@@ -144,20 +144,16 @@ Zebric may not be suitable for:
 ## Documentation
 
 ### Core Documentation
-- `ZBL-Framework-Specification.md` - Framework overview
-- `ZBL-Engine-Architecture.md` - Architecture details
-- `ZBL-Engine-Specification.md` - Implementation specification
+- [`docs/Zebric-Framework-Specification.md`](docs/Zebric-Framework-Specification.md) - Framework overview
+- [`docs/Zebric-Engine-Architecture.md`](docs/Zebric-Engine-Architecture.md) - Architecture details
+- [`docs/Zebric-Engine-Specification.md`](docs/Zebric-Engine-Specification.md) - Implementation specification
 
 ### Feature Documentation
-- [`docs/QUICKSTART.md`](docs/QUICKSTART.md) - Generate a blueprint with an LLM and run it
-- [`docs/ROUTING.md`](docs/ROUTING.md) - HTTP routing guide
-- [`docs/HTML-RENDERING.md`](docs/HTML-RENDERING.md) - HTML rendering guide
-- [`docs/DATABASE.md`](docs/DATABASE.md) - Database layer guide
+- [`docs/quickstart.md`](docs/quickstart.md) - Generate a blueprint with an LLM and run it
+- [`docs/blueprint-specification.md`](docs/blueprint-specification.md) - LLM-Readable description of a Zebric Blueprint
+- [`docs/html-rendering.md`](docs/html-rendering.md) - HTML rendering guide
 
 ### Implementation Summaries
-- `HTTP-ROUTING-SUMMARY.md` - Routing implementation details
-- `HTML-RENDERING-SUMMARY.md` - Rendering implementation details
-- `DATABASE-IMPLEMENTATION-SUMMARY.md` - Database implementation details
 - `CHANGELOG.md` - Full changelog
 
 ## License
