@@ -1,0 +1,160 @@
+{
+  "version": "0.1.0",
+  "project": {
+    "name": "Custom Theme Demo",
+    "version": "1.0.0",
+    "runtime": {
+      "min_version": "0.1.0"
+    }
+  },
+  "entities": [
+    {
+      "name": "Post",
+      "fields": [
+        { "name": "id", "type": "ULID", "primary_key": true },
+        { "name": "title", "type": "Text", "required": true },
+        { "name": "slug", "type": "Text", "required": true, "unique": true },
+        { "name": "content", "type": "LongText", "required": true },
+        { "name": "status", "type": "Enum", "values": ["draft", "published"], "default": "draft" },
+        { "name": "createdAt", "type": "DateTime", "default": "now" },
+        { "name": "updatedAt", "type": "DateTime", "default": "now" }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "path": "/",
+      "title": "Custom Theme Demo",
+      "layout": "dashboard",
+      "queries": {
+        "posts": {
+          "entity": "Post",
+          "orderBy": { "createdAt": "desc" },
+          "limit": 5
+        },
+        "draftPosts": {
+          "entity": "Post",
+          "where": { "status": "draft" },
+          "limit": 5
+        },
+        "publishedPosts": {
+          "entity": "Post",
+          "where": { "status": "published" },
+          "limit": 5
+        }
+      }
+    },
+    {
+      "path": "/posts",
+      "title": "All Posts",
+      "layout": "list",
+      "queries": {
+        "posts": {
+          "entity": "Post",
+          "orderBy": { "createdAt": "desc" }
+        }
+      }
+    },
+    {
+      "path": "/posts/:id",
+      "title": "Post Detail",
+      "layout": "detail",
+      "queries": {
+        "post": {
+          "entity": "Post",
+          "where": { "id": "$params.id" }
+        }
+      }
+    },
+    {
+      "path": "/posts/new",
+      "title": "Create Post",
+      "layout": "form",
+      "form": {
+        "entity": "Post",
+        "method": "create",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "label": "Title",
+            "required": true
+          },
+          {
+            "name": "slug",
+            "type": "text",
+            "label": "URL Slug",
+            "required": true,
+            "pattern": "^[a-z0-9-]+$"
+          },
+          {
+            "name": "content",
+            "type": "textarea",
+            "label": "Content",
+            "rows": 10,
+            "required": true
+          },
+          {
+            "name": "status",
+            "type": "select",
+            "label": "Status",
+            "options": ["draft", "published"],
+            "default": "draft"
+          }
+        ],
+        "onSuccess": {
+          "redirect": "/posts/{id}"
+        }
+      }
+    },
+    {
+      "path": "/posts/:id/edit",
+      "title": "Edit Post",
+      "layout": "form",
+      "queries": {
+        "post": {
+          "entity": "Post",
+          "where": { "id": "$params.id" }
+        }
+      },
+      "form": {
+        "entity": "Post",
+        "method": "update",
+        "fields": [
+          {
+            "name": "title",
+            "type": "text",
+            "label": "Title",
+            "required": true
+          },
+          {
+            "name": "slug",
+            "type": "text",
+            "label": "URL Slug",
+            "required": true
+          },
+          {
+            "name": "content",
+            "type": "textarea",
+            "label": "Content",
+            "rows": 10,
+            "required": true
+          },
+          {
+            "name": "status",
+            "type": "select",
+            "label": "Status",
+            "options": ["draft", "published"]
+          }
+        ],
+        "onSuccess": {
+          "redirect": "/posts/{id}"
+        }
+      }
+    }
+  ],
+  "ui": {
+    "view_transitions": true,
+    "progressive_enhancement": "none"
+  }
+}

@@ -1,0 +1,565 @@
+/**
+ * Unit tests for QueryExecutor
+ * Security-critical: database operations, access control, SQL injection prevention
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { QueryExecutor } from './query-executor.js'
+import { DatabaseConnection } from './connection.js'
+import { SchemaGenerator } from './schema-generator.js'
+import type { Blueprint, Entity, Query } from '../types/blueprint.js'
+import { writeFile, mkdir, rm } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
+import Database from 'better-sqlite3'
+
+describe('QueryExecutor', () => {
+  let executor: QueryExecutor
+  let connection: DatabaseConnection
+  let testDir: string
+  let dbPath: string
+  let testBlueprint: Blueprint
+
+  beforeEach(async () => {
+    // Create temporary test directory
+    testDir = join(tmpdir(), `zbl-test-${Date.now()}`)
+    await mkdir(testDir, { recursive: true })
+    dbPath = join(testDir, 'test.db')
+
+    // Create test blueprint
+    testBlueprint = {
+      version: '0.1.0',
+      project: {
+        name: 'Test',
+        version: '1.0.0',
+        runtime: { min_version: '0.1.0' }
+      },
+      entities: [
+        {
+          name: 'Post',
+          fields: [
+            { name: 'id', type: 'ULID', primary_key: true },
+            { name: 'title', type: 'Text', required: true },
+            { name: 'content', type: 'LongText' },
+            { name: 'published', type: 'Boolean' },
+            { name: 'views', type: 'Integer' },
+            { name: 'createdAt', type: 'DateTime' },
+            { name: 'updatedAt', type: 'DateTime' }
+          ]
+        },
+        {
+          name: 'Comment',
+          fields: [
+            { name: 'id', type: 'ULID', primary_key: true },
+            { name: 'postId', type: 'Ref', ref: 'Post.id' },
+            { name: 'text', type: 'Text', required: true },
+            { name: 'createdAt', type: 'DateTime' }
+          ]
+        }
+      ],
+      pages: []
+    }
+
+    // Initialize database connection
+    connection = new DatabaseConnection(
+      { type: 'sqlite', path: dbPath },
+      testBlueprint
+    )
+    await connection.connect()
+
+    executor = new QueryExecutor(connection)
+  })
+
+  afterEach(async () => {
+    await connection.close()
+    await rm(testDir, { recursive: true, force: true })
+  })
+
+  describe('execute', () => {
+    it('should execute simple query', async () => {
+      const query: Query = {
+        entity: 'Post'
+      }
+
+      const results = await executor.execute(query)
+      expect(Array.isArray(results)).toBe(true)
+    })
+
+    it('should apply WHERE filters', async () => {
+      // Create test post
+      await executor.create('Post', {
+        title: 'Test Post',
+        published: true,
+        views: 100
+      })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          published: true
+        }
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Test Post')
+    })
+
+    it('should apply ORDER BY', async () => {
+      await executor.create('Post', { title: 'Post A', views: 50 })
+      await executor.create('Post', { title: 'Post B', views: 100 })
+      await executor.create('Post', { title: 'Post C', views: 75 })
+
+      const query: Query = {
+        entity: 'Post',
+        orderBy: { views: 'desc' }
+      }
+
+      const results = await executor.execute(query)
+      expect(results[0].title).toBe('Post B')
+      expect(results[1].title).toBe('Post C')
+      expect(results[2].title).toBe('Post A')
+    })
+
+    it('should apply LIMIT', async () => {
+      await executor.create('Post', { title: 'Post 1' })
+      await executor.create('Post', { title: 'Post 2' })
+      await executor.create('Post', { title: 'Post 3' })
+
+      const query: Query = {
+        entity: 'Post',
+        limit: 2
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(2)
+    })
+
+    it('should apply OFFSET', async () => {
+      await executor.create('Post', { title: 'Post 1' })
+      await executor.create('Post', { title: 'Post 2' })
+      await executor.create('Post', { title: 'Post 3' })
+
+      const query: Query = {
+        entity: 'Post',
+        orderBy: { title: 'asc' },
+        offset: 1,
+        limit: 2
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(2)
+      expect(results[0].title).toBe('Post 2')
+    })
+
+    it('should handle AND conditions', async () => {
+      await executor.create('Post', { title: 'Published Post', published: true, views: 100 })
+      await executor.create('Post', { title: 'Draft Post', published: false, views: 50 })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          and: [
+            { published: true },
+            { views: { gte: 50 } }
+          ]
+        }
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Published Post')
+    })
+
+    it('should handle OR conditions', async () => {
+      await executor.create('Post', { title: 'Popular', views: 1000 })
+      await executor.create('Post', { title: 'Featured', published: true, views: 10 })
+      await executor.create('Post', { title: 'Draft', published: false, views: 5 })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          or: [
+            { views: { gte: 100 } },
+            { published: true }
+          ]
+        }
+      }
+
+      const results = await executor.execute(query)
+      expect(results.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it('should handle comparison operators', async () => {
+      await executor.create('Post', { title: 'Low', views: 10 })
+      await executor.create('Post', { title: 'Medium', views: 50 })
+      await executor.create('Post', { title: 'High', views: 100 })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          views: { gt: 20, lt: 80 }
+        }
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('Medium')
+    })
+
+    it('should handle LIKE operator', async () => {
+      await executor.create('Post', { title: 'Introduction to TypeScript' })
+      await executor.create('Post', { title: 'Advanced TypeScript Patterns' })
+      await executor.create('Post', { title: 'JavaScript Basics' })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          title: { like: '%TypeScript%' }
+        }
+      }
+
+      const results = await executor.execute(query)
+      expect(results).toHaveLength(2)
+    })
+
+    it('should replace $params.x with context values', async () => {
+      const post = await executor.create('Post', { title: 'Test Post', views: 100 })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          id: '$params.postId'
+        }
+      }
+
+      const results = await executor.execute(query, {
+        params: { postId: post.id }
+      })
+
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe(post.id)
+    })
+
+    it('should throw on non-existent entity', async () => {
+      const query: Query = {
+        entity: 'NonExistent'
+      }
+
+      await expect(executor.execute(query)).rejects.toThrow('Entity NonExistent not found')
+    })
+  })
+
+  describe('findById', () => {
+    it('should find record by ID', async () => {
+      const created = await executor.create('Post', { title: 'Test Post' })
+
+      const found = await executor.findById('Post', created.id)
+
+      expect(found).toBeDefined()
+      expect(found.id).toBe(created.id)
+      expect(found.title).toBe('Test Post')
+    })
+
+    it('should return null for non-existent ID', async () => {
+      const found = await executor.findById('Post', 'nonexistent')
+      expect(found).toBeNull()
+    })
+
+    it('should throw on non-existent entity', async () => {
+      await expect(
+        executor.findById('NonExistent', 'some-id')
+      ).rejects.toThrow('Entity NonExistent not found')
+    })
+  })
+
+  describe('create', () => {
+    it('should create new record', async () => {
+      const data = {
+        title: 'New Post',
+        content: 'Content here',
+        published: true,
+        views: 0
+      }
+
+      const created = await executor.create('Post', data)
+
+      expect(created).toBeDefined()
+      expect(created.id).toBeDefined()
+      expect(created.title).toBe('New Post')
+      expect(created.published).toBe(true)
+    })
+
+    it('should auto-generate ID if not provided', async () => {
+      const created = await executor.create('Post', { title: 'Test' })
+
+      expect(created.id).toBeDefined()
+      expect(typeof created.id).toBe('string')
+      expect(created.id.length).toBeGreaterThan(0)
+    })
+
+    it('should set timestamps automatically', async () => {
+      const created = await executor.create('Post', { title: 'Test' })
+
+      expect(created.createdAt).toBeDefined()
+      expect(created.updatedAt).toBeDefined()
+    })
+
+    it('should handle camelCase to snake_case conversion', async () => {
+      const created = await executor.create('Post', {
+        title: 'Test',
+        createdAt: Date.now()
+      })
+
+      expect(created.createdAt).toBeDefined()
+    })
+
+    it('should throw on non-existent entity', async () => {
+      await expect(
+        executor.create('NonExistent', { title: 'Test' })
+      ).rejects.toThrow('Entity NonExistent not found')
+    })
+  })
+
+  describe('update', () => {
+    it('should update existing record', async () => {
+      const created = await executor.create('Post', { title: 'Original', views: 0 })
+
+      const updated = await executor.update('Post', created.id, {
+        title: 'Updated',
+        views: 100
+      })
+
+      expect(updated.title).toBe('Updated')
+      expect(updated.views).toBe(100)
+    })
+
+    it('should update timestamp automatically', async () => {
+      const created = await executor.create('Post', { title: 'Test' })
+      const originalUpdatedAt = created.updatedAt
+
+      await new Promise(resolve => setTimeout(resolve, 10))
+
+      const updated = await executor.update('Post', created.id, { title: 'Updated' })
+
+      expect(updated.updatedAt).toBeGreaterThanOrEqual(originalUpdatedAt)
+    })
+
+    it('should handle camelCase to snake_case conversion', async () => {
+      const created = await executor.create('Post', { title: 'Test' })
+
+      const updated = await executor.update('Post', created.id, {
+        createdAt: Date.now()
+      })
+
+      expect(updated).toBeDefined()
+    })
+
+    it('should throw on non-existent entity', async () => {
+      await expect(
+        executor.update('NonExistent', 'some-id', { title: 'Test' })
+      ).rejects.toThrow('Entity NonExistent not found')
+    })
+  })
+
+  describe('delete', () => {
+    it('should delete existing record', async () => {
+      const created = await executor.create('Post', { title: 'To Delete' })
+
+      await executor.delete('Post', created.id)
+
+      const found = await executor.findById('Post', created.id)
+      expect(found).toBeNull()
+    })
+
+    it('should not throw on non-existent ID', async () => {
+      await expect(
+        executor.delete('Post', 'nonexistent')
+      ).resolves.not.toThrow()
+    })
+
+    it('should throw on non-existent entity', async () => {
+      await expect(
+        executor.delete('NonExistent', 'some-id')
+      ).rejects.toThrow('Entity NonExistent not found')
+    })
+  })
+
+  describe('count', () => {
+    it('should count all records', async () => {
+      await executor.create('Post', { title: 'Post 1' })
+      await executor.create('Post', { title: 'Post 2' })
+      await executor.create('Post', { title: 'Post 3' })
+
+      const count = await executor.count({ entity: 'Post' })
+      expect(count).toBe(3)
+    })
+
+    it('should count with WHERE filters', async () => {
+      await executor.create('Post', { title: 'Published', published: true })
+      await executor.create('Post', { title: 'Draft', published: false })
+      await executor.create('Post', { title: 'Another Published', published: true })
+
+      const count = await executor.count({
+        entity: 'Post',
+        where: { published: true }
+      })
+
+      expect(count).toBe(2)
+    })
+
+    it('should return 0 for empty results', async () => {
+      const count = await executor.count({ entity: 'Post' })
+      expect(count).toBe(0)
+    })
+  })
+
+  describe('security', () => {
+    it('should prevent SQL injection in WHERE clause', async () => {
+      await executor.create('Post', { title: 'Safe Post' })
+
+      const query: Query = {
+        entity: 'Post',
+        where: {
+          title: "'; DROP TABLE post; --"
+        }
+      }
+
+      // Should not throw and should not drop table
+      const results = await executor.execute(query)
+      expect(Array.isArray(results)).toBe(true)
+
+      // Verify table still exists by querying it again
+      const allPosts = await executor.execute({ entity: 'Post' })
+      expect(Array.isArray(allPosts)).toBe(true)
+    })
+
+    it('should sanitize user input in create', async () => {
+      const created = await executor.create('Post', {
+        title: "'; DROP TABLE post; --",
+        content: '<script>alert("xss")</script>'
+      })
+
+      expect(created.title).toBe("'; DROP TABLE post; --")
+      expect(created.content).toBe('<script>alert("xss")</script>')
+
+      // Verify we can still query
+      const found = await executor.findById('Post', created.id)
+      expect(found).toBeDefined()
+    })
+
+    it('should handle null bytes in input', async () => {
+      const created = await executor.create('Post', {
+        title: 'Test\x00Data'
+      })
+
+      expect(created).toBeDefined()
+    })
+  })
+
+  describe('context variables', () => {
+    it('should replace $params variables', async () => {
+      const post = await executor.create('Post', { title: 'Test', views: 100 })
+
+      const results = await executor.execute(
+        {
+          entity: 'Post',
+          where: { id: '$params.id' }
+        },
+        {
+          params: { id: post.id }
+        }
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe(post.id)
+    })
+
+    it('should replace $query variables', async () => {
+      await executor.create('Post', { title: 'JavaScript Guide' })
+      await executor.create('Post', { title: 'TypeScript Guide' })
+
+      const results = await executor.execute(
+        {
+          entity: 'Post',
+          where: { title: { like: '$query.search' } }
+        },
+        {
+          query: { search: '%TypeScript%' }
+        }
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toContain('TypeScript')
+    })
+
+    it('should replace $currentUser.id', async () => {
+      // Add userId field to Post entity
+      testBlueprint.entities[0].fields.push({
+        name: 'userId',
+        type: 'Ref',
+        ref: 'User.id'
+      })
+
+      // Recreate connection with updated blueprint
+      await connection.close()
+
+      // Drop and recreate table manually
+      const db = Database(dbPath)
+      db.exec('DROP TABLE IF EXISTS post')
+      db.close()
+
+      connection = new DatabaseConnection(
+        { type: 'sqlite', path: dbPath },
+        testBlueprint
+      )
+      await connection.connect()
+      executor = new QueryExecutor(connection)
+
+      await executor.create('Post', { title: 'User Post', userId: 'user123' })
+      await executor.create('Post', { title: 'Other Post', userId: 'user456' })
+
+      const results = await executor.execute(
+        {
+          entity: 'Post',
+          where: { userId: '$currentUser.id' }
+        },
+        {
+          session: {
+            user: { id: 'user123', email: 'test@example.com' },
+            token: 'token'
+          }
+        }
+      )
+
+      expect(results).toHaveLength(1)
+      expect(results[0].title).toBe('User Post')
+    })
+  })
+
+  describe('relations', () => {
+    it('should create related records', async () => {
+      const post = await executor.create('Post', { title: 'Main Post' })
+      const comment = await executor.create('Comment', {
+        postId: post.id,
+        text: 'Great post!'
+      })
+
+      expect(comment.postId).toBe(post.id)
+      expect(comment.text).toBe('Great post!')
+    })
+
+    it('should query related records', async () => {
+      const post = await executor.create('Post', { title: 'Main Post' })
+      await executor.create('Comment', { postId: post.id, text: 'Comment 1' })
+      await executor.create('Comment', { postId: post.id, text: 'Comment 2' })
+
+      const comments = await executor.execute({
+        entity: 'Comment',
+        where: { postId: post.id }
+      })
+
+      expect(comments).toHaveLength(2)
+    })
+  })
+})

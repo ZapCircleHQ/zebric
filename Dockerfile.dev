@@ -1,0 +1,33 @@
+# Development Dockerfile for Zebric
+# This Dockerfile is optimized for local development with hot reload
+
+FROM node:20-alpine AS base
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Set working directory
+WORKDIR /app
+
+# Install curl for healthchecks
+RUN apk add --no-cache curl
+
+# Development stage
+FROM base AS development
+
+# Copy package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/runtime/package.json ./packages/runtime/
+COPY packages/cli/package.json ./packages/cli/
+
+# Install all dependencies (including devDependencies)
+RUN pnpm install --frozen-lockfile
+
+# Copy source code (will be overridden by volume mount in docker-compose)
+COPY . .
+
+# Expose application and metrics ports
+EXPOSE 3000 9090
+
+# Default command (can be overridden in docker-compose)
+CMD ["pnpm", "dev"]

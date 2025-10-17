@@ -1,0 +1,30 @@
+{
+  "name": "zebric",
+  "version": "0.1.0",
+  "description": "Zebric - Runtime Engine for ZBL Blueprint JSON (ZBL Runtime Engine)",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "plugins/*",
+    "examples/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "turbo": "^1.13.0",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.12.7",
+    "vitest": "^1.6.1",
+    "prettier": "^3.2.5",
+    "eslint": "^8.57.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@zebric/cli",
+  "version": "0.1.0",
+  "description": "Zebric CLI - Command-line tools for Zebric Engine",
+  "type": "module",
+  "bin": {
+    "zebric": "./dist/index.js",
+    "zebric-engine": "./dist/engine-runner.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@zebric/runtime": "workspace:*",
+    "commander": "^12.0.0",
+    "chalk": "^5.3.0",
+    "ora": "^8.0.1",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}

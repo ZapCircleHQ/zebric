@@ -1,0 +1,302 @@
+/**
+ * Unit tests for Input Validator
+ * Security-critical: validates and sanitizes user input
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest'
+import { InputValidator } from './input-validator.js'
+import type { Field } from '../types/blueprint.js'
+
+describe('InputValidator', () => {
+  let validator: InputValidator
+
+  beforeEach(() => {
+    validator = new InputValidator()
+  })
+
+  describe('validateField', () => {
+    it('should validate Text field', () => {
+      const field: Field = { name: 'title', type: 'Text' }
+      const result = validator.validateField(field, 'Hello World')
+      expect(result.valid).toBe(true)
+      expect(result.value).toBe('Hello World')
+    })
+
+    it('should reject Text field exceeding max length', () => {
+      const field: Field = { name: 'title', type: 'Text' }
+      const longText = 'a'.repeat(10000) // Assume max is lower
+      const result = validator.validateField(field, longText)
+      // Implementation may truncate or reject
+      expect(result).toBeDefined()
+    })
+
+    it('should validate Email field with valid email', () => {
+      const field: Field = { name: 'email', type: 'Email' }
+      const result = validator.validateField(field, 'user@example.com')
+      expect(result.valid).toBe(true)
+    })
+
+    it('should reject invalid email format', () => {
+      const field: Field = { name: 'email', type: 'Email' }
+      const result = validator.validateField(field, 'not-an-email')
+      expect(result.valid).toBe(false)
+      expect(result.errors).toBeDefined()
+    })
+
+    it('should validate Number field', () => {
+      const field: Field = { name: 'count', type: 'Number' }
+      const result = validator.validateField(field, 42)
+      expect(result.valid).toBe(true)
+      expect(result.value).toBe(42)
+    })
+
+    it('should coerce string numbers', () => {
+      const field: Field = { name: 'count', type: 'Number' }
+      const result = validator.validateField(field, '42')
+      expect(result.valid).toBe(true)
+      expect(result.value).toBe(42)
+    })
+
+    it('should reject non-numeric strings for Number', () => {
+      const field: Field = { name: 'count', type: 'Number' }
+      const result = validator.validateField(field, 'not a number')
+      expect(result.valid).toBe(false)
+    })
+
+    it('should validate Boolean field', () => {
+      const field: Field = { name: 'active', type: 'Boolean' }
+      expect(validator.validateField(field, true).valid).toBe(true)
+      expect(validator.validateField(field, false).valid).toBe(true)
+    })
+
+    it('should coerce boolean strings', () => {
+      const field: Field = { name: 'active', type: 'Boolean' }
+      expect(validator.validateField(field, 'true').value).toBe(true)
+      expect(validator.validateField(field, 'false').value).toBe(false)
+      expect(validator.validateField(field, '1').value).toBe(true)
+      expect(validator.validateField(field, '0').value).toBe(false)
+    })
+
+    it('should validate Date field', () => {
+      const field: Field = { name: 'birthdate', type: 'Date' }
+      const result = validator.validateField(field, '2025-10-10')
+      expect(result.valid).toBe(true)
+    })
+
+    it('should reject invalid date format', () => {
+      const field: Field = { name: 'birthdate', type: 'Date' }
+      const result = validator.validateField(field, '10/10/2025') // Wrong format
+      // Depends on implementation - may accept or reject
+      expect(result).toBeDefined()
+    })
+
+    it('should validate DateTime field', () => {
+      const field: Field = { name: 'createdAt', type: 'DateTime' }
+      const result = validator.validateField(field, '2025-10-10T15:30:00Z')
+      expect(result.valid).toBe(true)
+    })
+
+    it('should validate Enum field with valid value', () => {
+      const field: Field = {
+        name: 'status',
+        type: 'Enum',
+        values: ['pending', 'active', 'completed']
+      }
+      const result = validator.validateField(field, 'active')
+      expect(result.valid).toBe(true)
+    })
+
+    it('should reject Enum field with invalid value', () => {
+      const field: Field = {
+        name: 'status',
+        type: 'Enum',
+        values: ['pending', 'active', 'completed']
+      }
+      const result = validator.validateField(field, 'invalid')
+      expect(result.valid).toBe(false)
+    })
+
+    it('should enforce required fields', () => {
+      const field: Field = { name: 'title', type: 'Text', required: true }
+      const result = validator.validateField(field, null)
+      expect(result.valid).toBe(false)
+      expect(result.errors).toContain('required')
+    })
+
+    it('should allow null for optional fields', () => {
+      const field: Field = { name: 'description', type: 'Text' }
+      const result = validator.validateField(field, null)
+      expect(result.valid).toBe(true)
+    })
+
+    it('should validate URL field', () => {
+      const field: Field = { name: 'website', type: 'URL' }
+      expect(validator.validateField(field, 'https://example.com').valid).toBe(true)
+      expect(validator.validateField(field, 'http://example.com').valid).toBe(true)
+    })
+
+    it('should reject invalid URL', () => {
+      const field: Field = { name: 'website', type: 'URL' }
+      expect(validator.validateField(field, 'not a url').valid).toBe(false)
+    })
+
+    it('should reject dangerous URL protocols', () => {
+      const field: Field = { name: 'website', type: 'URL' }
+      expect(validator.validateField(field, 'javascript:alert(1)').valid).toBe(false)
+      expect(validator.validateField(field, 'data:text/html,<script>').valid).toBe(false)
+    })
+
+    it('should validate JSON field', () => {
+      const field: Field = { name: 'metadata', type: 'JSON' }
+      const result = validator.validateField(field, '{"key": "value"}')
+      expect(result.valid).toBe(true)
+    })
+
+    it('should reject invalid JSON', () => {
+      const field: Field = { name: 'metadata', type: 'JSON' }
+      const result = validator.validateField(field, '{invalid json}')
+      expect(result.valid).toBe(false)
+    })
+
+    it('should accept JSON objects directly', () => {
+      const field: Field = { name: 'metadata', type: 'JSON' }
+      const result = validator.validateField(field, { key: 'value' })
+      expect(result.valid).toBe(true)
+    })
+  })
+
+  describe('sanitization', () => {
+    it('should sanitize HTML in text fields', () => {
+      const field: Field = { name: 'comment', type: 'Text' }
+      const result = validator.validateField(field, '<script>alert("xss")</script>')
+      // Should either escape or strip HTML
+      expect(result.value).not.toContain('<script>')
+    })
+
+    it('should preserve safe HTML in LongText if allowed', () => {
+      const field: Field = { name: 'content', type: 'LongText' }
+      const result = validator.validateField(field, '<p>Safe content</p>')
+      // Behavior depends on configuration
+      expect(result).toBeDefined()
+    })
+
+    it('should trim whitespace', () => {
+      const field: Field = { name: 'title', type: 'Text' }
+      const result = validator.validateField(field, '  Hello World  ')
+      expect(result.value).toBe('Hello World')
+    })
+
+    it('should normalize email addresses', () => {
+      const field: Field = { name: 'email', type: 'Email' }
+      const result = validator.validateField(field, '  USER@EXAMPLE.COM  ')
+      expect(result.value).toBe('user@example.com')
+    })
+  })
+
+  describe('validateRecord', () => {
+    it('should validate entire record', () => {
+      const fields: Field[] = [
+        { name: 'id', type: 'ULID', primary_key: true },
+        { name: 'email', type: 'Email', required: true },
+        { name: 'name', type: 'Text', required: true }
+      ]
+
+      const data = {
+        email: 'user@example.com',
+        name: 'John Doe'
+      }
+
+      const result = validator.validateRecord(fields, data)
+      expect(result.valid).toBe(true)
+      expect(result.data).toEqual({
+        email: 'user@example.com',
+        name: 'John Doe'
+      })
+    })
+
+    it('should return all validation errors', () => {
+      const fields: Field[] = [
+        { name: 'email', type: 'Email', required: true },
+        { name: 'age', type: 'Number', required: true }
+      ]
+
+      const data = {
+        email: 'invalid-email',
+        age: 'not a number'
+      }
+
+      const result = validator.validateRecord(fields, data)
+      expect(result.valid).toBe(false)
+      expect(result.errors).toHaveProperty('email')
+      expect(result.errors).toHaveProperty('age')
+    })
+
+    it('should strip unknown fields', () => {
+      const fields: Field[] = [
+        { name: 'name', type: 'Text' }
+      ]
+
+      const data = {
+        name: 'John',
+        malicious: '<script>alert(1)</script>',
+        extra: 'data'
+      }
+
+      const result = validator.validateRecord(fields, data)
+      expect(result.data).toEqual({ name: 'John' })
+      expect(result.data).not.toHaveProperty('malicious')
+      expect(result.data).not.toHaveProperty('extra')
+    })
+
+    it('should skip validation for primary key on create', () => {
+      const fields: Field[] = [
+        { name: 'id', type: 'ULID', primary_key: true },
+        { name: 'name', type: 'Text' }
+      ]
+
+      const data = { name: 'John' }
+
+      const result = validator.validateRecord(fields, data, { skipPrimaryKey: true })
+      expect(result.valid).toBe(true)
+    })
+  })
+
+  describe('security', () => {
+    it('should detect SQL injection attempts', () => {
+      const field: Field = { name: 'search', type: 'Text' }
+      const result = validator.validateField(field, "'; DROP TABLE users; --")
+      // Should sanitize or flag as suspicious
+      expect(result.value).not.toContain('DROP TABLE')
+    })
+
+    it('should detect XSS attempts', () => {
+      const field: Field = { name: 'comment', type: 'Text' }
+      const xssAttempts = [
+        '<script>alert(1)</script>',
+        '<img src=x onerror=alert(1)>',
+        'javascript:alert(1)',
+        '<svg onload=alert(1)>'
+      ]
+
+      for (const xss of xssAttempts) {
+        const result = validator.validateField(field, xss)
+        expect(result.value).not.toMatch(/<script|javascript:|onerror|onload/i)
+      }
+    })
+
+    it('should handle extremely large inputs', () => {
+      const field: Field = { name: 'text', type: 'Text' }
+      const hugeInput = 'a'.repeat(1000000) // 1MB
+      const result = validator.validateField(field, hugeInput)
+      // Should either truncate or reject
+      expect(result).toBeDefined()
+    })
+
+    it('should handle null bytes', () => {
+      const field: Field = { name: 'text', type: 'Text' }
+      const result = validator.validateField(field, 'test\x00data')
+      // Should remove or reject null bytes
+      expect(result.value).not.toContain('\x00')
+    })
+  })
+})

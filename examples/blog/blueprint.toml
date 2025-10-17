@@ -1,0 +1,246 @@
+version = "0.1.0"
+
+[project]
+name = "Blog Example"
+version = "1.0.0"
+description = "A simple blog built with Zebric"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.User]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "email", type = "Email", unique = true, index = true, required = true },
+  { name = "name", type = "Text", required = true },
+  { name = "role", type = "Enum", values = ["user", "admin"], default = "user" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.User.relations]
+posts = { type = "hasMany", entity = "Post", foreign_key = "authorId" }
+
+[entity.Post]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "slug", type = "Text", unique = true, index = true, required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["draft", "published"], default = "draft" },
+  { name = "authorId", type = "Ref", ref = "User.id", index = true, required = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Post.relations]
+author = { type = "belongsTo", entity = "User", foreign_key = "authorId" }
+
+[entity.Post.access]
+read = { or = [{ status = "published" }, { authorId = "$currentUser.id" }] }
+create = true
+update = { or = [{ authorId = "$currentUser.id" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "Home"
+auth = "none"
+layout = "list"
+
+[page."/".query.posts]
+entity = "Post"
+where = { status = "published" }
+orderBy = { createdAt = "desc" }
+limit = 10
+include = ["author"]
+
+[page."/posts"]
+title = "All Posts"
+auth = "none"
+layout = "list"
+
+[page."/posts".query.posts]
+entity = "Post"
+where = { status = "published" }
+orderBy = { createdAt = "desc" }
+limit = 20
+include = ["author"]
+
+[page."/posts/:id"]
+title = "Post Detail"
+auth = "none"
+layout = "detail"
+
+[page."/posts/:id".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+include = ["author"]
+
+[page."/posts/new"]
+title = "New Post"
+auth = "optional"
+layout = "form"
+
+[page."/posts/new".form]
+entity = "Post"
+method = "create"
+
+[[page."/posts/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "slug"
+type = "text"
+label = "URL Slug"
+required = true
+pattern = "^[a-z0-9-]+$"
+error_message = "Slug must be lowercase letters, numbers, and hyphens only"
+
+[[page."/posts/new".form.fields]]
+name = "body"
+type = "textarea"
+label = "Content"
+rows = 20
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = ["draft", "published"]
+default = "draft"
+
+[page."/posts/new".form.onSuccess]
+redirect = "/posts/{id}"
+message = "Post created successfully!"
+
+[page."/posts/:id/edit"]
+title = "Edit Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/:id/edit".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+
+[page."/posts/:id/edit".form]
+entity = "Post"
+method = "update"
+
+[[page."/posts/:id/edit".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/:id/edit".form.fields]]
+name = "slug"
+type = "text"
+label = "URL Slug"
+required = true
+
+[[page."/posts/:id/edit".form.fields]]
+name = "body"
+type = "textarea"
+label = "Content"
+rows = 20
+required = true
+
+[[page."/posts/:id/edit".form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = ["draft", "published"]
+
+[page."/posts/:id/edit".form.onSuccess]
+redirect = "/posts/{id}"
+message = "Post updated successfully!"
+
+[page."/posts/:id/delete"]
+title = "Delete Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/:id/delete".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+
+[page."/posts/:id/delete".form]
+entity = "Post"
+method = "delete"
+fields = []
+
+[page."/posts/:id/delete".form.onSuccess]
+redirect = "/posts"
+message = "Post deleted successfully"
+
+[page."/users/:id"]
+title = "User Profile"
+auth = "none"
+layout = "detail"
+
+[page."/users/:id".query.user]
+entity = "User"
+where = { id = "$params.id" }
+
+[page."/users/:id".query.posts]
+entity = "Post"
+where = { authorId = "$params.id", status = "published" }
+orderBy = { createdAt = "desc" }
+limit = 10
+
+[page."/dashboard"]
+title = "Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[page."/dashboard".query.totalPosts]
+entity = "Post"
+orderBy = { createdAt = "desc" }
+limit = 5
+
+[page."/dashboard".query.draftPosts]
+entity = "Post"
+where = { status = "draft" }
+orderBy = { createdAt = "desc" }
+limit = 5
+
+[page."/dashboard".query.publishedPosts]
+entity = "Post"
+where = { status = "published" }
+orderBy = { createdAt = "desc" }
+limit = 5
+
+[page."/dashboard".query.recentUsers]
+entity = "User"
+orderBy = { createdAt = "desc" }
+limit = 5
+
+# ==========================================
+# Authentication
+# ==========================================
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+
+# ==========================================
+# UI Configuration
+# ==========================================
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

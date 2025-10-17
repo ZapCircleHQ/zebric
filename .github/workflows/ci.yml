@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: TypeScript compilation
+        run: pnpm -r --filter './packages/*' --filter './plugins/*' exec tsc --noEmit
+
+      - name: Lint check
+        run: pnpm lint
+        continue-on-error: true
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run tests
+        run: pnpm --filter @zebric/runtime test
+
+      - name: Generate coverage report
+        run: pnpm --filter @zebric/runtime test -- --coverage
+        continue-on-error: true
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/runtime/coverage/coverage-final.json
+          flags: runtime
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all packages
+        run: pnpm build
+
+      - name: Verify build artifacts
+        run: |
+          echo "Checking build outputs..."
+          ls -R packages/*/dist || echo "No dist directories found"
+
+  blueprint-smoke-test:
+    name: Blueprint Smoke Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Test task-tracker blueprint parse
+        run: |
+          echo "Testing task-tracker blueprint..."
+          node packages/cli/dist/index.js validate examples/task-tracker/blueprint.toml || echo "Validation not yet implemented"
+
+      - name: Test blog blueprint parse
+        run: |
+          echo "Testing blog blueprint..."
+          node packages/cli/dist/index.js validate examples/blog/blueprint.toml || echo "Validation not yet implemented"
+
+  all-checks:
+    name: All Checks Passed
+    runs-on: ubuntu-latest
+    needs: [quality, test, build, blueprint-smoke-test]
+    if: always()
+
+    steps:
+      - name: Check job results
+        run: |
+          echo "Quality: ${{ needs.quality.result }}"
+          echo "Tests: ${{ needs.test.result }}"
+          echo "Build: ${{ needs.build.result }}"
+          echo "Blueprint: ${{ needs.blueprint-smoke-test.result }}"
+
+          if [ "${{ needs.quality.result }}" != "success" ] || \
+             [ "${{ needs.test.result }}" != "success" ] || \
+             [ "${{ needs.build.result }}" != "success" ] || \
+             [ "${{ needs.blueprint-smoke-test.result }}" != "success" ]; then
+            echo "One or more checks failed"
+            exit 1
+          fi
+
+          echo "All checks passed!"

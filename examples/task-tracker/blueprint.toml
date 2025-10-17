@@ -1,0 +1,98 @@
+version = "0.1.0"
+
+[project]
+name = "Task Tracker"
+version = "1.0.0"
+description = "A task management application with custom kanban board"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# Task entity
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "status", type = "Enum", values = ["not_started", "in_progress", "done"], default = "not_started" },
+  { name = "priority", type = "Enum", values = ["low", "normal", "high"], default = "normal" },
+  { name = "dueDate", type = "Date" },
+  { name = "createdAt", type = "DateTime" },
+  { name = "updatedAt", type = "DateTime" }
+]
+
+# Dashboard with custom behavior
+[page."/dashboard"]
+title = "Task Dashboard"
+auth = "optional"
+layout = "custom"
+
+[page."/dashboard".query.tasks]
+entity = "Task"
+
+[page."/dashboard".behavior]
+# Original user intent - preserved for AI regeneration
+intent = """
+The home screen should show all tasks past due or due today in the left column,
+all tasks in progress in the middle column, and all remaining tasks in the right column.
+
+The past due tasks should be italicized, and in dark blue, while in progress tasks
+should be in bold and medium blue. Tasks that haven't been started should be in light blue.
+
+To the left of every task name is a status indicator I can click to go from not started
+to in progress to done, and it cycles through.
+"""
+
+# Generated JavaScript behavior
+render = "./behaviors/dashboard-render.js"
+on_status_click = "./behaviors/status-click.js"
+
+# Standard form for creating tasks
+[page."/tasks/new"]
+title = "New Task"
+auth = "optional"
+layout = "form"
+
+[page."/tasks/new".form]
+entity = "Task"
+method = "create"
+
+[[page."/tasks/new".form.fields]]
+name = "title"
+type = "text"
+required = true
+
+[[page."/tasks/new".form.fields]]
+name = "description"
+type = "textarea"
+rows = 4
+
+[[page."/tasks/new".form.fields]]
+name = "priority"
+type = "select"
+options = [
+  { value = "low", label = "Low" },
+  { value = "normal", label = "Normal" },
+  { value = "high", label = "High" }
+]
+
+[[page."/tasks/new".form.fields]]
+name = "dueDate"
+type = "date"
+
+[page."/tasks/new".form.onSuccess]
+redirect = "/"
+message = "Task created successfully"
+
+# Standard detail page for editing
+[page."/tasks/:id"]
+title = "Edit Task"
+auth = "optional"
+layout = "detail"
+
+[page."/tasks/:id".queries.task]
+entity = "Task"
+where = { id = "$params.id" }
+
+[auth]
+providers = ["email"]

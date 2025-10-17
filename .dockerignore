@@ -1,0 +1,57 @@
+# Dependencies
+node_modules
+**/node_modules
+pnpm-lock.yaml
+
+# Build outputs
+dist
+**/dist
+*.tsbuildinfo
+
+# Development files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage
+*.test.ts
+*.spec.ts
+__tests__
+test
+
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Data (will be mounted as volume)
+data
+**/data
+*.db
+*.sqlite
+
+# Temporary files
+tmp
+temp
+*.tmp

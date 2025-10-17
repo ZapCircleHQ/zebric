@@ -1,0 +1,171 @@
+version = "0.1.0"
+
+[project]
+name = "Vibe Chat Blueprint Generator"
+version = "0.1.0"
+description = "Chat with OpenAI to draft blueprint.toml files for Zebric"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.ChatSession]
+fields = [
+  { name = "id",        type = "ULID",     primary_key = true },
+  { name = "title",     type = "Text",     required    = true },
+  { name = "status",    type = "Enum",     values      = ["waiting", "generating", "ready", "error"], default = "waiting" },
+  { name = "createdAt", type = "DateTime", default     = "now" },
+  { name = "updatedAt", type = "DateTime", default     = "now" }
+]
+
+[entity.ChatSession.relations]
+messages = { type = "hasMany", entity = "ChatMessage", foreign_key = "sessionId" }
+
+[entity.ChatMessage]
+fields = [
+  { name = "id",        type = "ULID",     primary_key = true },
+  { name = "sessionId", type = "Ref",      ref         = "ChatSession.id", index = true, required = true },
+  { name = "role",      type = "Enum",     values      = ["system", "user", "assistant"], default = "user" },
+  { name = "kind",      type = "Enum",     values      = ["chat", "blueprint", "note"],   default = "chat" },
+  { name = "content",   type = "LongText", required    = true },
+  { name = "createdAt", type = "DateTime", default     = "now" }
+]
+
+[entity.ChatMessage.relations]
+session = { type = "belongsTo", entity = "ChatSession", foreign_key = "sessionId" }
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "Vibe Sessions"
+auth = "none"
+layout = "list"
+
+[page."/".queries.sessions]
+entity = "ChatSession"
+orderBy = { updatedAt = "desc" }
+limit = 20
+
+[page."/sessions/new"]
+title = "New Chat Session"
+auth = "none"
+layout = "form"
+
+[page."/sessions/new".form]
+entity = "ChatSession"
+method = "create"
+
+[[page."/sessions/new".form.fields]]
+name = "title"
+type = "text"
+label = "What vibe are you building?"
+placeholder = "e.g. ZapCircle onboarding wizard"
+required = true
+
+[page."/sessions/new".form.onSuccess]
+redirect = "/sessions/{id}"
+message = "Session created. Start chatting to draft a blueprint."
+
+[page."/sessions/:id"]
+title = "Chat"
+auth = "none"
+layout = "custom"
+
+[page."/sessions/:id".queries.session]
+entity = "ChatSession"
+where = { id = "$params.id" }
+limit = 1
+
+[page."/sessions/:id".queries.messages]
+entity = "ChatMessage"
+where = { sessionId = "$params.id" }
+orderBy = { createdAt = "asc" }
+limit = 100
+
+[page."/sessions/:id".behavior]
+intent = """
+Render a two-panel chat experience for vibe coding.
+
+Left panel: show the conversation history and a composer box that posts new ChatMessage records to /api/chat-messages.
+Right panel: when the workflow creates a blueprint response, show it as highlighted TOML, an iframe preview, and actions to copy or download.
+
+Show the session status (waiting, generating, ready, error) above the chat and reflect transitions while waiting on OpenAI.
+"""
+render = "./behaviors/chat-render.js"
+
+# ==========================================
+# Workflows
+# ==========================================
+
+[workflow.generate_vibe_blueprint]
+description = "Calls OpenAI to turn a chat message into a blueprint.toml response"
+trigger = { entity = "ChatMessage", event = "create", condition = { role = "user" } }
+
+# Step 1: set session status = generating
+[[workflow.generate_vibe_blueprint.steps]]
+type   = "query"
+entity = "ChatSession"
+action = "update"
+[workflow.generate_vibe_blueprint.steps.where]
+id = "{{ trigger.data.sessionId }}"
+[workflow.generate_vibe_blueprint.steps.data]
+status = "generating"
+
+# Step 2: fetch session
+[[workflow.generate_vibe_blueprint.steps]]
+type     = "query"
+entity   = "ChatSession"
+action   = "find"
+assignTo = "session"
+[workflow.generate_vibe_blueprint.steps.where]
+id = "{{ trigger.data.sessionId }}"
+
+# Step 3: call OpenAI
+[[workflow.generate_vibe_blueprint.steps]]
+type     = "webhook"
+url      = "https://api.openai.com/v1/chat/completions"
+method   = "POST"
+assignTo = "openai"
+
+[workflow.generate_vibe_blueprint.steps.headers]
+Content-Type = "application/json"
+Authorization = "Bearer {{ env.OPENAI_API_KEY }}"
+
+[workflow.generate_vibe_blueprint.steps.payload]
+model       = "gpt-4o-mini"
+temperature = 0.2
+
+# payload.messages as array of tables
+[[workflow.generate_vibe_blueprint.steps.payload.messages]]
+role    = "system"
+content = "You are a ZapCircle assistant that outputs production-ready blueprint.toml files for the ZBL runtime. Respond with TOML only."
+
+[[workflow.generate_vibe_blueprint.steps.payload.messages]]
+role    = "user"
+content = "Project Name: {{ variables.session.0.title }}\n\nConversation seed: {{ trigger.data.content }}\n\nReturn a complete blueprint.toml that the developer can run locally."
+
+# Step 4: store assistant blueprint message
+[[workflow.generate_vibe_blueprint.steps]]
+type   = "query"
+entity = "ChatMessage"
+action = "create"
+[workflow.generate_vibe_blueprint.steps.data]
+sessionId = "{{ trigger.data.sessionId }}"
+role      = "assistant"
+kind      = "blueprint"
+content   = "{{ variables.openai.choices.0.message.content }}"
+
+# Step 5: set session status = ready
+[[workflow.generate_vibe_blueprint.steps]]
+type   = "query"
+entity = "ChatSession"
+action = "update"
+[workflow.generate_vibe_blueprint.steps.where]
+id = "{{ trigger.data.sessionId }}"
+[workflow.generate_vibe_blueprint.steps.data]
+status = "ready"

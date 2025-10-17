@@ -1,0 +1,377 @@
+version = "0.1.0"
+
+[project]
+name = "Blog Example"
+version = "1.0.0"
+description = "A simple blog built with Zebric"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[[entities]]
+name = "User"
+
+[[entities.fields]]
+name = "id"
+type = "ULID"
+primary_key = true
+
+[[entities.fields]]
+name = "email"
+type = "Email"
+unique = true
+index = true
+required = true
+
+[[entities.fields]]
+name = "name"
+type = "Text"
+required = true
+
+[[entities.fields]]
+name = "role"
+type = "Enum"
+values = ["user", "admin"]
+default = "user"
+
+[[entities.fields]]
+name = "createdAt"
+type = "DateTime"
+default = "now"
+
+[[entities.fields]]
+name = "updatedAt"
+type = "DateTime"
+default = "now"
+
+[entities.relations.posts]
+type = "hasMany"
+entity = "Post"
+foreign_key = "authorId"
+
+# ------------------------------------------
+
+[[entities]]
+name = "Post"
+
+[[entities.fields]]
+name = "id"
+type = "ULID"
+primary_key = true
+
+[[entities.fields]]
+name = "title"
+type = "Text"
+required = true
+
+[[entities.fields]]
+name = "slug"
+type = "Text"
+unique = true
+index = true
+required = true
+
+[[entities.fields]]
+name = "body"
+type = "LongText"
+required = true
+
+[[entities.fields]]
+name = "status"
+type = "Enum"
+values = ["draft", "published"]
+default = "draft"
+
+[[entities.fields]]
+name = "authorId"
+type = "Ref"
+ref = "User.id"
+index = true
+required = true
+
+[[entities.fields]]
+name = "createdAt"
+type = "DateTime"
+default = "now"
+
+[[entities.fields]]
+name = "updatedAt"
+type = "DateTime"
+default = "now"
+
+[entities.relations.author]
+type = "belongsTo"
+entity = "User"
+foreign_key = "authorId"
+
+[entities.access]
+create = true
+delete = { "$currentUser.role" = "admin" }
+
+[[entities.access.read.or]]
+status = "published"
+
+[[entities.access.read.or]]
+authorId = "$currentUser.id"
+
+[[entities.access.update.or]]
+authorId = "$currentUser.id"
+
+[[entities.access.update.or]]
+"$currentUser.role" = "admin"
+
+# ==========================================
+# Pages
+# ==========================================
+
+[[pages]]
+path = "/"
+title = "Home"
+auth = "none"
+layout = "list"
+
+[pages.queries.posts]
+entity = "Post"
+limit = 10
+include = ["author"]
+
+[pages.queries.posts.where]
+status = "published"
+
+[pages.queries.posts.orderBy]
+createdAt = "desc"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/posts"
+title = "All Posts"
+auth = "none"
+layout = "list"
+
+[pages.queries.posts]
+entity = "Post"
+limit = 20
+include = ["author"]
+
+[pages.queries.posts.where]
+status = "published"
+
+[pages.queries.posts.orderBy]
+createdAt = "desc"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/posts/:id"
+title = "Post Detail"
+auth = "none"
+layout = "detail"
+
+[pages.queries.post]
+entity = "Post"
+include = ["author"]
+
+[pages.queries.post.where]
+id = "$params.id"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/posts/new"
+title = "New Post"
+auth = "optional"
+layout = "form"
+
+[pages.form]
+entity = "Post"
+method = "create"
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "slug"
+type = "text"
+label = "URL Slug"
+required = true
+pattern = "^[a-z0-9-]+$"
+error_message = "Slug must be lowercase letters, numbers, and hyphens only"
+
+[[pages.form.fields]]
+name = "body"
+type = "textarea"
+label = "Content"
+rows = 20
+required = true
+
+[[pages.form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = ["draft", "published"]
+default = "draft"
+
+[pages.form.onSuccess]
+redirect = "/posts/{id}"
+message = "Post created successfully!"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/posts/:id/edit"
+title = "Edit Post"
+auth = "required"
+layout = "form"
+
+[pages.queries.post]
+entity = "Post"
+
+[pages.queries.post.where]
+id = "$params.id"
+
+[pages.form]
+entity = "Post"
+method = "update"
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "slug"
+type = "text"
+label = "URL Slug"
+required = true
+
+[[pages.form.fields]]
+name = "body"
+type = "textarea"
+label = "Content"
+rows = 20
+required = true
+
+[[pages.form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = ["draft", "published"]
+
+[pages.form.onSuccess]
+redirect = "/posts/{id}"
+message = "Post updated successfully!"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/posts/:id/delete"
+title = "Delete Post"
+auth = "required"
+layout = "form"
+
+[pages.queries.post]
+entity = "Post"
+
+[pages.queries.post.where]
+id = "$params.id"
+
+[pages.form]
+entity = "Post"
+method = "delete"
+fields = []
+
+[pages.form.onSuccess]
+redirect = "/posts"
+message = "Post deleted successfully"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/users/:id"
+title = "User Profile"
+auth = "none"
+layout = "detail"
+
+[pages.queries.user]
+entity = "User"
+
+[pages.queries.user.where]
+id = "$params.id"
+
+[pages.queries.posts]
+entity = "Post"
+limit = 10
+
+[pages.queries.posts.where]
+authorId = "$params.id"
+status = "published"
+
+[pages.queries.posts.orderBy]
+createdAt = "desc"
+
+# ------------------------------------------
+
+[[pages]]
+path = "/dashboard"
+title = "Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[pages.queries.totalPosts]
+entity = "Post"
+limit = 5
+
+[pages.queries.totalPosts.orderBy]
+createdAt = "desc"
+
+[pages.queries.draftPosts]
+entity = "Post"
+limit = 5
+
+[pages.queries.draftPosts.where]
+status = "draft"
+
+[pages.queries.draftPosts.orderBy]
+createdAt = "desc"
+
+[pages.queries.publishedPosts]
+entity = "Post"
+limit = 5
+
+[pages.queries.publishedPosts.where]
+status = "published"
+
+[pages.queries.publishedPosts.orderBy]
+createdAt = "desc"
+
+[pages.queries.recentUsers]
+entity = "User"
+limit = 5
+
+[pages.queries.recentUsers.orderBy]
+createdAt = "desc"
+
+# ==========================================
+# Authentication
+# ==========================================
+
+[auth]
+providers = ["email"]
+
+# ==========================================
+# UI Configuration
+# ==========================================
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

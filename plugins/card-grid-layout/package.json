@@ -1,0 +1,26 @@
+{
+  "name": "@zebric-plugin/card-grid-layout",
+  "version": "0.1.0",
+  "description": "Card grid layout renderer plugin for Zebric",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "zebric",
+    "zbl",
+    "plugin",
+    "layout",
+    "card-grid"
+  ],
+  "peerDependencies": {
+    "@zebric/runtime": "^0.1.0"
+  },
+  "devDependencies": {
+    "@zebric/runtime": "workspace:*",
+    "typescript": "^5.3.3"
+  }
+}

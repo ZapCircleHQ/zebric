@@ -1,0 +1,25 @@
+# Prometheus configuration for Zebric development
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'development'
+    app: 'zebric-engine'
+
+# Scrape configurations
+scrape_configs:
+  # Zebric metrics
+  - job_name: 'zebric-engine'
+    static_configs:
+      - targets: ['zebric-dev:3000']
+        labels:
+          service: 'zebric-engine'
+          instance: 'dev'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']

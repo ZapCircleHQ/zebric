@@ -1,0 +1,164 @@
+# Docker Compose for Zebric Engine Users
+# This setup is for users who want to run applications using their own blueprints
+
+version: '3.8'
+
+services:
+  # Zebric Engine runtime
+  zebric-engine:
+    image: zebric-engine:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: zebric-engine
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      # Mount your blueprint file
+      - ./blueprint.toml:/app/blueprint.toml:ro
+      # Mount database directory (if using SQLite)
+      - ./data:/app/data
+      # Optional: Mount static assets
+      - ./static:/app/static:ro
+    environment:
+      # Application settings
+      - NODE_ENV=production
+      - PORT=3000
+      - BLUEPRINT_PATH=/app/blueprint.toml
+
+      # Database configuration
+      - DATABASE_URL=${DATABASE_URL:-file:./data/app.db}
+
+      # Better Auth configuration (required for authentication)
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:?Please set BETTER_AUTH_SECRET environment variable}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
+
+      # Optional: Email configuration (for auth flows)
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@example.com}
+
+      # Optional: OAuth providers
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID:-}
+      - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
+
+      # Monitoring
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      - HEALTH_CHECK_ENABLED=${HEALTH_CHECK_ENABLED:-true}
+
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+
+      # Security
+      - TRUST_PROXY=${TRUST_PROXY:-false}
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+
+      # Workflow settings
+      - WORKFLOW_HTTP_TIMEOUT=${WORKFLOW_HTTP_TIMEOUT:-30000}
+      - WORKFLOW_MAX_PAYLOAD_SIZE=${WORKFLOW_MAX_PAYLOAD_SIZE:-10485760}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - zebric-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      redis:
+        condition: service_healthy
+        required: false
+
+  # PostgreSQL (optional - uncomment if using Postgres instead of SQLite)
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: zebric-postgres
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     - POSTGRES_USER=${POSTGRES_USER:-zebric}
+  #     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Please set POSTGRES_PASSWORD}
+  #     - POSTGRES_DB=${POSTGRES_DB:-zebric_production}
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zebric}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - zebric-network
+
+  # Redis (optional - uncomment if using BullMQ for background jobs)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: zebric-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+  #   networks:
+  #     - zebric-network
+
+  # Prometheus (optional - for monitoring)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: zebric-prometheus
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--storage.tsdb.retention.time=30d'
+  #   restart: unless-stopped
+  #   networks:
+  #     - zebric-network
+  #   depends_on:
+  #     - zebric-engine
+
+  # Grafana (optional - for metrics visualization)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: zebric-grafana
+  #   ports:
+  #     - "3001:3000"
+  #   environment:
+  #     - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?Please set GRAFANA_PASSWORD}
+  #     - GF_USERS_ALLOW_SIGN_UP=false
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #   restart: unless-stopped
+  #   networks:
+  #     - zebric-network
+  #   depends_on:
+  #     - prometheus
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  zebric-network:
+    driver: bridge

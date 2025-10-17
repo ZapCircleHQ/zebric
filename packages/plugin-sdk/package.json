@@ -1,0 +1,27 @@
+{
+  "name": "@zebric/plugin-sdk",
+  "version": "0.1.0",
+  "description": "Zebric Plugin SDK - Build plugins for Zebric Engine",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "^3.23.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}

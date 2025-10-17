@@ -1,0 +1,15 @@
+{
+  "name": "vibe-coding-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example vibe coding chat built with Zebric",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "build": "echo 'No build step needed - runtime engine'",
+    "deploy": "zebric deploy"
+  },
+  "dependencies": {
+    "@zebric/runtime": "workspace:*",
+    "@zebric/cli": "workspace:*"
+  }
+}
