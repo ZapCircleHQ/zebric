@@ -11,6 +11,34 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "Jeff Linwood",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/runtime"
+  },
+  "keywords": [
+    "zebric",
+    "runtime",
+    "engine",
+    "blueprint",
+    "zbl",
+    "low-code",
+    "workflow"
+  ],
+  "homepage": "https://github.com/ZapCircleHQ/zebric#readme",
+  "bugs": {
+    "url": "https://github.com/ZapCircleHQ/zebric/issues"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",

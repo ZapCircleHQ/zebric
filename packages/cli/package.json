@@ -7,6 +7,34 @@
     "zebric": "./dist/index.js",
     "zebric-engine": "./dist/engine-runner.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "Jeff Linwood",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "zebric",
+    "cli",
+    "command-line",
+    "blueprint",
+    "zbl",
+    "low-code",
+    "developer-tools"
+  ],
+  "homepage": "https://github.com/ZapCircleHQ/zebric#readme",
+  "bugs": {
+    "url": "https://github.com/ZapCircleHQ/zebric/issues"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
