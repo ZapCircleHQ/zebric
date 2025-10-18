@@ -1,6 +1,7 @@
 {
   "name": "@zebric-plugin/card-grid-layout",
   "version": "0.1.0",
+  "private": true,
   "description": "Card grid layout renderer plugin for Zebric",
   "type": "module",
   "main": "dist/index.js",
