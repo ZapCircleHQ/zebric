@@ -1,0 +1,21 @@
+name: "🐛 Bug report"
+description: File a bug report
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: Clear steps + expected vs actual.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      placeholder: Minimal blueprint + CLI command.
+  - type: input
+    id: version
+    attributes:
+      label: Zebric version
+      placeholder: 0.1.0

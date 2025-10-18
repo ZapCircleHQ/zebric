@@ -1,6 +1,13 @@
-# Zebric Framework and Runtime Engine
+# Zebric — Declarative Web App Framework (Runtime, not code generation)
 
-A new (October 2025) web application framework that interprets Blueprint configuration files at runtime, enabling rapid prototyping and AI-assisted development.
+[![npm version](https://img.shields.io/npm/v/@zebric/cli)](https://www.npmjs.com/package/@zebric/cli)
+[![CI](https://github.com/ZapCircleHQ/zebric/actions/workflows/ci.yml/badge.svg)](https://github.com/ZapCircleHQ/zebric/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
+
+Zebric is a **config-driven runtime** that reads **Blueprint** files (TOML/JSON) and serves a **working web app at runtime** — no code generation step. Update a blueprint, refresh the page, done. Designed to be **LLM-friendly** and **plugin-extensible**.
+
+> TL;DR: “Configure your app, don’t generate it.” Server Side Rendered HTML, forms, routes, database, and auth from your Blueprint.
+
 
 ## What is Zebric?
 
