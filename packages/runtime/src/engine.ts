@@ -20,6 +20,7 @@ import type { CacheInterface } from './cache/index.js'
 import { ErrorHandler } from './errors/index.js'
 import type { AuthProvider } from './auth/index.js'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
+import { FileStorage } from './storage/index.js'
 import type {
   Blueprint,
   EngineConfig,
@@ -56,6 +57,7 @@ export class ZebricEngine extends EventEmitter {
   private subsystemInitializer!: SubsystemInitializer
   private serverManager!: ServerManager
   private adminServer?: AdminServer
+  private fileStorage!: FileStorage
   private pendingSchemaDiff: SchemaDiffResult | null = null
   private isShuttingDown = false
   private shutdownTimeout = 30000 // 30 seconds
@@ -79,6 +81,8 @@ export class ZebricEngine extends EventEmitter {
     const port = config.port || 3000
     const defaultOrigin = `http://${host}:${port}`
 
+    this.fileStorage = new FileStorage()
+
     this.routeHandler = new RouteHandler(
       undefined,
       undefined,
@@ -88,7 +92,8 @@ export class ZebricEngine extends EventEmitter {
       this.plugins,
       defaultOrigin,
       config.theme,
-      config.rendererClass
+      config.rendererClass,
+      this.fileStorage
     ) // Will set blueprint after loading
     this.metrics = new MetricsRegistry()
     this.tracer = new RequestTracer()
@@ -157,7 +162,10 @@ export class ZebricEngine extends EventEmitter {
       // 6. Initialize Workflows
       this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
 
-      // 7. Initialize Plugin API Provider
+      // 7. Initialize File Storage
+      await this.fileStorage.initialize()
+
+      // 8. Initialize Plugin API Provider
       this.initializePluginAPIProvider()
 
       // 8. Load Plugins (after core systems are initialized)

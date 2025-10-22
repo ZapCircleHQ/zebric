@@ -10,6 +10,7 @@
 
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { ulid } from 'ulid'
+import path from 'node:path'
 import type { AuthProvider, SessionManager } from '../auth/index.js'
 import type { Blueprint, EngineConfig, EngineState } from '../types/index.js'
 import type { SchemaDiffResult } from '../database/index.js'
@@ -186,7 +187,20 @@ export class ServerManager {
 
     // Register Fastify plugins
     await this.server.register(import('@fastify/formbody'))
+    await this.server.register(import('@fastify/multipart'), {
+      limits: {
+        fileSize: 50 * 1024 * 1024, // 50MB max file size
+        files: 10, // Max 10 files per request
+      },
+    })
     await this.server.register(import('@fastify/cookie'))
+
+    // Register static file serving for uploads
+    await this.server.register(import('@fastify/static'), {
+      root: path.resolve(process.cwd(), 'data/uploads'),
+      prefix: '/uploads/',
+      decorateReply: false, // Don't decorate reply since we may have multiple static paths
+    })
 
     // Register CSRF protection
     await this.server.register(import('@fastify/csrf-protection'), {

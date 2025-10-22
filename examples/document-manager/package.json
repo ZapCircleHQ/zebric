@@ -1,0 +1,15 @@
+{
+  "name": "document-manager",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example file upload application built with Zebric",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "build": "echo 'No build step needed - runtime engine'",
+    "deploy": "zebric deploy --provider=railway"
+  },
+  "dependencies": {
+    "@zebric/runtime": "workspace:*",
+    "@zebric/cli": "workspace:*"
+  }
+}

@@ -307,16 +307,34 @@ message = "Post created successfully"
 
 **Form Field Types:**
 - `text`: Single-line text input
-- `textarea`: Multi-line text input
+- `textarea`: Multi-line text input (supports `rows` attribute)
 - `email`: Email input with validation
 - `password`: Password input
-- `number`: Numeric input
-- `select`: Dropdown select
+- `number`: Numeric input (supports `min`, `max`, and `step` attributes)
+- `select`: Dropdown select (requires `options` array)
 - `checkbox`: Checkbox
-- `radio`: Radio buttons
-- `file`: File upload
+- `radio`: Radio buttons (requires `options` array)
+- `file`: File upload (supports `accept` array for MIME types, `max` for size limit in bytes)
 - `date`: Date picker
 - `datetime`: Date and time picker
+
+**File Upload Field Example:**
+```toml
+[[page."/documents/upload".form.fields]]
+name = "document"
+type = "file"
+label = "Upload Document"
+required = true
+accept = ["application/pdf", "image/jpeg", "image/png"]
+max = 10485760  # 10MB in bytes
+```
+
+When a file is uploaded, the following fields are automatically stored in the database:
+- `fieldname`: URL path to the uploaded file (e.g., `/uploads/01HQZT...abc.pdf`)
+- `fieldname_id`: Unique file identifier
+- `fieldname_filename`: Original filename
+- `fieldname_size`: File size in bytes
+- `fieldname_mimetype`: File MIME type
 
 ## Authentication
 

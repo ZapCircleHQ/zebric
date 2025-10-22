@@ -6,6 +6,7 @@
  */
 
 import type { FastifyRequest, FastifyReply } from 'fastify'
+import type { MultipartFile } from '@fastify/multipart'
 import type { Query, Form, Blueprint, Page } from '../types/blueprint.js'
 import type { RouteMatch } from './route-matcher.js'
 import { HTMLRenderer, type Theme } from '../renderer/index.js'
@@ -14,6 +15,7 @@ import type { SessionManager, UserSession } from '../auth/index.js'
 import type { PluginRegistry } from '../plugins/index.js'
 import { AuditLogger, AuditEventType, AuditSeverity, ErrorSanitizer } from '../security/index.js'
 import { BehaviorExecutor } from './behavior-executor.js'
+import { FileStorage } from '../storage/index.js'
 
 export interface RouteContext {
   params: Record<string, string>
@@ -34,6 +36,7 @@ export class RouteHandler {
   private rendererClass: typeof HTMLRenderer
   private readonly defaultOrigin: string
   private behaviorExecutor?: BehaviorExecutor
+  private fileStorage: FileStorage
 
   constructor(
     blueprint?: Blueprint,
@@ -44,7 +47,8 @@ export class RouteHandler {
     pluginRegistry?: PluginRegistry,
     defaultOrigin: string = 'http://localhost:3000',
     theme?: Theme,
-    rendererClass?: typeof HTMLRenderer
+    rendererClass?: typeof HTMLRenderer,
+    fileStorage?: FileStorage
   ) {
     if (blueprint) {
       this.blueprint = blueprint
@@ -60,6 +64,7 @@ export class RouteHandler {
     this.pluginRegistry = pluginRegistry
     this.theme = theme
     this.defaultOrigin = defaultOrigin
+    this.fileStorage = fileStorage || new FileStorage()
   }
 
   /**
@@ -346,12 +351,18 @@ export class RouteHandler {
         return
       }
 
-      // Get form data
-      const body = request.body as Record<string, any>
-
       if (!page.form) {
         reply.code(400).send({ error: 'No form defined for this page' })
         return
+      }
+
+      // Get form data (handle multipart if there are file fields)
+      let body: Record<string, any>
+
+      if (this.hasFileFields(page.form)) {
+        body = await this.processMultipartForm(request, page.form)
+      } else {
+        body = request.body as Record<string, any>
       }
 
       // Validate form data
@@ -500,11 +511,18 @@ export class RouteHandler {
         return
       }
 
-      const body = request.body as Record<string, any>
-
       if (!page.form || page.form.method !== 'update') {
         reply.code(400).send({ error: 'No update form defined for this page' })
         return
+      }
+
+      // Get form data (handle multipart if there are file fields)
+      let body: Record<string, any>
+
+      if (this.hasFileFields(page.form)) {
+        body = await this.processMultipartForm(request, page.form)
+      } else {
+        body = request.body as Record<string, any>
       }
 
       // Validate form data
@@ -786,8 +804,8 @@ export class RouteHandler {
     for (const field of form.fields) {
       const value = data[field.name]
 
-      // Required check
-      if (field.required && (value === undefined || value === null || value === '')) {
+      // Required check (skip for file fields, handled separately below)
+      if (field.type !== 'file' && field.required && (value === undefined || value === null || value === '')) {
         errors.push({
           field: field.name,
           message: `${field.label || field.name} is required`,
@@ -819,6 +837,20 @@ export class RouteHandler {
             message: `Must be at most ${field.max}`,
           })
         }
+      }
+
+      // File type validation
+      if (field.type === 'file') {
+        // Check if file was uploaded (for required fields)
+        if (field.required && !value) {
+          errors.push({
+            field: field.name,
+            message: `${field.label || field.name} is required`,
+          })
+        }
+
+        // Size validation is handled in processMultipartForm
+        // MIME type validation is handled in processMultipartForm
       }
     }
 
@@ -889,5 +921,59 @@ export class RouteHandler {
       console.error('Authorization check error:', error)
       return false
     }
+  }
+
+  /**
+   * Process multipart form data (handles file uploads)
+   */
+  private async processMultipartForm(
+    request: FastifyRequest,
+    form: Form
+  ): Promise<Record<string, any>> {
+    const data: Record<string, any> = {}
+    const parts = request.parts()
+
+    for await (const part of parts) {
+      if (part.type === 'file') {
+        // Find field definition
+        const field = form.fields.find(f => f.name === part.fieldname)
+
+        if (!field || field.type !== 'file') {
+          continue
+        }
+
+        // Validate file
+        const validation = this.fileStorage.validateFile(part as MultipartFile, {
+          maxSize: field.max || 50 * 1024 * 1024,
+          allowedTypes: field.accept,
+        })
+
+        if (!validation.valid) {
+          throw new Error(validation.error)
+        }
+
+        // Save file
+        const uploadedFile = await this.fileStorage.saveFile(part as MultipartFile)
+
+        // Store file URL/path in form data
+        data[part.fieldname] = uploadedFile.url
+        data[`${part.fieldname}_id`] = uploadedFile.id
+        data[`${part.fieldname}_filename`] = uploadedFile.originalName
+        data[`${part.fieldname}_size`] = uploadedFile.size
+        data[`${part.fieldname}_mimetype`] = uploadedFile.mimeType
+      } else {
+        // Regular form field
+        data[part.fieldname] = (part as any).value
+      }
+    }
+
+    return data
+  }
+
+  /**
+   * Check if form has file fields
+   */
+  private hasFileFields(form: Form): boolean {
+    return form.fields.some(f => f.type === 'file')
   }
 }

@@ -164,6 +164,10 @@ export class HTMLRenderer {
     // Get existing record if editing
     const record = this.resolveFormRecord(form, data)
 
+    // Check if form has file fields to set enctype
+    const hasFileFields = form.fields.some(f => f.type === 'file')
+    const enctype = hasFileFields ? 'enctype="multipart/form-data"' : ''
+
     return html`
       <div class="${this.theme.container} ${this.theme.containerNarrow}">
         <h1 class="${this.theme.heading1}">${page.title}</h1>
@@ -171,6 +175,7 @@ export class HTMLRenderer {
         <form
           method="POST"
           action="${page.path}"
+          ${safe(enctype)}
           class="${this.theme.form}"
           data-enhance="${this.resolveEnhancementMode()}"
         >
@@ -1068,16 +1073,33 @@ export class HTMLRenderer {
 
             try {
               const formData = new FormData(form)
-              const data = Object.fromEntries(formData)
 
-              const response = await fetch(form.action, {
-                method: form.getAttribute('method') || 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Accept': 'application/json'
-                },
-                body: JSON.stringify(data)
-              })
+              // Check if form has file inputs
+              const hasFiles = Array.from(formData.entries()).some(([_, value]) => value instanceof File)
+
+              let response
+              if (hasFiles) {
+                // Use multipart/form-data for file uploads
+                response = await fetch(form.action, {
+                  method: form.getAttribute('method') || 'POST',
+                  headers: {
+                    'Accept': 'application/json'
+                    // Don't set Content-Type - browser will set it with boundary
+                  },
+                  body: formData
+                })
+              } else {
+                // Use JSON for regular forms
+                const data = Object.fromEntries(formData)
+                response = await fetch(form.action, {
+                  method: form.getAttribute('method') || 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                  },
+                  body: JSON.stringify(data)
+                })
+              }
 
               const contentType = response.headers.get('content-type') || ''
               const hasJson = contentType.includes('application/json')

@@ -1,0 +1,222 @@
+version = "0.1.0"
+
+[project]
+name = "Document Manager"
+version = "1.0.0"
+description = "A simple document management system with file uploads"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.User]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "email", type = "Email", unique = true, index = true, required = true },
+  { name = "name", type = "Text", required = true },
+  { name = "role", type = "Enum", values = ["user", "admin"], default = "user" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.User.relations]
+documents = { type = "hasMany", entity = "Document", foreign_key = "userId" }
+
+[entity.Document]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "category", type = "Enum", values = ["contract", "invoice", "report", "other"], default = "other" },
+  { name = "file", type = "Text", required = true },  # File URL
+  { name = "file_id", type = "Text" },               # File ID
+  { name = "file_filename", type = "Text" },         # Original filename
+  { name = "file_size", type = "Integer" },          # File size in bytes
+  { name = "file_mimetype", type = "Text" },         # MIME type
+  { name = "userId", type = "Ref", ref = "User.id", index = true, required = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Document.relations]
+user = { type = "belongsTo", entity = "User", foreign_key = "userId" }
+
+[entity.Document.access]
+read = { or = [{ userId = "$currentUser.id" }, { "$currentUser.role" = "admin" }] }
+create = true
+update = { or = [{ userId = "$currentUser.id" }, { "$currentUser.role" = "admin" }] }
+delete = { or = [{ userId = "$currentUser.id" }, { "$currentUser.role" = "admin" }] }
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "My Documents"
+auth = "required"
+layout = "list"
+
+[page."/".query.documents]
+entity = "Document"
+where = { userId = "$currentUser.id" }
+orderBy = { createdAt = "desc" }
+limit = 20
+include = ["user"]
+
+[page."/documents"]
+title = "All Documents"
+auth = "required"
+layout = "list"
+
+[page."/documents".query.documents]
+entity = "Document"
+where = { userId = "$currentUser.id" }
+orderBy = { createdAt = "desc" }
+limit = 50
+
+[page."/documents/:id"]
+title = "Document Details"
+auth = "required"
+layout = "detail"
+
+[page."/documents/:id".query.document]
+entity = "Document"
+where = { id = "$params.id" }
+include = ["user"]
+
+# Upload new document
+[page."/documents/upload"]
+title = "Upload Document"
+auth = "required"
+layout = "form"
+
+[page."/documents/upload".form]
+entity = "Document"
+method = "create"
+
+[[page."/documents/upload".form.fields]]
+name = "title"
+type = "text"
+label = "Document Title"
+required = true
+placeholder = "Enter document title"
+
+[[page."/documents/upload".form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 4
+placeholder = "Optional description"
+
+[[page."/documents/upload".form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+options = ["contract", "invoice", "report", "other"]
+default = "other"
+required = true
+
+[[page."/documents/upload".form.fields]]
+name = "file"
+type = "file"
+label = "Upload File"
+required = true
+accept = ["application/pdf", "image/jpeg", "image/png", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"]
+max = 10485760  # 10MB max file size
+
+[page."/documents/upload".form.onSuccess]
+redirect = "/documents/{id}"
+message = "Document uploaded successfully!"
+
+# Edit document metadata
+[page."/documents/:id/edit"]
+title = "Edit Document"
+auth = "required"
+layout = "form"
+
+[page."/documents/:id/edit".query.document]
+entity = "Document"
+where = { id = "$params.id" }
+
+[page."/documents/:id/edit".form]
+entity = "Document"
+method = "update"
+
+[[page."/documents/:id/edit".form.fields]]
+name = "title"
+type = "text"
+label = "Document Title"
+required = true
+
+[[page."/documents/:id/edit".form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 4
+
+[[page."/documents/:id/edit".form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+options = ["contract", "invoice", "report", "other"]
+required = true
+
+[page."/documents/:id/edit".form.onSuccess]
+redirect = "/documents/{id}"
+message = "Document updated successfully!"
+
+# Delete document
+[page."/documents/:id/delete"]
+title = "Delete Document"
+auth = "required"
+layout = "form"
+
+[page."/documents/:id/delete".query.document]
+entity = "Document"
+where = { id = "$params.id" }
+
+[page."/documents/:id/delete".form]
+entity = "Document"
+method = "delete"
+fields = []
+
+[page."/documents/:id/delete".form.onSuccess]
+redirect = "/documents"
+message = "Document deleted successfully"
+
+# Dashboard
+[page."/dashboard"]
+title = "Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[page."/dashboard".query.recentDocuments]
+entity = "Document"
+where = { userId = "$currentUser.id" }
+orderBy = { createdAt = "desc" }
+limit = 5
+
+[page."/dashboard".query.documentsByCategory]
+entity = "Document"
+where = { userId = "$currentUser.id" }
+orderBy = { category = "asc" }
+
+# ==========================================
+# Authentication
+# ==========================================
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+# ==========================================
+# UI Configuration
+# ==========================================
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true
