@@ -251,16 +251,6 @@ export class ServerManager {
    * Register routes from Blueprint
    */
   private registerRoutes(): void {
-    // Root route
-    this.server.get('/', async () => {
-      return {
-        name: this.blueprint.project.name,
-        version: this.blueprint.project.version,
-        engine: ENGINE_VERSION,
-        status: this.state.status,
-      }
-    })
-
     // Health check
     this.server.get('/health', async (_request, reply) => {
       const health = this.getHealthStatusFn ? await this.getHealthStatusFn() : this.getHealthStatus()
@@ -321,6 +311,15 @@ export class ServerManager {
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
       const renderer = new RendererClass(this.blueprint, this.config.theme, this.plugins)
       reply.type('text/html').send(renderer.renderSignInPage(callback))
+    })
+
+    this.server.get('/auth/sign-up', async (request: FastifyRequest, reply: FastifyReply) => {
+      const callbackPath = this.getCallbackPath(request)
+      const origin = this.resolveOrigin(request)
+      const callback = `${origin}${callbackPath}`
+      const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
+      const renderer = new RendererClass(this.blueprint, this.config.theme, this.plugins)
+      reply.type('text/html').send(renderer.renderSignUpPage(callback))
     })
 
     this.server.get('/auth/sign-out', async (request: FastifyRequest, reply: FastifyReply) => {

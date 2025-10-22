@@ -1228,7 +1228,7 @@ export class HTMLRenderer {
 
   private getSignupPath(): string {
     const explicit = this.blueprint.pages.find((page) => page.path.includes('sign-up') || page.path.includes('register'))
-    return explicit?.path || '/api/auth/sign-up/email'
+    return explicit?.path || '/auth/sign-up'
   }
 
   private getLoginAction(): string {
@@ -1375,6 +1375,129 @@ export class HTMLRenderer {
                   if (submitButton) {
                     submitButton.disabled = false
                     submitButton.textContent = 'Sign in'
+                  }
+                }
+              })
+            })
+          </script>
+        </body>
+      </html>
+    `
+  }
+
+  renderSignUpPage(callbackURL: string, message?: string): string {
+    const action = '/api/auth/sign-up/email'
+    const escapedCallbackAttr = escapeHtmlAttr(callbackURL || '/')
+    const escapedCallbackJs = escapeJs(callbackURL || '/')
+    const escapedActionJs = escapeJs(action)
+    const feedback = message ? `<p id="auth-feedback" class="text-sm text-emerald-600">${escapeHtml(message)}</p>` : '<p id="auth-feedback" class="text-sm text-emerald-600"></p>'
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Sign up - ${escapeHtml(this.blueprint.project.name)}</title>
+          <script src="https://cdn.tailwindcss.com"></script>
+        </head>
+        <body class="${this.theme.body}">
+          <div class="min-h-screen flex items-center justify-center p-6">
+            <div class="${this.theme.card} w-full max-w-md p-8">
+              <h1 class="${this.theme.heading1} text-center">Create your account</h1>
+              ${feedback}
+              <form id="sign-up-form" class="space-y-4 mt-4" method="POST" action="${action}">
+                <input type="hidden" name="callbackURL" value="${escapedCallbackAttr}">
+                <div>
+                  <label class="${this.theme.label}" for="name">Name</label>
+                  <input class="${this.theme.input}" type="text" name="name" id="name" required autocomplete="name">
+                </div>
+                <div>
+                  <label class="${this.theme.label}" for="email">Email</label>
+                  <input class="${this.theme.input}" type="email" name="email" id="email" required autocomplete="email">
+                </div>
+                <div>
+                  <label class="${this.theme.label}" for="password">Password</label>
+                  <input class="${this.theme.input}" type="password" name="password" id="password" required autocomplete="new-password" minlength="8">
+                  <p class="text-xs text-gray-500 mt-1">At least 8 characters</p>
+                </div>
+                <button type="submit" class="${this.theme.buttonPrimary} w-full">Sign up</button>
+              </form>
+              <p class="mt-6 text-sm text-center text-gray-500">
+                Already have an account? <a href="${this.getLoginPath()}" class="${this.theme.linkPrimary}">Sign in</a>
+              </p>
+            </div>
+          </div>
+          <script>
+            document.addEventListener('DOMContentLoaded', () => {
+              const form = document.getElementById('sign-up-form')
+              if (!form) return
+              const feedback = document.getElementById('auth-feedback')
+              const endpoint = '${escapedActionJs}'
+              const callbackURL = '${escapedCallbackJs}'
+              const nameInput = form.querySelector('input[name="name"]')
+              const emailInput = form.querySelector('input[name="email"]')
+              const passwordInput = form.querySelector('input[name="password"]')
+              const submitButton = form.querySelector('button[type="submit"]')
+
+              form.addEventListener('submit', async (event) => {
+                event.preventDefault()
+                if (feedback) {
+                  feedback.textContent = ''
+                  feedback.classList.remove('text-red-600')
+                  feedback.classList.add('text-emerald-600')
+                }
+                if (submitButton) {
+                  submitButton.disabled = true
+                  submitButton.textContent = 'Creating account…'
+                }
+
+                const payload = {
+                  name: nameInput?.value || '',
+                  email: emailInput?.value || '',
+                  password: passwordInput?.value || '',
+                  callbackURL,
+                }
+
+                try {
+                  const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Accept': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(payload),
+                  })
+
+                  if (response.ok) {
+                    window.location.href = callbackURL || '/'
+                    return
+                  }
+
+                  let message = 'Sign up failed. Please try again.'
+                  try {
+                    const data = await response.json()
+                    message = data?.message || data?.error || message
+                  } catch (_) {
+                    // ignore
+                  }
+
+                  if (feedback) {
+                    feedback.textContent = message
+                    feedback.classList.remove('text-emerald-600')
+                    feedback.classList.add('text-red-600')
+                  }
+                } catch (error) {
+                  if (feedback) {
+                    feedback.textContent = 'Network error. Please check your connection and try again.'
+                    feedback.classList.remove('text-emerald-600')
+                    feedback.classList.add('text-red-600')
+                  }
+                } finally {
+                  if (submitButton) {
+                    submitButton.disabled = false
+                    submitButton.textContent = 'Sign up'
                   }
                 }
               })
