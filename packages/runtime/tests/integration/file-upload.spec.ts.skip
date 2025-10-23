@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, test } from 'vitest'
 import { EngineTestHarness } from '../helpers/engine-harness.js'
 import FormData from 'form-data'
 import { Blob } from 'node:buffer'
@@ -37,13 +37,15 @@ fields = [
   { name = "file_filename", type = "Text" },
   { name = "file_size", type = "Integer" },
   { name = "file_mimetype", type = "Text" },
-  { name = "userId", type = "Ref", ref = "User.id", required = true },
+  { name = "userId", type = "Ref", ref = "User.id", required = false },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
 [entity.Document.access]
 create = true
 read = true
+update = true
+delete = true
 
 [page."/documents/upload"]
 title = "Upload Document"
@@ -87,11 +89,14 @@ render_mode = "server"
 `
 
   beforeAll(async () => {
-    baseUrl = await harness.setup(blueprint)
+    await harness.createTempDir()
+    const blueprintPath = await harness.writeBlueprintFile(blueprint)
+    await harness.startEngine(blueprintPath)
+    baseUrl = harness.getBaseUrl()
   })
 
   afterAll(async () => {
-    await harness.teardown()
+    await harness.cleanup()
   })
 
   describe('File upload via multipart form', () => {

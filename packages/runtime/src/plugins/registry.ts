@@ -71,9 +71,21 @@ export class PluginRegistry {
       // For full plugins, init runs directly
       if (plugin.init) {
         if (trustLevel === 'limited' && sandbox) {
-          // TODO: Run init in sandbox with appropriate APIs
-          // For now, we'll allow init to run directly but log a warning
-          console.warn(`   ⚠️  Plugin init() currently runs outside sandbox (will be fixed)`)
+          // SECURITY LIMITATION: Plugin init() runs outside sandbox in 0.1.x
+          //
+          // The current VM-based sandbox can only run string code, not pre-compiled functions.
+          // Plugins are imported as ES modules with functions, making sandboxing challenging.
+          //
+          // Roadmap for proper sandboxing (targeting 0.2.0):
+          // 1. Require plugins to export init as string code instead of function
+          // 2. OR: Use Worker Threads for true isolation (recommended for untrusted code)
+          // 3. OR: Use isolated-vm for better security boundaries
+          //
+          // For now, "limited" plugins have access restrictions enforced by the EngineAPI
+          // they receive, not by VM sandboxing.
+          console.warn(`   ⚠️  WARNING: Plugin init() runs with full Node.js access`)
+          console.warn(`   ⚠️  Sandboxing for init() will be added in v0.2.0`)
+          console.warn(`   ⚠️  Only use plugins from trusted sources`)
           await plugin.init(engine, pluginConfig.config || {})
         } else {
           await plugin.init(engine, pluginConfig.config || {})
