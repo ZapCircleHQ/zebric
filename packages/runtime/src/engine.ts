@@ -29,7 +29,7 @@ import type {
   EngineAPI,
 } from './types/index.js'
 
-const ENGINE_VERSION = '0.1.0'
+const ENGINE_VERSION = '0.1.1'
 
 export class ZebricEngine extends EventEmitter {
   private state: EngineState

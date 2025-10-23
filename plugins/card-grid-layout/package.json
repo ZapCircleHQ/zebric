@@ -1,6 +1,6 @@
 {
   "name": "@zebric-plugin/card-grid-layout",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Card grid layout renderer plugin for Zebric",
   "type": "module",
@@ -18,7 +18,7 @@
     "card-grid"
   ],
   "peerDependencies": {
-    "@zebric/runtime": "^0.1.0"
+    "@zebric/runtime": "^0.1.1"
   },
   "devDependencies": {
     "@zebric/runtime": "workspace:*",

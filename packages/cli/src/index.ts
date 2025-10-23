@@ -14,7 +14,7 @@ const program = new Command()
 program
   .name('zebric')
   .description('Zebric - Runtime interpreter for Blueprint JSON (ZBL Engine)')
-  .version('0.1.0')
+  .version('0.1.1')
 
 // Dev command
 program

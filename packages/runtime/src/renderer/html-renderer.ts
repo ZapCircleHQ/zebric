@@ -976,7 +976,7 @@ export class HTMLRenderer {
       <footer class="border-t border-gray-200 mt-12 py-6">
         <div class="${this.theme.container}">
           <p class="text-center text-sm text-gray-500">
-            Powered by ZBL Engine v0.1.0
+            Powered by Zebric Engine v0.1.1
           </p>
         </div>
       </footer>

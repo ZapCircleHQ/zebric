@@ -110,7 +110,7 @@ export class AdminServer {
     this.server.get('/', async () => {
       return {
         name: 'Zebric Admin Server',
-        version: '0.1.0',
+        version: '0.1.1',
         endpoints: {
           blueprint: '/blueprint',
           state: '/state',
