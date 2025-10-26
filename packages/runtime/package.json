@@ -9,10 +9,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schema": "./schema/blueprint.schema.json"
   },
   "files": [
     "dist",
+    "schema",
     "README.md",
     "LICENSE"
   ],
@@ -40,7 +42,7 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && npm run generate-schema",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
@@ -48,7 +50,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "generate-schema": "node dist/blueprint/generate-json-schema.js"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",
@@ -79,6 +82,7 @@
     "@vitest/ui": "^1.6.1",
     "form-data": "^4.0.4",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.1"
+    "vitest": "^1.6.1",
+    "zod-to-json-schema": "^3.24.6"
   }
 }

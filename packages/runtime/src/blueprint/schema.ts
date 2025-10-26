@@ -215,6 +215,7 @@ const PermissionRuleSchema = z.object({
 
 const AuthConfigSchema = z.object({
   providers: z.array(z.string()),
+  trustedOrigins: z.array(z.string()).optional(),
   session: z
     .object({
       duration: z.number().optional(),
@@ -232,6 +233,8 @@ const PluginConfigSchema = z.object({
   name: z.string(),
   version: z.string().optional(),
   enabled: z.boolean(),
+  trust_level: z.enum(['limited', 'full']).optional(),
+  capabilities: z.array(z.enum(['database', 'network', 'storage', 'filesystem'])).optional(),
   config: z.record(z.any()).optional(),
 })
 
