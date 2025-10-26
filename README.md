@@ -41,7 +41,37 @@ zebric/
 
 ## Quick Start
 
+### Using npm (Recommended for users)
+
 ```bash
+# Install Zebric CLI globally
+npm install -g @zebric/cli
+
+# Or use with npx (no installation needed)
+npx @zebric/cli --version
+
+# Create a new directory for your project
+mkdir my-app
+cd my-app
+
+# Create a simple blueprint.toml file (or use an AI tool to generate one)
+# See docs/quickstart.md for examples
+
+# Run your app
+zebric dev blueprint.toml
+# Or with npx:
+# npx @zebric/cli dev blueprint.toml
+
+# Visit http://localhost:3000
+```
+
+### Development from source
+
+```bash
+# Clone the repository
+git clone https://github.com/ZapCircleHQ/zebric.git
+cd zebric
+
 # Install dependencies
 pnpm install
 
@@ -159,6 +189,11 @@ Zebric may not be suitable for:
 - [`docs/quickstart.md`](docs/quickstart.md) - Generate a blueprint with an LLM and run it
 - [`docs/blueprint-specification.md`](docs/blueprint-specification.md) - LLM-Readable description of a Zebric Blueprint
 - [`docs/html-rendering.md`](docs/html-rendering.md) - HTML rendering guide
+- [`docs/api-stability.md`](docs/api-stability.md) - API stability guarantees and experimental features
+
+### Development Documentation
+- [`docs/version-management.md`](docs/version-management.md) - How to manage versions and releases with Changesets
+- [`TESTING.md`](TESTING.md) - Testing documentation
 
 ### Implementation Summaries
 - `CHANGELOG.md` - Full changelog
