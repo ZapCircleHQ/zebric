@@ -3,7 +3,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { BlueprintLoader, BlueprintValidationError } from './loader.js'
+import { BlueprintLoader } from './loader.js'
+import { BlueprintValidationError } from './validation-error.js'
 import { writeFile, mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
@@ -350,11 +351,11 @@ layout = "list"
 entity = "DoesNotExist"
 `)
 
-      await expect(loader.load(blueprintPath)).rejects.toMatchObject({
-        errors: [
-          { message: 'Page "/" query "missing" references unknown entity "DoesNotExist"' }
-        ]
-      })
+      const error = await loader.load(blueprintPath).catch(e => e)
+      expect(error).toBeInstanceOf(BlueprintValidationError)
+      expect(error.structured.type).toBe('REFERENCE_VALIDATION')
+      expect(error.structured.errors).toHaveLength(1)
+      expect(error.structured.errors[0].message).toContain('DoesNotExist')
     })
 
     it('should reject workflows referencing unknown trigger entities', async () => {
@@ -381,7 +382,9 @@ trigger.event = "create"
 steps = []
 `)
 
-      await expect(loader.load(blueprintPath)).rejects.toBeInstanceOf(BlueprintValidationError)
+      const error = await loader.load(blueprintPath).catch(e => e)
+      expect(error).toBeInstanceOf(BlueprintValidationError)
+      expect(error.structured.type).toBe('REFERENCE_VALIDATION')
     })
   })
 })

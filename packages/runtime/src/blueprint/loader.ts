@@ -9,16 +9,16 @@ import { createHash } from 'node:crypto'
 import * as TOML from '@iarna/toml'
 import { BlueprintSchema } from './schema.js'
 import type { Blueprint } from '../types/index.js'
+import {
+  BlueprintValidationError,
+  zodErrorToStructured,
+  createReferenceError,
+  createParseError,
+  createVersionError,
+} from './validation-error.js'
 
-export class BlueprintValidationError extends Error {
-  constructor(
-    message: string,
-    public errors: any[]
-  ) {
-    super(message)
-    this.name = 'BlueprintValidationError'
-  }
-}
+// Re-export for backwards compatibility
+export { BlueprintValidationError }
 
 export class BlueprintLoader {
   /**
@@ -33,14 +33,21 @@ export class BlueprintLoader {
 
       // Parse based on format
       let data: any
-      if (isTOML) {
-        const parsed = TOML.parse(content)
-        // Transform spec-compliant TOML to Blueprint JSON structure
-        data = this.transformTOML(parsed)
-        // Remove Symbol keys added by TOML parser (for Zod 4 compatibility)
-        data = this.stripSymbolKeys(data)
-      } else {
-        data = JSON.parse(content)
+      try {
+        if (isTOML) {
+          const parsed = TOML.parse(content)
+          // Transform spec-compliant TOML to Blueprint JSON structure
+          data = this.transformTOML(parsed)
+          // Remove Symbol keys added by TOML parser (for Zod 4 compatibility)
+          data = this.stripSymbolKeys(data)
+        } else {
+          data = JSON.parse(content)
+        }
+      } catch (parseError: any) {
+        // Extract line/column from parse error if available
+        const line = parseError.line
+        const column = parseError.col ?? parseError.column
+        throw createParseError(parseError.message, path, line, column)
       }
 
       // Validate against schema
@@ -48,8 +55,7 @@ export class BlueprintLoader {
 
       if (!result.success) {
         throw new BlueprintValidationError(
-          'Blueprint validation failed',
-          result.error.errors
+          zodErrorToStructured(result.error, path)
         )
       }
 
@@ -59,15 +65,12 @@ export class BlueprintLoader {
       blueprint.hash = this.generateHash(content)
 
       // Validate references
-      this.validateReferences(blueprint)
+      this.validateReferences(blueprint, path)
 
       return blueprint
     } catch (error) {
       if (error instanceof BlueprintValidationError) {
         throw error
-      }
-      if (error instanceof SyntaxError) {
-        throw new Error(`Invalid format in Blueprint: ${error.message}`)
       }
       throw error
     }
@@ -180,7 +183,7 @@ export class BlueprintLoader {
   /**
    * Validate entity references, field refs, etc.
    */
-  private validateReferences(blueprint: Blueprint): void {
+  private validateReferences(blueprint: Blueprint, file?: string): void {
     const entityNames = new Set(blueprint.entities.map((e) => e.name))
     const errors: string[] = []
 
@@ -244,17 +247,14 @@ export class BlueprintLoader {
     }
 
     if (errors.length > 0) {
-      throw new BlueprintValidationError(
-        'Blueprint reference validation failed',
-        errors.map((e) => ({ message: e }))
-      )
+      throw createReferenceError(errors, file)
     }
   }
 
   /**
    * Validate Blueprint version compatibility
    */
-  validateVersion(blueprint: Blueprint, engineVersion: string): void {
+  validateVersion(blueprint: Blueprint, engineVersion: string, file?: string): void {
     const minVersion = blueprint.project.runtime.min_version
 
     // Simple semver check (can be enhanced with proper semver library)
@@ -265,9 +265,7 @@ export class BlueprintLoader {
       engineMajor < minMajor ||
       (engineMajor === minMajor && engineMinor < minMinor)
     ) {
-      throw new Error(
-        `Blueprint requires engine version ${minVersion} or higher, but running ${engineVersion}`
-      )
+      throw createVersionError(minVersion, engineVersion, file)
     }
   }
 }
