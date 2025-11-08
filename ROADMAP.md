@@ -47,46 +47,45 @@ While most projects will remain proofs-of-concept, Zebric ensures they're produc
 ---
 
 ### **0.1.2** - AI Tooling Readiness ⭐ Priority
-**Status**: Planned
+**Status**: Finished
 **Goal**: Make Zebric a preferred target for AI app building tools
 
 This release is critical for building AI-powered app builders (like a "vibe coding" tool) on top of Zebric.
 
 #### AI Tool Integration
-- [ ] **JSON Schema for Blueprint** - Enable AI validation before code generation
+- [x] **JSON Schema for Blueprint** - Enable AI validation before code generation
   - Export complete JSON Schema for Blueprint format
   - Support both TOML and JSON Blueprint validation
   - Include examples and field descriptions in schema
 
-- [ ] **Structured Error Messages** - Parseable validation errors for AI tools
+- [x] **Structured Error Messages** - Parseable validation errors for AI tools
   - Error codes and structured error objects
   - Actionable fix suggestions in error messages
   - Line/column information for Blueprint errors
 
-- [ ] **Blueprint Validation API** - Programmatic validation without running server
+- [x] **Blueprint Validation API** - Programmatic validation without running server
   ```typescript
   import { validateBlueprint } from '@zebric/runtime';
   const result = await validateBlueprint(blueprintContent);
   ```
 
-- [ ] **Programmatic Runtime API** - Control server lifecycle from code
+- [x] **Programmatic Runtime API** - Control server lifecycle from code
   ```typescript
-  import { ZebricEngine } from '@zebric/runtime';
-  const engine = new ZebricEngine(blueprint);
-  await engine.start();
-  await engine.reload(newBlueprint);
-  await engine.stop();
+  import { Zebric, createZebric } from '@zebric/runtime';
+  const zebric = await createZebric({ blueprintPath: './blueprint.toml' });
+  await zebric.reload();
+  await zebric.stop();
   ```
 
-- [ ] **Headless Mode** - Structured JSON logs instead of CLI pretty-printing
+- [ ] **Headless Mode** - Structured JSON logs instead of CLI pretty-printing (moved to 0.1.3)
   - `--headless` flag for CLI
   - JSON-formatted log output
   - Programmatic event listeners for errors/warnings
 
 #### Documentation
-- [ ] "Building AI Tools with Zebric" guide
-- [ ] API reference for programmatic usage
-- [ ] Blueprint generation best practices for AI
+- [x] "Building AI Tools with Zebric" guide
+- [x] API reference for programmatic usage
+- [x] Blueprint generation best practices for AI
 
 ---
 
@@ -367,5 +366,5 @@ Actual release dates depend on:
 
 ---
 
-**Last Updated**: 2025-10-23
-**Current Version**: 0.1.1
+**Last Updated**: 2025-10-28
+**Current Version**: 0.1.2

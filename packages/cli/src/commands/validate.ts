@@ -58,29 +58,33 @@ function reportSuccess(path: string, blueprint: Blueprint, elapsedMs: number): v
 function handleValidationError(error: unknown, path: string): never {
   if (error instanceof BlueprintValidationError) {
     console.error(`❌ Blueprint validation failed: ${path}`)
+    console.error('')
 
-    if (Array.isArray(error.errors) && error.errors.length > 0) {
-      error.errors.forEach((detail, index) => {
+    // Use the structured errors from the error object
+    const structured = error.structured
+    console.error(`${structured.type}: ${structured.message}`)
+    console.error('')
+
+    if (structured.errors.length > 0) {
+      structured.errors.forEach((detail, index) => {
         const position = index + 1
+        const locationPath = detail.location.path.length > 0
+          ? detail.location.path.join('.')
+          : 'root'
 
-        if (typeof detail === 'string') {
-          console.error(`   ${position}. ${detail}`)
-          return
+        console.error(`   ${position}. [${locationPath}] ${detail.message}`)
+
+        if (detail.expected && detail.received) {
+          console.error(`      Expected: ${detail.expected}`)
+          console.error(`      Received: ${detail.received}`)
         }
 
-        const message = (detail as any).message ?? 'Unknown validation error'
-        const zodPath = Array.isArray((detail as any).path)
-          ? (detail as any).path.filter(Boolean).join('.')
-          : undefined
-
-        if (zodPath) {
-          console.error(`   ${position}. [${zodPath}] ${message}`)
-        } else {
-          console.error(`   ${position}. ${message}`)
+        if (detail.suggestion) {
+          console.error(`      💡 ${detail.suggestion}`)
         }
+
+        console.error('')
       })
-    } else {
-      console.error(`   ${error.message}`)
     }
 
     process.exit(1)
