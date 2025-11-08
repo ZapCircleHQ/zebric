@@ -1,0 +1,69 @@
+{
+  "name": "@zebric/runtime-core",
+  "version": "0.2.0",
+  "description": "Zebric Runtime Core - Platform-agnostic engine and ports",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "Jeff Linwood",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/runtime-core"
+  },
+  "keywords": [
+    "zebric",
+    "runtime",
+    "engine",
+    "blueprint",
+    "platform-agnostic",
+    "web-api"
+  ],
+  "homepage": "https://github.com/ZapCircleHQ/zebric#readme",
+  "bugs": {
+    "url": "https://github.com/ZapCircleHQ/zebric/issues"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "clean": "rm -rf dist",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "drizzle-orm": "^0.30.8",
+    "ulid": "^3.0.1",
+    "zod": "^3.23.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

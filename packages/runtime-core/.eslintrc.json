@@ -1,0 +1,35 @@
+{
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module",
+    "project": "./tsconfig.json"
+  },
+  "plugins": ["@typescript-eslint"],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "rules": {
+    "no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          {
+            "group": ["node:*"],
+            "message": "Node.js built-in imports are not allowed in runtime-core. This package must be platform-agnostic."
+          },
+          {
+            "group": ["fs", "path", "crypto", "events", "http", "https", "net", "stream", "os", "process"],
+            "message": "Node.js built-in modules are not allowed in runtime-core. Use Web APIs instead."
+          }
+        ]
+      }
+    ],
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/explicit-module-boundary-types": "off"
+  },
+  "env": {
+    "es2022": true
+  }
+}

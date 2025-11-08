@@ -12,7 +12,7 @@ import type { UserSession, PermissionManager } from '../auth/index.js'
 import { AccessControl } from './access-control.js'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
-import { performance } from 'node:perf_hooks'
+// performance.now() is available as a Web API (no import needed)
 
 export interface QueryContext {
   params?: Record<string, string>
