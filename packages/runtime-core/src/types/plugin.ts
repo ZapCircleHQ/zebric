@@ -76,8 +76,8 @@ export interface EngineAPI {
 
   // Storage
   storage: {
-    upload(key: string, data: Buffer, options?: any): Promise<string>
-    download(key: string): Promise<Buffer>
+    upload(key: string, data: ArrayBuffer | Uint8Array, options?: any): Promise<string>
+    download(key: string): Promise<ArrayBuffer>
     delete(key: string): Promise<void>
     getUrl(key: string): string
   }

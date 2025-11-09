@@ -16,10 +16,9 @@ export * from './blueprint/loader.js'
 export * from './blueprint/validation-error.js'
 
 // Database
-export * from './database/schema-generator.js'
-export * from './database/schema-diff.js'
 export * from './database/access-control.js'
-// query-executor.ts will be migrated in next phase (depends on connection, metrics)
+// schema-generator and schema-diff moved to runtime-node (Drizzle-specific)
+// query-executor moved to runtime-node (depends on connection, metrics)
 
 // Security
 export * from './security/html-escape.js'

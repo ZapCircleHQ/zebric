@@ -4,7 +4,7 @@
  * A custom theme with purple/pink gradient branding
  */
 
-import type { Theme } from '@zebric/runtime'
+import type { Theme } from '@zebric/runtime-node'
 
 export const brandTheme: Theme = {
   name: 'brand',

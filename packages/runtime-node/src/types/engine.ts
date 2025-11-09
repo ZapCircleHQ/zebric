@@ -4,7 +4,8 @@
  * Core types for the Zebric Engine runtime.
  */
 
-import type { Blueprint, SchemaDiffResult, Theme } from '@zebric/runtime-core'
+import type { Blueprint, Theme } from '@zebric/runtime-core'
+import type { SchemaDiffResult } from '../database/schema-diff.js'
 import type { HTMLRenderer } from '../renderer/html-renderer.js'
 
 export interface EngineConfig {

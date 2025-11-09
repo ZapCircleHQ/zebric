@@ -9,7 +9,7 @@
     "deploy": "zebric deploy --provider=railway"
   },
   "dependencies": {
-    "@zebric/runtime": "workspace:*",
+    "@zebric/runtime-node": "workspace:*",
     "@zebric/cli": "workspace:*"
   }
 }

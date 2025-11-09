@@ -9,7 +9,7 @@
     "deploy": "zebric deploy"
   },
   "dependencies": {
-    "@zebric/runtime": "workspace:*",
+    "@zebric/runtime-node": "workspace:*",
     "@zebric/cli": "workspace:*"
   }
 }

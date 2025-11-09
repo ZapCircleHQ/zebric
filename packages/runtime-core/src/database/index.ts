@@ -1,8 +1,7 @@
 /**
- * Database Exports
+ * Database Exports (Platform-Agnostic)
  */
 
-export * from './schema-generator.js'
-export * from './schema-diff.js'
 export * from './access-control.js'
-// query-executor will be added in next phase
+// schema-generator and schema-diff moved to runtime-node (Drizzle-specific)
+// query-executor in runtime-node (depends on connection)

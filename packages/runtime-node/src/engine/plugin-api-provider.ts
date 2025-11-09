@@ -134,9 +134,12 @@ export class PluginAPIProvider {
 
       // Storage (in-memory implementation)
       storage: {
-        upload: async (key: string, data: Buffer, _options?: any) => {
+        upload: async (key: string, data: ArrayBuffer | Uint8Array, _options?: any) => {
           const resolvedKey = key && key.trim().length > 0 ? key : ulid()
-          const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data)
+          // Convert to Buffer for Node.js storage
+          const buffer = data instanceof ArrayBuffer
+            ? Buffer.from(data)
+            : Buffer.from(data.buffer, data.byteOffset, data.byteLength)
           this.storageStore.set(resolvedKey, buffer)
           return resolvedKey
         },
@@ -145,7 +148,8 @@ export class PluginAPIProvider {
           if (!blob) {
             throw new Error(`Storage key not found: ${key}`)
           }
-          return blob
+          // Convert Buffer to ArrayBuffer for platform-agnostic return
+          return blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.byteLength) as ArrayBuffer
         },
         delete: async (key: string) => {
           this.storageStore.delete(key)

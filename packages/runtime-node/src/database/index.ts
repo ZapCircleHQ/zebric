@@ -5,9 +5,10 @@
  */
 
 // Re-export from core
-export { SchemaGenerator, SchemaDiffer, AccessControl } from '@zebric/runtime-core'
-export type { SchemaDiffResult } from '@zebric/runtime-core'
+export { AccessControl } from '@zebric/runtime-core'
 
-// Node-specific exports
+// Node-specific exports (Drizzle-based)
 export * from './connection.js'
 export * from './query-executor.js'
+export * from './schema-generator.js'
+export * from './schema-diff.js'

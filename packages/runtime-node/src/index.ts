@@ -17,6 +17,8 @@ export * from './programmatic.js'
 // Database (Node-specific implementations)
 export * from './database/connection.js'
 export * from './database/query-executor.js'
+export * from './database/schema-generator.js'
+export * from './database/schema-diff.js'
 
 // Cache implementations
 export * from './cache/memory-cache.js'
