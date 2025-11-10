@@ -7,29 +7,34 @@
  * SECURITY: All user-generated content is HTML-escaped to prevent XSS.
  */
 
-import type { Page, Blueprint } from '@zebric/runtime-core'
+import type { Page, Blueprint } from '../types/blueprint.js'
+import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
-import type { PluginRegistry } from '../plugins/index.js'
 import { defaultTheme } from './theme.js'
-import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '@zebric/runtime-core'
-
-export interface RenderContext {
-  page: Page
-  data: Record<string, any>
-  params: Record<string, string>
-  query: Record<string, string>
-  session?: any
-  csrfToken?: string
-}
+import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '../security/html-escape.js'
+import { MemoryTemplateRegistry, InlineTemplateLoader, type TemplateRegistry, type TemplateLoader } from './template-system.js'
+import { createDefaultTemplates } from './default-templates.js'
 
 export class HTMLRenderer {
   private reloadScript?: string
+  private templateRegistry: TemplateRegistry
+  private templateLoader: TemplateLoader
 
   constructor(
     private blueprint: Blueprint,
     private theme: Theme = defaultTheme,
-    private pluginRegistry?: PluginRegistry
-  ) {}
+    templateRegistry?: TemplateRegistry,
+    templateLoader?: TemplateLoader
+  ) {
+    this.templateRegistry = templateRegistry || new MemoryTemplateRegistry()
+    this.templateLoader = templateLoader || new InlineTemplateLoader()
+
+    // Load default templates
+    const defaultTemplates = createDefaultTemplates(this.theme)
+    defaultTemplates.forEach((template, name) => {
+      this.templateRegistry.set(name, template)
+    })
+  }
 
   /**
    * Set reload script for hot reload (development mode only)
@@ -44,20 +49,23 @@ export class HTMLRenderer {
   renderPage(context: RenderContext): string {
     const { page } = context
 
-    // Check if this is a plugin layout
-    if (this.pluginRegistry && page.layout) {
-      const pluginLayout = this.pluginRegistry.getLayoutRenderer(page.layout)
-      if (pluginLayout) {
-        const pluginContext = {
-          ...context,
-          theme: this.theme
-        }
-        const content = pluginLayout(pluginContext)
+    // Check for custom template first
+    if (page.template) {
+      const content = this.renderWithCustomTemplate(context)
+      if (content) {
         return this.wrapInDocument(page.title, safe(content), context.session, page.path)
       }
     }
 
-    // Render layout-specific content
+    // Check for default layout template
+    const layoutTemplateName = `layout:${page.layout}`
+    const layoutTemplate = this.templateRegistry.get(layoutTemplateName)
+    if (layoutTemplate) {
+      const content = layoutTemplate.render(context)
+      return this.wrapInDocument(page.title, safe(content), context.session, page.path)
+    }
+
+    // Fall back to built-in layout rendering
     let content: SafeHtml
     switch (page.layout) {
       case 'list':
@@ -81,6 +89,42 @@ export class HTMLRenderer {
 
     // Wrap in document
     return this.wrapInDocument(page.title, content, context.session, page.path)
+  }
+
+  /**
+   * Render page with custom template
+   */
+  private renderWithCustomTemplate(context: RenderContext): string | null {
+    const { page } = context
+    if (!page.template) {
+      return null
+    }
+
+    try {
+      const templateName = `custom:${page.path}`
+
+      // Check if template is already loaded
+      let template = this.templateRegistry.get(templateName)
+
+      // If not loaded, try to load it
+      if (!template && this.templateLoader.loadSync) {
+        const engine = page.template.engine || 'native'
+        template = this.templateLoader.loadSync(page.template.source, engine)
+        template.name = templateName
+        this.templateRegistry.set(templateName, template)
+      }
+
+      // Render with template
+      if (template) {
+        return template.render(context)
+      }
+
+      console.warn(`Custom template not found for page: ${page.path}`)
+      return null
+    } catch (error) {
+      console.error(`Error rendering custom template for page ${page.path}:`, error)
+      return null
+    }
   }
 
   /**
@@ -171,7 +215,7 @@ export class HTMLRenderer {
     const record = this.resolveFormRecord(form, data)
 
     // Check if form has file fields to set enctype
-    const hasFileFields = form.fields.some(f => f.type === 'file')
+    const hasFileFields = form.fields.some((f: any) => f.type === 'file')
     const enctype = hasFileFields ? 'enctype="multipart/form-data"' : ''
 
     return html`
@@ -186,7 +230,7 @@ export class HTMLRenderer {
           data-enhance="${this.resolveEnhancementMode()}"
         >
           ${csrfToken ? safe(`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />`) : ''}
-          ${safe(form.fields.map(field => this.renderFormField(field, record)).join(''))}
+          ${safe(form.fields.map((field: any) => this.renderFormField(field, record)).join(''))}
 
           <div class="${this.theme.formActions}">
             <button
@@ -218,7 +262,7 @@ export class HTMLRenderer {
     // Dashboard typically has multiple data queries
     const widgets = Object.entries(page.queries || {}).map(([name, query]) => {
       const items = data[name] || []
-      const entity = this.blueprint.entities.find(e => e.name === query.entity)
+      const entity = this.blueprint.entities.find(e => e.name === (query as any).entity)
 
       return this.renderDashboardWidget(name, items, entity, query)
     })
@@ -676,7 +720,7 @@ export class HTMLRenderer {
       <div class="mt-8">
         ${safe(relatedQueries.map(([name, query]) => {
           const items = data[name] || []
-          const relatedEntity = this.blueprint.entities.find(e => e.name === query.entity)
+          const relatedEntity = this.blueprint.entities.find(e => e.name === (query as any).entity)
 
           return html`
             <div class="mb-6">

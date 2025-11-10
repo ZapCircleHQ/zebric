@@ -2,15 +2,11 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { ulid } from 'ulid'
 import type { MultipartFile } from '@fastify/multipart'
+import type { UploadedFile as BaseUploadedFile } from '@zebric/runtime-core'
 
-export interface UploadedFile {
-  id: string
+export interface UploadedFileDetails extends BaseUploadedFile {
   filename: string
-  originalName: string
-  mimeType: string
-  size: number
   path: string
-  url: string
 }
 
 export interface StorageConfig {
@@ -52,7 +48,7 @@ export class FileStorage {
     }
   }
 
-  async saveFile(file: MultipartFile): Promise<UploadedFile> {
+  async saveFile(file: MultipartFile): Promise<UploadedFileDetails> {
     if (this.config.type === 'local') {
       return this.saveFileLocally(file)
     }
@@ -60,7 +56,7 @@ export class FileStorage {
     throw new Error(`Storage type ${this.config.type} not yet implemented`)
   }
 
-  private async saveFileLocally(file: MultipartFile): Promise<UploadedFile> {
+  private async saveFileLocally(file: MultipartFile): Promise<UploadedFileDetails> {
     if (!this.config.uploadDir) {
       throw new Error('Upload directory not configured')
     }
@@ -75,7 +71,7 @@ export class FileStorage {
     const buffer = await file.toBuffer()
     await fs.writeFile(filePath, buffer)
 
-    const uploadedFile: UploadedFile = {
+    const uploadedFile: UploadedFileDetails = {
       id: fileId,
       filename,
       originalName: file.filename,
@@ -109,7 +105,7 @@ export class FileStorage {
     }
   }
 
-  async getFile(fileId: string): Promise<UploadedFile | null> {
+  async getFile(fileId: string): Promise<UploadedFileDetails | null> {
     if (this.config.type === 'local') {
       return this.getFileLocally(fileId)
     }
@@ -117,7 +113,7 @@ export class FileStorage {
     throw new Error(`Storage type ${this.config.type} not yet implemented`)
   }
 
-  private async getFileLocally(fileId: string): Promise<UploadedFile | null> {
+  private async getFileLocally(fileId: string): Promise<UploadedFileDetails | null> {
     if (!this.config.uploadDir) return null
 
     const files = await fs.readdir(this.config.uploadDir)

@@ -5,9 +5,8 @@
  */
 
 import { ZebricEngine } from './engine.js'
-import type { Blueprint } from '@zebric/runtime-core'
+import type { Blueprint, Theme } from '@zebric/runtime-core'
 import type { EngineConfig } from './types/index.js'
-import type { Theme } from './renderer/theme.js'
 import { validateBlueprintFile } from './blueprint/validate.js'
 
 /**

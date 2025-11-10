@@ -2,6 +2,5 @@
  * Server Module
  */
 
-export * from './route-handler.js'
-export * from './route-matcher.js'
+export * from './fastify-adapter.js'
 export * from './behavior-executor.js'

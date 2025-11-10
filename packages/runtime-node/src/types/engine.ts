@@ -4,9 +4,8 @@
  * Core types for the Zebric Engine runtime.
  */
 
-import type { Blueprint, Theme } from '@zebric/runtime-core'
+import type { Blueprint, Theme, HTMLRenderer } from '@zebric/runtime-core'
 import type { SchemaDiffResult } from '../database/schema-diff.js'
-import type { HTMLRenderer } from '../renderer/html-renderer.js'
 
 export interface EngineConfig {
   blueprintPath: string
@@ -75,13 +74,6 @@ export interface Session {
   user: any
   expiresAt: Date
   createdAt: Date
-}
-
-export interface RequestContext {
-  session: Session | null
-  params: Record<string, string>
-  query: Record<string, string>
-  body: any
 }
 
 export interface ZebricEngineAPI {

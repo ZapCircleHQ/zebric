@@ -8,7 +8,8 @@ import type { FastifyInstance } from 'fastify'
 import { EventEmitter } from 'node:events'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
-import { RouteMatcher, RouteHandler } from './server/index.js'
+import { RouteMatcher } from '@zebric/runtime-core'
+import { FastifyAdapter } from './server/fastify-adapter.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
 import { SessionManager, ErrorSanitizer } from '@zebric/runtime-core'
 import { AuditLogger } from './security/index.js'
@@ -39,7 +40,7 @@ export class ZebricEngine extends EventEmitter {
   private server!: FastifyInstance
   private config: EngineConfig
   private routeMatcher: RouteMatcher
-  private routeHandler: RouteHandler
+  private fastifyAdapter!: FastifyAdapter
   private database!: DatabaseConnection
   private queryExecutor!: QueryExecutor
   private authProvider!: AuthProvider
@@ -75,26 +76,9 @@ export class ZebricEngine extends EventEmitter {
     this.loader = new BlueprintLoader()
     this.plugins = new PluginRegistry()
     this.routeMatcher = new RouteMatcher()
-    const host = config.host && config.host !== '0.0.0.0' && config.host !== '::'
-      ? config.host
-      : 'localhost'
-    const port = config.port || 3000
-    const defaultOrigin = `http://${host}:${port}`
 
     this.fileStorage = new FileStorage()
 
-    this.routeHandler = new RouteHandler(
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      this.plugins,
-      defaultOrigin,
-      config.theme,
-      config.rendererClass,
-      this.fileStorage
-    ) // Will set blueprint after loading
     this.metrics = new MetricsRegistry()
     this.tracer = new RequestTracer()
 
@@ -143,21 +127,11 @@ export class ZebricEngine extends EventEmitter {
       this.database = database
       this.queryExecutor = queryExecutor
 
-      // Update route handler with database
-      this.routeHandler.setBlueprint(this.blueprint, this.config.blueprintPath)
-      this.routeHandler.setQueryExecutor(this.queryExecutor)
-
       // 5. Initialize Authentication
       const { authProvider, sessionManager } = await this.subsystemInitializer.initializeAuth()
       this.authProvider = authProvider
       this.sessionManager = sessionManager
       // permissionManager is used internally by subsystem initializer
-
-      // Update route handler with session manager and security modules
-      this.routeHandler.setSessionManager(this.sessionManager)
-      this.routeHandler.setAuditLogger(this.auditLogger)
-      this.routeHandler.setErrorSanitizer(this.errorSanitizer)
-      this.routeHandler.setPluginRegistry(this.plugins)
 
       // 6. Initialize Workflows
       this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
@@ -171,7 +145,26 @@ export class ZebricEngine extends EventEmitter {
       // 8. Load Plugins (after core systems are initialized)
       await this.loadPlugins()
 
-      // 9. Initialize and Start HTTP Server
+      // 9. Create FastifyAdapter with all dependencies
+      const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
+        ? this.config.host
+        : 'localhost'
+      const port = this.config.port || 3000
+      const defaultOrigin = `http://${host}:${port}`
+
+      this.fastifyAdapter = new FastifyAdapter({
+        blueprint: this.blueprint,
+        queryExecutor: this.queryExecutor,
+        sessionManager: this.sessionManager,
+        auditLogger: this.auditLogger,
+        errorSanitizer: this.errorSanitizer,
+        pluginRegistry: this.plugins,
+        defaultOrigin,
+        theme: this.config.theme,
+        rendererClass: this.config.rendererClass
+      })
+
+      // 10. Initialize and Start HTTP Server
       this.serverManager = new ServerManager({
         blueprint: this.blueprint,
         config: this.config,
@@ -182,7 +175,7 @@ export class ZebricEngine extends EventEmitter {
         workflowManager: this.workflowManager,
         plugins: this.plugins,
         routeMatcher: this.routeMatcher,
-        routeHandler: this.routeHandler,
+        fastifyAdapter: this.fastifyAdapter,
         metrics: this.metrics,
         tracer: this.tracer,
         errorHandler: this.errorHandler,
@@ -393,8 +386,8 @@ export class ZebricEngine extends EventEmitter {
       // Update route matcher with new pages
       this.routeMatcher = new RouteMatcher()
 
-      // Update route handler with new blueprint
-      this.routeHandler.setBlueprint(newBlueprint, this.config.blueprintPath)
+      // Update fastify adapter with new blueprint
+      this.fastifyAdapter.setBlueprint(newBlueprint)
 
       // Notify connected clients via WebSocket
       if (this.reloadServer) {
@@ -551,7 +544,7 @@ export class ZebricEngine extends EventEmitter {
 
     // Inject reload script into HTML renderer
     const reloadScript = getReloadScript()
-    const renderer = (this.routeHandler as any).renderer
+    const renderer = (this.fastifyAdapter as any).renderer
     if (renderer && typeof renderer.setReloadScript === 'function') {
       renderer.setReloadScript(reloadScript)
     }

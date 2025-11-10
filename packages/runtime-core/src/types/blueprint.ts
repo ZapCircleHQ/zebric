@@ -111,6 +111,13 @@ export interface Page {
   form?: Form
   meta?: PageMeta
   behavior?: PageBehavior
+  template?: PageTemplate
+}
+
+export interface PageTemplate {
+  engine?: 'native' | 'handlebars' | 'liquid'
+  source: string // File path or inline template content
+  type?: 'file' | 'inline' // How to load the template (default: 'file')
 }
 
 export interface PageBehavior {

@@ -18,7 +18,8 @@ import type { SchemaDiffResult } from '../database/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import type { PluginRegistry } from '../plugins/index.js'
-import type { RouteMatcher, RouteHandler } from '../server/index.js'
+import type { RouteMatcher } from '@zebric/runtime-core'
+import { FastifyAdapter } from '../server/fastify-adapter.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { RequestTracer } from '../monitoring/request-tracer.js'
 import { SpanType, SpanStatus } from '../monitoring/request-tracer.js'
@@ -37,7 +38,7 @@ export interface ServerManagerDependencies {
   workflowManager?: WorkflowManager
   plugins: PluginRegistry
   routeMatcher: RouteMatcher
-  routeHandler: RouteHandler
+  fastifyAdapter: FastifyAdapter
   metrics: MetricsRegistry
   tracer: RequestTracer
   errorHandler: ErrorHandler
@@ -59,7 +60,7 @@ export class ServerManager {
   private workflowManager?: WorkflowManager
   private plugins: PluginRegistry
   private routeMatcher: RouteMatcher
-  private routeHandler: RouteHandler
+  private fastifyAdapter: FastifyAdapter
   private metrics: MetricsRegistry
   private tracer: RequestTracer
   private errorHandler: ErrorHandler
@@ -75,7 +76,7 @@ export class ServerManager {
     this.workflowManager = deps.workflowManager
     this.plugins = deps.plugins
     this.routeMatcher = deps.routeMatcher
-    this.routeHandler = deps.routeHandler
+    this.fastifyAdapter = deps.fastifyAdapter
     this.metrics = deps.metrics
     this.tracer = deps.tracer
     this.errorHandler = deps.errorHandler
@@ -95,7 +96,7 @@ export class ServerManager {
     if (updates.workflowManager !== undefined) this.workflowManager = updates.workflowManager
     if (updates.plugins) this.plugins = updates.plugins
     if (updates.routeMatcher) this.routeMatcher = updates.routeMatcher
-    if (updates.routeHandler) this.routeHandler = updates.routeHandler
+    if (updates.fastifyAdapter) this.fastifyAdapter = updates.fastifyAdapter
     if (updates.metrics) this.metrics = updates.metrics
     if (updates.tracer) this.tracer = updates.tracer
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
@@ -283,9 +284,9 @@ export class ServerManager {
     this.server.setNotFoundHandler(async (request, reply) => {
       const acceptsHtml = !request.headers.accept?.includes('application/json')
 
-      if (acceptsHtml && this.routeHandler) {
+      if (acceptsHtml && this.fastifyAdapter) {
         // Render HTML 404 page
-        const renderer = (this.routeHandler as any).renderer
+        const renderer = (this.fastifyAdapter as any).renderer
         if (renderer) {
           const html = renderer.render404(request.url)
           reply.code(404).type('text/html').send(html)
@@ -310,7 +311,7 @@ export class ServerManager {
       const origin = this.resolveOrigin(request)
       const callback = `${origin}${callbackPath}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-      const renderer = new RendererClass(this.blueprint, this.config.theme, this.plugins)
+      const renderer = new RendererClass(this.blueprint, this.config.theme)
       reply.type('text/html').send(renderer.renderSignInPage(callback))
     })
 
@@ -319,7 +320,7 @@ export class ServerManager {
       const origin = this.resolveOrigin(request)
       const callback = `${origin}${callbackPath}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-      const renderer = new RendererClass(this.blueprint, this.config.theme, this.plugins)
+      const renderer = new RendererClass(this.blueprint, this.config.theme)
       reply.type('text/html').send(renderer.renderSignUpPage(callback))
     })
 
@@ -328,7 +329,7 @@ export class ServerManager {
       const origin = this.resolveOrigin(request)
       const callback = `${origin}${callbackPath}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-      const renderer = new RendererClass(this.blueprint, this.config.theme, this.plugins)
+      const renderer = new RendererClass(this.blueprint, this.config.theme)
       reply.type('text/html').send(renderer.renderSignOutPage(callback))
     })
   }
@@ -579,19 +580,19 @@ export class ServerManager {
       try {
         switch (request.method) {
           case 'GET':
-            await this.routeHandler.handleGet(match, request, reply)
+            await this.fastifyAdapter.handleGet(request, reply)
             break
 
           case 'POST':
-            await this.routeHandler.handlePost(match, request, reply)
+            await this.fastifyAdapter.handlePost(request, reply)
             break
 
           case 'PUT':
-            await this.routeHandler.handlePut(match, request, reply)
+            await this.fastifyAdapter.handlePut(request, reply)
             break
 
           case 'DELETE':
-            await this.routeHandler.handleDelete(match, request, reply)
+            await this.fastifyAdapter.handleDelete(request, reply)
             break
 
           default:

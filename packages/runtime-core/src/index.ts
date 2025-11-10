@@ -26,8 +26,12 @@ export * from './security/error-sanitizer.js'
 export * from './security/input-validator.js'
 
 // Rendering
-// renderer will be migrated in next phase (depends on plugins)
 export * from './renderer/theme.js'
+export * from './renderer/html-renderer.js'
+export * from './renderer/template-system.js'
+export * from './renderer/default-templates.js'
+export * from './renderer/handlebars-engine.js'
+export * from './renderer/liquid-engine.js'
 
 // Cache Interface
 export * from './cache/cache-interface.js'
@@ -36,3 +40,8 @@ export * from './cache/cache-interface.js'
 export * from './auth/provider.js'
 export * from './auth/permissions.js'
 export * from './auth/session.js'
+
+// Routing
+export * from './routing/route-matcher.js'
+export * from './routing/request-handler.js'
+export * from './routing/request-ports.js'

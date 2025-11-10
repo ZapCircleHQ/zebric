@@ -1,10 +1,10 @@
 # Blueprint Specification
 
-Version: 0.1.0
+Version: 0.2.0
 
 ## Overview
 
-A Blueprint is a TOML or JSON configuration file that defines the structure and behavior of a Zebric application. It includes entities (data models), pages, authentication, access control, and UI configuration.
+A Blueprint is a TOML or JSON configuration file that defines the structure and behavior of a Zebric application. It includes entities (data models), pages, authentication, access control, UI configuration, and custom templates.
 
 ## File Structure
 
@@ -258,6 +258,7 @@ Define a page with its route, layout, and data.
 - `title` (string, required): Page title
 - `auth` (string): Authentication requirement - `"required"`, `"optional"`, `"none"`
 - `layout` (string, required): Layout type - `"list"`, `"detail"`, `"form"`, or custom
+- `template` (object, optional): Custom template configuration (see [Custom Templates](#custom-templates))
 
 **Example:**
 ```toml
@@ -335,6 +336,196 @@ When a file is uploaded, the following fields are automatically stored in the da
 - `fieldname_filename`: Original filename
 - `fieldname_size`: File size in bytes
 - `fieldname_mimetype`: File MIME type
+
+### Custom Templates
+
+Pages can use custom templates instead of the built-in layouts. This allows complete control over HTML rendering using template engines like Handlebars, Liquid, or native JavaScript template literals.
+
+**Template Configuration:**
+
+```toml
+[page."/products".template]
+engine = "handlebars"  # "native", "handlebars", or "liquid"
+source = "templates/products.hbs"  # File path or inline template
+type = "file"  # "file" or "inline" (default: "file")
+```
+
+**Attributes:**
+- `engine` (string, optional): Template engine to use - `"native"`, `"handlebars"`, or `"liquid"` (default: `"native"`)
+- `source` (string, required): Template file path or inline template content
+- `type` (string, optional): How to load the template - `"file"` or `"inline"` (default: `"file"`)
+
+#### Template Engines
+
+##### Native Templates
+
+Use JavaScript template literals for simple, fast templates.
+
+**Example:**
+```toml
+[page."/welcome"]
+title = "Welcome"
+layout = "custom"
+
+[page."/welcome".template]
+engine = "native"
+type = "inline"
+source = """
+<div class="container">
+  <h1>${context.page.title}</h1>
+  <p>Welcome, ${context.session?.user?.name || 'Guest'}!</p>
+</div>
+"""
+```
+
+##### Handlebars Templates
+
+Use Handlebars for powerful templating with helpers and partials.
+
+**Example Blueprint:**
+```toml
+[page."/products"]
+title = "Product Catalog"
+layout = "custom"
+
+[page."/products".template]
+engine = "handlebars"
+source = "templates/products.hbs"
+
+[page."/products".queries.products]
+entity = "Product"
+orderBy = { name = "asc" }
+```
+
+**Example Template (`templates/products.hbs`):**
+```handlebars
+<div class="product-grid">
+  <h1>{{page.title}}</h1>
+
+  {{#if isAuthenticated}}
+    <p>Welcome, {{user.name}}!</p>
+  {{/if}}
+
+  {{#each data.products}}
+    <div class="product-card">
+      <h2>{{this.name}}</h2>
+      <p>{{this.description}}</p>
+      <span class="price">${{this.price}}</span>
+
+      {{#if this.inStock}}
+        <button>Add to Cart</button>
+      {{else}}
+        <span class="out-of-stock">Out of Stock</span>
+      {{/if}}
+    </div>
+  {{/each}}
+
+  {{#unless data.products}}
+    <p>No products found</p>
+  {{/unless}}
+</div>
+```
+
+**Built-in Handlebars Helpers:**
+- `{{#if}}`, `{{#unless}}`, `{{#each}}` - Standard Handlebars helpers
+- `{{eq a b}}` - Equality comparison
+- `{{neq a b}}` - Inequality comparison
+- `{{gt a b}}`, `{{gte a b}}`, `{{lt a b}}`, `{{lte a b}}` - Numeric comparisons
+- `{{and a b ...}}`, `{{or a b ...}}` - Logical operations
+- `{{not value}}` - Logical negation
+- `{{formatDate date "short|long|time|datetime"}}` - Date formatting
+- `{{json obj}}` - JSON stringify
+- `{{length arr}}` - Array length
+
+##### Liquid Templates
+
+Use Liquid for a Ruby-like templating experience.
+
+**Example Blueprint:**
+```toml
+[page."/blog"]
+title = "Blog Posts"
+layout = "custom"
+
+[page."/blog".template]
+engine = "liquid"
+source = "templates/blog.liquid"
+
+[page."/blog".queries.posts]
+entity = "Post"
+where = { status = "published" }
+orderBy = { createdAt = "desc" }
+```
+
+**Example Template (`templates/blog.liquid`):**
+```liquid
+<div class="blog-container">
+  <h1>{{ page.title }}</h1>
+
+  {% if session %}
+    <p>Logged in as {{ session.user.name }}</p>
+  {% endif %}
+
+  {% for post in data.posts %}
+    <article class="blog-post">
+      <h2>{{ post.title }}</h2>
+      <time>{{ post.createdAt | formatDate: "long" }}</time>
+      <p>{{ post.excerpt }}</p>
+      <a href="/blog/{{ post.id }}">Read more</a>
+    </article>
+  {% endfor %}
+
+  {% if data.posts.size == 0 %}
+    <p>No posts found</p>
+  {% endif %}
+</div>
+```
+
+**Built-in Liquid Filters:**
+- `{{ date | formatDate: "short|long|time|datetime" }}` - Date formatting
+- `{{ obj | json }}` - JSON stringify
+
+#### Template Context
+
+All templates receive a `RenderContext` object with the following properties:
+
+- `page` - Page configuration (title, path, queries, form, etc.)
+- `data` - Query results (e.g., `data.posts`, `data.users`)
+- `params` - URL parameters (e.g., `params.id` for `/posts/:id`)
+- `query` - Query string parameters (e.g., `query.search` for `?search=term`)
+- `session` - User session (null if not authenticated)
+  - `session.user` - User object
+  - `session.id` - Session ID
+- `csrfToken` - CSRF token for forms
+- `user` - Shorthand for `session.user` (Handlebars/Liquid only)
+- `isAuthenticated` - Boolean indicating if user is logged in (Handlebars/Liquid only)
+
+#### Platform-Specific Template Loading
+
+**Node.js:**
+- Templates are loaded from the filesystem using `FileTemplateLoader`
+- Template paths are relative to the project root
+- Templates are cached and support hot-reload in development mode
+
+**CloudFlare Workers:**
+- Templates can be loaded from KV storage using `KVTemplateLoader`
+- Templates can be bundled inline using `type = "inline"`
+- Two-tier caching (local memory + KV) for optimal performance
+
+**Example for Workers:**
+```toml
+# Option 1: Inline template (bundled with Worker)
+[page."/welcome".template]
+engine = "native"
+type = "inline"
+source = "<h1>${context.page.title}</h1>"
+
+# Option 2: KV storage (deployed separately)
+[page."/products".template]
+engine = "handlebars"
+type = "file"
+source = "products.hbs"  # Loaded from KV with key "template:products.hbs"
+```
 
 ## Authentication
 

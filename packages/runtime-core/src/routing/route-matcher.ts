@@ -5,7 +5,7 @@
  * Handles static and dynamic routes with parameter extraction.
  */
 
-import type { Page } from '@zebric/runtime-core'
+import type { Page } from '../types/blueprint.js'
 
 export interface RouteMatch {
   page: Page
@@ -33,7 +33,8 @@ export class RouteMatcher {
     for (const page of pages) {
       if (!page.path) continue
       // TypeScript doesn't narrow the type after the continue, so we need to assert
-      const params = this.matchDynamicRoute(pathname, (page.path as unknown) as string)
+      // @ts-expect-error - TypeScript control flow analysis issue with continue + type narrowing
+      const params = this.matchDynamicRoute(pathname, page.path)
       if (params !== null) {
         return { page, params, query }
       }
