@@ -248,9 +248,15 @@ importers:
 
   packages/runtime-worker:
     dependencies:
+      '@types/cookie':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@zebric/runtime-core':
         specifier: workspace:*
         version: link:../runtime-core
+      cookie:
+        specifier: ^1.0.2
+        version: 1.0.2
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241127.0
@@ -2584,6 +2590,13 @@ packages:
     resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
     dependencies:
       '@types/node': 20.19.19
+
+  /@types/cookie@1.0.0:
+    resolution: {integrity: sha512-mGFXbkDQJ6kAXByHS7QAggRXgols0mAdP4MuXgloGY1tXokvzaFFM4SMqWvf7AH0oafI7zlFJwoGWzmhDqTZ9w==}
+    deprecated: This is a stub types definition. cookie provides its own type definitions, so you do not need this installed.
+    dependencies:
+      cookie: 1.0.2
+    dev: false
 
   /@types/estree@1.0.8:
     resolution: {integrity: sha512-dWHzHa2WqEXI/O1E9OjrocMTKJl2mSrEolh1Iomrv6U+JuNwaHXsXx9bLu5gG7BUWFIN0skIQJQ/L1rIex4X6w==}

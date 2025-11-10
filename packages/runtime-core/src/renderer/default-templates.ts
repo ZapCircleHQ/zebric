@@ -4,8 +4,17 @@
  * Built-in templates for standard layouts (list, detail, form, etc.)
  * These templates can be overridden by custom templates in Blueprints.
  *
- * NOTE: These are simplified placeholder templates.
- * For production use, the existing HTMLRenderer methods provide better layout rendering.
+ * IMPORTANT: These are simplified placeholder templates for demonstration purposes.
+ * By default, HTMLRenderer uses its built-in renderListLayout(), renderDetailLayout(), etc.
+ * methods which provide full-featured HTML rendering.
+ *
+ * These default templates are only used if you explicitly call renderer.loadDefaultTemplates()
+ * which might be useful for:
+ * - Creating a template-based rendering system
+ * - Providing simpler templates for edge/Workers environments
+ * - Demonstrating the template system
+ *
+ * For production use, the built-in HTMLRenderer methods are recommended.
  */
 
 import { StringTemplate } from './template-system.js'

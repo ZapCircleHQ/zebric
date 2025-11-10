@@ -29,11 +29,9 @@ export class HTMLRenderer {
     this.templateRegistry = templateRegistry || new MemoryTemplateRegistry()
     this.templateLoader = templateLoader || new InlineTemplateLoader()
 
-    // Load default templates
-    const defaultTemplates = createDefaultTemplates(this.theme)
-    defaultTemplates.forEach((template, name) => {
-      this.templateRegistry.set(name, template)
-    })
+    // Note: Default templates are NOT loaded automatically
+    // The built-in renderListLayout, renderDetailLayout, etc. methods are used instead
+    // Users can load default templates explicitly if needed via loadDefaultTemplates()
   }
 
   /**
@@ -41,6 +39,20 @@ export class HTMLRenderer {
    */
   setReloadScript(script: string): void {
     this.reloadScript = script
+  }
+
+  /**
+   * Load default templates into the registry
+   * (Optional - the built-in render methods are used by default)
+   */
+  loadDefaultTemplates(): void {
+    const defaultTemplates = createDefaultTemplates(this.theme)
+    defaultTemplates.forEach((template, name) => {
+      // Only set if not already registered (don't overwrite custom templates)
+      if (!this.templateRegistry.has(name)) {
+        this.templateRegistry.set(name, template)
+      }
+    })
   }
 
   /**
@@ -57,7 +69,8 @@ export class HTMLRenderer {
       }
     }
 
-    // Check for default layout template
+    // Check for layout template in registry (only if explicitly loaded by user)
+    // Default templates are NOT checked here - we use built-in methods instead
     const layoutTemplateName = `layout:${page.layout}`
     const layoutTemplate = this.templateRegistry.get(layoutTemplateName)
     if (layoutTemplate) {
@@ -65,7 +78,7 @@ export class HTMLRenderer {
       return this.wrapInDocument(page.title, safe(content), context.session, page.path)
     }
 
-    // Fall back to built-in layout rendering
+    // Use built-in layout rendering (full HTML implementations)
     let content: SafeHtml
     switch (page.layout) {
       case 'list':
