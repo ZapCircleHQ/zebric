@@ -4,7 +4,7 @@
  * Demonstrates how to use a custom theme with ZBL Engine
  */
 
-import { ZebricEngine } from '@zebric/runtime'
+import { ZebricEngine } from '@zebric/runtime-node'
 import { brandTheme } from './brand-theme.js'
 
 const engine = new ZebricEngine({

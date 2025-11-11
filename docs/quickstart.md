@@ -21,6 +21,7 @@ Requirements:
 - Define entities with realistic field names and data types
 - Include at least one page per major workflow
 - For pages that need custom logic, declare a behavior but leave implementation paths empty
+- For custom HTML layouts, add a template configuration with engine and source
 - Use `auth = "optional"` where anonymous access is acceptable
 - Include helpful comments sparingly
 - Return only valid TOML
@@ -31,6 +32,7 @@ Tips while iterating with the LLM:
 - Ask it to refine entities or page flows rather than rewriting from scratch.
 - Have it add relationships with `where` clauses (`[page."/tasks/:id".queries.task]` patterns).
 - Keep behavior file paths consistent so you can add implementations later.
+- Request custom templates for pages that need unique layouts beyond the built-in options (list, detail, form, dashboard).
 
 ## 2. Review and Save the Blueprint
 
@@ -73,14 +75,93 @@ Leave the process running while you iterate. Updating `blueprint.toml` triggers 
 When you spot gaps:
 
 1. Copy the relevant section of `blueprint.toml`.
-2. Explain what needs changing (e.g., “Add a dashboard page that groups tasks by status”).
+2. Explain what needs changing (e.g., "Add a dashboard page that groups tasks by status").
 3. Ask the LLM to rewrite only that section or provide a diff.
 4. Merge the changes manually and let the runtime reload.
 
+## 6. Add Custom Templates (Optional)
+
+If the built-in layouts (list, detail, form, dashboard) don't fit your needs, you can use custom templates.
+
+### Using Templates with LLMs
+
+Ask your LLM to generate both the Blueprint configuration and the template file:
+
+```
+Create a custom product catalog page with a template.
+Use Handlebars to display products in a grid with images, prices, and an "Add to Cart" button.
+```
+
+The LLM should provide:
+
+**1. Blueprint configuration:**
+```toml
+[page."/products"]
+title = "Product Catalog"
+layout = "custom"
+
+[page."/products".template]
+engine = "handlebars"
+source = "templates/products.hbs"
+
+[page."/products".queries.products]
+entity = "Product"
+orderBy = { name = "asc" }
+```
+
+**2. Template file (`templates/products.hbs`):**
+```handlebars
+<div class="product-grid">
+  <h1>{{page.title}}</h1>
+
+  {{#each data.products}}
+    <div class="product-card">
+      <img src="{{this.imageUrl}}" alt="{{this.name}}">
+      <h2>{{this.name}}</h2>
+      <p>{{this.description}}</p>
+      <span class="price">${{this.price}}</span>
+      <button>Add to Cart</button>
+    </div>
+  {{/each}}
+</div>
+```
+
+### Template Engines
+
+Choose the template engine that fits your style:
+
+- **Native** (JavaScript template literals): Fast, simple, no dependencies
+- **Handlebars**: Popular, powerful helpers, great for complex logic
+- **Liquid**: Ruby-like syntax, clean and readable
+
+### Inline Templates for Simple Cases
+
+For simple custom HTML, use inline templates directly in the Blueprint:
+
+```toml
+[page."/welcome"]
+title = "Welcome"
+layout = "custom"
+
+[page."/welcome".template]
+engine = "native"
+type = "inline"
+source = """
+<div class="welcome-banner">
+  <h1>${context.page.title}</h1>
+  <p>Welcome, ${context.session?.user?.name || 'Guest'}!</p>
+</div>
+"""
+```
+
+See [`docs/blueprint-specification.md#custom-templates`](blueprint-specification.md#custom-templates) for complete template documentation.
+
 ## Next Steps
 
-- Add custom behaviors under `behaviors/` and wire them up in the blueprint.
-- Explore the examples in `examples/` for more advanced patterns.
-- Read the full [`docs/blueprint-specification.md`](blueprint-specification.md) to extend the schema confidently.
+- Add custom templates for unique page layouts using Handlebars, Liquid, or native JavaScript
+- Add custom behaviors under `behaviors/` and wire them up in the blueprint
+- Explore the examples in `examples/` for more advanced patterns
+- Read the full [`docs/blueprint-specification.md`](blueprint-specification.md) to extend the schema confidently
+- Learn about [Custom Templates](blueprint-specification.md#custom-templates) for complete control over HTML rendering
 
-You're now ready to build and iterate on Zebric apps powered by AI-generated blueprints.
+You're now ready to build and iterate on Zebric apps powered by AI-generated blueprints and custom templates.

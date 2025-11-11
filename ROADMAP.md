@@ -77,11 +77,6 @@ This release is critical for building AI-powered app builders (like a "vibe codi
   await zebric.stop();
   ```
 
-- [ ] **Headless Mode** - Structured JSON logs instead of CLI pretty-printing (moved to 0.1.3)
-  - `--headless` flag for CLI
-  - JSON-formatted log output
-  - Programmatic event listeners for errors/warnings
-
 #### Documentation
 - [x] "Building AI Tools with Zebric" guide
 - [x] API reference for programmatic usage
@@ -89,7 +84,60 @@ This release is critical for building AI-powered app builders (like a "vibe codi
 
 ---
 
-### **0.1.3** - Feature Completeness
+### **0.1.3** - Support for CloudFlare Workers Platform
+**Status**: Completed
+**Goal**: Allow Zebric to run on non-Node platforms, starting with CloudFlare Workers
+
+#### Multi-Platform Architecture
+- [x] **Runtime Core Package** (`@zebric/runtime-core`)
+  - Platform-agnostic Blueprint parsing and validation
+  - Port-based architecture for database, cache, and storage
+  - No Node.js or platform-specific dependencies
+  - Shared business logic across all platforms
+
+- [x] **Node.js Adapter** (`@zebric/runtime-node`)
+  - SQLite and PostgreSQL database adapters
+  - Redis cache adapter
+  - Local filesystem storage
+  - Fastify-based HTTP server
+  - Full backward compatibility with 0.1.x
+
+- [x] **CloudFlare Workers Adapter** (`@zebric/runtime-worker`)
+  - D1 database adapter (SQLite-compatible)
+  - KV cache adapter
+  - R2 storage adapter
+  - Workers-specific request handling
+  - Full Blueprint compatibility
+
+#### CloudFlare Workers Features
+- [x] D1 Database Integration
+  - Serverless SQLite database
+  - Same schema generator as Node.js
+  - Automatic migrations support
+
+- [x] KV Cache Integration
+  - Distributed edge caching
+  - TTL support
+  - Compatible with CacheInterface
+
+- [x] R2 Storage Integration
+  - S3-compatible object storage
+  - File upload support
+  - Public URL generation
+
+- [x] Workers Example Application
+  - Complete blog example using D1, KV, and R2
+  - Inline TOML blueprint
+  - Health check endpoint
+  - Ready-to-deploy with wrangler
+
+#### Documentation
+- [x] Workers deployment guide in example README
+- [x] Port-based architecture documentation
+- [x] Multi-platform compatibility guarantees
+
+
+### **0.1.4** - Feature Completeness
 **Status**: Planned
 **Goal**: Essential features for real-world POCs and applications
 
@@ -129,6 +177,11 @@ This release is critical for building AI-powered app builders (like a "vibe codi
   - Conditional field requirements
   - Better error message display
   - Field-level validation feedback
+
+- [ ] **Headless Mode** - Structured JSON logs instead of CLI pretty-printing (moved to 0.1.4)
+  - `--headless` flag for CLI
+  - JSON-formatted log output
+  - Programmatic event listeners for errors/warnings
 
 #### Production Deployment
 - [ ] **Multi-Instance Deployment Documentation**
@@ -366,5 +419,5 @@ Actual release dates depend on:
 
 ---
 
-**Last Updated**: 2025-10-28
-**Current Version**: 0.1.2
+**Last Updated**: 2025-11-08
+**Current Version**: 0.1.3

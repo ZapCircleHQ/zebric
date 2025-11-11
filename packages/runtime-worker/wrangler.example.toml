@@ -1,0 +1,126 @@
+# Example wrangler.toml configuration for Zebric Workers Runtime
+# Copy this to wrangler.toml and configure for your project
+
+name = "zebric-worker"
+main = "src/index.ts"
+compatibility_date = "2025-11-09"
+
+# IMPORTANT: Enable file upload support in FormData
+compatibility_flags = ["formdata_parser_supports_files"]
+
+# Node.js compatibility for npm packages like 'cookie'
+# This enables packages like cookie, jsonwebtoken, etc.
+node_compat = true
+
+# ============================================================================
+# KV Namespaces (for sessions, cache, etc.)
+# ============================================================================
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "your-sessions-kv-namespace-id"
+preview_id = "your-preview-sessions-kv-namespace-id"
+
+[[kv_namespaces]]
+binding = "CACHE"
+id = "your-cache-kv-namespace-id"
+preview_id = "your-preview-cache-kv-namespace-id"
+
+# ============================================================================
+# D1 Database (for data storage)
+# ============================================================================
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zebric-db"
+database_id = "your-database-id"
+
+# ============================================================================
+# R2 Storage (for file uploads)
+# ============================================================================
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "zebric-files"
+preview_bucket_name = "zebric-files-preview"
+
+# ============================================================================
+# Rate Limiting (optional)
+# ============================================================================
+
+# [[unsafe.bindings]]
+# name = "RATE_LIMITER"
+# type = "ratelimit"
+# namespace_id = "your-ratelimit-namespace-id"
+# # 100 requests per minute per IP
+# simple = { limit = 100, period = 60 }
+
+# ============================================================================
+# Workers Assets (for static files - optional)
+# ============================================================================
+
+# [assets]
+# directory = "./public"
+# binding = "ASSETS"
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+
+[vars]
+ENVIRONMENT = "development"
+# Add your environment-specific variables here
+
+# ============================================================================
+# Development Configuration
+# ============================================================================
+
+[dev]
+port = 8787
+local_protocol = "http"
+
+# ============================================================================
+# Production Configuration Example
+# ============================================================================
+
+# [env.production]
+# name = "zebric-worker-production"
+# [[env.production.kv_namespaces]]
+# binding = "SESSIONS"
+# id = "your-production-sessions-kv-id"
+#
+# [[env.production.kv_namespaces]]
+# binding = "CACHE"
+# id = "your-production-cache-kv-id"
+#
+# [[env.production.d1_databases]]
+# binding = "DB"
+# database_name = "zebric-db-production"
+# database_id = "your-production-db-id"
+#
+# [[env.production.r2_buckets]]
+# binding = "FILES"
+# bucket_name = "zebric-files-production"
+
+# ============================================================================
+# Setup Instructions
+# ============================================================================
+#
+# 1. Create KV Namespaces:
+#    pnpm wrangler kv:namespace create SESSIONS
+#    pnpm wrangler kv:namespace create SESSIONS --preview
+#    pnpm wrangler kv:namespace create CACHE
+#    pnpm wrangler kv:namespace create CACHE --preview
+#
+# 2. Create D1 Database:
+#    pnpm wrangler d1 create zebric-db
+#
+# 3. Create R2 Bucket:
+#    pnpm wrangler r2 bucket create zebric-files
+#    pnpm wrangler r2 bucket create zebric-files-preview
+#
+# 4. Update the IDs in this file with the values from the commands above
+#
+# 5. Deploy:
+#    pnpm wrangler deploy
+#

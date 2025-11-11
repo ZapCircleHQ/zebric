@@ -1,0 +1,22 @@
+name = "zebric-workers-blog"
+main = "src/index.ts"
+compatibility_date = "2024-11-08"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "blog-db"
+database_id = "preview-database-id"
+
+# KV Cache binding
+[[kv_namespaces]]
+binding = "CACHE"
+id = "preview-cache-id"
+
+# R2 Storage binding (optional, for file uploads)
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "blog-storage"
+
+[vars]
+ENVIRONMENT = "development"

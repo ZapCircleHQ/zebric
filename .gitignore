@@ -1,6 +1,7 @@
 docs.notpublished/
 internal/
 .claude/
+starters/cloudflare-workers-test/
 
 data/
 tsconfig.tsbuildinfo

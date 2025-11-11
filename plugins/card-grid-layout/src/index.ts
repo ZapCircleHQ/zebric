@@ -5,7 +5,7 @@
  * Perfect for image-heavy content, product catalogs, etc.
  */
 
-import type { Plugin, LayoutRenderer, LayoutRendererContext, EngineAPI } from '@zebric/runtime'
+import type { Plugin, LayoutRenderer, LayoutRendererContext, EngineAPI } from '@zebric/runtime-node'
 
 /**
  * Escape HTML to prevent XSS

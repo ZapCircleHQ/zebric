@@ -8,10 +8,12 @@ import { resolve } from 'node:path'
 import { access } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import {
-  BlueprintLoader,
+  BlueprintParser,
+  detectFormat,
   BlueprintValidationError,
   type Blueprint,
-} from '@zebric/runtime'
+} from '@zebric/runtime-node'
+import { readFile } from 'node:fs/promises'
 
 export interface ValidateOptions {
   blueprint?: string
@@ -31,11 +33,13 @@ export async function validateCommand(options: ValidateOptions = {}): Promise<vo
     process.exit(1)
   }
 
-  const loader = new BlueprintLoader()
+  const parser = new BlueprintParser()
   const startTime = Date.now()
 
   try {
-    const blueprint = await loader.load(blueprintPath)
+    const content = await readFile(blueprintPath, 'utf-8')
+    const format = detectFormat(blueprintPath)
+    const blueprint = parser.parse(content, format, blueprintPath)
     const elapsed = Date.now() - startTime
 
     reportSuccess(blueprintPath, blueprint, elapsed)

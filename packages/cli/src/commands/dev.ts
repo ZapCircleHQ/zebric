@@ -5,7 +5,7 @@
  */
 
 import { resolve } from 'node:path'
-import { ZebricEngine } from '@zebric/runtime'
+import { ZebricEngine } from '@zebric/runtime-node'
 
 export interface DevOptions {
   blueprint?: string

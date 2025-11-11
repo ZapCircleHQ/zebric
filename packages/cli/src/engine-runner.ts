@@ -7,7 +7,7 @@
  */
 
 import { resolve } from 'node:path'
-import { ZebricEngine } from '@zebric/runtime'
+import { ZebricEngine } from '@zebric/runtime-node'
 
 // Parse command line arguments
 const args = process.argv.slice(2)
