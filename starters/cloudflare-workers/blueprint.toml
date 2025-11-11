@@ -1,0 +1,170 @@
+# Zebric Blueprint - Task Manager Example
+# Change this file to create your own application!
+
+version = "1.0.0"
+
+[project]
+name = "Task Manager"
+version = "1.0.0"
+
+[project.runtime]
+target = "cloudflare-workers"
+min_version = "0.1.0"
+
+# Entities define your data models
+[[entities]]
+name = "Task"
+
+[[entities.fields]]
+name = "id"
+type = "ULID"
+primaryKey = true
+
+[[entities.fields]]
+name = "title"
+type = "Text"
+required = true
+
+[[entities.fields]]
+name = "description"
+type = "LongText"
+
+[[entities.fields]]
+name = "status"
+type = "Text"
+default = "pending"
+
+[[entities.fields]]
+name = "priority"
+type = "Integer"
+default = 0
+
+[[entities.fields]]
+name = "dueDate"
+type = "Date"
+
+[[entities.fields]]
+name = "createdAt"
+type = "DateTime"
+default = "now"
+
+# Pages define your UI routes
+[[pages]]
+path = "/"
+title = "Home"
+layout = "list"
+auth = "none"
+
+[pages.queries.tasks]
+entity = "Task"
+orderBy = { priority = "desc" }
+limit = 10
+
+[[pages]]
+path = "/tasks"
+title = "All Tasks"
+layout = "list"
+auth = "none"
+
+[pages.queries.tasks]
+entity = "Task"
+orderBy = { priority = "desc" }
+
+[[pages]]
+path = "/tasks/new"
+title = "New Task"
+layout = "form"
+auth = "none"
+
+[pages.form]
+entity = "Task"
+method = "create"
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 4
+
+[[pages.form.fields]]
+name = "status"
+type = "text"
+label = "Status"
+placeholder = "pending"
+
+[[pages.form.fields]]
+name = "priority"
+type = "number"
+label = "Priority"
+
+[[pages.form.fields]]
+name = "dueDate"
+type = "date"
+label = "Due Date"
+
+[pages.form.onSuccess]
+redirect = "/tasks"
+message = "Task created successfully"
+
+[[pages]]
+path = "/tasks/:id"
+title = "Task Details"
+layout = "detail"
+auth = "none"
+
+[pages.queries.task]
+entity = "Task"
+where = { id = "$params.id" }
+limit = 1
+
+[[pages]]
+path = "/tasks/:id/edit"
+title = "Edit Task"
+layout = "form"
+auth = "none"
+
+[pages.queries.task]
+entity = "Task"
+where = { id = "$params.id" }
+limit = 1
+
+[pages.form]
+entity = "Task"
+method = "update"
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 4
+
+[[pages.form.fields]]
+name = "status"
+type = "text"
+label = "Status"
+
+[[pages.form.fields]]
+name = "priority"
+type = "number"
+label = "Priority"
+
+[[pages.form.fields]]
+name = "dueDate"
+type = "date"
+label = "Due Date"
+
+[pages.form.onSuccess]
+redirect = "/tasks/:id"
+message = "Task updated successfully"

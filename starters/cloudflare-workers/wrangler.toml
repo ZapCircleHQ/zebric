@@ -1,0 +1,33 @@
+name = "zebric-app"
+main = "worker.ts"
+compatibility_date = "2025-01-10"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database (required)
+[[d1_databases]]
+binding = "DB"
+database_name = "zebric-db"
+database_id = "your-database-id-here"  # Get this from: wrangler d1 create zebric-db
+
+# KV Namespace for Sessions (optional - enables forms with CSRF protection)
+# [[kv_namespaces]]
+# binding = "SESSION_KV"
+# id = "your-session-kv-id-here"  # Get this from: wrangler kv:namespace create SESSION_KV
+
+# KV Namespace for Caching (optional)
+# [[kv_namespaces]]
+# binding = "CACHE_KV"
+# id = "your-cache-kv-id-here"  # Get this from: wrangler kv:namespace create CACHE_KV
+
+# R2 Bucket for File Storage (optional)
+# [[r2_buckets]]
+# binding = "FILES_R2"
+# bucket_name = "zebric-files"
+
+# Development settings
+[env.dev]
+name = "zebric-app-dev"
+
+# Production settings
+[env.production]
+name = "zebric-app-production"

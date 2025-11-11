@@ -1,0 +1,21 @@
+{
+  "name": "zebric-cloudflare-starter",
+  "version": "1.0.0",
+  "description": "Zebric CloudFlare Workers starter template",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create zebric-db",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:prod": "wrangler d1 migrations apply DB --remote"
+  },
+  "dependencies": {
+    "@zebric/runtime-worker": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241127.0",
+    "wrangler": "^3.114.15"
+  }
+}
