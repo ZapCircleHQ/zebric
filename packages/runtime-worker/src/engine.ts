@@ -4,19 +4,23 @@
  * CloudFlare Workers adapter for Zebric runtime.
  */
 
-import { BlueprintParser, detectFormat } from '@zebric/runtime-core'
-import type { Blueprint } from '@zebric/runtime-core'
+import { BlueprintParser, detectFormat, HTMLRenderer, defaultTheme } from '@zebric/runtime-core'
+import type { Blueprint, Theme } from '@zebric/runtime-core'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
+import { WorkersAdapter } from './adapter/workers-adapter.js'
+import { WorkersSessionManager } from './session/session-manager.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
   DB: D1Database
   CACHE_KV?: KVNamespace
   FILES_R2?: R2Bucket
+  SESSION_KV?: KVNamespace
 
   // Environment variables
   BLUEPRINT?: string // Serialized blueprint JSON
+  SESSION_SECRET?: string // Secret for session encryption
 }
 
 export interface WorkersEngineConfig {
@@ -24,12 +28,15 @@ export interface WorkersEngineConfig {
   blueprint?: Blueprint // Pre-parsed blueprint
   blueprintContent?: string // Raw blueprint content (JSON/TOML)
   blueprintFormat?: 'json' | 'toml' // Format of blueprintContent
+  theme?: Theme // Custom theme (defaults to defaultTheme)
+  renderer?: HTMLRenderer // Custom renderer
 }
 
 export class ZebricWorkersEngine {
   private blueprint!: Blueprint
   private db: D1Adapter
   private cache?: KVCache
+  private adapter: WorkersAdapter
 
   constructor(private config: WorkersEngineConfig) {
     this.db = new D1Adapter(config.env.DB)
@@ -51,6 +58,29 @@ export class ZebricWorkersEngine {
     } else {
       throw new Error('Blueprint must be provided via config.blueprint, config.blueprintContent, or env.BLUEPRINT')
     }
+
+    // Initialize session manager if SESSION_KV is provided
+    let sessionManager: WorkersSessionManager | undefined
+    if (config.env.SESSION_KV) {
+      sessionManager = new WorkersSessionManager({
+        kv: config.env.SESSION_KV
+      })
+    }
+
+    // Initialize renderer if not provided
+    const renderer = config.renderer || new HTMLRenderer(
+      this.blueprint,
+      config.theme || defaultTheme
+    )
+
+    // Initialize adapter
+    this.adapter = new WorkersAdapter({
+      blueprint: this.blueprint,
+      db: this.db,
+      sessionManager,
+      cache: this.cache,
+      renderer
+    })
   }
 
   /**
@@ -104,33 +134,13 @@ export class ZebricWorkersEngine {
   }
 
   private async handleApiRequest(request: Request, url: URL): Promise<Response> {
-    // TODO: Implement API request handling
-    // This will use the query executor from runtime-core
-    return new Response(
-      JSON.stringify({
-        message: 'API endpoint not yet implemented',
-        path: url.pathname
-      }),
-      {
-        status: 501,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    )
+    // Use the adapter to handle API requests
+    return this.adapter.fetch(request)
   }
 
   private async handlePageRequest(request: Request, url: URL): Promise<Response> {
-    // TODO: Implement page rendering
-    // This will use the HTML renderer from runtime-core
-    return new Response(
-      JSON.stringify({
-        message: 'Page rendering not yet implemented',
-        path: url.pathname
-      }),
-      {
-        status: 501,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    )
+    // Use the adapter to handle page requests
+    return this.adapter.fetch(request)
   }
 
   /**

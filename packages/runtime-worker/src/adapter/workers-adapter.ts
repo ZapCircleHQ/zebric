@@ -25,6 +25,7 @@ import { KVCache } from '../cache/kv-cache.js'
 import { R2Storage } from '../storage/r2-storage.js'
 import { WorkersSessionManager } from '../session/session-manager.js'
 import { WorkersCSRFProtection } from '../security/csrf-protection.js'
+import { WorkersQueryExecutor } from '../query/workers-query-executor.js'
 
 /**
  * Workers adapter config
@@ -228,33 +229,8 @@ export class WorkersAdapter {
    * Wrap D1Adapter to match QueryExecutorPort interface
    */
   private wrapD1Adapter(adapter: D1Adapter): QueryExecutorPort {
-    return {
-      execute: async (query: Query, context: RequestContext) => {
-        // Simple query execution - can be enhanced later
-        // For now, just return empty results as D1Adapter doesn't have execute method yet
-        console.warn('Query execution not fully implemented in Workers adapter yet')
-        return []
-      },
-      create: async (entity: string, data: Record<string, any>, context: RequestContext) => {
-        // TODO: Implement create using D1Adapter
-        console.warn('Create not fully implemented in Workers adapter yet')
-        return data
-      },
-      update: async (entity: string, id: string, data: Record<string, any>, context: RequestContext) => {
-        // TODO: Implement update using D1Adapter
-        console.warn('Update not fully implemented in Workers adapter yet')
-        return data
-      },
-      delete: async (entity: string, id: string, context: RequestContext) => {
-        // TODO: Implement delete using D1Adapter
-        console.warn('Delete not fully implemented in Workers adapter yet')
-      },
-      findById: async (entity: string, id: string) => {
-        // TODO: Implement findById using D1Adapter
-        console.warn('FindById not fully implemented in Workers adapter yet')
-        return null
-      }
-    }
+    // Use the full-featured WorkersQueryExecutor
+    return new WorkersQueryExecutor(adapter, this.blueprint)
   }
 
   /**
