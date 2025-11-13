@@ -31,7 +31,7 @@ Requirements:
 Note: CloudFlare Workers has some differences from Node.js:
 - Prefer inline templates over file templates for better performance
 - Keep templates compact for faster edge execution
-- Use native or Handlebars templates (Liquid requires larger bundle)
+- Use Liquid templates (default) for the best balance of bundle size and security; Handlebars works too if needed
 ```
 
 Tips while iterating with the LLM:
@@ -194,17 +194,17 @@ title = "Products"
 layout = "custom"
 
 [page."/products".template]
-engine = "native"
+engine = "liquid"
 type = "inline"
 source = """
 <div class="products">
-  <h1>${context.page.title}</h1>
-  ${context.data.products.map(p => `
+  <h1>{{ page.title }}</h1>
+  {% for p in data.products %}
     <div class="product">
-      <h2>${p.name}</h2>
-      <p>${p.price}</p>
+      <h2>{{ p.name }}</h2>
+      <p>${{ p.price }}</p>
     </div>
-  `).join('')}
+  {% endfor %}
 </div>
 """
 

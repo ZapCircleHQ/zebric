@@ -339,27 +339,27 @@ When a file is uploaded, the following fields are automatically stored in the da
 
 ### Custom Templates
 
-Pages can use custom templates instead of the built-in layouts. This allows complete control over HTML rendering using template engines like Handlebars, Liquid, or native JavaScript template literals.
+Pages can use custom templates instead of the built-in layouts. This allows complete control over HTML rendering using template engines like Handlebars or Liquid (default).
 
 **Template Configuration:**
 
 ```toml
 [page."/products".template]
-engine = "handlebars"  # "native", "handlebars", or "liquid"
+engine = "handlebars"  # "handlebars" or "liquid"
 source = "templates/products.hbs"  # File path or inline template
 type = "file"  # "file" or "inline" (default: "file")
 ```
 
 **Attributes:**
-- `engine` (string, optional): Template engine to use - `"native"`, `"handlebars"`, or `"liquid"` (default: `"native"`)
+- `engine` (string, optional): Template engine to use - `"handlebars"` or `"liquid"` (default: `"liquid"`)
 - `source` (string, required): Template file path or inline template content
 - `type` (string, optional): How to load the template - `"file"` or `"inline"` (default: `"file"`)
 
 #### Template Engines
 
-##### Native Templates
+##### Liquid Templates
 
-Use JavaScript template literals for simple, fast templates.
+Liquid is the default engine because it is lightweight, secure, and runs in every Zebric runtime.
 
 **Example:**
 ```toml
@@ -368,12 +368,12 @@ title = "Welcome"
 layout = "custom"
 
 [page."/welcome".template]
-engine = "native"
+engine = "liquid"
 type = "inline"
 source = """
 <div class="container">
-  <h1>${context.page.title}</h1>
-  <p>Welcome, ${context.session?.user?.name || 'Guest'}!</p>
+  <h1>{{ page.title }}</h1>
+  <p>Welcome, {{ user.name | default: 'Guest' }}!</p>
 </div>
 """
 ```
@@ -485,6 +485,51 @@ orderBy = { createdAt = "desc" }
 - `{{ date | formatDate: "short|long|time|datetime" }}` - Date formatting
 - `{{ obj | json }}` - JSON stringify
 
+### Layout Slots
+
+Built-in layouts expose named slots so you can override specific regions without rewriting the entire template. Slots accept the same configuration object as `[page.*.template]` and support both inline and file-based sources.
+
+Available slots:
+
+| Layout     | Slots                               |
+|------------|-------------------------------------|
+| `list`     | `list.header`, `list.body`, `list.empty` |
+| `detail`   | `detail.main`, `detail.related`     |
+| `form`     | `form.form`                         |
+| `dashboard`| `dashboard.widgets`                 |
+
+Example overriding the list header and empty state:
+
+```toml
+[page."/tasks"]
+title = "Tasks"
+layout = "list"
+
+[page."/tasks".layoutSlots."list.header"]
+engine = "liquid"
+type = "inline"
+source = """
+<div class="flex items-center justify-between">
+  <div>
+    <h1 class="text-3xl font-semibold">{{ page.title }}</h1>
+    <p class="text-gray-500">{{ renderer.slot.entity?.description }}</p>
+  </div>
+  <a href="/tasks/new" class="btn btn-primary">New Task</a>
+</div>
+"""
+
+[page."/tasks".layoutSlots."list.empty"]
+engine = "liquid"
+type = "inline"
+source = """
+<div class="text-center text-gray-400 py-12">
+  <p>No tasks yet. Start by creating your first task!</p>
+</div>
+"""
+```
+
+Within slot templates you have access to the normal template context plus `renderer.slot`, which contains slot-specific data such as `entity`, `items`, or `record` (depending on the layout).
+
 #### Template Context
 
 All templates receive a `RenderContext` object with the following properties:
@@ -516,9 +561,9 @@ All templates receive a `RenderContext` object with the following properties:
 ```toml
 # Option 1: Inline template (bundled with Worker)
 [page."/welcome".template]
-engine = "native"
+engine = "liquid"
 type = "inline"
-source = "<h1>${context.page.title}</h1>"
+source = "<h1>{{ page.title }}</h1>"
 
 # Option 2: KV storage (deployed separately)
 [page."/products".template]

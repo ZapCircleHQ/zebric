@@ -9,10 +9,10 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import {
   StringTemplate,
-  NativeTemplateEngine,
   type TemplateLoader,
   type Template,
-  type TemplateEngine
+  type TemplateEngine,
+  createLiquidEngine
 } from '@zebric/runtime-core'
 
 export interface FileTemplateLoaderConfig {
@@ -34,21 +34,21 @@ export class FileTemplateLoader implements TemplateLoader {
     this.baseDir = config.baseDir
     this.cache = config.cache ?? true
     this.engines = config.engines || new Map([
-      ['native', new NativeTemplateEngine()]
+      ['liquid', createLiquidEngine()]
     ])
   }
 
   /**
    * Load template from file (async)
    */
-  async load(source: string, engine: 'native' | 'handlebars' | 'liquid'): Promise<Template> {
+  async load(source: string, engine: 'handlebars' | 'liquid'): Promise<Template> {
     return this.loadSync(source, engine)
   }
 
   /**
    * Load template from file (sync)
    */
-  loadSync(source: string, engine: 'native' | 'handlebars' | 'liquid'): Template {
+  loadSync(source: string, engine: 'handlebars' | 'liquid'): Template {
     const cacheKey = `${source}:${engine}`
 
     // Check cache
@@ -110,7 +110,7 @@ export class FileTemplateLoader implements TemplateLoader {
       this.templateCache.delete(`${source}:${engine}`)
     } else {
       // Invalidate all engines for this source
-      const engines = ['native', 'handlebars', 'liquid']
+      const engines = ['liquid', 'handlebars']
       engines.forEach(eng => {
         this.templateCache.delete(`${source}:${eng}`)
       })

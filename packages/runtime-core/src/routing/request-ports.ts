@@ -69,7 +69,100 @@ export interface RenderContext {
   query: Record<string, string>
   session?: UserSession | null
   csrfToken?: string
+  renderer?: RendererContext
 }
+
+/**
+ * Extended renderer context available in templates
+ */
+export interface RendererContext {
+  theme?: any
+  segments?: Record<string, string>
+  slot?: SlotContext
+  feedback?: string
+  fields?: Record<string, string>
+  script?: string
+  content?: string
+  [key: string]: unknown
+}
+
+// ============================================================================
+// Layout Slot Contexts
+// ============================================================================
+
+/**
+ * Base slot context available to all slots
+ */
+export interface BaseSlotContext {
+  theme?: any
+  entity?: any
+}
+
+/**
+ * Context available to list.header slot
+ */
+export interface ListHeaderSlotContext extends BaseSlotContext {
+  entity?: any
+}
+
+/**
+ * Context available to list.empty slot
+ */
+export interface ListEmptySlotContext extends BaseSlotContext {
+  entity?: any
+}
+
+/**
+ * Context available to list.body slot
+ */
+export interface ListBodySlotContext extends BaseSlotContext {
+  entity?: any
+  items: any[]
+}
+
+/**
+ * Context available to detail.main slot
+ */
+export interface DetailMainSlotContext extends BaseSlotContext {
+  record: any
+  entity?: any
+}
+
+/**
+ * Context available to detail.related slot
+ */
+export interface DetailRelatedSlotContext extends BaseSlotContext {
+  entity?: any
+  data: Record<string, any>
+}
+
+/**
+ * Context available to form.form slot
+ */
+export interface FormFormSlotContext extends BaseSlotContext {
+  form: Form
+  record?: any
+}
+
+/**
+ * Context available to dashboard.widgets slot
+ */
+export interface DashboardWidgetsSlotContext extends BaseSlotContext {
+  widgets: any[] // Array of rendered widget SafeHtml
+  data: Record<string, any>
+}
+
+/**
+ * Union type for all slot contexts
+ */
+export type SlotContext =
+  | ListHeaderSlotContext
+  | ListEmptySlotContext
+  | ListBodySlotContext
+  | DetailMainSlotContext
+  | DetailRelatedSlotContext
+  | FormFormSlotContext
+  | DashboardWidgetsSlotContext
 
 /**
  * Audit logger port - logs security events

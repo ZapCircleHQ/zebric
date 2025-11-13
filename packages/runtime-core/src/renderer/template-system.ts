@@ -2,17 +2,19 @@
  * Template System
  *
  * Platform-agnostic template interfaces for Zebric.
- * Supports multiple template engines (native, Handlebars, Liquid) across Node and Workers.
+ * Supports template engines (Handlebars, Liquid) across Node, Workers, and other runtimes.
  */
 
 import type { RenderContext } from '../routing/request-ports.js'
+import { createLiquidEngine } from './liquid-engine.js'
 
+export type TemplateEngineName = 'handlebars' | 'liquid'
 /**
  * Template interface
  */
 export interface Template {
   name: string
-  engine: 'native' | 'handlebars' | 'liquid'
+  engine: TemplateEngineName
   render(context: RenderContext): string
 }
 
@@ -31,15 +33,15 @@ export interface TemplateRegistry {
  * Template loader interface
  */
 export interface TemplateLoader {
-  load(source: string, engine: 'native' | 'handlebars' | 'liquid'): Promise<Template>
-  loadSync?(source: string, engine: 'native' | 'handlebars' | 'liquid'): Template
+  load(source: string, engine: TemplateEngineName): Promise<Template>
+  loadSync?(source: string, engine: TemplateEngineName): Template
 }
 
 /**
  * Template engine interface
  */
 export interface TemplateEngine {
-  name: 'native' | 'handlebars' | 'liquid'
+  name: TemplateEngineName
   compile(source: string): (context: RenderContext) => string
 }
 
@@ -80,25 +82,12 @@ export class MemoryTemplateRegistry implements TemplateRegistry {
 export class StringTemplate implements Template {
   constructor(
     public name: string,
-    public engine: 'native' | 'handlebars' | 'liquid',
+    public engine: TemplateEngineName,
     private renderFn: (context: RenderContext) => string
   ) {}
 
   render(context: RenderContext): string {
     return this.renderFn(context)
-  }
-}
-
-/**
- * Native template engine using template literals
- */
-export class NativeTemplateEngine implements TemplateEngine {
-  readonly name = 'native' as const
-
-  compile(source: string): (context: RenderContext) => string {
-    // Use Function constructor to create a template function
-    // The template has access to 'context' variable
-    return new Function('context', `return \`${source}\`;`) as (context: RenderContext) => string
   }
 }
 
@@ -109,15 +98,15 @@ export class NativeTemplateEngine implements TemplateEngine {
 export class InlineTemplateLoader implements TemplateLoader {
   constructor(
     private engines: Map<string, TemplateEngine> = new Map([
-      ['native', new NativeTemplateEngine()]
+      ['liquid', createLiquidEngine()]
     ])
   ) {}
 
-  async load(source: string, engine: 'native' | 'handlebars' | 'liquid'): Promise<Template> {
+  async load(source: string, engine: TemplateEngineName): Promise<Template> {
     return this.loadSync(source, engine)
   }
 
-  loadSync(source: string, engine: 'native' | 'handlebars' | 'liquid'): Template {
+  loadSync(source: string, engine: TemplateEngineName): Template {
     const templateEngine = this.engines.get(engine)
     if (!templateEngine) {
       throw new Error(`Template engine '${engine}' not found`)

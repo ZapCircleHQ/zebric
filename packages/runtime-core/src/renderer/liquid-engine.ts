@@ -3,10 +3,9 @@
  *
  * Liquid template engine adapter for Zebric.
  * Works on both Node.js and CloudFlare Workers.
- *
- * Note: Requires 'liquidjs' package to be installed separately.
  */
 
+import { Liquid } from 'liquidjs'
 import type { TemplateEngine } from './template-system.js'
 import type { RenderContext } from '../routing/request-ports.js'
 
@@ -36,12 +35,7 @@ export class LiquidEngine implements TemplateEngine {
     return (context: RenderContext) => {
       // Flatten context for Liquid
       const liquidContext = {
-        page: context.page,
-        data: context.data,
-        params: context.params,
-        query: context.query,
-        session: context.session,
-        csrfToken: context.csrfToken,
+        ...context,
         // Convenience helpers
         user: context.session?.user,
         isAuthenticated: !!context.session,
@@ -88,7 +82,13 @@ export class LiquidEngine implements TemplateEngine {
  * Create Liquid engine with common filters
  */
 export function createLiquidEngine(liquid?: any): LiquidEngine {
-  const engine = new LiquidEngine(liquid)
+  const liquidInstance = liquid ?? new Liquid({
+    // SECURITY: Auto-escape all output by default to prevent XSS
+    // Use the 'raw' filter to explicitly opt-out when rendering pre-escaped HTML
+    outputEscape: 'escape'
+  })
+
+  const engine = new LiquidEngine(liquidInstance)
 
   // Register common filters
   engine.registerFilter('formatDate', (date: string | Date, format?: string) => {

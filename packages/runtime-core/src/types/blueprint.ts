@@ -112,13 +112,52 @@ export interface Page {
   meta?: PageMeta
   behavior?: PageBehavior
   template?: PageTemplate
+  layoutSlots?: Record<string, PageTemplate>
 }
 
 export interface PageTemplate {
-  engine?: 'native' | 'handlebars' | 'liquid'
+  engine?: 'handlebars' | 'liquid'
   source: string // File path or inline template content
   type?: 'file' | 'inline' // How to load the template (default: 'file')
 }
+
+// ============================================================================
+// Layout Slots
+// ============================================================================
+
+/**
+ * Valid slot names for the list layout
+ */
+export type ListLayoutSlot = 'list.header' | 'list.body' | 'list.empty'
+
+/**
+ * Valid slot names for the detail layout
+ */
+export type DetailLayoutSlot = 'detail.main' | 'detail.related'
+
+/**
+ * Valid slot names for the form layout
+ */
+export type FormLayoutSlot = 'form.form'
+
+/**
+ * Valid slot names for the dashboard layout
+ */
+export type DashboardLayoutSlot = 'dashboard.widgets'
+
+/**
+ * Union of all valid layout slot names
+ */
+export type LayoutSlotName =
+  | ListLayoutSlot
+  | DetailLayoutSlot
+  | FormLayoutSlot
+  | DashboardLayoutSlot
+
+/**
+ * Type-safe layoutSlots with proper slot name validation
+ */
+export type LayoutSlots = Partial<Record<LayoutSlotName, PageTemplate>>
 
 export interface PageBehavior {
   intent?: string  // Natural language description of desired behavior

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in required - {{ project.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="{{ theme.body }}">
+    <div class="{{ theme.container }} {{ theme.containerNarrow }}">
+      <div class="{{ theme.card }} p-8 text-center space-y-6">
+        <h1 class="{{ theme.heading1 }}">Sign in required</h1>
+        <p class="text-gray-600">
+          You need to sign in to access <code>{{ page.path }}</code>.
+        </p>
+        <a class="{{ theme.buttonPrimary }}" href="{{ auth.loginUrl }}">
+          Go to sign in
+        </a>
+      </div>
+    </div>
+  </body>
+</html>

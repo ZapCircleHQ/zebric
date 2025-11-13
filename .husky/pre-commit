@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+changed=$(git diff --name-only --cached -- 'packages/runtime-core/src/renderer/layout-templates/*.liquid' 'packages/runtime-core/src/renderer/auth-templates/*.liquid')
+
+if [ -n "$changed" ]; then
+  echo "Detected template changes. Rebuilding generated layout files..."
+  pnpm run build:templates || exit 1
+  git add packages/runtime-core/src/renderer/generated/builtin-layouts.ts \
+    packages/runtime-core/src/renderer/generated/auth-templates.ts
+fi
