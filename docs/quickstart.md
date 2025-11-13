@@ -128,11 +128,7 @@ orderBy = { name = "asc" }
 
 ### Template Engines
 
-Choose the template engine that fits your style:
-
-- **Native** (JavaScript template literals): Fast, simple, no dependencies
-- **Handlebars**: Popular, powerful helpers, great for complex logic
-- **Liquid**: Ruby-like syntax, clean and readable
+Liquid is the default template engine because it runs consistently on Node, Workers, and future edge runtimes. If you already have Handlebars templates, you can swap engines per page.
 
 ### Inline Templates for Simple Cases
 
@@ -144,21 +140,38 @@ title = "Welcome"
 layout = "custom"
 
 [page."/welcome".template]
-engine = "native"
+engine = "liquid"
 type = "inline"
 source = """
 <div class="welcome-banner">
-  <h1>${context.page.title}</h1>
-  <p>Welcome, ${context.session?.user?.name || 'Guest'}!</p>
+  <h1>{{ page.title }}</h1>
+  <p>Welcome, {{ user.name | default: 'Guest' }}!</p>
 </div>
 """
 ```
 
 See [`docs/blueprint-specification.md#custom-templates`](blueprint-specification.md#custom-templates) for complete template documentation.
 
+### Layout Slots
+
+Need a small tweak to a built-in layout? Override the relevant slot instead of replacing the entire template:
+
+```toml
+[page."/tasks".layoutSlots."list.empty"]
+engine = "liquid"
+type = "inline"
+source = """
+<div class="text-center text-gray-400 py-12">
+  <p>No tasks found. Create one to get started!</p>
+</div>
+"""
+```
+
+Available slots: `list.header`, `list.body`, `list.empty`, `detail.main`, `detail.related`, `form.form`, and `dashboard.widgets`. Slot templates receive `renderer.slot` with layout-specific data (items, record, entity, etc.).
+
 ## Next Steps
 
-- Add custom templates for unique page layouts using Handlebars, Liquid, or native JavaScript
+- Add custom templates for unique page layouts using Liquid (default) or Handlebars
 - Add custom behaviors under `behaviors/` and wire them up in the blueprint
 - Explore the examples in `examples/` for more advanced patterns
 - Read the full [`docs/blueprint-specification.md`](blueprint-specification.md) to extend the schema confidently

@@ -7,18 +7,32 @@
  * SECURITY: All user-generated content is HTML-escaped to prevent XSS.
  */
 
-import type { Page, Blueprint } from '../types/blueprint.js'
-import type { RenderContext } from '../routing/request-ports.js'
+import type { Page, Blueprint, PageTemplate, LayoutSlotName } from '../types/blueprint.js'
+import type { RenderContext, SlotContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { defaultTheme } from './theme.js'
 import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '../security/html-escape.js'
-import { MemoryTemplateRegistry, InlineTemplateLoader, type TemplateRegistry, type TemplateLoader } from './template-system.js'
+import {
+  MemoryTemplateRegistry,
+  InlineTemplateLoader,
+  StringTemplate,
+  type TemplateRegistry,
+  type TemplateLoader,
+  type Template
+} from './template-system.js'
 import { createDefaultTemplates } from './default-templates.js'
+import { createLiquidEngine } from './liquid-engine.js'
+import { builtinLayoutTemplates } from './generated/builtin-layouts.js'
+import { authTemplates } from './generated/auth-templates.js'
 
 export class HTMLRenderer {
   private reloadScript?: string
   private templateRegistry: TemplateRegistry
   private templateLoader: TemplateLoader
+  private builtinTemplates = new Map<string, Template>()
+  private authTemplateCache = new Map<string, Template>()
+  private slotTemplateCache = new Map<string, Template>()
+  private builtinTemplateEngine = createLiquidEngine()
 
   constructor(
     private blueprint: Blueprint,
@@ -28,6 +42,7 @@ export class HTMLRenderer {
   ) {
     this.templateRegistry = templateRegistry || new MemoryTemplateRegistry()
     this.templateLoader = templateLoader || new InlineTemplateLoader()
+    this.initializeBuiltinTemplates()
 
     // Note: Default templates are NOT loaded automatically
     // The built-in renderListLayout, renderDetailLayout, etc. methods are used instead
@@ -121,7 +136,7 @@ export class HTMLRenderer {
 
       // If not loaded, try to load it
       if (!template && this.templateLoader.loadSync) {
-        const engine = page.template.engine || 'native'
+        const engine = page.template.engine || 'liquid'
         template = this.templateLoader.loadSync(page.template.source, engine)
         template.name = templateName
         this.templateRegistry.set(templateName, template)
@@ -159,15 +174,38 @@ export class HTMLRenderer {
       e => e.name === page.queries?.[queryName]?.entity
     )
 
-    return html`
-      <div class="${this.theme.container}">
-        ${this.renderPageHeader(page, entity)}
-        ${items.length === 0
-          ? this.renderEmptyState(entity?.name || 'items')
-          : this.renderTable(items, entity)
-        }
-      </div>
-    `
+    const header = this.renderSlot(
+      page,
+      'list.header',
+      context,
+      { entity, theme: this.theme },
+      () => this.renderPageHeader(page, entity)
+    )
+
+    const emptyBody = this.renderSlot(
+      page,
+      'list.empty',
+      context,
+      { entity },
+      () => this.renderEmptyState(entity?.name || 'items')
+    )
+
+    const tableBody = this.renderSlot(
+      page,
+      'list.body',
+      context,
+      { entity, items },
+      () => this.renderTable(items, entity)
+    )
+
+    const segments = {
+      header,
+      body: items.length === 0 ? emptyBody : tableBody,
+    }
+
+    return this.renderBuiltinLayout('list', context, {
+      segments: this.serializeSegments(segments)
+    })
   }
 
   /**
@@ -199,18 +237,40 @@ export class HTMLRenderer {
       e => e.name === page.queries?.[queryName]?.entity
     )
 
-    return html`
-      <div class="${this.theme.container} ${this.theme.containerNarrow}">
-        <div class="${this.theme.card}">
-          <div class="p-6">
-            <h1 class="${this.theme.heading1}">${page.title}</h1>
-            ${this.renderDetailFields(record, entity)}
-            ${this.renderDetailActions(record, entity, context)}
-          </div>
+    const mainContent = html`
+      <div class="${this.theme.card}">
+        <div class="p-6">
+          <h1 class="${this.theme.heading1}">${page.title}</h1>
+          ${this.renderDetailFields(record, entity)}
+          ${this.renderDetailActions(record, entity, context)}
         </div>
-        ${this.renderRelatedData(context, entity)}
       </div>
     `
+
+    const main = this.renderSlot(
+      page,
+      'detail.main',
+      context,
+      { record, entity },
+      () => mainContent
+    )
+
+    const related = this.renderSlot(
+      page,
+      'detail.related',
+      context,
+      { entity, data },
+      () => this.renderRelatedData(context, entity)
+    )
+
+    const segments = {
+      main,
+      related,
+    }
+
+    return this.renderBuiltinLayout('detail', context, {
+      segments: this.serializeSegments(segments)
+    })
   }
 
   /**
@@ -231,39 +291,49 @@ export class HTMLRenderer {
     const hasFileFields = form.fields.some((f: any) => f.type === 'file')
     const enctype = hasFileFields ? 'enctype="multipart/form-data"' : ''
 
-    return html`
-      <div class="${this.theme.container} ${this.theme.containerNarrow}">
-        <h1 class="${this.theme.heading1}">${page.title}</h1>
+    const defaultForm = html`
+      <h1 class="${this.theme.heading1}">${page.title}</h1>
 
-        <form
-          method="POST"
-          action="${page.path}"
-          ${safe(enctype)}
-          class="${this.theme.form}"
-          data-enhance="${this.resolveEnhancementMode()}"
-        >
-          ${csrfToken ? safe(`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />`) : ''}
-          ${safe(form.fields.map((field: any) => this.renderFormField(field, record)).join(''))}
+      <form
+        method="POST"
+        action="${page.path}"
+        ${safe(enctype)}
+        class="${this.theme.form}"
+        data-enhance="${this.resolveEnhancementMode()}"
+      >
+        ${csrfToken ? safe(`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />`) : ''}
+        ${safe(form.fields.map((field: any) => this.renderFormField(field, record)).join(''))}
 
-          <div class="${this.theme.formActions}">
-            <button
-              type="button"
-              onclick="history.back()"
-              class="${this.theme.buttonSecondary}"
-              aria-label="Cancel and go back"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="${this.theme.buttonPrimary}"
-            >
-              ${form.method === 'create' ? 'Create' : form.method === 'update' ? 'Update' : 'Delete'}
-            </button>
-          </div>
-        </form>
-      </div>
+        <div class="${this.theme.formActions}">
+          <button
+            type="button"
+            onclick="history.back()"
+            class="${this.theme.buttonSecondary}"
+            aria-label="Cancel and go back"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            class="${this.theme.buttonPrimary}"
+          >
+            ${form.method === 'create' ? 'Create' : form.method === 'update' ? 'Update' : 'Delete'}
+          </button>
+        </div>
+      </form>
     `
+
+    const formHtml = this.renderSlot(
+      page,
+      'form.form',
+      context,
+      { form, record },
+      () => defaultForm
+    )
+
+    return this.renderBuiltinLayout('form', context, {
+      segments: this.serializeSegments({ form: formHtml })
+    })
   }
 
   /**
@@ -280,15 +350,23 @@ export class HTMLRenderer {
       return this.renderDashboardWidget(name, items, entity, query)
     })
 
-    return html`
-      <div class="${this.theme.container}">
-        <h1 class="${this.theme.heading1}">${page.title}</h1>
-
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
-          ${safe(widgets.join(''))}
-        </div>
+    const defaultWidgets = html`
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-6">
+        ${safe(widgets.join(''))}
       </div>
     `
+
+    const widgetsHtml = this.renderSlot(
+      page,
+      'dashboard.widgets',
+      context,
+      { widgets, data },
+      () => defaultWidgets
+    )
+
+    return this.renderBuiltinLayout('dashboard', context, {
+      segments: this.serializeSegments({ widgets: widgetsHtml })
+    })
   }
 
   /**
@@ -298,55 +376,54 @@ export class HTMLRenderer {
     const { query } = context
     const callbackURL = query.callbackURL || '/'
 
-    return html`
-      <div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-        <div class="max-w-md w-full space-y-8">
-          <div>
-            <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-              Sign in to your account
-            </h2>
-          </div>
-          <form class="mt-8 space-y-6" action="/api/auth/sign-in/email" method="POST">
-            <input type="hidden" name="callbackURL" value="${escapeHtmlAttr(callbackURL)}" />
-            <div class="rounded-md shadow-sm -space-y-px">
-              <div>
-                <label for="email" class="sr-only">Email address</label>
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autocomplete="email"
-                  required
-                  class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                  placeholder="Email address"
-                />
-              </div>
-              <div>
-                <label for="password" class="sr-only">Password</label>
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autocomplete="current-password"
-                  required
-                  class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                  placeholder="Password"
-                />
-              </div>
-            </div>
-
-            <div>
-              <button
-                type="submit"
-                class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Sign in
-              </button>
-            </div>
-          </form>
-        </div>
+    const content = html`
+      <div>
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Sign in to your account
+        </h2>
       </div>
+      <form class="mt-8 space-y-6" action="/api/auth/sign-in/email" method="POST">
+        <input type="hidden" name="callbackURL" value="${escapeHtmlAttr(callbackURL)}" />
+        <div class="rounded-md shadow-sm -space-y-px">
+          <div>
+            <label for="email" class="sr-only">Email address</label>
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autocomplete="email"
+              required
+              class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+              placeholder="Email address"
+            />
+          </div>
+          <div>
+            <label for="password" class="sr-only">Password</label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+              class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+              placeholder="Password"
+            />
+          </div>
+        </div>
+        <div>
+          <button
+            type="submit"
+            class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+          >
+            Sign in
+          </button>
+        </div>
+      </form>
     `
+
+    return this.renderBuiltinLayout('auth', context, {
+      segments: this.serializeSegments({ content })
+    })
   }
 
   private renderCustomLayout(context: RenderContext): SafeHtml {
@@ -1302,26 +1379,10 @@ export class HTMLRenderer {
     const target = request.url || page.path || '/'
     const loginUrl = `${this.getLoginPath()}${this.getLoginPath().includes('?') ? '&' : '?'}callbackURL=${encodeURIComponent(target)}`
 
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Sign in required - ${escapeHtml(this.blueprint.project.name)}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="${this.theme.body}">
-          <div class="${this.theme.container} ${this.theme.containerNarrow}">
-            <div class="${this.theme.card} p-8 text-center space-y-6">
-              <h1 class="${this.theme.heading1}">Sign in required</h1>
-              <p class="text-gray-600">You need to sign in to access <code>${escapeHtml(page.path)}</code>.</p>
-              <a class="${this.theme.buttonPrimary}" href="${loginUrl}">Go to sign in</a>
-            </div>
-          </div>
-        </body>
-      </html>
-    `
+    return this.renderAuthTemplate('login-required', {
+      page,
+      auth: { loginUrl },
+    })
   }
 
   renderSignInPage(callbackURL: string, message?: string): string {
@@ -1331,43 +1392,26 @@ export class HTMLRenderer {
     const escapedActionJs = escapeJs(action)
     const feedback = message ? `<p id="auth-feedback" class="text-sm text-emerald-600">${escapeHtml(message)}</p>` : '<p id="auth-feedback" class="text-sm text-emerald-600"></p>'
 
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Sign in - ${escapeHtml(this.blueprint.project.name)}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="${this.theme.body}">
-          <div class="min-h-screen flex items-center justify-center p-6">
-            <div class="${this.theme.card} w-full max-w-md p-8">
-              <h1 class="${this.theme.heading1} text-center">Sign in to continue</h1>
-              ${feedback}
-              <form id="sign-in-form" class="space-y-4 mt-4" method="POST" action="${action}">
-                <input type="hidden" name="callbackURL" value="${escapedCallbackAttr}">
-                <div>
-                  <label class="${this.theme.label}" for="email">Email</label>
-                  <input class="${this.theme.input}" type="email" name="email" id="email" required autocomplete="email">
-                </div>
-                <div>
-                  <label class="${this.theme.label}" for="password">Password</label>
-                  <input class="${this.theme.input}" type="password" name="password" id="password" required autocomplete="current-password">
-                </div>
-                <div class="flex items-center justify-between text-sm text-gray-600">
-                  <label class="inline-flex items-center">
-                    <input type="checkbox" name="rememberMe" class="mr-2"> Remember me
-                  </label>
-                  <a href="/forgot-password" class="${this.theme.linkSecondary}">Forgot password?</a>
-                </div>
-                <button type="submit" class="${this.theme.buttonPrimary} w-full">Sign in</button>
-              </form>
-              <p class="mt-6 text-sm text-center text-gray-500">
-                Don't have an account? <a href="${this.getSignupPath()}" class="${this.theme.linkPrimary}">Sign up</a>
-              </p>
-            </div>
-          </div>
+    return this.renderAuthTemplate('sign-in', {
+      renderer: {
+        feedback,
+        fields: {
+          email: `<div>
+            <label class="${this.theme.label}" for="email">Email</label>
+            <input class="${this.theme.input}" type="email" name="email" id="email" required autocomplete="email">
+          </div>`,
+          password: `<div>
+            <label class="${this.theme.label}" for="password">Password</label>
+            <input class="${this.theme.input}" type="password" name="password" id="password" required autocomplete="current-password">
+          </div>`,
+          meta: `<div class="flex items-center justify-between text-sm text-gray-600">
+            <label class="inline-flex items-center">
+              <input type="checkbox" name="rememberMe" class="mr-2"> Remember me
+            </label>
+            <a href="/forgot-password" class="${this.theme.linkSecondary}">Forgot password?</a>
+          </div>`
+        },
+        script: `
           <script>
             document.addEventListener('DOMContentLoaded', () => {
               const form = document.getElementById('sign-in-form')
@@ -1419,9 +1463,7 @@ export class HTMLRenderer {
                   try {
                     const data = await response.json()
                     message = data?.message || data?.error || message
-                  } catch (_) {
-                    // ignore
-                  }
+                  } catch (_) {}
 
                   if (feedback) {
                     feedback.textContent = message
@@ -1443,9 +1485,14 @@ export class HTMLRenderer {
               })
             })
           </script>
-        </body>
-      </html>
-    `
+        `
+      },
+      auth: {
+        action,
+        callback: escapedCallbackAttr,
+        signupPath: this.getSignupPath()
+      }
+    })
   }
 
   renderSignUpPage(callbackURL: string, message?: string): string {
@@ -1455,42 +1502,25 @@ export class HTMLRenderer {
     const escapedActionJs = escapeJs(action)
     const feedback = message ? `<p id="auth-feedback" class="text-sm text-emerald-600">${escapeHtml(message)}</p>` : '<p id="auth-feedback" class="text-sm text-emerald-600"></p>'
 
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Sign up - ${escapeHtml(this.blueprint.project.name)}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="${this.theme.body}">
-          <div class="min-h-screen flex items-center justify-center p-6">
-            <div class="${this.theme.card} w-full max-w-md p-8">
-              <h1 class="${this.theme.heading1} text-center">Create your account</h1>
-              ${feedback}
-              <form id="sign-up-form" class="space-y-4 mt-4" method="POST" action="${action}">
-                <input type="hidden" name="callbackURL" value="${escapedCallbackAttr}">
-                <div>
-                  <label class="${this.theme.label}" for="name">Name</label>
-                  <input class="${this.theme.input}" type="text" name="name" id="name" required autocomplete="name">
-                </div>
-                <div>
-                  <label class="${this.theme.label}" for="email">Email</label>
-                  <input class="${this.theme.input}" type="email" name="email" id="email" required autocomplete="email">
-                </div>
-                <div>
-                  <label class="${this.theme.label}" for="password">Password</label>
-                  <input class="${this.theme.input}" type="password" name="password" id="password" required autocomplete="new-password" minlength="8">
-                  <p class="text-xs text-gray-500 mt-1">At least 8 characters</p>
-                </div>
-                <button type="submit" class="${this.theme.buttonPrimary} w-full">Sign up</button>
-              </form>
-              <p class="mt-6 text-sm text-center text-gray-500">
-                Already have an account? <a href="${this.getLoginPath()}" class="${this.theme.linkPrimary}">Sign in</a>
-              </p>
-            </div>
-          </div>
+    return this.renderAuthTemplate('sign-up', {
+      renderer: {
+        feedback,
+        fields: {
+          name: `<div>
+            <label class="${this.theme.label}" for="name">Name</label>
+            <input class="${this.theme.input}" type="text" name="name" id="name" required autocomplete="name">
+          </div>`,
+          email: `<div>
+            <label class="${this.theme.label}" for="email">Email</label>
+            <input class="${this.theme.input}" type="email" name="email" id="email" required autocomplete="email">
+          </div>`,
+          password: `<div>
+            <label class="${this.theme.label}" for="password">Password</label>
+            <input class="${this.theme.input}" type="password" name="password" id="password" required autocomplete="new-password" minlength="8">
+            <p class="text-xs text-gray-500 mt-1">At least 8 characters</p>
+          </div>`
+        },
+        script: `
           <script>
             document.addEventListener('DOMContentLoaded', () => {
               const form = document.getElementById('sign-up-form')
@@ -1542,9 +1572,7 @@ export class HTMLRenderer {
                   try {
                     const data = await response.json()
                     message = data?.message || data?.error || message
-                  } catch (_) {
-                    // ignore
-                  }
+                  } catch (_) {}
 
                   if (feedback) {
                     feedback.textContent = message
@@ -1566,48 +1594,158 @@ export class HTMLRenderer {
               })
             })
           </script>
-        </body>
-      </html>
-    `
+        `
+      },
+      auth: {
+        action,
+        callback: escapedCallbackAttr,
+        loginPath: this.getLoginPath()
+      }
+    })
   }
 
   renderSignOutPage(callbackURL: string): string {
     const escapedCallbackJs = escapeJs(callbackURL || '/')
-    return `
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Signing out - ${escapeHtml(this.blueprint.project.name)}</title>
-          <script>
-            async function signOut() {
-              try {
-                await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' })
-              } catch (error) {
-                console.error('Failed to sign out', error)
-              } finally {
-                window.location.href = '${escapedCallbackJs}'
-              }
-            }
-            window.addEventListener('DOMContentLoaded', signOut)
-          </script>
-          <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body class="${this.theme.body}">
-          <div class="min-h-screen flex items-center justify-center p-6">
-            <div class="${this.theme.card} w-full max-w-md p-8 text-center space-y-4">
-              <h1 class="${this.theme.heading1}">Signing you out…</h1>
-              <p class="text-gray-600">You will be redirected shortly.</p>
-              <noscript>
-                <p class="text-sm text-gray-500">JavaScript is required to sign out automatically. <a href="/api/auth/sign-out" class="${this.theme.linkPrimary}">Click here</a> instead.</p>
-              </noscript>
-            </div>
-          </div>
-        </body>
-      </html>
-    `
+    return this.renderAuthTemplate('sign-out', {
+      auth: { callbackJs: escapedCallbackJs }
+    })
   }
 
+  private initializeBuiltinTemplates(): void {
+    builtinLayoutTemplates.forEach((templateSource, name) => {
+      const renderFn = this.builtinTemplateEngine.compile(templateSource)
+      const template = new StringTemplate(`builtin:${name}`, 'liquid', renderFn)
+      this.builtinTemplates.set(name, template)
+    })
+  }
+
+  private serializeSegments(segments: Record<string, SafeHtml | string>): Record<string, string> {
+    const result: Record<string, string> = {}
+    for (const [key, value] of Object.entries(segments)) {
+      result[key] = value instanceof SafeHtml ? value.toString() : String(value)
+    }
+    return result
+  }
+
+  private renderBuiltinLayout(
+    layout: string,
+    context: RenderContext,
+    data: Record<string, unknown>
+  ): SafeHtml {
+    const template = this.builtinTemplates.get(layout)
+    if (!template) {
+      throw new Error(`Built-in layout template not found: ${layout}`)
+    }
+
+    const rendererData = {
+      theme: this.theme,
+      ...data,
+    }
+
+    const templateContext = {
+      ...context,
+      renderer: rendererData,
+    } as RenderContext & { renderer: typeof rendererData }
+
+    const rendered = template.render(templateContext)
+    return safe(rendered)
+  }
+
+  private renderAuthTemplate(name: string, data: Record<string, unknown>): string {
+    let template = this.authTemplateCache.get(name)
+    if (!template) {
+      const source = authTemplates.get(name)
+      if (!source) {
+        throw new Error(`Auth template not found: ${name}`)
+      }
+      template = new StringTemplate(`auth:${name}`, 'liquid', this.builtinTemplateEngine.compile(source))
+      this.authTemplateCache.set(name, template)
+    }
+
+    const context: RenderContext = {
+      page: data.page ?? { title: '', path: '' },
+      data: {},
+      params: {},
+      query: {},
+      renderer: data.renderer as any,
+      project: this.blueprint.project,
+      theme: this.theme,
+      auth: data.auth ?? {},
+      ...data,
+    } as any
+
+    return template.render(context)
+  }
+
+  private renderSlot(
+    page: Page,
+    slotName: LayoutSlotName,
+    context: RenderContext,
+    slotData: SlotContext,
+    fallback: () => SafeHtml
+  ): SafeHtml {
+    const slotConfig = page.layoutSlots?.[slotName]
+    if (!slotConfig) {
+      return fallback()
+    }
+
+    const cacheKey = `slot:${page.path}:${slotName}`
+    let template = this.slotTemplateCache.get(cacheKey)
+    if (!template) {
+      const loadedTemplate = this.loadSlotTemplate(cacheKey, slotConfig)
+      if (loadedTemplate) {
+        this.slotTemplateCache.set(cacheKey, loadedTemplate)
+        template = loadedTemplate
+      }
+    }
+
+    if (!template) {
+      return fallback()
+    }
+
+    const slotContext: RenderContext = {
+      ...context,
+      renderer: {
+        ...(context.renderer || {}),
+        slot: slotData,
+        theme: this.theme,
+      },
+    }
+
+    try {
+      return safe(template.render(slotContext))
+    } catch (error) {
+      console.error(`Failed to render slot "${slotName}" for page ${page.path}:`, error)
+      return fallback()
+    }
+  }
+
+  private loadSlotTemplate(cacheKey: string, config: PageTemplate): Template | null {
+    const engine = config.engine || 'liquid'
+    const type = config.type || 'inline'
+
+    try {
+      if (type === 'file') {
+        if (!this.templateLoader.loadSync) {
+          console.warn(`Slot template loader not available for ${cacheKey}`)
+          return null
+        }
+        const template = this.templateLoader.loadSync(config.source, engine)
+        template.name = cacheKey
+        return template
+      }
+
+      if (engine !== 'liquid') {
+        console.warn(`Inline layout slots currently support Liquid templates only (slot: ${cacheKey})`)
+        return null
+      }
+
+      const renderFn = this.builtinTemplateEngine.compile(config.source)
+      return new StringTemplate(cacheKey, 'liquid', renderFn)
+    } catch (error) {
+      console.error(`Failed to load slot template "${cacheKey}":`, error)
+      return null
+    }
+  }
 
 }

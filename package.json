@@ -19,7 +19,9 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish"
+    "release": "pnpm build && changeset publish",
+    "build:templates": "node scripts/build-layout-templates.mjs",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
@@ -28,7 +30,8 @@
     "prettier": "^3.2.5",
     "turbo": "^1.13.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.1"
+    "vitest": "^1.6.1",
+    "husky": "^9.0.11"
   },
   "packageManager": "pnpm@8.15.0"
 }

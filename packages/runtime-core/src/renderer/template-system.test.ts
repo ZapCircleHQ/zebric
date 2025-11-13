@@ -3,12 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import {
-  MemoryTemplateRegistry,
-  InlineTemplateLoader,
-  NativeTemplateEngine,
-  StringTemplate
-} from './template-system.js'
+import { MemoryTemplateRegistry, InlineTemplateLoader, StringTemplate } from './template-system.js'
 import type { RenderContext } from '../routing/request-ports.js'
 
 describe('MemoryTemplateRegistry', () => {
@@ -19,7 +14,7 @@ describe('MemoryTemplateRegistry', () => {
   })
 
   it('should store and retrieve templates', () => {
-    const template = new StringTemplate('test', 'native', () => '<div>test</div>')
+    const template = new StringTemplate('test', 'liquid', () => '<div>test</div>')
 
     registry.set('test-template', template)
 
@@ -28,7 +23,7 @@ describe('MemoryTemplateRegistry', () => {
   })
 
   it('should check if template exists', () => {
-    const template = new StringTemplate('test', 'native', () => '<div>test</div>')
+    const template = new StringTemplate('test', 'liquid', () => '<div>test</div>')
 
     registry.set('test-template', template)
 
@@ -37,7 +32,7 @@ describe('MemoryTemplateRegistry', () => {
   })
 
   it('should delete templates', () => {
-    const template = new StringTemplate('test', 'native', () => '<div>test</div>')
+    const template = new StringTemplate('test', 'liquid', () => '<div>test</div>')
 
     registry.set('test-template', template)
     expect(registry.has('test-template')).toBe(true)
@@ -47,77 +42,13 @@ describe('MemoryTemplateRegistry', () => {
   })
 
   it('should clear all templates', () => {
-    registry.set('template1', new StringTemplate('t1', 'native', () => 'test1'))
-    registry.set('template2', new StringTemplate('t2', 'native', () => 'test2'))
+    registry.set('template1', new StringTemplate('t1', 'liquid', () => 'test1'))
+    registry.set('template2', new StringTemplate('t2', 'liquid', () => 'test2'))
 
     expect(registry.size()).toBe(2)
 
     registry.clear()
     expect(registry.size()).toBe(0)
-  })
-})
-
-describe('NativeTemplateEngine', () => {
-  let engine: NativeTemplateEngine
-  let mockContext: RenderContext
-
-  beforeEach(() => {
-    engine = new NativeTemplateEngine()
-    mockContext = {
-      page: { path: '/test', title: 'Test Page', layout: 'list' },
-      data: { items: [{ name: 'Item 1' }, { name: 'Item 2' }] },
-      params: { id: '123' },
-      query: { search: 'test' },
-      session: {
-        id: 'session-123',
-        userId: 'user-456',
-        user: { id: 'user-456', name: 'Test User' },
-        expiresAt: new Date(),
-        createdAt: new Date()
-      }
-    }
-  })
-
-  it('should compile and execute simple template', () => {
-    const renderFn = engine.compile('<div>${context.page.title}</div>')
-    const result = renderFn(mockContext)
-
-    expect(result).toBe('<div>Test Page</div>')
-  })
-
-  it('should access nested context properties', () => {
-    const renderFn = engine.compile('<p>${context.session.user.name}</p>')
-    const result = renderFn(mockContext)
-
-    expect(result).toBe('<p>Test User</p>')
-  })
-
-  it('should handle array mapping', () => {
-    const template = `
-      <ul>
-        \${context.data.items.map(item => \`<li>\${item.name}</li>\`).join('')}
-      </ul>
-    `
-    const renderFn = engine.compile(template)
-    const result = renderFn(mockContext)
-
-    expect(result).toContain('<li>Item 1</li>')
-    expect(result).toContain('<li>Item 2</li>')
-  })
-
-  it('should handle conditional rendering', () => {
-    const template = '\${context.session ? "Logged in" : "Guest"}'
-    const renderFn = engine.compile(template)
-    const result = renderFn(mockContext)
-
-    expect(result).toBe('Logged in')
-  })
-
-  it('should handle template with no context access', () => {
-    const renderFn = engine.compile('<div>Static content</div>')
-    const result = renderFn(mockContext)
-
-    expect(result).toBe('<div>Static content</div>')
   })
 })
 
@@ -128,25 +59,25 @@ describe('InlineTemplateLoader', () => {
     loader = new InlineTemplateLoader()
   })
 
-  it('should load native template synchronously', () => {
+  it('should load liquid template synchronously', () => {
     const source = '<div>${context.page.title}</div>'
-    const template = loader.loadSync(source, 'native')
+    const template = loader.loadSync(source, 'liquid')
 
     expect(template).toBeDefined()
-    expect(template.engine).toBe('native')
+    expect(template.engine).toBe('liquid')
   })
 
-  it('should load native template asynchronously', async () => {
-    const source = '<div>${context.page.title}</div>'
-    const template = await loader.load(source, 'native')
+  it('should load liquid template asynchronously', async () => {
+    const source = '<div>{{ page.title }}</div>'
+    const template = await loader.load(source, 'liquid')
 
     expect(template).toBeDefined()
-    expect(template.engine).toBe('native')
+    expect(template.engine).toBe('liquid')
   })
 
   it('should render loaded template', () => {
-    const source = '<h1>${context.page.title}</h1>'
-    const template = loader.loadSync(source, 'native')
+    const source = '<h1>{{ page.title }}</h1>'
+    const template = loader.loadSync(source, 'liquid')
 
     const context: RenderContext = {
       page: { path: '/', title: 'Home', layout: 'list' },
@@ -167,7 +98,7 @@ describe('InlineTemplateLoader', () => {
 
   it('should allow registering custom engine', () => {
     const customEngine = {
-      name: 'custom' as const,
+      name: 'handlebars' as const,
       compile: (source: string) => {
         return () => `CUSTOM: ${source}`
       }
@@ -175,7 +106,7 @@ describe('InlineTemplateLoader', () => {
 
     loader.registerEngine(customEngine)
 
-    const template = loader.loadSync('test', 'custom' as any)
+    const template = loader.loadSync('test', 'handlebars')
     const result = template.render({} as RenderContext)
 
     expect(result).toBe('CUSTOM: test')
@@ -185,7 +116,7 @@ describe('InlineTemplateLoader', () => {
 describe('StringTemplate', () => {
   it('should store and render template', () => {
     const renderFn = (context: RenderContext) => `Hello ${context.page.title}`
-    const template = new StringTemplate('greeting', 'native', renderFn)
+    const template = new StringTemplate('greeting', 'liquid', renderFn)
 
     const context: RenderContext = {
       page: { path: '/', title: 'World', layout: 'list' },
@@ -195,7 +126,7 @@ describe('StringTemplate', () => {
     }
 
     expect(template.name).toBe('greeting')
-    expect(template.engine).toBe('native')
+    expect(template.engine).toBe('liquid')
     expect(template.render(context)).toBe('Hello World')
   })
 
@@ -205,7 +136,7 @@ describe('StringTemplate', () => {
       return `<ul>${items.map((i: any) => `<li>${i.name}</li>`).join('')}</ul>`
     }
 
-    const template = new StringTemplate('list', 'native', renderFn)
+    const template = new StringTemplate('list', 'liquid', renderFn)
 
     const context: RenderContext = {
       page: { path: '/', title: 'List', layout: 'list' },
@@ -225,8 +156,8 @@ describe('Template System Integration', () => {
     const loader = new InlineTemplateLoader()
 
     // Load template
-    const source = '<div class="product"><h2>${context.data.name}</h2><p>$${context.data.price}</p></div>'
-    const template = await loader.load(source, 'native')
+    const source = '<div class="product"><h2>{{ data.name }}</h2><p>${{ data.price }}</p></div>'
+    const template = await loader.load(source, 'liquid')
 
     // Register template
     registry.set('product-card', template)
@@ -252,8 +183,8 @@ describe('Template System Integration', () => {
     const loader = new InlineTemplateLoader()
 
     // Load multiple templates
-    const headerTemplate = await loader.load('<header>${context.page.title}</header>', 'native')
-    const footerTemplate = await loader.load('<footer>© 2025</footer>', 'native')
+    const headerTemplate = await loader.load('<header>{{ page.title }}</header>', 'liquid')
+    const footerTemplate = await loader.load('<footer>© 2025</footer>', 'liquid')
 
     registry.set('header', headerTemplate)
     registry.set('footer', footerTemplate)

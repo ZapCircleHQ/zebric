@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - {{ project.name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="{{ theme.body }}">
+    <div class="min-h-screen flex items-center justify-center p-6">
+      <div class="{{ theme.card }} w-full max-w-md p-8">
+        <h1 class="{{ theme.heading1 }} text-center">Sign in to continue</h1>
+        {{ renderer.feedback | raw }}
+        <form id="sign-in-form" class="space-y-4 mt-4" method="POST" action="{{ auth.action }}">
+          <input type="hidden" name="callbackURL" value="{{ auth.callback }}">
+          {{ renderer.fields.email | raw }}
+          {{ renderer.fields.password | raw }}
+          {{ renderer.fields.meta | raw }}
+          <button type="submit" class="{{ theme.buttonPrimary }} w-full">Sign in</button>
+        </form>
+        <p class="mt-6 text-sm text-center text-gray-500">
+          Don't have an account?
+          <a href="{{ auth.signupPath }}" class="{{ theme.linkPrimary }}">Sign up</a>
+        </p>
+      </div>
+    </div>
+    {{ renderer.script | raw }}
+  </body>
+</html>

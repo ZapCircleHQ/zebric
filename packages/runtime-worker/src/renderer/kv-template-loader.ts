@@ -7,10 +7,10 @@
 
 import {
   StringTemplate,
-  NativeTemplateEngine,
   type TemplateLoader,
   type Template,
-  type TemplateEngine
+  type TemplateEngine,
+  createLiquidEngine
 } from '@zebric/runtime-core'
 
 export interface KVTemplateLoaderConfig {
@@ -36,14 +36,14 @@ export class KVTemplateLoader implements TemplateLoader {
     this.keyPrefix = config.keyPrefix || 'template:'
     this.cacheTtl = config.cacheTtl ?? 3600
     this.engines = config.engines || new Map([
-      ['native', new NativeTemplateEngine()]
+      ['liquid', createLiquidEngine()]
     ])
   }
 
   /**
    * Load template from KV storage (async)
    */
-  async load(source: string, engine: 'native' | 'handlebars' | 'liquid'): Promise<Template> {
+  async load(source: string, engine: 'handlebars' | 'liquid'): Promise<Template> {
     const cacheKey = `${source}:${engine}`
 
     // Check local cache first (reduces KV reads)
@@ -86,7 +86,7 @@ export class KVTemplateLoader implements TemplateLoader {
   /**
    * Sync load not supported for KV (always async)
    */
-  loadSync(source: string, engine: 'native' | 'handlebars' | 'liquid'): Template {
+  loadSync(source: string, engine: 'handlebars' | 'liquid'): Template {
     throw new Error('Synchronous template loading not supported in CloudFlare Workers. Use load() instead.')
   }
 
@@ -122,7 +122,7 @@ export class KVTemplateLoader implements TemplateLoader {
       this.localCache.delete(`${source}:${engine}`)
     } else {
       // Invalidate all engines for this source
-      const engines = ['native', 'handlebars', 'liquid']
+      const engines = ['liquid', 'handlebars']
       engines.forEach(eng => {
         this.localCache.delete(`${source}:${eng}`)
       })

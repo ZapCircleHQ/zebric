@@ -31,28 +31,28 @@ export function createDefaultTemplates(theme: Theme): Map<string, StringTemplate
   // List layout template
   templates.set('layout:list', new StringTemplate(
     'layout:list',
-    'native',
+    'liquid',
     (context: RenderContext) => renderListLayout(context, theme)
   ))
 
   // Detail layout template
   templates.set('layout:detail', new StringTemplate(
     'layout:detail',
-    'native',
+    'liquid',
     (context: RenderContext) => renderDetailLayout(context, theme)
   ))
 
   // Form layout template
   templates.set('layout:form', new StringTemplate(
     'layout:form',
-    'native',
+    'liquid',
     (context: RenderContext) => renderFormLayout(context, theme)
   ))
 
   // Dashboard layout template
   templates.set('layout:dashboard', new StringTemplate(
     'layout:dashboard',
-    'native',
+    'liquid',
     (context: RenderContext) => renderDashboardLayout(context, theme)
   ))
 

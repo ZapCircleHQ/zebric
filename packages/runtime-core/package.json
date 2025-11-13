@@ -49,6 +49,7 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
+    "liquidjs": "^10.10.0",
     "zod": "^3.23.5"
   },
   "devDependencies": {
