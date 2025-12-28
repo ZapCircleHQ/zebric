@@ -31,7 +31,6 @@ export async function createTestEnvironment(blueprint: Blueprint): Promise<TestE
       }
     `,
     compatibilityDate: '2025-01-10',
-    compatibilityFlags: ['nodejs_compat'],
     d1Databases: {
       DB: 'd1:test-db'
     },

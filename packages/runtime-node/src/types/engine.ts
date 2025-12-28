@@ -49,6 +49,10 @@ export interface DevConfig {
   dbPath?: string
   adminHost?: string // Admin server host (default: 127.0.0.1)
   adminPort?: number // Admin server port (default: 3030)
+  rateLimit?: {
+    max?: number
+    windowMs?: number
+  }
 }
 
 export interface EngineState {

@@ -6,10 +6,12 @@
 
 import { BlueprintParser, detectFormat, HTMLRenderer, defaultTheme } from '@zebric/runtime-core'
 import type { Blueprint, Theme } from '@zebric/runtime-core'
+import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
-import { WorkersAdapter } from './adapter/workers-adapter.js'
 import { WorkersSessionManager } from './session/session-manager.js'
+import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { WorkersQueryExecutor } from './query/workers-query-executor.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
@@ -36,7 +38,8 @@ export class ZebricWorkersEngine {
   private blueprint!: Blueprint
   private db: D1Adapter
   private cache?: KVCache
-  private adapter: WorkersAdapter
+  private adapter: BlueprintHttpAdapter
+  private app: Hono
 
   constructor(private config: WorkersEngineConfig) {
     this.db = new D1Adapter(config.env.DB)
@@ -73,13 +76,25 @@ export class ZebricWorkersEngine {
       config.theme || defaultTheme
     )
 
+    const queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
+    const rendererPort = {
+      renderPage: (context: any) => renderer.renderPage(context)
+    }
+
     // Initialize adapter
-    this.adapter = new WorkersAdapter({
+    this.adapter = new BlueprintHttpAdapter({
       blueprint: this.blueprint,
-      db: this.db,
+      queryExecutor,
       sessionManager,
-      cache: this.cache,
-      renderer
+      renderer: rendererPort
+    })
+
+    this.app = new Hono()
+
+    this.app.get('/health', async () => this.handleHealthCheck())
+
+    this.app.all('*', async (c) => {
+      return this.adapter.handle(c.req.raw)
     })
   }
 
@@ -88,20 +103,7 @@ export class ZebricWorkersEngine {
    */
   async fetch(request: Request): Promise<Response> {
     try {
-      const url = new URL(request.url)
-
-      // Health check endpoint
-      if (url.pathname === '/health') {
-        return this.handleHealthCheck()
-      }
-
-      // API routes
-      if (url.pathname.startsWith('/api/')) {
-        return this.handleApiRequest(request, url)
-      }
-
-      // Page routes
-      return this.handlePageRequest(request, url)
+      return await this.app.fetch(request, this.config.env)
     } catch (error) {
       console.error('Request handling error:', error)
       return new Response(
@@ -131,16 +133,6 @@ export class ZebricWorkersEngine {
         headers: { 'Content-Type': 'application/json' }
       }
     )
-  }
-
-  private async handleApiRequest(request: Request, url: URL): Promise<Response> {
-    // Use the adapter to handle API requests
-    return this.adapter.fetch(request)
-  }
-
-  private async handlePageRequest(request: Request, url: URL): Promise<Response> {
-    // Use the adapter to handle page requests
-    return this.adapter.fetch(request)
   }
 
   /**

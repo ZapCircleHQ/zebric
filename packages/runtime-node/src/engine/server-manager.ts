@@ -1,16 +1,11 @@
-/**
- * ServerManager
- *
- * Handles HTTP server setup and route registration:
- * - Fastify server initialization
- * - Middleware configuration (security, metrics, rate limiting)
- * - Route registration (auth, webhooks, API, pages, admin)
- * - Request/response handling
- */
-
-import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { Hono } from 'hono'
+import type { Context } from 'hono'
+import { serve, type ServerType } from '@hono/node-server'
+import { getCookie, setCookie } from 'hono/cookie'
 import { ulid } from 'ulid'
 import path from 'node:path'
+import { promises as fs } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
@@ -18,15 +13,11 @@ import type { SchemaDiffResult } from '../database/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import type { PluginRegistry } from '../plugins/index.js'
-import type { RouteMatcher } from '@zebric/runtime-core'
-import { FastifyAdapter } from '../server/fastify-adapter.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { RequestTracer } from '../monitoring/request-tracer.js'
 import { SpanType, SpanStatus } from '../monitoring/request-tracer.js'
 import type { ErrorHandler } from '../errors/index.js'
-import { CSPBuilder } from '@zebric/runtime-core'
-
-const ENGINE_VERSION = '0.1.0'
+import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 
 export interface ServerManagerDependencies {
   blueprint: Blueprint
@@ -37,8 +28,7 @@ export interface ServerManagerDependencies {
   queryExecutor: QueryExecutor
   workflowManager?: WorkflowManager
   plugins: PluginRegistry
-  routeMatcher: RouteMatcher
-  fastifyAdapter: FastifyAdapter
+  blueprintAdapter: BlueprintHttpAdapter
   metrics: MetricsRegistry
   tracer: RequestTracer
   errorHandler: ErrorHandler
@@ -46,11 +36,9 @@ export interface ServerManagerDependencies {
   getHealthStatus?: () => Promise<any>
 }
 
-/**
- * ServerManager - Manages HTTP server and route registration
- */
 export class ServerManager {
-  private server!: FastifyInstance
+  private app!: Hono
+  private server?: ServerType
   private blueprint: Blueprint
   private config: EngineConfig
   private state: EngineState
@@ -59,12 +47,13 @@ export class ServerManager {
   private queryExecutor: QueryExecutor
   private workflowManager?: WorkflowManager
   private plugins: PluginRegistry
-  private routeMatcher: RouteMatcher
-  private fastifyAdapter: FastifyAdapter
+  private blueprintAdapter: BlueprintHttpAdapter
   private metrics: MetricsRegistry
   private tracer: RequestTracer
   private errorHandler: ErrorHandler
   private getHealthStatusFn?: () => Promise<any>
+  private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
+  private csrfCookieName = 'csrf-token'
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -75,17 +64,13 @@ export class ServerManager {
     this.queryExecutor = deps.queryExecutor
     this.workflowManager = deps.workflowManager
     this.plugins = deps.plugins
-    this.routeMatcher = deps.routeMatcher
-    this.fastifyAdapter = deps.fastifyAdapter
+    this.blueprintAdapter = deps.blueprintAdapter
     this.metrics = deps.metrics
     this.tracer = deps.tracer
     this.errorHandler = deps.errorHandler
     this.getHealthStatusFn = deps.getHealthStatus
   }
 
-  /**
-   * Update dependencies (called after reload or subsystem changes)
-   */
   updateDependencies(updates: Partial<ServerManagerDependencies>): void {
     if (updates.blueprint) this.blueprint = updates.blueprint
     if (updates.config) this.config = updates.config
@@ -95,357 +80,243 @@ export class ServerManager {
     if (updates.queryExecutor) this.queryExecutor = updates.queryExecutor
     if (updates.workflowManager !== undefined) this.workflowManager = updates.workflowManager
     if (updates.plugins) this.plugins = updates.plugins
-    if (updates.routeMatcher) this.routeMatcher = updates.routeMatcher
-    if (updates.fastifyAdapter) this.fastifyAdapter = updates.fastifyAdapter
+    if (updates.blueprintAdapter) this.blueprintAdapter = updates.blueprintAdapter
     if (updates.metrics) this.metrics = updates.metrics
     if (updates.tracer) this.tracer = updates.tracer
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
+    if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
   }
 
-  /**
-   * Start HTTP server
-   */
-  async start(): Promise<FastifyInstance> {
-    this.server = Fastify({
-      logger: this.config.dev?.logLevel === 'debug',
-      bodyLimit: 10 * 1024 * 1024, // 10MB max body size (protects against DoS)
-      requestIdHeader: 'x-request-id',
-      genReqId: () => ulid(),
-    })
-
-    // Register error handler
-    this.server.setErrorHandler(this.errorHandler.toFastifyHandler())
-
-    // Add request ID and security headers and start request timer
-    this.server.addHook('onRequest', async (request, reply) => {
-      ;(request as any)._metricsStart = this.metrics.now()
-
-      // Start trace for this request
-      this.tracer.startTrace(request.id, request.method, request.url)
-
-      // Start HTTP request span
-      const httpSpanId = this.tracer.startSpan(
-        request.id,
-        SpanType.HTTP_REQUEST,
-        `${request.method} ${request.url}`,
-        {
-          method: request.method,
-          url: request.url,
-          headers: Object.keys(request.headers),
-          ip: request.ip,
-          userAgent: request.headers['user-agent'],
-        }
-      )
-      ;(request as any)._traceId = request.id
-      ;(request as any)._httpSpanId = httpSpanId
-
-      // Add request ID to response header
-      reply.header('X-Request-ID', request.id)
-      reply.header('X-Trace-ID', request.id)
-
-      // CSP header - allow Tailwind CDN for development
-      const csp = new CSPBuilder()
-        .directive('default-src', ["'self'"])
-        .directive('script-src', ["'self'", "'unsafe-inline'", 'https://cdn.tailwindcss.com']) // Tailwind CDN
-        .directive('style-src', ["'self'", "'unsafe-inline'"])
-        .directive('img-src', ["'self'", 'data:', 'https:'])
-        .build()
-
-      reply.header('Content-Security-Policy', csp)
-      reply.header('X-Content-Type-Options', 'nosniff')
-      reply.header('X-Frame-Options', 'DENY')
-      reply.header('X-XSS-Protection', '1; mode=block')
-      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
-    })
-
-    // Record request metrics and end trace
-    this.server.addHook('onResponse', async (request, reply) => {
-      const start = (request as any)._metricsStart
-      const duration = typeof start === 'number' ? this.metrics.now() - start : 0
-      const route =
-        (request.routeOptions && request.routeOptions.url) ||
-        request.url ||
-        'unknown'
-
-      this.metrics.recordRequest(route, reply.statusCode, duration)
-
-      // End HTTP span
-      const httpSpanId = (request as any)._httpSpanId
-      if (httpSpanId) {
-        const status = reply.statusCode >= 400 ? SpanStatus.ERROR : SpanStatus.OK
-        this.tracer.endSpan(httpSpanId, status, {
-          statusCode: reply.statusCode,
-          contentLength: reply.getHeader('content-length'),
-        })
-      }
-
-      // End trace
-      const traceId = (request as any)._traceId
-      if (traceId) {
-        const error = reply.statusCode >= 500 ? `HTTP ${reply.statusCode}` : undefined
-        this.tracer.endTrace(traceId, reply.statusCode, error)
-      }
-    })
-
-    // Register Fastify plugins
-    await this.server.register(import('@fastify/formbody'))
-    await this.server.register(import('@fastify/multipart'), {
-      limits: {
-        fileSize: 50 * 1024 * 1024, // 50MB max file size
-        files: 10, // Max 10 files per request
-      },
-    })
-    await this.server.register(import('@fastify/cookie'))
-
-    // Register static file serving for uploads
-    await this.server.register(import('@fastify/static'), {
-      root: path.resolve(process.cwd(), 'data/uploads'),
-      prefix: '/uploads/',
-      decorateReply: false, // Don't decorate reply since we may have multiple static paths
-    })
-
-    // Register CSRF protection
-    await this.server.register(import('@fastify/csrf-protection'), {
-      cookieOpts: {
-        signed: false, // Don't sign CSRF token cookie
-        httpOnly: true,
-        sameSite: 'strict'
-      }
-    })
-
-    // Register rate limiting (100 requests per minute per IP by default)
-    const rateLimitPlugin = await import('@fastify/rate-limit')
-    await this.server.register(rateLimitPlugin.default, {
-      max: 100,
-      timeWindow: '1 minute'
-    })
-
-    // Register routes
+  async start(): Promise<ServerType> {
+    this.app = new Hono()
+    this.app.onError(this.errorHandler.toHonoHandler())
+    this.registerGlobalMiddleware()
     this.registerRoutes()
 
-    // Start listening
     const port = this.config.port || 3000
     const host = this.config.host || '0.0.0.0'
-
-    await this.server.listen({ port, host })
-    console.log(`✅ HTTP Server listening on ${host}:${port}`)
+    this.server = serve(
+      {
+        fetch: this.app.fetch,
+        port,
+        hostname: host
+      },
+      () => {
+        console.log(`✅ HTTP Server listening on ${host}:${port}`)
+      }
+    )
 
     return this.server
   }
 
-  /**
-   * Stop HTTP server
-   */
   async stop(): Promise<void> {
-    if (this.server) {
-      await this.server.close()
+    if (this.server && 'close' in this.server) {
+      await new Promise<void>((resolve, reject) => {
+        this.server!.close((err?: Error) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
     }
   }
 
-  /**
-   * Get server instance
-   */
-  getServer(): FastifyInstance {
+  getServer(): ServerType | undefined {
     return this.server
   }
 
-  /**
-   * Register routes from Blueprint
-   */
-  private registerRoutes(): void {
-    // Health check
-    this.server.get('/health', async (_request, reply) => {
-      const health = this.getHealthStatusFn ? await this.getHealthStatusFn() : this.getHealthStatus()
-      return reply.code(health.healthy ? 200 : 503).send(health)
-    })
+  private registerGlobalMiddleware(): void {
+    this.app.use('*', async (c, next) => {
+      const requestId = ulid()
+      const traceId = requestId
+      Reflect.set(c.req.raw, 'requestId', requestId)
+      Reflect.set(c.req.raw, 'traceId', traceId)
 
-    // Metrics endpoint (Prometheus format)
-    this.server.get('/metrics', async (_request, reply) => {
-      reply.header('Content-Type', 'text/plain; version=0.0.4')
-      reply.send(this.metrics.toPrometheus())
-    })
+      const now = this.metrics.now()
+      const url = new URL(c.req.url)
 
-    // Built-in auth UIs
-    this.registerAuthPages()
-
-    // Register authentication routes
-    this.registerAuthRoutes()
-
-    // Register webhook routes
-    this.registerWebhookRoutes()
-
-    // Register API routes for entities
-    this.registerAPIRoutes()
-
-    // Register page routes from Blueprint
-    this.registerPageRoutes()
-
-    // Catch-all 404 handler
-    this.server.setNotFoundHandler(async (request, reply) => {
-      const acceptsHtml = !request.headers.accept?.includes('application/json')
-
-      if (acceptsHtml && this.fastifyAdapter) {
-        // Render HTML 404 page
-        const renderer = (this.fastifyAdapter as any).renderer
-        if (renderer) {
-          const html = renderer.render404(request.url)
-          reply.code(404).type('text/html').send(html)
-          return
+      this.tracer.startTrace(traceId, c.req.method, url.pathname)
+      const spanId = this.tracer.startSpan(
+        traceId,
+        SpanType.HTTP_REQUEST,
+        `${c.req.method} ${url.pathname}`,
+        {
+          method: c.req.method,
+          url: c.req.url,
+          headers: Array.from(c.req.raw.headers.keys()),
+          ip: this.getClientIp(c),
+          userAgent: c.req.header('user-agent')
         }
+      )
+
+      const rateLimitResponse = this.applyRateLimiting(c)
+      if (rateLimitResponse) {
+        return rateLimitResponse
       }
 
-      // Fall back to JSON
-      reply.code(404).send({
-        error: 'Not Found',
-        message: 'The requested page does not exist',
+      const csrfResponse = this.applyCsrfProtection(c)
+      if (csrfResponse) {
+        return csrfResponse
+      }
+
+      let response: Response | void
+      try {
+        response = await next()
+      } finally {
+        const duration = this.metrics.now() - now
+        const statusCode = c.res.status ?? 200
+        this.metrics.recordRequest(url.pathname, statusCode, duration)
+
+        const spanStatus = statusCode >= 400 ? SpanStatus.ERROR : SpanStatus.OK
+        this.tracer.endSpan(spanId, spanStatus, {
+          statusCode
+        })
+        this.tracer.endTrace(
+          traceId,
+          statusCode,
+          statusCode >= 500 ? `HTTP ${statusCode}` : undefined
+        )
+
+        this.applySecurityHeaders(c, requestId, traceId)
+      }
+
+      return response
+    })
+  }
+
+  private registerRoutes(): void {
+    this.app.get('/health', async () => {
+      const health = this.getHealthStatusFn ? await this.getHealthStatusFn() : this.getHealthStatus()
+      return Response.json(health, { status: health.healthy ? 200 : 503 })
+    })
+
+    this.app.get('/metrics', async () => {
+      return new Response(this.metrics.toPrometheus(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; version=0.0.4' }
       })
     })
+
+    this.registerStaticUploads()
+    this.registerAuthPages()
+    this.registerAuthRoutes()
+    this.registerWebhookRoutes()
+    this.registerAPIRoutes()
+    this.registerPageRoutes()
+
+    this.app.notFound(() => {
+      return Response.json(
+        {
+          error: 'Not Found',
+          message: 'The requested page does not exist'
+        },
+        { status: 404 }
+      )
+    })
   }
 
-  /**
-   * Register authentication pages
-   */
+  private registerStaticUploads(): void {
+    const root = path.resolve(process.cwd(), 'data/uploads')
+    this.app.get('/uploads/*', async (c) => {
+      const relative = c.req.path.replace(/^\/uploads\/?/, '')
+      const filePath = path.join(root, relative)
+      try {
+        const data = await fs.readFile(filePath)
+        const mimeType = this.getMimeType(filePath)
+        return new Response(data, {
+          status: 200,
+          headers: { 'Content-Type': mimeType }
+        })
+      } catch {
+        return Response.json({ error: 'File not found' }, { status: 404 })
+      }
+    })
+  }
+
   private registerAuthPages(): void {
-    this.server.get('/auth/sign-in', async (request: FastifyRequest, reply: FastifyReply) => {
-      const callbackPath = this.getCallbackPath(request)
-      const origin = this.resolveOrigin(request)
-      const callback = `${origin}${callbackPath}`
+    this.app.get('/auth/sign-in', async (c) => {
+      const callback = `${this.resolveOrigin(c.req.raw)}${this.getCallbackPath(c.req.raw)}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
       const renderer = new RendererClass(this.blueprint, this.config.theme)
-      reply.type('text/html').send(renderer.renderSignInPage(callback))
+      return c.html(renderer.renderSignInPage(callback))
     })
 
-    this.server.get('/auth/sign-up', async (request: FastifyRequest, reply: FastifyReply) => {
-      const callbackPath = this.getCallbackPath(request)
-      const origin = this.resolveOrigin(request)
-      const callback = `${origin}${callbackPath}`
+    this.app.get('/auth/sign-up', async (c) => {
+      const callback = `${this.resolveOrigin(c.req.raw)}${this.getCallbackPath(c.req.raw)}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
       const renderer = new RendererClass(this.blueprint, this.config.theme)
-      reply.type('text/html').send(renderer.renderSignUpPage(callback))
+      return c.html(renderer.renderSignUpPage(callback))
     })
 
-    this.server.get('/auth/sign-out', async (request: FastifyRequest, reply: FastifyReply) => {
-      const callbackPath = this.getCallbackPath(request)
-      const origin = this.resolveOrigin(request)
-      const callback = `${origin}${callbackPath}`
+    this.app.get('/auth/sign-out', async (c) => {
+      const callback = `${this.resolveOrigin(c.req.raw)}${this.getCallbackPath(c.req.raw)}`
       const RendererClass = this.config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
       const renderer = new RendererClass(this.blueprint, this.config.theme)
-      reply.type('text/html').send(renderer.renderSignOutPage(callback))
+      return c.html(renderer.renderSignOutPage(callback))
     })
   }
 
-  /**
-   * Register authentication routes
-   */
   private registerAuthRoutes(): void {
-    // Register Better Auth handler for all auth endpoints
-    this.server.route({
-      method: ['GET', 'POST'],
-      url: '/api/auth/*',
-      handler: async (request: FastifyRequest, reply: FastifyReply) => {
-        try {
-          // Construct request URL
-          const url = new URL(request.url, `http://${request.headers.host}`)
-
-          // Convert Fastify headers to standard Headers object
-          const headers = new Headers()
-          Object.entries(request.headers).forEach(([key, value]) => {
-            if (value) {
-              const headerValue = Array.isArray(value) ? value[0] : value
-              if (headerValue) {
-                headers.append(key, headerValue)
-              }
-            }
-          })
-
-          // Create Fetch API-compatible request
-          const req = new Request(url.toString(), {
-            method: request.method,
-            headers,
-            body: request.body ? JSON.stringify(request.body) : undefined,
-          })
-
-          // Call Better Auth handler (get underlying instance)
-          const betterAuthInstance = this.authProvider.getAuthInstance()
-          const res = await betterAuthInstance.handler(req)
-
-          // Copy response headers
-          res.headers.forEach((value: string, key: string) => {
-            reply.header(key, value)
-          })
-
-          // Send response
-          reply.code(res.status).send(await res.text())
-        } catch (error) {
-          console.error('Auth route error:', error)
-          reply.code(500).send({
+    this.app.all('/api/auth/*', async (c) => {
+      try {
+        const betterAuthInstance = this.authProvider.getAuthInstance()
+        const response = await betterAuthInstance.handler(c.req.raw)
+        return response
+      } catch (error) {
+        console.error('Auth route error:', error)
+        return Response.json(
+          {
             error: 'Authentication failed',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
-        }
-      },
+            details: error instanceof Error ? error.message : 'Unknown error'
+          },
+          { status: 500 }
+        )
+      }
     })
-
-    console.log('✅ Registered authentication routes at /api/auth/*')
   }
 
-  /**
-   * Register webhook routes for workflows
-   */
   private registerWebhookRoutes(): void {
     if (!this.workflowManager) {
       return
     }
 
-    // Register a wildcard route for all webhooks
-    this.server.route({
-      method: ['GET', 'POST', 'PUT', 'DELETE'],
-      url: '/webhooks/*',
-      handler: async (request: FastifyRequest, reply: FastifyReply) => {
-        try {
-          // Get webhook path (e.g., /webhooks/github -> /webhooks/github)
-          const webhookPath = request.url.split('?')[0] || request.url
+    this.app.all('/webhooks/*', async (c) => {
+      try {
+        const webhookPath = new URL(c.req.url).pathname
+        const jobs = await this.workflowManager!.triggerWebhook(webhookPath, {
+          headers: Object.fromEntries(c.req.raw.headers),
+          body: await this.tryParseBody(c.req.raw),
+          query: Object.fromEntries(new URL(c.req.url).searchParams)
+        })
 
-          // Trigger workflows for this webhook
-          const jobs = await this.workflowManager!.triggerWebhook(webhookPath, {
-            headers: request.headers as Record<string, string>,
-            body: request.body,
-            query: request.query as Record<string, string>,
-          })
-
-          if (jobs.length === 0) {
-            reply.code(404).send({
-              error: 'No workflow found for this webhook',
-              path: webhookPath,
-            })
-            return
-          }
-
-          reply.send({
-            success: true,
-            message: `Triggered ${jobs.length} workflow(s)`,
-            jobs: jobs.map((job) => ({
-              id: job.id,
-              workflow: job.workflowName,
-              status: job.status,
-            })),
-          })
-        } catch (error) {
-          console.error('Webhook error:', error)
-          reply.code(500).send({
-            error: 'Failed to trigger workflow',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
+        if (jobs.length === 0) {
+          return Response.json(
+            { error: 'No workflow found for this webhook', path: webhookPath },
+            { status: 404 }
+          )
         }
-      },
-    })
 
-    console.log('✅ Registered webhook routes at /webhooks/*')
+        return Response.json({
+          success: true,
+          message: `Triggered ${jobs.length} workflow(s)`,
+          jobs: jobs.map((job) => ({
+            id: job.id,
+            workflow: job.workflowName,
+            status: job.status
+          }))
+        })
+      } catch (error) {
+        console.error('Webhook error:', error)
+        return Response.json(
+          {
+            error: 'Failed to trigger workflow',
+            details: error instanceof Error ? error.message : 'Unknown error'
+          },
+          { status: 500 }
+        )
+      }
+    })
   }
 
-  /**
-   * Register API routes for CRUD operations on entities
-   */
   private registerAPIRoutes(): void {
     if (!this.blueprint.entities || this.blueprint.entities.length === 0) {
       return
@@ -455,216 +326,141 @@ export class ServerManager {
       const entityPath = `/api/${entity.name.toLowerCase()}s`
       const entityPathWithId = `${entityPath}/:id`
 
-      // CREATE - POST /api/posts
-      this.server.post(entityPath, async (request: FastifyRequest, reply: FastifyReply) => {
+      this.app.post(entityPath, async (c) => {
         try {
-          const data = request.body as Record<string, any>
-          const session = await this.sessionManager.getSession(request as any)
+          const data = await c.req.json<Record<string, any>>()
+          const session = await this.sessionManager.getSession(c.req.raw)
           const result = await this.queryExecutor.create(entity.name, data, { session })
-          reply.code(201).send(result)
+          return Response.json(result, { status: 201 })
         } catch (error) {
           console.error(`Create ${entity.name} error:`, error)
-          reply.code(500).send({
-            error: 'Create failed',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
+          return Response.json(
+            {
+              error: 'Create failed',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+          )
         }
       })
 
-      // READ ALL - GET /api/posts
-      this.server.get(entityPath, async (_request: FastifyRequest, reply: FastifyReply) => {
+      this.app.get(entityPath, async () => {
         try {
           const results = await this.queryExecutor.execute(
             {
               entity: entity.name,
               orderBy: { createdAt: 'desc' },
-              limit: 100,
+              limit: 100
             },
             {}
           )
-          reply.send(results)
+          return Response.json(results)
         } catch (error) {
           console.error(`List ${entity.name} error:`, error)
-          reply.code(500).send({
-            error: 'List failed',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
+          return Response.json(
+            {
+              error: 'List failed',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+          )
         }
       })
 
-      // READ ONE - GET /api/posts/:id
-      this.server.get(entityPathWithId, async (request: FastifyRequest, reply: FastifyReply) => {
+      this.app.get(entityPathWithId, async (c) => {
         try {
-          const params = request.params as { id: string }
-          const result = await this.queryExecutor.findById(entity.name, params.id)
+          const { id } = c.req.param() as { id: string }
+          const result = await this.queryExecutor.findById(entity.name, id)
           if (!result) {
-            reply.code(404).send({ error: 'Not found' })
-            return
+            return Response.json({ error: 'Not found' }, { status: 404 })
           }
-          reply.send(result)
+          return Response.json(result)
         } catch (error) {
           console.error(`Find ${entity.name} error:`, error)
-          reply.code(500).send({
-            error: 'Find failed',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
+          return Response.json(
+            {
+              error: 'Find failed',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+          )
         }
       })
 
-      // UPDATE - PUT /api/posts/:id
-      this.server.put(entityPathWithId, async (request: FastifyRequest, reply: FastifyReply) => {
+      this.app.put(entityPathWithId, async (c) => {
         try {
-          const params = request.params as { id: string }
-          const data = request.body as Record<string, any>
-          const session = await this.sessionManager.getSession(request as any)
-          const result = await this.queryExecutor.update(entity.name, params.id, data, { session })
-          reply.send(result)
+          const { id } = c.req.param() as { id: string }
+          const data = await c.req.json<Record<string, any>>()
+          const session = await this.sessionManager.getSession(c.req.raw)
+          const result = await this.queryExecutor.update(entity.name, id, data, { session })
+          return Response.json(result)
         } catch (error) {
           console.error(`Update ${entity.name} error:`, error)
           const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-
-          // Check if it's a "not found" error
-          if (errorMessage.includes('not found')) {
-            reply.code(404).send({
-              error: 'Not found',
-              details: errorMessage,
-            })
-          } else {
-            reply.code(500).send({
+          const statusCode = errorMessage.includes('not found') ? 404 : 500
+          return Response.json(
+            {
               error: 'Update failed',
-              details: errorMessage,
-            })
-          }
+              details: errorMessage
+            },
+            { status: statusCode }
+          )
         }
       })
 
-      // DELETE - DELETE /api/posts/:id
-      this.server.delete(entityPathWithId, async (request: FastifyRequest, reply: FastifyReply) => {
+      this.app.delete(entityPathWithId, async (c) => {
         try {
-          const params = request.params as { id: string }
-          const session = await this.sessionManager.getSession(request as any)
-          await this.queryExecutor.delete(entity.name, params.id, { session })
-          reply.code(204).send()
+          const { id } = c.req.param() as { id: string }
+          const session = await this.sessionManager.getSession(c.req.raw)
+          await this.queryExecutor.delete(entity.name, id, { session })
+          return Response.json({ success: true })
         } catch (error) {
           console.error(`Delete ${entity.name} error:`, error)
-          reply.code(500).send({
-            error: 'Delete failed',
-            details: error instanceof Error ? error.message : 'Unknown error',
-          })
+          return Response.json(
+            {
+              error: 'Delete failed',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            },
+            { status: 500 }
+          )
         }
       })
     }
-
-    console.log(`✅ Registered API routes for ${this.blueprint.entities.length} entities`)
   }
 
-  /**
-   * Register page routes from Blueprint
-   */
   private registerPageRoutes(): void {
-    if (!this.blueprint.pages || this.blueprint.pages.length === 0) {
-      return
-    }
-
-    // Register a catch-all route that handles all HTTP methods
-    this.server.all('/*', async (request: FastifyRequest, reply: FastifyReply) => {
-      const match = this.routeMatcher.match(request.url, this.blueprint.pages)
-
-      if (!match) {
-        // Let the 404 handler deal with it
-        reply.callNotFound()
-        return
-      }
-
-      // Route matched, handle based on HTTP method
-      try {
-        switch (request.method) {
-          case 'GET':
-            await this.fastifyAdapter.handleGet(request, reply)
-            break
-
-          case 'POST':
-            await this.fastifyAdapter.handlePost(request, reply)
-            break
-
-          case 'PUT':
-            await this.fastifyAdapter.handlePut(request, reply)
-            break
-
-          case 'DELETE':
-            await this.fastifyAdapter.handleDelete(request, reply)
-            break
-
-          default:
-            reply.code(405).send({
-              error: 'Method Not Allowed',
-              message: `HTTP method ${request.method} is not supported for this route`,
-            })
-        }
-      } catch (error) {
-        console.error('Route handler error:', error)
-        reply.code(500).send({
-          error: 'Internal Server Error',
-          message: error instanceof Error ? error.message : 'An unexpected error occurred',
-        })
-      }
+    this.app.all('*', async (c) => {
+      return this.blueprintAdapter.handle(c.req.raw)
     })
-
-    console.log(`✅ Registered ${this.blueprint.pages.length} page routes`)
   }
 
-  /**
-   * Get health status
-   */
   private getHealthStatus(): { healthy: boolean; database: boolean; status: string; timestamp: string } {
-    // Check database connectivity by attempting a simple query
-    let databaseHealthy = false
-    try {
-      // If we have a query executor, database is healthy
-      databaseHealthy = !!this.queryExecutor
-    } catch (error) {
-      databaseHealthy = false
-    }
-
+    const databaseHealthy = !!this.queryExecutor
     const isHealthy = this.state.status === 'running' && databaseHealthy
 
     return {
       healthy: isHealthy,
       database: databaseHealthy,
       status: this.state.status,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     }
   }
 
-  /**
-   * Extract callback parameter from request
-   */
-  private extractCallbackParam(request: FastifyRequest): string {
-    const query = request.query as Record<string, any>
-    return query.callback || query.redirect || '/'
-  }
-
-  /**
-   * Get callback path from request
-   */
-  private getCallbackPath(request: FastifyRequest): string {
-    const raw = this.extractCallbackParam(request)
+  private getCallbackPath(request: Request): string {
+    const url = new URL(request.url)
+    const raw = url.searchParams.get('callback') || url.searchParams.get('redirect') || '/'
     try {
-      const url = new URL(raw, 'http://localhost')
-      const path = url.pathname + (url.search || '')
+      const parsed = new URL(raw, 'http://localhost')
+      const path = parsed.pathname + (parsed.search || '')
       return path.startsWith('/') ? path : `/${path}`
     } catch {
       return raw && raw.startsWith('/') ? raw : '/'
     }
   }
 
-  /**
-   * Resolve origin from request
-   */
-  private resolveOrigin(request: FastifyRequest): string {
-    const protocol = request.protocol || 'http'
-    const hostHeader = request.headers.host || request.hostname
-    let host = hostHeader ? hostHeader.split(',')[0] || ''.trim() : ''
+  private resolveOrigin(request: Request): string {
+    const url = new URL(request.url)
+    let host = url.host
 
     if (!host || host.startsWith('0.0.0.0') || host.startsWith('::')) {
       const fallbackHost = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
@@ -674,6 +470,111 @@ export class ServerManager {
       host = `${fallbackHost}:${fallbackPort}`
     }
 
-    return `${protocol}://${host}`
+    return `${url.protocol}//${host}`
+  }
+
+  private async tryParseBody(request: Request): Promise<any> {
+    const contentType = request.headers.get('content-type') || ''
+    if (contentType.includes('application/json')) {
+      return request.json().catch(() => null)
+    }
+    if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
+      const form = await request.formData()
+      return Object.fromEntries(form as any)
+    }
+    return request.text()
+  }
+
+  private getClientIp(c: Context): string {
+    const forwarded = c.req.header('x-forwarded-for')
+    if (forwarded) {
+      return forwarded.split(',')[0]?.trim() || 'unknown'
+    }
+    const socket = (c.env as any)?.incoming?.socket
+    return socket?.remoteAddress || 'unknown'
+  }
+
+  private applyRateLimiting(c: Context): Response | void {
+    const ip = this.getClientIp(c)
+    const max = this.config.dev?.rateLimit?.max || 100
+    const windowMs = this.config.dev?.rateLimit?.windowMs || 60_000
+    const now = Date.now()
+    const bucket = this.rateLimitStore.get(ip)
+
+    if (!bucket || now > bucket.resetAt) {
+      this.rateLimitStore.set(ip, { count: 1, resetAt: now + windowMs })
+      return
+    }
+
+    if (bucket.count >= max) {
+      return Response.json(
+        { error: 'Too Many Requests', retryAfter: Math.ceil((bucket.resetAt - now) / 1000) },
+        { status: 429 }
+      )
+    }
+
+    bucket.count += 1
+  }
+
+  private applyCsrfProtection(c: Context): Response | void {
+    const method = c.req.method.toUpperCase()
+    const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+    const existingToken = getCookie(c, this.csrfCookieName)
+
+    if (isSafeMethod) {
+      if (!existingToken) {
+        setCookie(c, this.csrfCookieName, randomUUID(), {
+          httpOnly: false,
+          sameSite: 'strict',
+          secure: false,
+          path: '/'
+        })
+      }
+      return
+    }
+
+    const headerToken = c.req.header('x-csrf-token')
+    if (!existingToken || !headerToken || existingToken !== headerToken) {
+      return Response.json(
+        { error: 'Invalid CSRF token' },
+        { status: 403 }
+      )
+    }
+  }
+
+  private applySecurityHeaders(c: Context, requestId: string, traceId: string): void {
+    const csp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: https:"
+    ].join('; ')
+
+    c.header('X-Request-ID', requestId)
+    c.header('X-Trace-ID', traceId)
+    c.header('Content-Security-Policy', csp)
+    c.header('X-Content-Type-Options', 'nosniff')
+    c.header('X-Frame-Options', 'DENY')
+    c.header('X-XSS-Protection', '1; mode=block')
+    c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+
+  private getMimeType(filename: string): string {
+    const ext = path.extname(filename).toLowerCase()
+    const mimeTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.gif': 'image/gif',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.csv': 'text/csv',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.xls': 'application/vnd.ms-excel',
+      '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }
+
+    return mimeTypes[ext] || 'application/octet-stream'
   }
 }

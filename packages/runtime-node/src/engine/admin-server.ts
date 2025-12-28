@@ -1,11 +1,6 @@
-/**
- * AdminServer
- *
- * Separate HTTP server for admin/debugging endpoints.
- * Runs on a different port than the main application server for security.
- */
-
-import Fastify, { FastifyInstance } from 'fastify'
+import { Hono } from 'hono'
+import type { Context } from 'hono'
+import { serve, type ServerType } from '@hono/node-server'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineState } from '../types/index.js'
 import type { PluginRegistry } from '../plugins/index.js'
@@ -25,11 +20,9 @@ export interface AdminServerDependencies {
   port?: number
 }
 
-/**
- * AdminServer - Separate server for admin and debugging endpoints
- */
 export class AdminServer {
-  private server!: FastifyInstance
+  private app!: Hono
+  private server?: ServerType
   private blueprint: Blueprint
   private state: EngineState
   private plugins: PluginRegistry
@@ -48,13 +41,10 @@ export class AdminServer {
     this.metrics = deps.metrics
     this.pendingSchemaDiff = deps.pendingSchemaDiff
     this.getHealthStatusFn = deps.getHealthStatus
-    this.host = deps.host || '127.0.0.1' // Bind to localhost only by default
+    this.host = deps.host || '127.0.0.1'
     this.port = deps.port !== undefined ? deps.port : 3030
   }
 
-  /**
-   * Update dependencies (called after reload or subsystem changes)
-   */
   updateDependencies(updates: Partial<AdminServerDependencies>): void {
     if (updates.blueprint) this.blueprint = updates.blueprint
     if (updates.state) this.state = updates.state
@@ -62,54 +52,42 @@ export class AdminServer {
     if (updates.tracer) this.tracer = updates.tracer
     if (updates.metrics) this.metrics = updates.metrics
     if (updates.pendingSchemaDiff !== undefined) this.pendingSchemaDiff = updates.pendingSchemaDiff
+    if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
   }
 
-  /**
-   * Start admin server
-   */
-  async start(): Promise<FastifyInstance> {
-    this.server = Fastify({
-      logger: false,
-    })
-
-    // Security: No CORS, no authentication - should only be accessible from localhost
-    // If you need to access from another machine, use SSH tunneling
-
+  async start(): Promise<ServerType> {
+    this.app = new Hono()
     this.registerRoutes()
 
-    await this.server.listen({ port: this.port, host: this.host })
-
-    // Get the actual port (important when port is 0 for random assignment)
-    const address = this.server.server.address()
-    const actualPort = address && typeof address === 'object' ? address.port : this.port
-    console.log(`📊 Admin Server listening on ${this.host}:${actualPort}`)
+    this.server = serve({
+      fetch: this.app.fetch,
+      hostname: this.host,
+      port: this.port
+    }, () => {
+      console.log(`📊 Admin Server listening on ${this.host}:${this.port}`)
+    })
 
     return this.server
   }
 
-  /**
-   * Stop admin server
-   */
   async stop(): Promise<void> {
-    if (this.server) {
-      await this.server.close()
+    if (this.server && 'close' in this.server) {
+      await new Promise<void>((resolve, reject) => {
+        this.server!.close((err?: Error) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
     }
   }
 
-  /**
-   * Get server instance
-   */
-  getServer(): FastifyInstance {
+  getServer(): ServerType | undefined {
     return this.server
   }
 
-  /**
-   * Register admin routes
-   */
   private registerRoutes(): void {
-    // Root - Admin dashboard info
-    this.server.get('/', async () => {
-      return {
+    this.app.get('/', () => {
+      return Response.json({
         name: 'Zebric Admin Server',
         version: '0.1.1',
         endpoints: {
@@ -130,108 +108,85 @@ export class AdminServer {
           metrics: '/metrics',
           health: '/health',
         },
-      }
+      })
     })
 
-    // Blueprint viewer
-    this.server.get('/blueprint', async () => {
-      return this.blueprint
-    })
+    this.app.get('/blueprint', () => Response.json(this.blueprint))
+    this.app.get('/state', () => Response.json(this.state))
+    this.app.get('/schema-diff', () => Response.json(this.pendingSchemaDiff))
 
-    // Engine state
-    this.server.get('/state', async () => {
-      return this.state
-    })
-
-    // Pending schema diff (if any)
-    this.server.get('/schema-diff', async () => {
-      return this.pendingSchemaDiff
-    })
-
-    // Plugins
-    this.server.get('/plugins', async () => {
-      return this.plugins.list().map((p) => ({
+    this.app.get('/plugins', () => {
+      const plugins = this.plugins.list().map((p) => ({
         name: p.definition.name,
         version: p.plugin.version,
         provides: p.plugin.provides,
         enabled: p.definition.enabled,
       }))
+      return Response.json(plugins)
     })
 
-    // Entities
-    this.server.get('/entities', async () => {
-      return this.blueprint.entities.map((e) => ({
+    this.app.get('/entities', () => {
+      const entities = this.blueprint.entities.map((e) => ({
         name: e.name,
         fields: e.fields.length,
         relations: Object.keys(e.relations || {}).length,
       }))
+      return Response.json(entities)
     })
 
-    // Pages
-    this.server.get('/pages', async () => {
-      return this.blueprint.pages.map((p) => ({
+    this.app.get('/pages', () => {
+      const pages = this.blueprint.pages.map((p) => ({
         path: p.path,
         title: p.title,
         layout: p.layout,
         auth: p.auth,
       }))
+      return Response.json(pages)
     })
 
-    // Traces - Get all recent traces
-    this.server.get('/traces', async (request) => {
-      const query = request.query as { limit?: string }
-      const limit = query.limit ? parseInt(query.limit) : 100
-      return this.tracer.getAllTraces(limit)
+    this.app.get('/traces', (c) => {
+      const limit = parseInt(c.req.query('limit') || '100', 10)
+      return Response.json(this.tracer.getAllTraces(limit))
     })
 
-    // Traces - Get specific trace by ID
-    this.server.get('/traces/:traceId', async (request, reply) => {
-      const params = request.params as { traceId: string }
-      const trace = this.tracer.getTrace(params.traceId)
+    this.app.get('/traces/:traceId', (c) => {
+      const trace = this.tracer.getTrace(c.req.param('traceId'))
       if (!trace) {
-        return reply.code(404).send({ error: 'Trace not found' })
+        return Response.json({ error: 'Trace not found' }, { status: 404 })
       }
-      return trace
+      return Response.json(trace)
     })
 
-    // Traces - Get error traces
-    this.server.get('/traces/errors', async (request) => {
-      const query = request.query as { limit?: string }
-      const limit = query.limit ? parseInt(query.limit) : 100
-      return this.tracer.getErrorTraces(limit)
+    this.app.get('/traces/errors', (c) => {
+      const limit = parseInt(c.req.query('limit') || '100', 10)
+      return Response.json(this.tracer.getErrorTraces(limit))
     })
 
-    // Traces - Get slow traces
-    this.server.get('/traces/slow', async (request) => {
-      const query = request.query as { threshold?: string; limit?: string }
-      const threshold = query.threshold ? parseInt(query.threshold) : 1000
-      const limit = query.limit ? parseInt(query.limit) : 100
-      return this.tracer.getSlowTraces(threshold, limit)
+    this.app.get('/traces/slow', (c) => {
+      const threshold = parseInt(c.req.query('threshold') || '1000', 10)
+      const limit = parseInt(c.req.query('limit') || '100', 10)
+      return Response.json(this.tracer.getSlowTraces(threshold, limit))
     })
 
-    // Traces - Get trace statistics
-    this.server.get('/traces/stats', async () => {
-      return this.tracer.getStats()
+    this.app.get('/traces/stats', () => {
+      return Response.json(this.tracer.getStats())
     })
 
-    // Traces - Clear all traces
-    this.server.delete('/traces', async () => {
+    this.app.delete('/traces', () => {
       this.tracer.clearTraces()
-      return { message: 'All traces cleared' }
+      return Response.json({ success: true, message: 'Traces cleared' })
     })
 
-    // Metrics (Prometheus format)
-    this.server.get('/metrics', async (_request, reply) => {
-      reply.header('Content-Type', 'text/plain; version=0.0.4')
-      reply.send(this.metrics.toPrometheus())
+    this.app.get('/metrics', () => {
+      return new Response(this.metrics.toPrometheus(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; version=0.0.4' }
+      })
     })
 
-    // Health check
-    this.server.get('/health', async (_request, reply) => {
-      const health = this.getHealthStatusFn
-        ? await this.getHealthStatusFn()
-        : { healthy: true, status: 'running', timestamp: new Date().toISOString() }
-      return reply.code(health.healthy ? 200 : 503).send(health)
+    this.app.get('/health', async () => {
+      const health = this.getHealthStatusFn ? await this.getHealthStatusFn() : { healthy: true }
+      return Response.json(health, { status: health.healthy ? 200 : 503 })
     })
   }
 }

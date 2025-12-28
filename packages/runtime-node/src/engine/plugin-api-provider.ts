@@ -12,7 +12,6 @@
  * - Logging utilities
  */
 
-import type { FastifyRequest } from 'fastify'
 import { ulid } from 'ulid'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { QueryExecutor } from '../database/index.js'
@@ -221,13 +220,13 @@ export class PluginAPIProvider {
   /**
    * Normalize request-like object for session management
    */
-  private normalizeRequestForSession(requestLike: any): FastifyRequest | null {
+  private normalizeRequestForSession(requestLike: any): Request | null {
     if (!requestLike) {
       return null
     }
 
-    if ((requestLike as FastifyRequest).headers && (requestLike as FastifyRequest).cookies !== undefined) {
-      return requestLike as FastifyRequest
+    if (requestLike instanceof Request) {
+      return requestLike
     }
 
     const headers: Record<string, string> = {}
@@ -257,14 +256,27 @@ export class PluginAPIProvider {
       }
     }
 
-    if (Object.keys(headers).length === 0 && !requestLike.cookies) {
+    if (requestLike.cookies && typeof requestLike.cookies === 'object') {
+      const cookieHeader = Object.entries(requestLike.cookies)
+        .map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)
+        .join('; ')
+      if (cookieHeader) {
+        headers['cookie'] = cookieHeader
+      }
+    }
+
+    if (Object.keys(headers).length === 0) {
       return null
     }
 
-    return {
-      headers,
-      cookies: requestLike.cookies ?? {},
-    } as FastifyRequest
+    const requestHeaders = new Headers()
+    Object.entries(headers).forEach(([key, value]) => {
+      requestHeaders.set(key, value)
+    })
+
+    return new Request('http://localhost/plugin-api', {
+      headers: requestHeaders
+    })
   }
 
   /**

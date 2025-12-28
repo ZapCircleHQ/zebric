@@ -58,7 +58,7 @@ pnpm install
 pnpm exec zebric --blueprint=blueprint.toml
 ```
 
-The CLI will create the SQLite database on first run, sync the schema defined in your blueprint, and start the Fastify server.
+The CLI will create the SQLite database on first run, sync the schema defined in your blueprint, and start the Hono server.
 
 ### Hot Reload
 

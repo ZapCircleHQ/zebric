@@ -1,17 +1,29 @@
 /**
  * Mock CloudFlare Workers types for testing
- * Using 'any' to avoid complex type issues in test mocks
+ * Uses better-sqlite3 under the hood to approximate D1 behavior.
  */
 
+import Database from 'better-sqlite3'
+import type { Statement } from 'better-sqlite3'
+
 export class MockD1Database {
-  private data: Map<string, any[]> = new Map()
+  private db: Database.Database
+
+  constructor() {
+    this.db = new Database(':memory:')
+    // Enable foreign keys / WAL to match D1 defaults as closely as possible
+    this.db.pragma('journal_mode = WAL')
+    this.db.pragma('foreign_keys = ON')
+  }
 
   prepare(query: string): any {
-    return new MockD1PreparedStatement(query, this.data)
+    return new MockD1PreparedStatement(this.db.prepare(query))
   }
 
   async dump(): Promise<ArrayBuffer> {
-    throw new Error('Not implemented in mock')
+    const buffer = this.db.serialize()
+    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+    return arrayBuffer as ArrayBuffer
   }
 
   async batch<T = unknown>(statements: any[]): Promise<any[]> {
@@ -23,34 +35,10 @@ export class MockD1Database {
   }
 
   async exec(query: string): Promise<any> {
-    // Simple exec implementation for schema creation
-    const queries = query.split(';').filter(q => q.trim())
-    for (const q of queries) {
-      const trimmed = q.trim().toLowerCase()
-      if (trimmed.startsWith('create table')) {
-        // Extract table name and column definitions
-        const match = q.match(/create\s+table\s+(?:if\s+not\s+exists\s+)?(\w+)\s*\(([^)]+)\)/i)
-        if (match) {
-          const tableName = match[1].toLowerCase()
-          const columnDefs = match[2]
-
-          if (!this.data.has(tableName)) {
-            // Store table schema as metadata
-            const columns = columnDefs.split(',').map(col => {
-              const colMatch = col.trim().match(/^(\w+)/)
-              return colMatch ? colMatch[1] : null
-            }).filter(Boolean)
-
-            // Store schema in a special metadata entry
-            this.data.set(`__schema_${tableName}`, columns as any)
-            // Initialize empty table
-            this.data.set(tableName, [])
-          }
-        }
-      }
-    }
+    this.db.exec(query)
+    const statements = query.split(';').filter(q => q.trim())
     return {
-      count: queries.length,
+      count: statements.length,
       duration: 0
     }
   }
@@ -59,10 +47,7 @@ export class MockD1Database {
 class MockD1PreparedStatement {
   private params: unknown[] = []
 
-  constructor(
-    private query: string,
-    private data: Map<string, any[]>
-  ) {}
+  constructor(private stmt: Statement) {}
 
   bind(...values: unknown[]): any {
     this.params = values
@@ -70,188 +55,81 @@ class MockD1PreparedStatement {
   }
 
   async first<T = unknown>(colName?: string): Promise<T | null> {
-    const result = await this.all<T>()
-    if (result.results.length === 0) return null
-    if (colName) {
-      return (result.results[0] as any)[colName] ?? null
+    try {
+      const row = this.stmt.get(...this.params) as T | undefined
+      if (!row) return null
+      if (colName && typeof row === 'object' && row !== null) {
+        return (row as any)[colName] ?? null
+      }
+      return row
+    } catch {
+      return null
     }
-    return result.results[0]
   }
 
   async run<T = unknown>(): Promise<D1Result<T>> {
-    const query = this.query.toLowerCase().trim()
-
-    if (query.startsWith('insert')) {
-      return this.handleInsert()
-    } else if (query.startsWith('update')) {
-      return this.handleUpdate()
-    } else if (query.startsWith('delete')) {
-      return this.handleDelete()
-    } else if (query.startsWith('select')) {
-      return this.all<T>()
-    }
-
-    return {
-      success: true,
-      meta: {} as any,
-      results: [] as T[]
+    try {
+      const info = this.stmt.run(...this.params)
+      return {
+        success: true,
+        results: [] as T[],
+        meta: {
+          rows_read: 0,
+          rows_written: info.changes,
+          changed_db: info.changes > 0,
+          last_row_id: Number(info.lastInsertRowid),
+          changes: info.changes,
+          duration: 0,
+          size_after: 0
+        }
+      }
+    } catch (error) {
+      throw error
     }
   }
 
   async all<T = unknown>(): Promise<D1Result<T>> {
-    const query = this.query.toLowerCase().trim()
+    try {
+      const stmtReader = (this.stmt as any).reader as boolean | undefined
+      if (stmtReader) {
+        const rows = this.stmt.all(...this.params) as T[]
+        return {
+          success: true,
+          results: rows,
+          meta: {
+            rows_read: rows.length,
+            rows_written: 0,
+            changed_db: false,
+            last_row_id: Number((this.stmt as any).lastInsertRowid ?? 0),
+            changes: 0,
+            duration: 0,
+            size_after: 0
+          }
+        }
+      }
 
-    if (query.startsWith('select')) {
-      return this.handleSelect<T>()
-    } else if (query.startsWith('insert')) {
-      return this.handleInsert()
-    } else if (query.startsWith('update')) {
-      return this.handleUpdate()
-    } else if (query.startsWith('delete')) {
-      return this.handleDelete()
-    }
-
-    return {
-      success: true,
-      meta: {} as any,
-      results: [] as T[]
+      const info = this.stmt.run(...this.params)
+      return {
+        success: true,
+        results: [] as T[],
+        meta: {
+          rows_read: 0,
+          rows_written: info.changes,
+          changed_db: info.changes > 0,
+          last_row_id: Number(info.lastInsertRowid),
+          changes: info.changes,
+          duration: 0,
+          size_after: 0
+        }
+      }
+    } catch (error) {
+      throw error
     }
   }
 
   async raw<T = unknown>(): Promise<T[]> {
     const result = await this.all<T>()
     return result.results || []
-  }
-
-  private handleInsert(): any {
-    const tableMatch = this.query.match(/insert\s+into\s+(\w+)/i)
-    if (!tableMatch) {
-      return { success: false, error: 'Invalid INSERT query', results: [], meta: {} as any }
-    }
-
-    const tableName = tableMatch[1].toLowerCase()
-    const table = this.data.get(tableName) || []
-
-    // Extract column names from query - handle both formats:
-    // INSERT INTO table (col1, col2) VALUES (?, ?)
-    // INSERT INTO table VALUES (?, ?)
-    const colMatch = this.query.match(/insert\s+into\s+\w+\s*\(([^)]+)\)\s*values/i)
-    const row: any = {}
-
-    if (colMatch) {
-      // Explicit column names
-      const columns = colMatch[1].split(',').map(c => c.trim())
-      columns.forEach((col, idx) => {
-        if (idx < this.params.length) {
-          row[col] = this.params[idx]
-        }
-      })
-    } else {
-      // No column names - try to infer from schema or existing table structure
-      const schema = this.data.get(`__schema_${tableName}`)
-
-      if (schema && Array.isArray(schema)) {
-        // Use schema
-        schema.forEach((col: string, idx: number) => {
-          if (idx < this.params.length) {
-            row[col] = this.params[idx]
-          }
-        })
-      } else if (table.length > 0) {
-        // Use existing table structure
-        const existingColumns = Object.keys(table[0])
-        existingColumns.forEach((col, idx) => {
-          if (idx < this.params.length) {
-            row[col] = this.params[idx]
-          }
-        })
-      } else {
-        // Fallback to generic column names
-        this.params.forEach((val, idx) => {
-          row[`col${idx}`] = val
-        })
-      }
-    }
-
-    table.push(row)
-    this.data.set(tableName, table)
-
-    return {
-      success: true,
-      meta: {
-        changed_db: true,
-        changes: 1,
-        last_row_id: table.length,
-        rows_read: 0,
-        rows_written: 1
-      } as any,
-      results: []
-    }
-  }
-
-  private handleUpdate(): any {
-    return {
-      success: true,
-      meta: {
-        changed_db: true,
-        changes: 1,
-        rows_written: 1
-      },
-      results: []
-    }
-  }
-
-  private handleDelete(): any {
-    return {
-      success: true,
-      meta: {
-        changed_db: true,
-        changes: 1,
-        rows_written: 1
-      },
-      results: []
-    }
-  }
-
-  private handleSelect<T>(): any {
-    // Handle simple SELECT 1 health check queries
-    if (this.query.match(/select\s+\d+/i) && !this.query.includes('from')) {
-      return {
-        success: true,
-        results: [{ '1': 1 }] as T[],
-        meta: {
-          rows_read: 1,
-          rows_written: 0
-        } as any
-      }
-    }
-
-    const match = this.query.match(/from\s+(\w+)/i)
-    if (!match) {
-      return { success: true, results: [] as T[], meta: {} as any }
-    }
-
-    const tableName = match[1].toLowerCase()
-    let table = this.data.get(tableName) || []
-
-    // Simple WHERE clause handling for tests
-    if (this.query.includes('where') && this.params.length > 0) {
-      const whereMatch = this.query.match(/where\s+(\w+)\s*=\s*\?/i)
-      if (whereMatch) {
-        const column = whereMatch[1]
-        const value = this.params[0]
-        table = table.filter((row: any) => row[column] === value)
-      }
-    }
-
-    return {
-      success: true,
-      results: table as T[],
-      meta: {
-        rows_read: table.length,
-        rows_written: 0
-      } as any
-    }
   }
 }
 

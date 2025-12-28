@@ -2,5 +2,5 @@
  * Server Module
  */
 
-export * from './fastify-adapter.js'
+export { BlueprintHttpAdapter, type BlueprintAdapterConfig } from '@zebric/runtime-hono'
 export * from './behavior-executor.js'

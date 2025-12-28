@@ -1,0 +1,36 @@
+{
+  "name": "@zebric/runtime-hono",
+  "version": "0.1.0",
+  "description": "Shared Hono adapter for Zebric runtimes",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run --coverage=false"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@zebric/runtime-core": "workspace:*",
+    "hono": "^4.9.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  },
+  "peerDependencies": {
+    "hono": ">=4.0.0"
+  }
+}

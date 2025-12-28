@@ -6,7 +6,6 @@
 
 import { betterAuth } from 'better-auth'
 import Database from 'better-sqlite3'
-import type { FastifyRequest } from 'fastify'
 import type { AuthProvider, UserSession } from '@zebric/runtime-core'
 import type { AuthProviderConfig } from './config.js'
 
@@ -62,18 +61,19 @@ export class BetterAuthProvider implements AuthProvider {
 
   /**
    * Get session from request
-   * Note: Accepts any request type (FastifyRequest or Web API Request) for compatibility
+   * Note: Accepts any fetch-compatible Request for compatibility
    */
   async getSession(request: any): Promise<UserSession | null> {
     try {
+      const normalizedHeaders = this.normalizeHeaders(request)
       // Get session token from cookie or header
-      const token = this.extractToken(request)
+      const token = this.extractToken(request, normalizedHeaders)
       if (!token) {
         return null
       }
 
       // Create headers object with the session token in the cookie format Better Auth expects
-      const headers: Record<string, string> = { ...request.headers as Record<string, string> }
+      const headers: Record<string, string> = { ...normalizedHeaders }
 
       // If token came from Bearer header, set it as a cookie for Better Auth
       if (!headers.cookie?.includes('better-auth.session_token')) {
@@ -110,30 +110,89 @@ export class BetterAuthProvider implements AuthProvider {
   /**
    * Extract authentication token from request
    */
-  private extractToken(request: FastifyRequest): string | null {
-    // Check Authorization header
-    const authHeader = request.headers.authorization
-    if (authHeader?.startsWith('Bearer ')) {
-      return authHeader.substring(7)
+  private extractToken(request: any, headers: Record<string, string>): string | null {
+    const authorization = headers['authorization']
+    if (authorization?.toLowerCase().startsWith('bearer ')) {
+      return authorization.substring(7)
     }
 
-    const zblHeader = (request.headers as Record<string, string | string[] | undefined>)['zbl-token']
-    if (typeof zblHeader === 'string' && zblHeader.trim()) {
-      return zblHeader.trim()
+    const candidateHeaders = [
+      'zbl-token',
+      'x-api-token',
+      'x-zbl-token',
+      'x-plugin-token'
+    ]
+
+    for (const key of candidateHeaders) {
+      const headerValue = headers[key]
+      if (typeof headerValue === 'string' && headerValue.trim()) {
+        return headerValue.trim()
+      }
     }
 
-    const apiHeader = (request.headers as Record<string, string | string[] | undefined>)['x-api-token']
-    if (typeof apiHeader === 'string' && apiHeader.trim()) {
-      return apiHeader.trim()
-    }
-
-    // Check cookies
-    const sessionCookie = request.cookies?.['better-auth.session_token']
-    if (sessionCookie) {
-      return sessionCookie
+    const cookies = this.extractCookies(request, headers)
+    if (cookies['better-auth.session_token']) {
+      return cookies['better-auth.session_token']
     }
 
     return null
+  }
+
+  private normalizeHeaders(request: any): Record<string, string> {
+    const headers: Record<string, string> = {}
+
+    if (request instanceof Request) {
+      request.headers.forEach((value, key) => {
+        headers[key.toLowerCase()] = value
+      })
+      return headers
+    }
+
+    const source = request?.headers || {}
+    if (typeof source.forEach === 'function') {
+      source.forEach((value: string, key: string) => {
+        headers[key.toLowerCase()] = value
+      })
+    } else {
+      Object.entries(source).forEach(([key, value]) => {
+        if (typeof value === 'string') {
+          headers[key.toLowerCase()] = value
+        } else if (Array.isArray(value) && value.length > 0) {
+          headers[key.toLowerCase()] = value[0]
+        }
+      })
+    }
+
+    return headers
+  }
+
+  private extractCookies(request: any, headers: Record<string, string>): Record<string, string> {
+    if (request instanceof Request) {
+      const cookieHeader = request.headers.get('cookie')
+      return this.parseCookieHeader(cookieHeader)
+    }
+
+    if (request?.cookies) {
+      return request.cookies
+    }
+
+    return this.parseCookieHeader(headers.cookie)
+  }
+
+  private parseCookieHeader(cookieHeader?: string | null): Record<string, string> {
+    const cookies: Record<string, string> = {}
+    if (!cookieHeader) {
+      return cookies
+    }
+
+    cookieHeader.split(';').forEach((cookie) => {
+      const [key, value] = cookie.trim().split('=')
+      if (key && value) {
+        cookies[key] = decodeURIComponent(value)
+      }
+    })
+
+    return cookies
   }
 
   /**

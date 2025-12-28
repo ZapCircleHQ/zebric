@@ -47,10 +47,9 @@ describe('D1Adapter', () => {
       expect(result.rows).toHaveLength(1)
     })
 
-    it('should return empty results for nonexistent table', async () => {
-      // Mock doesn't validate table existence, just returns empty results
-      const result = await adapter.query('SELECT * FROM nonexistent')
-      expect(result.rows).toHaveLength(0)
+    it('should surface errors for nonexistent table', async () => {
+      await expect(adapter.query('SELECT * FROM nonexistent'))
+        .rejects.toThrow('D1 query error')
     })
   })
 
