@@ -46,6 +46,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@zebric/notifications": "workspace:*",
     "@hono/node-server": "^1.19.5",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",

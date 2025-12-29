@@ -13,7 +13,7 @@ export interface WorkflowTrigger {
 }
 
 export interface WorkflowStep {
-  type: 'query' | 'email' | 'webhook' | 'plugin' | 'condition' | 'loop' | 'delay'
+  type: 'query' | 'email' | 'webhook' | 'plugin' | 'condition' | 'loop' | 'delay' | 'notify'
 
   // Query step
   entity?: string
@@ -52,6 +52,9 @@ export interface WorkflowStep {
 
   // Result assignment
   assignTo?: string  // Assign result to context variable
+  // Notification step
+  adapter?: string
+  channel?: string
 }
 
 export interface Workflow {

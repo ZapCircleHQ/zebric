@@ -12,6 +12,7 @@ import type {
   WorkflowLog,
 } from './types.js'
 import type { QueryExecutor } from '../database/query-executor.js'
+import type { NotificationManager } from '@zebric/notifications'
 
 export interface EmailService {
   send(to: string, subject: string, body: string, template?: string): Promise<void>
@@ -30,6 +31,7 @@ export interface WorkflowExecutorOptions {
   pluginRegistry?: any
   emailService?: EmailService
   httpClient?: HttpClient
+  notificationService?: NotificationManager
 }
 
 export class WorkflowExecutor {
@@ -37,12 +39,14 @@ export class WorkflowExecutor {
   private pluginRegistry?: any
   private emailService?: EmailService
   private httpClient?: HttpClient
+  private notificationService?: NotificationManager
 
   constructor(options: WorkflowExecutorOptions) {
     this.dataLayer = options.dataLayer
     this.pluginRegistry = options.pluginRegistry
     this.emailService = options.emailService
     this.httpClient = options.httpClient
+    this.notificationService = options.notificationService
   }
 
   /**
@@ -135,6 +139,9 @@ export class WorkflowExecutor {
       case 'delay':
         return this.executeDelay(step, context)
 
+      case 'notify':
+        return this.executeNotify(step, context)
+
       default:
         throw new Error(`Unknown step type: ${(step as any).type}`)
     }
@@ -225,6 +232,31 @@ export class WorkflowExecutor {
     const body = step.payload ? this.resolveVariables(step.payload, context) : undefined
 
     return this.httpClient.request(url, { method, headers, body })
+  }
+
+  /**
+   * Execute a notification step
+   */
+  private async executeNotify(step: WorkflowStep, context: WorkflowContext): Promise<void> {
+    if (!this.notificationService) {
+      throw new Error('Notification service not configured')
+    }
+
+    const channel = step.channel ? this.resolveVariables(step.channel, context) : undefined
+    const to = step.to ? this.resolveVariables(step.to, context) : undefined
+    const subject = step.subject ? this.resolveVariables(step.subject, context) : undefined
+    const body = step.body ? this.resolveVariables(step.body, context) : undefined
+    const params = step.params ? this.resolveVariables(step.params, context) : undefined
+
+    await this.notificationService.send({
+      adapter: step.adapter,
+      channel,
+      to,
+      subject,
+      body,
+      template: step.template,
+      params,
+    })
   }
 
   /**

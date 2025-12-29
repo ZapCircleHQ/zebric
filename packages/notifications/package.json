@@ -1,0 +1,32 @@
+{
+  "name": "@zebric/notifications",
+  "version": "0.1.0",
+  "description": "Notification adapters for Zebric runtimes",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run --coverage=false"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@zebric/runtime-core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}

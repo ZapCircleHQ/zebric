@@ -15,6 +15,7 @@ export interface Blueprint {
   auth?: AuthConfig
   plugins?: PluginConfig[]
   ui?: UIConfig
+  notifications?: NotificationsConfig
 }
 
 export interface ProjectConfig {
@@ -226,7 +227,7 @@ export interface WorkflowTrigger {
 }
 
 export interface WorkflowStep {
-  type: 'email' | 'webhook' | 'plugin' | 'delay' | 'condition'
+  type: 'email' | 'webhook' | 'plugin' | 'delay' | 'condition' | 'notify'
   [key: string]: any
 }
 
@@ -294,4 +295,19 @@ export interface TailwindConfig {
   secondary_color?: string
   font_family?: string
   [key: string]: any
+}
+
+// ============================================================================
+// Notifications
+// ============================================================================
+
+export interface NotificationsConfig {
+  default?: string
+  adapters: NotificationAdapterConfig[]
+}
+
+export interface NotificationAdapterConfig {
+  name: string
+  type: string
+  config?: Record<string, any>
 }

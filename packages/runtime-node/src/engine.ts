@@ -23,6 +23,7 @@ import { FileStorage } from './storage/index.js'
 import type { Blueprint } from '@zebric/runtime-core'
 import { HTMLRenderer } from './renderer/index.js'
 import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { NotificationManager } from '@zebric/notifications'
 import type {
   EngineConfig,
   EngineState,
@@ -59,6 +60,7 @@ export class ZebricEngine extends EventEmitter {
   private serverManager!: ServerManager
   private adminServer?: AdminServer
   private fileStorage!: FileStorage
+  private notificationManager?: NotificationManager
   private pendingSchemaDiff: SchemaDiffResult | null = null
   private isShuttingDown = false
   private shutdownTimeout = 30000 // 30 seconds
@@ -144,7 +146,10 @@ export class ZebricEngine extends EventEmitter {
       // 8. Load Plugins (after core systems are initialized)
       await this.loadPlugins()
 
-      // 9. Create Hono adapter with all dependencies
+      // 9. Initialize Notifications
+      this.notificationManager = this.subsystemInitializer.initializeNotifications()
+
+      // 10. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'
@@ -167,7 +172,7 @@ export class ZebricEngine extends EventEmitter {
         defaultOrigin
       })
 
-      // 10. Initialize and Start HTTP Server
+      // 11. Initialize and Start HTTP Server
       this.serverManager = new ServerManager({
         blueprint: this.blueprint,
         config: this.config,
@@ -187,7 +192,7 @@ export class ZebricEngine extends EventEmitter {
 
       this.server = await this.serverManager.start()
 
-      // 10. Start Admin Server (if in dev mode)
+      // 12. Start Admin Server (if in dev mode)
       if (this.config.dev) {
         const adminHost = this.config.dev.adminHost || '127.0.0.1'
         // If adminPort is explicitly set (including 0), use it
@@ -211,7 +216,7 @@ export class ZebricEngine extends EventEmitter {
         await this.adminServer.start()
       }
 
-      // 11. Setup Hot Reload (if in dev mode)
+      // 13. Setup Hot Reload (if in dev mode)
       if (this.config.dev?.hotReload) {
         await this.setupHotReload()
       }

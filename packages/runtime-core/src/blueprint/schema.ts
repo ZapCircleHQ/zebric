@@ -264,6 +264,21 @@ const UIConfigSchema = z.object({
 })
 
 // ============================================================================
+// Notifications
+// ============================================================================
+
+const NotificationAdapterConfigSchema = z.object({
+  name: z.string(),
+  type: z.string(),
+  config: z.record(z.any()).optional(),
+})
+
+const NotificationsConfigSchema = z.object({
+  default: z.string().optional(),
+  adapters: z.array(NotificationAdapterConfigSchema),
+})
+
+// ============================================================================
 // Main Blueprint Schema
 // ============================================================================
 
@@ -286,6 +301,7 @@ export const BlueprintSchema = z.object({
   auth: AuthConfigSchema.optional(),
   plugins: z.array(PluginConfigSchema).optional(),
   ui: UIConfigSchema.optional(),
+  notifications: NotificationsConfigSchema.optional(),
 })
 
 export type BlueprintSchemaType = z.infer<typeof BlueprintSchema>
