@@ -167,6 +167,31 @@ const PageBehaviorSchema = z.object({
   render: z.string().optional(),
 }).passthrough() // Allow additional behavior handlers like on_status_click
 
+const ActionBarActionSchema = z.object({
+  label: z.string(),
+  href: z.string().optional(),
+  method: z.enum(['GET', 'POST']).optional(),
+  style: z.enum(['primary', 'secondary', 'danger', 'ghost']).optional(),
+  confirm: z.string().optional(),
+  target: z.enum(['_self', '_blank']).optional(),
+  icon: z.string().optional(),
+  workflow: z.string().optional(),
+  payload: z.record(z.any()).optional(),
+  redirect: z.string().optional(),
+  successMessage: z.string().optional(),
+  errorMessage: z.string().optional(),
+})
+
+const ActionBarSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  statusField: z.string().optional(),
+  statusLabel: z.string().optional(),
+  showStatus: z.boolean().optional(),
+  actions: z.array(ActionBarActionSchema).optional(),
+  secondaryActions: z.array(ActionBarActionSchema).optional(),
+})
+
 const PageSchema = z.object({
   path: z.string(),
   title: z.string(),
@@ -176,6 +201,7 @@ const PageSchema = z.object({
   form: FormSchema.optional(),
   meta: PageMetaSchema.optional(),
   behavior: PageBehaviorSchema.optional(),
+  actionBar: ActionBarSchema.optional(),
 })
 
 // ============================================================================
@@ -183,9 +209,12 @@ const PageSchema = z.object({
 // ============================================================================
 
 const WorkflowTriggerSchema = z.object({
-  entity: z.string(),
-  event: z.enum(['create', 'update', 'delete']),
+  entity: z.string().optional(),
+  event: z.enum(['create', 'update', 'delete']).optional(),
   condition: z.record(z.any()).optional(),
+  webhook: z.string().optional(),
+  schedule: z.string().optional(),
+  manual: z.boolean().optional(),
 })
 
 const WorkflowStepSchema = z.object({

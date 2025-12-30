@@ -119,6 +119,10 @@ export class WorkflowManager extends EventEmitter {
       },
     }
 
+    if (data?.session) {
+      context.session = data.session
+    }
+
     return this.queue.enqueue(workflowName, context)
   }
 

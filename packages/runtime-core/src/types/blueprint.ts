@@ -114,6 +114,7 @@ export interface Page {
   behavior?: PageBehavior
   template?: PageTemplate
   layoutSlots?: Record<string, PageTemplate>
+  actionBar?: ActionBarConfig
 }
 
 export interface PageTemplate {
@@ -164,6 +165,31 @@ export interface PageBehavior {
   intent?: string  // Natural language description of desired behavior
   render?: string  // Path to JavaScript file that renders the page
   [key: string]: any  // Additional behavior handlers (e.g., on_status_click)
+}
+
+export interface ActionBarConfig {
+  title?: string
+  description?: string
+  statusField?: string
+  statusLabel?: string
+  showStatus?: boolean
+  actions?: ActionBarAction[]
+  secondaryActions?: ActionBarAction[]
+}
+
+export interface ActionBarAction {
+  label: string
+  href?: string
+  method?: 'GET' | 'POST'
+  style?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  confirm?: string
+  target?: '_self' | '_blank'
+  icon?: string
+  workflow?: string
+  payload?: Record<string, any>
+  redirect?: string
+  successMessage?: string
+  errorMessage?: string
 }
 
 export interface Query {
@@ -221,9 +247,12 @@ export interface Workflow {
 }
 
 export interface WorkflowTrigger {
-  entity: string
-  event: 'create' | 'update' | 'delete'
+  entity?: string
+  event?: 'create' | 'update' | 'delete'
   condition?: Record<string, any>
+  webhook?: string
+  schedule?: string
+  manual?: boolean
 }
 
 export interface WorkflowStep {

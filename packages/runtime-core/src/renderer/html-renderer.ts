@@ -112,12 +112,12 @@ export class HTMLRenderer {
     const { page } = context
 
     // Check for custom template first
-    if (page.template) {
-      const content = this.layoutRenderers.renderWithCustomTemplate(context)
-      if (content) {
-        return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path)
+      if (page.template) {
+        const content = this.layoutRenderers.renderWithCustomTemplate(context)
+        if (content) {
+          return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash)
+        }
       }
-    }
 
     // Check for layout template in registry (only if explicitly loaded by user)
     // Default templates are NOT checked here - we use built-in methods instead
@@ -125,7 +125,7 @@ export class HTMLRenderer {
     const layoutTemplate = this.templateRegistry.get(layoutTemplateName)
     if (layoutTemplate) {
       const content = layoutTemplate.render(context)
-      return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path)
+      return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash)
     }
 
     // Use built-in layout rendering (full HTML implementations)
@@ -151,7 +151,7 @@ export class HTMLRenderer {
     }
 
     // Wrap in document
-    return this.documentWrapper.wrapInDocument(page.title, content, context.session, page.path)
+    return this.documentWrapper.wrapInDocument(page.title, content, context.session, page.path, context.flash)
   }
 
   /**

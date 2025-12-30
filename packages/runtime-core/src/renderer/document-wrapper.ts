@@ -7,6 +7,7 @@
 import type { Blueprint } from '../types/blueprint.js'
 import type { Theme } from './theme.js'
 import { escapeHtml, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
+import type { FlashMessage } from '../routing/request-ports.js'
 
 export class DocumentWrapper {
   private reloadScript?: string
@@ -26,7 +27,7 @@ export class DocumentWrapper {
   /**
    * Wrap content in complete HTML document
    */
-  wrapInDocument(title: string, content: SafeHtml, session?: any, currentPath?: string): string {
+  wrapInDocument(title: string, content: SafeHtml, session?: any, currentPath?: string, flash?: FlashMessage): string {
     const viewTransitions = this.blueprint.ui?.view_transitions !== false
     const escapedTitle = escapeHtml(title)
     const escapedProjectName = escapeHtml(this.blueprint.project.name)
@@ -104,6 +105,7 @@ export class DocumentWrapper {
           ${this.renderNav(session, currentPath).html}
 
           <main id="main-content" role="main" class="min-h-screen py-8">
+            ${this.renderFlash(flash).html}
             ${content.html}
           </main>
 
@@ -194,6 +196,36 @@ export class DocumentWrapper {
     `)
   }
 
+  private renderFlash(flash?: FlashMessage): SafeHtml {
+    if (!flash || !flash.text) {
+      return safe('')
+    }
+
+    const baseClasses = 'mx-auto mb-6 max-w-3xl rounded-lg border px-4 py-3 text-sm'
+    let variantClasses = 'border-gray-300 bg-white text-gray-800'
+
+    switch (flash.type) {
+      case 'success':
+        variantClasses = 'border-green-300 bg-green-50 text-green-800'
+        break
+      case 'error':
+        variantClasses = 'border-red-300 bg-red-50 text-red-800'
+        break
+      case 'warning':
+        variantClasses = 'border-yellow-300 bg-yellow-50 text-yellow-800'
+        break
+      default:
+        variantClasses = 'border-blue-200 bg-blue-50 text-blue-800'
+        break
+    }
+
+    return safe(`
+      <div role="status" aria-live="polite" class="${baseClasses} ${variantClasses}">
+        ${escapeHtml(flash.text)}
+      </div>
+    `)
+  }
+
   /**
    * Render client-side enhancement script
    */
@@ -225,6 +257,8 @@ export class DocumentWrapper {
 
               // Check if form has file inputs
               const hasFiles = Array.from(formData.entries()).some(([_, value]) => value instanceof File)
+              const csrfEntry = formData.get('_csrf')
+              const csrfHeader = csrfEntry ? String(csrfEntry) : null
 
               let response
               if (hasFiles) {
@@ -232,7 +266,8 @@ export class DocumentWrapper {
                 response = await fetch(form.action, {
                   method: form.getAttribute('method') || 'POST',
                   headers: {
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    ...(csrfHeader ? { 'x-csrf-token': csrfHeader } : {})
                     // Don't set Content-Type - browser will set it with boundary
                   },
                   body: formData
@@ -244,7 +279,8 @@ export class DocumentWrapper {
                   method: form.getAttribute('method') || 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    ...(csrfHeader ? { 'x-csrf-token': csrfHeader } : {})
                   },
                   body: JSON.stringify(data)
                 })
@@ -259,7 +295,7 @@ export class DocumentWrapper {
                 return
               }
 
-              if (response.ok && result && result.redirect) {
+              if (result && result.redirect) {
                 window.location.href = result.redirect
                 return
               }

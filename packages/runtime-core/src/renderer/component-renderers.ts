@@ -4,10 +4,10 @@
  * Reusable UI component rendering (tables, forms, widgets, etc.)
  */
 
-import type { Blueprint, Page } from '../types/blueprint.js'
+import type { Blueprint, Page, ActionBarAction } from '../types/blueprint.js'
 import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
-import { html, escapeHtml, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
+import { html, escapeHtml, escapeHtmlAttr, SafeHtml, safe, attr } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
 
 export class ComponentRenderers {
@@ -151,10 +151,219 @@ export class ComponentRenderers {
           onclick="if(confirm('Are you sure?')) { fetch('${this.utils.resolveEntityLink(deletePath, entity.name, record, 'delete')}', {method:'DELETE'}).then(() => window.location.href='${viewBase}') }"
           class="${this.theme.buttonSecondary} text-red-600"
         >
-          Delete
-        </button>
+      Delete
+    </button>
+  </div>
+`
+  }
+
+  /**
+   * Render action bar for detail pages
+   */
+  renderActionBar(page: Page, record: any, entity?: any, csrfToken?: string): SafeHtml {
+    const config = page.actionBar
+    if (!config) {
+      return safe('')
+    }
+
+    const statusField = this.getStatusFieldName(config, entity)
+    const statusValue = statusField ? record?.[statusField] : undefined
+    const hasStatus =
+      statusField &&
+      statusValue !== undefined &&
+      statusValue !== null &&
+      statusValue !== ''
+
+    const primaryActions = (config.actions || []).map(action =>
+      this.renderPrimaryAction(action, record, entity, page, csrfToken)
+    )
+    const secondaryActions = (config.secondaryActions || []).map(action =>
+      this.renderSecondaryAction(action, record, entity, page, csrfToken)
+    )
+
+    const hasPrimary = primaryActions.length > 0
+    const hasSecondary = secondaryActions.length > 0
+    const hasHeader = Boolean(config.title || config.description || hasStatus)
+    const shouldRender = hasHeader || hasPrimary || hasSecondary
+
+    if (!shouldRender) {
+      return safe('')
+    }
+
+    return html`
+      <div class="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-4">
+        <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          ${hasHeader ? html`
+            <div class="space-y-2">
+              ${config.title ? html`<p class="text-sm font-semibold text-gray-900">${config.title}</p>` : ''}
+              ${hasStatus ? html`
+                <div class="flex items-center gap-2 text-sm">
+                  <span class="text-gray-500">
+                    ${config.statusLabel || (statusField ? this.utils.formatFieldName(statusField) : '')}
+                  </span>
+                  <span class="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700 capitalize">
+                    ${this.utils.formatValue(statusValue, this.getFieldType(entity, statusField))}
+                  </span>
+                </div>
+              ` : ''}
+              ${config.description ? html`
+                <p class="text-sm text-gray-600 max-w-prose">${config.description}</p>
+              ` : ''}
+            </div>
+          ` : ''}
+
+          ${hasPrimary ? html`
+            <div class="flex flex-wrap gap-2">
+              ${safe(primaryActions.map(action => action.html).join(''))}
+            </div>
+          ` : ''}
+        </div>
+
+        ${hasSecondary ? html`
+          <div class="mt-3 flex flex-wrap gap-4 text-sm text-gray-600">
+            ${safe(secondaryActions.map(action => action.html).join(''))}
+          </div>
+        ` : ''}
       </div>
     `
+  }
+
+  private renderPrimaryAction(action: ActionBarAction, record: any, entity?: any, page?: Page, csrfToken?: string): SafeHtml {
+    if (action.workflow) {
+      return this.renderWorkflowAction(action, record, entity, page, 'primary', csrfToken)
+    }
+
+    const method = (action.method || 'GET').toUpperCase()
+    const href = action.href ? this.utils.interpolatePath(action.href, record) : '#'
+    const buttonClass = this.getActionButtonClass(action.style)
+    const confirmAttr = action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
+
+    if (method === 'POST') {
+      return html`
+        <form method="POST" action="${href}" class="inline" data-enhance="api">
+          ${csrfToken ? html`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />` : ''}
+          ${action.successMessage ? html`<input type="hidden" name="successMessage" value="${escapeHtmlAttr(action.successMessage)}" />` : ''}
+          ${action.errorMessage ? html`<input type="hidden" name="errorMessage" value="${escapeHtmlAttr(action.errorMessage)}" />` : ''}
+          <button type="submit" class="${buttonClass}"${confirmAttr}>
+            ${action.label}
+          </button>
+        </form>
+      `
+    }
+
+    return html`
+      <a
+        href="${href}"
+        class="${buttonClass}"
+        ${action.target ? attr('target', action.target) : ''}
+        ${action.target === '_blank' ? attr('rel', 'noopener noreferrer') : ''}
+        ${confirmAttr}
+      >
+        ${action.label}
+      </a>
+    `
+  }
+
+  private renderSecondaryAction(action: ActionBarAction, record: any, entity?: any, page?: Page, csrfToken?: string): SafeHtml {
+    if (action.workflow) {
+      return this.renderWorkflowAction(action, record, entity, page, 'secondary', csrfToken)
+    }
+
+    const href = action.href ? this.utils.interpolatePath(action.href, record) : '#'
+    return html`
+      <a
+        href="${href}"
+        class="${this.theme.linkSecondary} underline-offset-4 hover:underline"
+        ${action.target ? attr('target', action.target) : ''}
+        ${action.target === '_blank' ? attr('rel', 'noopener noreferrer') : ''}
+        ${action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''}
+      >
+        ${action.label}
+      </a>
+    `
+  }
+
+  private renderWorkflowAction(
+    action: ActionBarAction,
+    record: any,
+    entity: any,
+    page: Page | undefined,
+    variant: 'primary' | 'secondary',
+    csrfToken?: string
+  ): SafeHtml {
+    const workflow = action.workflow!
+    const payload = this.resolveActionPayload(action, record)
+    const payloadJson = payload ? JSON.stringify(payload) : null
+    const buttonClass =
+      variant === 'primary'
+        ? this.getActionButtonClass(action.style)
+        : `${this.theme.linkSecondary} underline-offset-4 hover:underline`
+    const redirectTarget = action.redirect
+      ? this.utils.interpolatePath(action.redirect, record)
+      : (page ? this.utils.interpolatePath(page.path, record ?? {}) : '')
+    const confirmAttr = action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
+
+    return html`
+      <form method="POST" action="/actions/${encodeURIComponent(workflow)}" class="inline" data-enhance="api">
+        ${csrfToken ? html`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />` : ''}
+        ${entity?.name ? html`<input type="hidden" name="entity" value="${escapeHtmlAttr(entity.name)}" />` : ''}
+        ${record?.id ? html`<input type="hidden" name="recordId" value="${escapeHtmlAttr(record.id)}" />` : ''}
+        ${page?.path ? html`<input type="hidden" name="page" value="${escapeHtmlAttr(page.path)}" />` : ''}
+        ${redirectTarget ? html`<input type="hidden" name="redirect" value="${escapeHtmlAttr(redirectTarget)}" />` : ''}
+        ${payloadJson ? html`<input type="hidden" name="payload" value='${escapeHtmlAttr(payloadJson)}' />` : ''}
+        ${action.successMessage ? html`<input type="hidden" name="successMessage" value="${escapeHtmlAttr(action.successMessage)}" />` : ''}
+        ${action.errorMessage ? html`<input type="hidden" name="errorMessage" value="${escapeHtmlAttr(action.errorMessage)}" />` : ''}
+        <button type="submit" class="${buttonClass}"${confirmAttr}>
+          ${action.label}
+        </button>
+      </form>
+    `
+  }
+
+  private getActionButtonClass(variant?: string): string {
+    switch (variant) {
+      case 'secondary':
+        return this.theme.buttonSecondary
+      case 'danger':
+        return `${this.theme.buttonSecondary} border-red-300 text-red-600 hover:bg-red-50`
+      case 'ghost':
+        return 'px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg border border-transparent'
+      default:
+        return this.theme.buttonPrimary
+    }
+  }
+
+  private getStatusFieldName(config: Page['actionBar'], entity?: any): string | null {
+    if (!config) return null
+    if (config.showStatus === false) return null
+    if (config.statusField) return config.statusField
+    const hasStatusField = entity?.fields?.some((field: any) => field.name === 'status')
+    return hasStatusField ? 'status' : null
+  }
+
+  private getFieldType(entity: any, fieldName?: string | null): string {
+    if (!entity || !fieldName) {
+      return 'Text'
+    }
+    const field = entity.fields?.find((f: any) => f.name === fieldName)
+    return field?.type || 'Text'
+  }
+
+  private resolveActionPayload(action: ActionBarAction, record: any): Record<string, any> | undefined {
+    if (!action.payload) {
+      return undefined
+    }
+
+    const resolved: Record<string, any> = {}
+    for (const [key, value] of Object.entries(action.payload)) {
+      if (typeof value === 'string') {
+        resolved[key] = this.utils.interpolateText(value, record)
+      } else {
+        resolved[key] = value
+      }
+    }
+
+    return resolved
   }
 
   /**
@@ -410,22 +619,94 @@ export class ComponentRenderers {
     return html`
       <div class="mt-8">
         ${safe(relatedQueries.map(([name, query]) => {
-          const items = data[name] || []
+          const items = Array.isArray(data[name]) ? data[name] : []
           const relatedEntity = this.blueprint.entities.find(e => e.name === (query as any).entity)
+          const sectionTitle = this.utils.formatFieldName(name)
+          const rendered = this.renderSmartSection(sectionTitle, items, relatedEntity, query)
 
           return html`
             <div class="mb-6">
-              <h2 class="${this.theme.heading2}">
-                ${this.utils.formatFieldName(name)}
-              </h2>
-              ${Array.isArray(items) && items.length > 0
-                ? this.renderTable(items, relatedEntity)
-                : html`<p class="text-gray-500">No ${name} found</p>`
-              }
+              <h2 class="${this.theme.heading2}">${sectionTitle}</h2>
+              ${rendered}
             </div>
           `.html
         }).join(''))}
       </div>
+    `
+  }
+
+  private renderSmartSection(title: string, items: any[], entity: any, query: any): SafeHtml {
+    const hint = ((entity?.name as string) || title || '').toLowerCase()
+
+    if (hint.includes('task')) {
+      return items.length > 0
+        ? this.renderChecklist(items)
+        : html`<p class="text-gray-500">No tasks found</p>`
+    }
+
+    if (hint.includes('milestone') || hint.includes('timeline')) {
+      return items.length > 0
+        ? this.renderRampTimeline(items)
+        : html`<p class="text-gray-500">No milestones yet</p>`
+    }
+
+    if (hint.includes('activity') || hint.includes('event')) {
+      return items.length > 0
+        ? this.renderActivityFeed(items)
+        : html`<p class="text-gray-500">No recent activity</p>`
+    }
+
+    return items.length > 0
+      ? this.renderTable(items, entity)
+      : html`<p class="text-gray-500">No ${this.utils.formatFieldName(title).toLowerCase()} found</p>`
+  }
+
+  renderChecklist(items: any[]): SafeHtml {
+    return html`
+      <ul class="space-y-2">
+        ${safe(items.map(item => {
+          const isDone = ['done', 'complete', 'completed'].includes(String(item.status || '').toLowerCase())
+          return html`
+            <li class="flex items-center justify-between rounded border border-gray-200 px-3 py-2">
+              <div>
+                <p class="text-sm font-medium text-gray-900">${escapeHtml(item.title || item.name || item.id)}</p>
+                ${item.dueDate ? html`<p class="text-xs text-gray-500">Due ${this.utils.formatValue(item.dueDate, 'Date')}</p>` : ''}
+              </div>
+              <span class="text-xs font-semibold ${isDone ? 'text-green-600' : 'text-gray-500'}">
+                ${escapeHtml(item.status || '')}
+              </span>
+            </li>
+          `.html
+        }).join(''))}
+      </ul>
+    `
+  }
+
+  renderRampTimeline(items: any[]): SafeHtml {
+    return html`
+      <ol class="relative border-l border-gray-200">
+        ${safe(items.map(item => html`
+          <li class="mb-6 ml-4">
+            <div class="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full ${item.status === 'approved' ? 'bg-green-600' : 'bg-gray-300'}"></div>
+            <p class="text-sm font-medium text-gray-900">${escapeHtml(item.title || item.name || item.id)}</p>
+            ${item.targetDate ? html`<p class="text-xs text-gray-500">Target ${this.utils.formatValue(item.targetDate, 'Date')}</p>` : ''}
+            ${item.status ? html`<p class="text-xs text-gray-500">Status: ${escapeHtml(item.status)}</p>` : ''}
+          </li>
+        `.html).join(''))}
+      </ol>
+    `
+  }
+
+  renderActivityFeed(items: any[]): SafeHtml {
+    return html`
+      <ul role="list" class="divide-y divide-gray-100 rounded border border-gray-100">
+        ${safe(items.map(item => html`
+          <li class="px-4 py-3">
+            <p class="text-sm text-gray-900">${escapeHtml(item.title || item.summary || item.action || 'Event')}</p>
+            ${item.timestamp ? html`<p class="text-xs text-gray-500">${this.utils.formatValue(item.timestamp, 'DateTime')}</p>` : ''}
+          </li>
+        `.html).join(''))}
+      </ul>
     `
   }
 

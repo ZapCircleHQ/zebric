@@ -248,9 +248,10 @@ export class BlueprintParser {
     // Check workflow entity references
     if (blueprint.workflows) {
       for (const workflow of blueprint.workflows) {
-        if (!entityNames.has(workflow.trigger.entity)) {
+        const triggerEntity = workflow.trigger?.entity
+        if (triggerEntity && !entityNames.has(triggerEntity)) {
           errors.push(
-            `Workflow "${workflow.name}" trigger references unknown entity "${workflow.trigger.entity}"`
+            `Workflow "${workflow.name}" trigger references unknown entity "${triggerEntity}"`
           )
         }
       }

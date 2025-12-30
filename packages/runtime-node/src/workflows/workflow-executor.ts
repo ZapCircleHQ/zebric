@@ -174,10 +174,22 @@ export class WorkflowExecutor {
         if (!data) {
           throw new Error('Update action requires data')
         }
-        return this.dataLayer.update(step.entity, where || {}, data)
+        {
+          const targetId = this.extractIdFromWhere(where)
+          if (!targetId) {
+            throw new Error('Update action requires an id in the where clause')
+          }
+          return this.dataLayer.update(step.entity, targetId, data)
+        }
 
       case 'delete':
-        return this.dataLayer.delete(step.entity, where || {})
+        {
+          const targetId = this.extractIdFromWhere(where)
+          if (!targetId) {
+            throw new Error('Delete action requires an id in the where clause')
+          }
+          return this.dataLayer.delete(step.entity, targetId)
+        }
 
       case 'find':
         return this.dataLayer.execute({
@@ -409,6 +421,22 @@ export class WorkflowExecutor {
     }
 
     return value
+  }
+
+  private extractIdFromWhere(where: any): string | undefined {
+    if (!where) {
+      return undefined
+    }
+
+    if (typeof where === 'string') {
+      return where
+    }
+
+    if (typeof where === 'object' && where.id !== undefined && where.id !== null) {
+      return String(where.id)
+    }
+
+    return undefined
   }
 
   /**

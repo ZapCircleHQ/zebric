@@ -131,10 +131,47 @@ export class RendererUtils {
    * Interpolate path template with parameters
    */
   interpolatePath(pathTemplate: string, params: Record<string, any>): string {
-    return pathTemplate.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, key) => {
-      const value = params[key]
-      return value === undefined || value === null ? '' : encodeURIComponent(String(value))
+    if (!pathTemplate) {
+      return ''
+    }
+
+    const replaceToken = (template: string, regex: RegExp): string => {
+      return template.replace(regex, (_, key) => {
+        const value = params?.[key]
+        return value === undefined || value === null ? '' : encodeURIComponent(String(value))
+      })
+    }
+
+    // Support both :id and {id} style placeholders
+    const withBraces = replaceToken(pathTemplate, /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g)
+    return replaceToken(withBraces, /:([a-zA-Z_][a-zA-Z0-9_]*)/g)
+  }
+
+  /**
+   * Interpolate arbitrary text with {placeholders}
+   */
+  interpolateText(template: string, params?: Record<string, any>): string {
+    if (!template) {
+      return ''
+    }
+
+    return template.replace(/\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g, (_, key) => {
+      const value = this.getNestedValue(params, key)
+      return value === undefined || value === null ? '' : String(value)
     })
+  }
+
+  private getNestedValue(source: Record<string, any> | undefined, path: string): any {
+    if (!source || !path) {
+      return undefined
+    }
+
+    return path.split('.').reduce<any>((acc, key) => {
+      if (acc === undefined || acc === null) {
+        return undefined
+      }
+      return acc[key]
+    }, source)
   }
 
   /**
