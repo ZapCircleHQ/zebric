@@ -7,6 +7,7 @@
 import type { Blueprint } from '../types/blueprint.js'
 import type { Theme } from './theme.js'
 import { escapeHtml, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
+import { INLINE_TAILWIND_STYLE_TAG } from './tailwind-style.js'
 import type { FlashMessage } from '../routing/request-ports.js'
 
 export class DocumentWrapper {
@@ -40,8 +41,7 @@ export class DocumentWrapper {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${escapedTitle} - ${escapedProjectName}</title>
 
-          <!-- Tailwind CSS CDN -->
-          <script src="https://cdn.tailwindcss.com"></script>
+          ${this.renderInlineStyles().html}
 
           ${viewTransitions ? `
             <meta name="view-transition" content="same-origin">
@@ -194,6 +194,10 @@ export class DocumentWrapper {
         </div>
       </footer>
     `)
+  }
+
+  private renderInlineStyles(): SafeHtml {
+    return safe(INLINE_TAILWIND_STYLE_TAG)
   }
 
   private renderFlash(flash?: FlashMessage): SafeHtml {

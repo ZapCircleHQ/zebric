@@ -11,6 +11,7 @@ import type { Template } from './template-system.js'
 import { escapeHtml, escapeHtmlAttr, escapeJs } from '../security/html-escape.js'
 import { StringTemplate } from './template-system.js'
 import { authTemplates } from './generated/auth-templates.js'
+import { INLINE_TAILWIND_STYLE_TAG } from './tailwind-style.js'
 
 export class AuthPageRenderers {
   constructor(
@@ -282,12 +283,17 @@ export class AuthPageRenderers {
       this.authTemplateCache.set(name, template)
     }
 
+    const rendererData = {
+      styles: INLINE_TAILWIND_STYLE_TAG,
+      ...(data.renderer as Record<string, unknown> ?? {})
+    }
+
     const context: RenderContext = {
       page: data.page ?? { title: '', path: '' },
       data: {},
       params: {},
       query: {},
-      renderer: data.renderer as any,
+      renderer: rendererData as any,
       project: this.blueprint.project,
       theme: this.theme,
       auth: data.auth ?? {},

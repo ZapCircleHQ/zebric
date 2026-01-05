@@ -748,7 +748,7 @@ export class ServerManager {
   private applySecurityHeaders(c: Context, requestId: string, traceId: string): void {
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com",
+      "script-src 'self' 'unsafe-inline'",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: https:"
     ].join('; ')

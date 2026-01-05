@@ -355,6 +355,9 @@ export class BlueprintParser {
     for (let i = 0; i < a.length; i++) {
       const segA = a[i]
       const segB = b[i]
+      if (!segA || !segB) {
+        return false
+      }
       if (segA.dynamic || segB.dynamic) {
         continue
       }
