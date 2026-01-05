@@ -18,6 +18,7 @@ import { CacheInterface, MemoryCache, RedisCache } from '../cache/index.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { PluginRegistry } from '../plugins/index.js'
 import type { AuditLogger } from '../security/index.js'
+import { NotificationManager } from '@zebric/notifications'
 
 export interface SubsystemInitializerDependencies {
   blueprint: Blueprint
@@ -36,6 +37,7 @@ export interface InitializedSubsystems {
   permissionManager: PermissionManager
   workflowManager?: WorkflowManager
   cache: CacheInterface
+  notificationManager?: NotificationManager
 }
 
 /**
@@ -55,12 +57,27 @@ export class SubsystemInitializer {
   private permissionManager?: PermissionManager
   private workflowManager?: WorkflowManager
   private cache?: CacheInterface
+  private notificationManager?: NotificationManager
 
   constructor(deps: SubsystemInitializerDependencies) {
     this.blueprint = deps.blueprint
     this.config = deps.config
     this.metrics = deps.metrics
     this.plugins = deps.plugins
+  }
+
+  /**
+   * Initialize notification adapters
+   */
+  initializeNotifications(): NotificationManager {
+    if (this.notificationManager) {
+      return this.notificationManager
+    }
+
+    const config = this.blueprint.notifications
+    this.notificationManager = new NotificationManager(config)
+    console.log(`✅ Notifications initialized (${this.notificationManager.listAdapters().join(', ')})`)
+    return this.notificationManager
   }
 
   /**
@@ -204,6 +221,7 @@ export class SubsystemInitializer {
       dataLayer: this.queryExecutor,
       pluginRegistry: this.plugins,
       httpClient,
+      notificationService: this.notificationManager,
       maxConcurrent: 10,
       retryDelay: 1000,
       maxRetries: 3,
@@ -248,6 +266,7 @@ export class SubsystemInitializer {
       permissionManager: this.permissionManager,
       workflowManager: this.workflowManager,
       cache: this.cache,
+      notificationManager: this.notificationManager,
     }
   }
 

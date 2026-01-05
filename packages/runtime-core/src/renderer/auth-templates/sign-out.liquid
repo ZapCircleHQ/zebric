@@ -16,7 +16,7 @@
       }
       window.addEventListener('DOMContentLoaded', signOut)
     </script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    {{ renderer.styles | raw }}
   </head>
   <body class="{{ theme.body }}">
     <div class="min-h-screen flex items-center justify-center p-6">

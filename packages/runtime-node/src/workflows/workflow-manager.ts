@@ -9,12 +9,14 @@ import { WorkflowQueue, type WorkflowQueueOptions } from './workflow-queue.js'
 import { WorkflowExecutor } from './workflow-executor.js'
 import type { Workflow, WorkflowJob, WorkflowContext, WorkflowTrigger } from './types.js'
 import type { QueryExecutor } from '../database/query-executor.js'
+import type { NotificationManager } from '@zebric/notifications'
 
 export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   dataLayer: QueryExecutor
   pluginRegistry?: any
   emailService?: any
   httpClient?: any
+  notificationService?: NotificationManager
 }
 
 export class WorkflowManager extends EventEmitter {
@@ -38,6 +40,7 @@ export class WorkflowManager extends EventEmitter {
       pluginRegistry: options.pluginRegistry,
       emailService: options.emailService,
       httpClient: options.httpClient,
+      notificationService: options.notificationService,
     })
 
     // Connect queue to executor
@@ -114,6 +117,10 @@ export class WorkflowManager extends EventEmitter {
       variables: {
         data,
       },
+    }
+
+    if (data?.session) {
+      context.session = data.session
     }
 
     return this.queue.enqueue(workflowName, context)

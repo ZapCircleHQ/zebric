@@ -4,14 +4,12 @@
  * Main engine class that interprets Blueprint JSON at runtime.
  */
 
-import type { FastifyInstance } from 'fastify'
+import type { ServerType } from '@hono/node-server'
 import { EventEmitter } from 'node:events'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
-import { RouteMatcher } from '@zebric/runtime-core'
-import { FastifyAdapter } from './server/fastify-adapter.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
-import { SessionManager, ErrorSanitizer } from '@zebric/runtime-core'
+import { SessionManager, ErrorSanitizer, type QueryExecutorPort, type SessionManagerPort, type RendererPort, type AuditLoggerPort } from '@zebric/runtime-core'
 import { AuditLogger } from './security/index.js'
 import { BlueprintWatcher, ReloadServer, getReloadScript } from './hot-reload/index.js'
 import type { WorkflowManager } from './workflows/index.js'
@@ -23,6 +21,9 @@ import type { AuthProvider, EngineAPI } from '@zebric/runtime-core'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
 import { FileStorage } from './storage/index.js'
 import type { Blueprint } from '@zebric/runtime-core'
+import { HTMLRenderer } from './renderer/index.js'
+import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { NotificationManager } from '@zebric/notifications'
 import type {
   EngineConfig,
   EngineState,
@@ -37,10 +38,10 @@ export class ZebricEngine extends EventEmitter {
   private blueprint!: Blueprint
   private loader: BlueprintLoader
   private plugins: PluginRegistry
-  private server!: FastifyInstance
+  private server?: ServerType
   private config: EngineConfig
-  private routeMatcher: RouteMatcher
-  private fastifyAdapter!: FastifyAdapter
+  private blueprintAdapter!: BlueprintHttpAdapter
+  private rendererInstance?: HTMLRenderer
   private database!: DatabaseConnection
   private queryExecutor!: QueryExecutor
   private authProvider!: AuthProvider
@@ -59,6 +60,7 @@ export class ZebricEngine extends EventEmitter {
   private serverManager!: ServerManager
   private adminServer?: AdminServer
   private fileStorage!: FileStorage
+  private notificationManager?: NotificationManager
   private pendingSchemaDiff: SchemaDiffResult | null = null
   private isShuttingDown = false
   private shutdownTimeout = 30000 // 30 seconds
@@ -75,7 +77,6 @@ export class ZebricEngine extends EventEmitter {
 
     this.loader = new BlueprintLoader()
     this.plugins = new PluginRegistry()
-    this.routeMatcher = new RouteMatcher()
 
     this.fileStorage = new FileStorage()
 
@@ -145,26 +146,33 @@ export class ZebricEngine extends EventEmitter {
       // 8. Load Plugins (after core systems are initialized)
       await this.loadPlugins()
 
-      // 9. Create FastifyAdapter with all dependencies
+      // 9. Initialize Notifications
+      this.notificationManager = this.subsystemInitializer.initializeNotifications()
+
+      // 10. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'
       const port = this.config.port || 3000
       const defaultOrigin = `http://${host}:${port}`
 
-      this.fastifyAdapter = new FastifyAdapter({
+      const RendererClass = this.config.rendererClass || HTMLRenderer
+      this.rendererInstance = new RendererClass(this.blueprint, this.config.theme)
+      const rendererPort: RendererPort = {
+        renderPage: (context) => this.rendererInstance!.renderPage(context as any)
+      }
+
+      this.blueprintAdapter = new BlueprintHttpAdapter({
         blueprint: this.blueprint,
-        queryExecutor: this.queryExecutor,
-        sessionManager: this.sessionManager,
-        auditLogger: this.auditLogger,
+        queryExecutor: this.createQueryExecutorPort(),
+        sessionManager: this.createSessionManagerPort(),
+        renderer: rendererPort,
+        auditLogger: this.createAuditLoggerPort(),
         errorSanitizer: this.errorSanitizer,
-        pluginRegistry: this.plugins,
-        defaultOrigin,
-        theme: this.config.theme,
-        rendererClass: this.config.rendererClass
+        defaultOrigin
       })
 
-      // 10. Initialize and Start HTTP Server
+      // 11. Initialize and Start HTTP Server
       this.serverManager = new ServerManager({
         blueprint: this.blueprint,
         config: this.config,
@@ -174,8 +182,7 @@ export class ZebricEngine extends EventEmitter {
         queryExecutor: this.queryExecutor,
         workflowManager: this.workflowManager,
         plugins: this.plugins,
-        routeMatcher: this.routeMatcher,
-        fastifyAdapter: this.fastifyAdapter,
+        blueprintAdapter: this.blueprintAdapter,
         metrics: this.metrics,
         tracer: this.tracer,
         errorHandler: this.errorHandler,
@@ -185,7 +192,7 @@ export class ZebricEngine extends EventEmitter {
 
       this.server = await this.serverManager.start()
 
-      // 10. Start Admin Server (if in dev mode)
+      // 12. Start Admin Server (if in dev mode)
       if (this.config.dev) {
         const adminHost = this.config.dev.adminHost || '127.0.0.1'
         // If adminPort is explicitly set (including 0), use it
@@ -209,7 +216,7 @@ export class ZebricEngine extends EventEmitter {
         await this.adminServer.start()
       }
 
-      // 11. Setup Hot Reload (if in dev mode)
+      // 13. Setup Hot Reload (if in dev mode)
       if (this.config.dev?.hotReload) {
         await this.setupHotReload()
       }
@@ -225,7 +232,9 @@ export class ZebricEngine extends EventEmitter {
       if (this.config.dev && this.adminServer) {
         // Get the actual port the admin server is listening on
         const adminServerInstance = this.adminServer.getServer()
-        const address = adminServerInstance.server.address()
+        const address = adminServerInstance && 'address' in adminServerInstance
+          ? adminServerInstance.address()
+          : null
         if (address && typeof address === 'object') {
           const adminHost = address.address === '::' ? 'localhost' : address.address
           console.log(`📊 Admin: http://${adminHost}:${address.port}`)
@@ -383,11 +392,14 @@ export class ZebricEngine extends EventEmitter {
         this.pluginAPIProvider.updateDependencies({ blueprint: newBlueprint })
       }
 
-      // Update route matcher with new pages
-      this.routeMatcher = new RouteMatcher()
-
-      // Update fastify adapter with new blueprint
-      this.fastifyAdapter.setBlueprint(newBlueprint)
+      // Update renderer and adapter with new blueprint
+      const RendererClass = this.config.rendererClass || HTMLRenderer
+      this.rendererInstance = new RendererClass(newBlueprint, this.config.theme)
+      if (this.config.dev?.hotReload && this.reloadServer) {
+        const reloadScript = getReloadScript()
+        this.rendererInstance.setReloadScript(reloadScript)
+      }
+      this.blueprintAdapter.setBlueprint(newBlueprint)
 
       // Notify connected clients via WebSocket
       if (this.reloadServer) {
@@ -537,16 +549,19 @@ export class ZebricEngine extends EventEmitter {
    */
   private async setupHotReload(): Promise<void> {
     // Initialize ReloadServer with WebSocket
+    if (!this.server) {
+      throw new Error('Server not started')
+    }
+
     this.reloadServer = new ReloadServer({
-      server: (this.server as any).server, // Access underlying HTTP server
+      server: this.server as any,
       path: '/__reload',
     })
 
     // Inject reload script into HTML renderer
     const reloadScript = getReloadScript()
-    const renderer = (this.fastifyAdapter as any).renderer
-    if (renderer && typeof renderer.setReloadScript === 'function') {
-      renderer.setReloadScript(reloadScript)
+    if (this.rendererInstance && typeof this.rendererInstance.setReloadScript === 'function') {
+      this.rendererInstance.setReloadScript(reloadScript)
     }
 
     // Initialize BlueprintWatcher
@@ -567,5 +582,64 @@ export class ZebricEngine extends EventEmitter {
     this.blueprintWatcher.start()
 
     console.log('✅ Hot reload enabled')
+  }
+
+  private createQueryExecutorPort(): QueryExecutorPort {
+    return {
+      execute: (query, context) => this.queryExecutor.execute(query, context),
+      create: (entity, data, context) => this.queryExecutor.create(entity, data, context),
+      update: (entity, id, data, context) => this.queryExecutor.update(entity, id, data, context),
+      delete: (entity, id, context) => this.queryExecutor.delete(entity, id, context),
+      findById: (entity, id) => this.queryExecutor.findById(entity, id)
+    }
+  }
+
+  private createSessionManagerPort(): SessionManagerPort {
+    return {
+      getSession: async (request) => {
+        const headers = new Headers()
+        Object.entries(request.headers).forEach(([key, value]) => {
+          if (typeof value === 'string') {
+            headers.set(key, value)
+          } else if (Array.isArray(value) && value.length > 0) {
+            headers.set(key, value[0])
+          }
+        })
+
+        const fetchRequest = new Request(request.url, {
+          method: request.method,
+          headers
+        })
+
+        return this.sessionManager.getSession(fetchRequest)
+      }
+    }
+  }
+
+  private createAuditLoggerPort(): AuditLoggerPort {
+    return {
+      log: (event: any) => {
+        this.auditLogger.log({
+          eventType: event.eventType as any,
+          action: event.action,
+          severity: (event.severity as any) || 'INFO',
+          resource: event.resource,
+          success: event.success !== false,
+          userId: event.userId,
+          ipAddress: event.ipAddress,
+          userAgent: event.userAgent,
+          metadata: event.metadata
+        })
+      },
+      logAccessDenied: (resource: string, action: string, entity?: string, context?: any) => {
+        this.auditLogger.logAccessDenied(resource, action, context?.userId, {
+          entityType: entity,
+          ...context
+        })
+      },
+      logDataAccess: (action, entity, recordId, userId, success, context) => {
+        this.auditLogger.logDataAccess(action as any, entity, recordId, userId, success ?? true, context)
+      }
+    }
   }
 }

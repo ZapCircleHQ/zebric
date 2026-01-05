@@ -14,6 +14,7 @@ describe('WorkflowExecutor', () => {
   let mockDataLayer: QueryExecutor
   let mockHttpClient: HttpClient
   let mockEmailService: EmailService
+  let mockNotificationService: { send: ReturnType<typeof vi.fn> }
   let executor: WorkflowExecutor
 
   beforeEach(() => {
@@ -35,10 +36,15 @@ describe('WorkflowExecutor', () => {
       send: vi.fn().mockResolvedValue(undefined),
     }
 
+    mockNotificationService = {
+      send: vi.fn().mockResolvedValue(undefined),
+    }
+
     executor = new WorkflowExecutor({
       dataLayer: mockDataLayer,
       httpClient: mockHttpClient,
       emailService: mockEmailService,
+      notificationService: mockNotificationService as any,
     })
   })
 
@@ -229,6 +235,41 @@ describe('WorkflowExecutor', () => {
       expect(result.success).toBe(false)
       expect(result.error).toContain('Network timeout')
       expect(result.logs.some(log => log.level === 'error')).toBe(true)
+    })
+  })
+
+  describe('notifications', () => {
+    it('should execute notify step', async () => {
+      const workflow: Workflow = {
+        name: 'notify-test',
+        trigger: { entity: 'user', event: 'create' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'console',
+            channel: '#general',
+            template: 'Welcome {{variables.userName}}',
+            params: { app: 'OpsHub' },
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: { type: 'entity', entity: 'user', event: 'create' },
+        variables: { userName: 'Dana' },
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'console',
+        channel: '#general',
+        to: undefined,
+        subject: undefined,
+        body: undefined,
+        template: 'Welcome {{variables.userName}}',
+        params: { app: 'OpsHub' },
+      })
     })
   })
 

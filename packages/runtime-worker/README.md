@@ -47,65 +47,47 @@ bucket_name = "your-bucket"
 ### 2. Create Your Worker
 
 ```typescript
+import { Hono } from 'hono'
+import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import {
-  WorkersAdapter,
   WorkersSessionManager,
-  WorkersCSRFProtection,
-  D1Adapter,
-  KVCache,
-  R2Storage
+  WorkersQueryExecutor,
+  D1Adapter
 } from '@zebric/runtime-worker'
 import { blueprint } from './blueprint'
 
 export interface Env {
   SESSIONS: KVNamespace
-  CACHE: KVNamespace
   DB: D1Database
-  FILES: R2Bucket
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // Initialize session manager
-    const sessionManager = new WorkersSessionManager({
-      kv: env.SESSIONS,
-      sessionCookieName: 'session',
-      sessionTTL: 86400 // 24 hours
-    })
-
-    // Initialize CSRF protection
-    const csrfProtection = new WorkersCSRFProtection({
-      sessionManager,
-      cookieName: 'csrf-token',
-      headerName: 'x-csrf-token',
-      formFieldName: '_csrf'
-    })
-
-    // Initialize database
+  fetch(request: Request, env: Env, ctx: ExecutionContext) {
     const db = new D1Adapter(env.DB)
-
-    // Initialize cache
-    const cache = new KVCache(env.CACHE)
-
-    // Initialize storage
-    const storage = new R2Storage(env.FILES)
-
-    // Create adapter
-    const adapter = new WorkersAdapter({
-      blueprint,
-      db,
-      cache,
-      storage,
-      sessionManager,
-      csrfProtection,
-      defaultOrigin: 'https://your-app.workers.dev'
+    const queryExecutor = new WorkersQueryExecutor(db, blueprint)
+    const sessionManager = new WorkersSessionManager({
+      kv: env.SESSIONS
     })
 
-    // Handle request
-    return adapter.fetch(request)
+    const adapter = new BlueprintHttpAdapter({
+      blueprint,
+      queryExecutor,
+      sessionManager
+    })
+
+    const app = new Hono()
+    app.get('/health', async () => new Response(JSON.stringify({ status: 'healthy' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    }))
+    app.all('*', (c) => adapter.handle(c.req.raw))
+
+    return app.fetch(request, env, ctx)
   }
 }
 ```
+
+> `ZebricWorkersEngine` and `createWorkerHandler` now use this same Hono-based adapter internally. If you already have other Hono routes, you can compose Zebric by mounting the adapter in your existing `app`.
 
 ## Session Management
 

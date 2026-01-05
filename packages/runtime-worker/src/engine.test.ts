@@ -61,31 +61,19 @@ describe('ZebricWorkersEngine', () => {
   })
 
   describe('API requests', () => {
-    it('should handle API list request', async () => {
+    it('should return 404 when no entities are defined', async () => {
       const request = new Request('https://example.com/api/post')
       const response = await engine.fetch(request)
-
-      // API endpoints return 501 Not Implemented in minimal worker runtime
-      expect(response.status).toBe(501)
-    })
-
-    it('should return 501 for API endpoints', async () => {
-      const request = new Request('https://example.com/api/nonexistent')
-      const response = await engine.fetch(request)
-
-      // All API endpoints return 501 in minimal worker runtime
-      expect(response.status).toBe(501)
+      expect(response.status).toBe(404)
     })
   })
 
   describe('page requests', () => {
-    it('should handle page requests', async () => {
+    it('should return 404 when no pages exist', async () => {
       const request = new Request('https://example.com/')
       const response = await engine.fetch(request)
 
-      // Pages return 501 Not Implemented in minimal worker runtime
-      expect(response).toBeDefined()
-      expect(response.status).toBe(501)
+      expect(response.status).toBe(404)
     })
   })
 

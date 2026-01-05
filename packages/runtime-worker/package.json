@@ -28,7 +28,9 @@
   "dependencies": {
     "@types/cookie": "^1.0.0",
     "@zebric/runtime-core": "workspace:*",
-    "cookie": "^1.0.2"
+    "@zebric/runtime-hono": "workspace:*",
+    "cookie": "^1.0.2",
+    "hono": "^4.9.9"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",

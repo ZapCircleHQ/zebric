@@ -1,5 +1,7 @@
 /**
  * Adapter Module
+ *
+ * Re-export the shared Blueprint adapter for Hono-based runtimes.
  */
 
-export * from './workers-adapter.js'
+export { BlueprintHttpAdapter, type BlueprintAdapterConfig } from '@zebric/runtime-hono'

@@ -248,17 +248,128 @@ export class BlueprintParser {
     // Check workflow entity references
     if (blueprint.workflows) {
       for (const workflow of blueprint.workflows) {
-        if (!entityNames.has(workflow.trigger.entity)) {
+        const triggerEntity = workflow.trigger?.entity
+        if (triggerEntity && !entityNames.has(triggerEntity)) {
           errors.push(
-            `Workflow "${workflow.name}" trigger references unknown entity "${workflow.trigger.entity}"`
+            `Workflow "${workflow.name}" trigger references unknown entity "${triggerEntity}"`
           )
         }
       }
     }
 
+    // Check internal link targets
+    this.validateRouteLinks(blueprint, errors)
+
     if (errors.length > 0) {
       throw createReferenceError(errors, file)
     }
+  }
+
+  /**
+   * Ensure internal links/redirects reference existing page routes
+   */
+  private validateRouteLinks(blueprint: Blueprint, errors: string[]): void {
+    if (!blueprint.pages || blueprint.pages.length === 0) {
+      return
+    }
+
+    const routes = blueprint.pages.map(page => ({
+      path: page.path,
+      pattern: this.normalizeRoutePattern(page.path)
+    }))
+
+    const checkLink = (link: string | undefined, context: string) => {
+      if (!link || !link.startsWith('/')) {
+        return
+      }
+      if (link === '/' || link === '') {
+        return
+      }
+      const normalized = this.normalizeRoutePattern(link)
+      const hasMatch = routes.some(route => this.routePatternsMatch(normalized, route.pattern))
+      if (!hasMatch) {
+        errors.push(`${context} references unknown route "${link}"`)
+      }
+    }
+
+    for (const page of blueprint.pages) {
+      if (page.form?.onSuccess?.redirect) {
+        checkLink(page.form.onSuccess.redirect, `Form success redirect on page "${page.path}"`)
+      }
+
+      const actionBar = page.actionBar
+      if (actionBar) {
+        if (actionBar.actions) {
+          for (const action of actionBar.actions) {
+            checkLink(action.href, `Action "${action.label}" on page "${page.path}"`)
+            checkLink(action.redirect, `Action redirect "${action.label}" on page "${page.path}"`)
+          }
+        }
+        if (actionBar.secondaryActions) {
+          for (const action of actionBar.secondaryActions) {
+            checkLink(action.href, `Action "${action.label}" on page "${page.path}"`)
+            checkLink(action.redirect, `Action redirect "${action.label}" on page "${page.path}"`)
+          }
+        }
+      }
+    }
+  }
+
+  private normalizeRoutePattern(path: string): Array<{ dynamic: boolean; value?: string }> {
+    if (!path) {
+      return []
+    }
+
+    const withoutQuery = path.split('?')[0] || ''
+
+    if (withoutQuery === '/' || withoutQuery === '') {
+      return []
+    }
+
+    const cleaned = withoutQuery.replace(/\/+$/, '').replace(/^\/+/, '')
+    if (!cleaned) {
+      return []
+    }
+
+    return cleaned.split('/').map(segment => {
+      if (this.isDynamicSegment(segment)) {
+        return { dynamic: true }
+      }
+      return { dynamic: false, value: segment }
+    })
+  }
+
+  private isDynamicSegment(segment: string): boolean {
+    if (!segment) return false
+    if (segment.startsWith(':')) {
+      return true
+    }
+    return segment.startsWith('{') && segment.endsWith('}')
+  }
+
+  private routePatternsMatch(
+    a: Array<{ dynamic: boolean; value?: string }>,
+    b: Array<{ dynamic: boolean; value?: string }>
+  ): boolean {
+    if (a.length !== b.length) {
+      return false
+    }
+
+    for (let i = 0; i < a.length; i++) {
+      const segA = a[i]
+      const segB = b[i]
+      if (!segA || !segB) {
+        return false
+      }
+      if (segA.dynamic || segB.dynamic) {
+        continue
+      }
+      if (segA.value !== segB.value) {
+        return false
+      }
+    }
+
+    return true
   }
 
   /**

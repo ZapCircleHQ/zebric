@@ -89,7 +89,7 @@ npx zebric dev blueprint.toml
 
 - **Runtime**: Node.js 20+
 - **Language**: TypeScript
-- **HTTP Server**: Fastify 5.x
+- **HTTP Server**: Hono 4.x
 - **Database ORM**: Drizzle ORM with SQLite and PostgreSQL
 - **Authentication**: Better Auth (Other providers in the future)
 - **Background Jobs**: BullMQ (optional)

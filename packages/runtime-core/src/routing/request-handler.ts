@@ -18,7 +18,8 @@ import type {
   AuditLoggerPort,
   FileStoragePort,
   AuthorizationPort,
-  RenderContext
+  RenderContext,
+  FlashMessage
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
 import { AccessControl } from '../database/access-control.js'
@@ -71,6 +72,7 @@ export class RequestHandler {
   ): Promise<HttpResponse> {
     const page = match.page
     const session = await this.getSession(request)
+    const flash = this.getFlashMessage(request)
 
     try {
       // Check auth - Secure by default: require authentication unless explicitly none or optional
@@ -114,6 +116,8 @@ export class RequestHandler {
         userAgent: request.headers['user-agent'] as string
       })
 
+      const csrfToken = this.getCsrfTokenFromCookies(request)
+
       if (this.wantsJson(request) || !this.renderer) {
         // Return JSON for API requests or if no renderer
         return this.jsonResponse(200, {
@@ -122,8 +126,10 @@ export class RequestHandler {
           layout: page.layout,
           data,
           params: match.params,
-          query: match.query
-        })
+          query: match.query,
+          flash,
+          csrfToken
+        }, flash ? { 'Set-Cookie': this.clearFlashCookieHeader() } : undefined)
       } else {
         // Render HTML
         const html = this.renderer.renderPage({
@@ -131,10 +137,12 @@ export class RequestHandler {
           data,
           params: match.params,
           query: match.query,
-          session
+          session,
+          flash,
+          csrfToken
         })
 
-        return this.htmlResponse(200, html)
+        return this.htmlResponse(200, html, flash ? { 'Set-Cookie': this.clearFlashCookieHeader() } : undefined)
       }
     } catch (error) {
       return this.handleError(error, session, page.path, request)
@@ -639,27 +647,74 @@ export class RequestHandler {
     return this.jsonResponse(sanitized.statusCode, sanitized)
   }
 
-  private jsonResponse(status: number, data: any): HttpResponse {
+  private jsonResponse(status: number, data: any, headers: Record<string, string> = {}): HttpResponse {
     return {
       status,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(data)
     }
   }
 
-  private htmlResponse(status: number, html: string): HttpResponse {
+  private htmlResponse(status: number, html: string, headers: Record<string, string> = {}): HttpResponse {
     return {
       status,
-      headers: { 'Content-Type': 'text/html' },
+      headers: { 'Content-Type': 'text/html', ...headers },
       body: html
     }
   }
 
-  private redirectResponse(location: string): HttpResponse {
+  private redirectResponse(location: string, headers: Record<string, string> = {}): HttpResponse {
     return {
       status: 303,
-      headers: { 'Location': location },
+      headers: { 'Location': location, ...headers },
       body: ''
     }
+  }
+
+  private getFlashMessage(request: HttpRequest): FlashMessage | undefined {
+    const cookieHeader = (request.headers['cookie'] as string) || (request.headers['Cookie'] as string)
+    if (!cookieHeader) {
+      return undefined
+    }
+
+    const cookies = this.parseCookies(cookieHeader)
+    const raw = cookies['flash']
+    if (!raw) {
+      return undefined
+    }
+
+    try {
+      const decoded = decodeURIComponent(raw)
+      const parsed = JSON.parse(decoded)
+      if (parsed && typeof parsed.text === 'string') {
+        return parsed
+      }
+    } catch {
+      return undefined
+    }
+
+    return undefined
+  }
+
+  private parseCookies(cookieHeader: string): Record<string, string> {
+    return cookieHeader.split(';').reduce<Record<string, string>>((acc, part) => {
+      const [name, ...rest] = part.split('=')
+      if (!name) return acc
+      acc[name.trim()] = rest.join('=').trim()
+      return acc
+    }, {})
+  }
+
+  private clearFlashCookieHeader(): string {
+    return 'flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax'
+  }
+
+  private getCsrfTokenFromCookies(request: HttpRequest): string | undefined {
+    const cookieHeader = (request.headers['cookie'] as string) || (request.headers['Cookie'] as string)
+    if (!cookieHeader) {
+      return undefined
+    }
+    const cookies = this.parseCookies(cookieHeader)
+    return cookies['csrf-token']
   }
 }

@@ -62,6 +62,11 @@ export interface RendererPort {
   renderPage(context: RenderContext): string
 }
 
+export interface FlashMessage {
+  type: 'success' | 'error' | 'info' | 'warning'
+  text: string
+}
+
 export interface RenderContext {
   page: any // Page type
   data: Record<string, any>
@@ -70,6 +75,7 @@ export interface RenderContext {
   session?: UserSession | null
   csrfToken?: string
   renderer?: RendererContext
+  flash?: FlashMessage
 }
 
 /**
@@ -83,6 +89,7 @@ export interface RendererContext {
   fields?: Record<string, string>
   script?: string
   content?: string
+  flash?: FlashMessage
   [key: string]: unknown
 }
 

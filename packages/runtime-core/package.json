@@ -39,7 +39,10 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
+    "postinstall": "node ./scripts/build-css.mjs",
+    "prebuild": "node ./scripts/build-css.mjs",
     "build": "tsc",
+    "build:css": "node ./scripts/build-css.mjs",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -60,7 +63,10 @@
     "eslint": "^8.57.0",
     "typescript": "^5.4.5",
     "vitest": "^1.6.1",
-    "zod-to-json-schema": "^3.24.6"
+    "zod-to-json-schema": "^3.24.6",
+    "tailwindcss": "^3.4.4",
+    "postcss": "^8.4.38",
+    "autoprefixer": "^10.4.18"
   },
   "engines": {
     "node": ">=18.0.0"

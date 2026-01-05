@@ -1,8 +1,16 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { ulid } from 'ulid'
-import type { MultipartFile } from '@fastify/multipart'
 import type { UploadedFile as BaseUploadedFile } from '@zebric/runtime-core'
+
+export type UploadableFile = File | {
+  name?: string
+  filename?: string
+  mimetype?: string
+  type?: string
+  size: number
+  arrayBuffer: () => Promise<ArrayBuffer>
+}
 
 export interface UploadedFileDetails extends BaseUploadedFile {
   filename: string
@@ -48,7 +56,7 @@ export class FileStorage {
     }
   }
 
-  async saveFile(file: MultipartFile): Promise<UploadedFileDetails> {
+  async saveFile(file: UploadableFile): Promise<UploadedFileDetails> {
     if (this.config.type === 'local') {
       return this.saveFileLocally(file)
     }
@@ -56,26 +64,27 @@ export class FileStorage {
     throw new Error(`Storage type ${this.config.type} not yet implemented`)
   }
 
-  private async saveFileLocally(file: MultipartFile): Promise<UploadedFileDetails> {
+  private async saveFileLocally(file: UploadableFile): Promise<UploadedFileDetails> {
     if (!this.config.uploadDir) {
       throw new Error('Upload directory not configured')
     }
 
     // Generate unique filename
     const fileId = ulid()
-    const ext = path.extname(file.filename)
+    const originalName = this.getOriginalName(file)
+    const ext = path.extname(originalName)
     const filename = `${fileId}${ext}`
     const filePath = path.join(this.config.uploadDir, filename)
 
     // Save file
-    const buffer = await file.toBuffer()
+    const buffer = Buffer.from(await file.arrayBuffer())
     await fs.writeFile(filePath, buffer)
 
     const uploadedFile: UploadedFileDetails = {
       id: fileId,
       filename,
-      originalName: file.filename,
-      mimeType: file.mimetype,
+      originalName,
+      mimeType: this.getMimeTypeFromFile(file, filename),
       size: buffer.length,
       path: filePath,
       url: `${this.config.baseUrl}/${filename}`,
@@ -157,7 +166,7 @@ export class FileStorage {
   /**
    * Validate file before upload
    */
-  validateFile(file: MultipartFile, options?: {
+  validateFile(file: UploadableFile, options?: {
     maxSize?: number
     allowedTypes?: string[]
   }): { valid: boolean; error?: string } {
@@ -165,7 +174,7 @@ export class FileStorage {
     const allowedTypes = options?.allowedTypes
 
     // Check file size
-    if (file.file.bytesRead > maxSize) {
+    if (this.getFileSize(file) > maxSize) {
       return {
         valid: false,
         error: `File size exceeds maximum allowed size of ${maxSize / 1024 / 1024}MB`,
@@ -174,14 +183,30 @@ export class FileStorage {
 
     // Check MIME type
     if (allowedTypes && allowedTypes.length > 0) {
-      if (!allowedTypes.includes(file.mimetype)) {
+      const mimeType = this.getMimeTypeFromFile(file)
+      if (!allowedTypes.includes(mimeType)) {
         return {
           valid: false,
-          error: `File type ${file.mimetype} is not allowed`,
+          error: `File type ${mimeType} is not allowed`,
         }
       }
     }
 
     return { valid: true }
+  }
+
+  private getOriginalName(file: UploadableFile): string {
+    return file.name || (file as any).filename || 'upload'
+  }
+
+  private getMimeTypeFromFile(file: UploadableFile, fallbackName?: string): string {
+    return file.type || (file as any).mimetype || this.getMimeType(fallbackName || this.getOriginalName(file))
+  }
+
+  private getFileSize(file: UploadableFile): number {
+    if ('size' in file) {
+      return file.size
+    }
+    return (file as any).file?.bytesRead || 0
   }
 }

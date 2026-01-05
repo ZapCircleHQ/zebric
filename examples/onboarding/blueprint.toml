@@ -1,0 +1,205 @@
+version = "1.0.0"
+hash = "dev-onboarding"
+
+[project]
+name = "Developer Onboarding"
+version = "0.1.0"
+description = "Collect info, provision access, and guide new engineers through their first weeks."
+[project.runtime]
+min_version = "0.1.0"
+
+[notifications]
+default = "email-primary"
+
+[[notifications.adapters]]
+name = "email-primary"
+type = "email"
+config = { from = "peopleops@startup.com" }
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[[entities]]
+name = "Developer"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "fullName", type = "Text", required = true },
+  { name = "email", type = "Email", required = true, unique = true },
+  { name = "startDate", type = "Date", required = true },
+  { name = "role", type = "Text", required = true },
+  { name = "team", type = "Text", required = true },
+  { name = "mentorId", type = "Ref", ref = "Developer.id" },
+  { name = "buddyId", type = "Ref", ref = "Developer.id" },
+  { name = "managerId", type = "Ref", ref = "Developer.id" },
+  { name = "status", type = "Enum", values = ["preboarding","day_one","week_one","ramp_up","complete"], default = "preboarding" }
+]
+
+[[entities]]
+name = "AccessItem"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "developerId", type = "Ref", ref = "Developer.id", required = true },
+  { name = "system", type = "Text", required = true },
+  { name = "scope", type = "Text" },
+  { name = "status", type = "Enum", values = ["requested","provisioned","pending","revoked"], default = "requested" },
+  { name = "ownerId", type = "Text" },
+  { name = "ticketLink", type = "Text" }
+]
+
+[[entities]]
+name = "OnboardingTask"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "developerId", type = "Ref", ref = "Developer.id", required = true },
+  { name = "type", type = "Enum", values = ["equipment","paperwork","security","training","mentorship"], required = true },
+  { name = "title", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["todo","in_progress","done","blocked"], default = "todo" },
+  { name = "assigneeId", type = "Text" },
+  { name = "dueDate", type = "Date" },
+  { name = "notes", type = "LongText" }
+]
+
+[[entities]]
+name = "RampMilestone"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "developerId", type = "Ref", ref = "Developer.id", required = true },
+  { name = "title", type = "Text", required = true },
+  { name = "targetDate", type = "Date" },
+  { name = "status", type = "Enum", values = ["pending","in_review","approved"], default = "pending" },
+  { name = "approverId", type = "Text" },
+  { name = "notes", type = "LongText" }
+]
+
+[[pages]]
+path = "/"
+title = "Onboarding Dashboard"
+layout = "dashboard"
+auth = "none"
+[pages.queries.stats]
+entity = "Developer"
+
+[[pages]]
+path = "/developers"
+title = "New Developers"
+layout = "list"
+auth = "none"
+[pages.queries.devs]
+entity = "Developer"
+orderBy = { startDate = "asc" }
+
+[[pages]]
+path = "/developers/{id}"
+title = "Developer Profile"
+layout = "detail"
+auth = "none"
+[pages.queries.dev]
+entity = "Developer"
+where = { id = "{id}" }
+[pages.queries.access]
+entity = "AccessItem"
+where = { developerId = "{id}" }
+[pages.queries.tasks]
+entity = "OnboardingTask"
+where = { developerId = "{id}" }
+[pages.queries.milestones]
+entity = "RampMilestone"
+where = { developerId = "{id}" }
+[pages.actionBar]
+title = "Onboarding status"
+description = "Move the developer through key milestones and reach out to their support crew."
+statusField = "status"
+[[pages.actionBar.actions]]
+label = "Advance to day one"
+workflow = "AdvanceDeveloperStatus"
+style = "primary"
+payload = { status = "day_one" }
+successMessage = "Developer advanced to day one."
+[[pages.actionBar.actions]]
+label = "Start week one"
+workflow = "AdvanceDeveloperStatus"
+style = "secondary"
+payload = { status = "week_one" }
+successMessage = "Week one onboarding started."
+[[pages.actionBar.secondaryActions]]
+label = "Email new hire"
+href = "mailto:{email}"
+
+[[pages]]
+path = "/developers/new"
+title = "Add Developer"
+layout = "form"
+auth = "none"
+[pages.form]
+entity = "Developer"
+method = "create"
+fields = [
+  { name = "fullName", type = "text", label = "Full Name", required = true },
+  { name = "email", type = "email", label = "Email", required = true },
+  { name = "role", type = "text", label = "Role", required = true },
+  { name = "team", type = "text", label = "Team", required = true },
+  { name = "startDate", type = "date", label = "Start Date", required = true }
+]
+[pages.form.onSuccess]
+redirect = "/developers/{id}"
+message = "Developer added. Next steps queued."
+
+[[behaviors]]
+name = "DeveloperOnboardingWorkflow"
+type = "workflow"
+[behaviors.trigger]
+entity = "Developer"
+events = ["create","update"]
+
+[[behaviors.steps]]
+name = "Kick off preboarding"
+if = { status = "preboarding" }
+actions = [
+  { type = "create", entity = "OnboardingTask", values = { developerId = "{id}", type = "equipment", title = "Ship laptop", assigneeId = "it-team" } },
+  { type = "create", entity = "OnboardingTask", values = { developerId = "{id}", type = "paperwork", title = "Collect signed agreements", assigneeId = "{managerId}" } },
+  { type = "create", entity = "AccessItem", values = { developerId = "{id}", system = "GitHub", ownerId = "devops" } },
+  { type = "notify", channel = "slack", template = "welcome-email", to = "{email}" }
+]
+
+[[behaviors.steps]]
+name = "Day-one prep"
+if = { status = "day_one" }
+actions = [
+  { type = "update", entity = "OnboardingTask", where = { developerId = "{id}", type = "equipment" }, values = { status = "done" } },
+  { type = "notify", channel = "slack", template = "mentor-intro", to = "{mentorId}" },
+  { type = "create", entity = "RampMilestone", values = { developerId = "{id}", title = "First PR merged", targetDate = "{startDate + 7d}", approverId = "{mentorId}" } }
+]
+
+[[behaviors.steps]]
+name = "Week-one check-ins"
+if = { status = "week_one" }
+actions = [
+  { type = "notify", channel = "slack", template = "week1-checkin", to = "{managerId}" },
+  { type = "notify", channel = "slack", template = "buddy-checkin", to = "{buddyId}" }
+]
+
+[[behaviors]]
+name = "AccessProvisioning"
+type = "workflow"
+[behaviors.trigger]
+entity = "AccessItem"
+events = ["update"]
+[[behaviors.steps]]
+name = "Alert IT"
+if = { status = "requested" }
+actions = [
+  { type = "notify", channel = "slack", template = "access-needed", to = "it-helpdesk" }
+]
+
+[[workflows]]
+name = "AdvanceDeveloperStatus"
+description = "Manual action triggered from the developer profile action bar."
+[workflows.trigger]
+manual = true
+[[workflows.steps]]
+type = "query"
+entity = "Developer"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "{{ variables.data.payload.status }}" }
