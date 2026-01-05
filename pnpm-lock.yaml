@@ -123,6 +123,31 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.19.19)
 
+  packages/framework-stories:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@zebric/runtime-core':
+        specifier: workspace:*
+        version: link:../runtime-core
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../runtime-node
+      undici:
+        specifier: ^6.13.0
+        version: 6.23.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.0
+        version: 20.19.19
+      typescript:
+        specifier: ^5.4.5
+        version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.19.19)
+
   packages/notifications:
     dependencies:
       '@zebric/runtime-core':
@@ -5840,6 +5865,11 @@ packages:
     dependencies:
       '@fastify/busboy': 2.1.1
     dev: true
+
+  /undici@6.23.0:
+    resolution: {integrity: sha512-VfQPToRA5FZs/qJxLIinmU59u0r7LXqoJkCzinq3ckNJp3vKEh7jTWN589YQ5+aoAC/TGRLyJLCPKcLQbM8r9g==}
+    engines: {node: '>=18.17'}
+    dev: false
 
   /undici@7.14.0:
     resolution: {integrity: sha512-Vqs8HTzjpQXZeXdpsfChQTlafcMQaaIwnGwLam1wudSSjlJeQ3bw1j+TLPePgrCnCpUXx7Ba5Pdpf5OBih62NQ==}
