@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
-import { BlueprintParser } from '../../../runtime-core/src/blueprint/loader.js'
+import { BlueprintParser } from '@zebric/runtime-core'
 
 const parser = new BlueprintParser()
 const workspaceRoot = path.resolve(process.cwd(), '..', '..')
