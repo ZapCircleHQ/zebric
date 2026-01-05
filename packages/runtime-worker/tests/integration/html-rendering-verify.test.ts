@@ -68,15 +68,15 @@ describe('HTML Rendering Verification', () => {
     expect(html).toContain('Tasks')
   })
 
-  it('should include Tailwind CSS CDN', async () => {
+  it('should inline Tailwind styles', async () => {
     const response = await env.fetch('/tasks', {
       headers: { 'Accept': 'text/html' }
     })
 
     const html = await response.text()
 
-    // Should include Tailwind CSS
-    expect(html).toContain('tailwindcss')
+    // Should include the inline Tailwind style tag
+    expect(html).toContain('id="zebric-tailwind"')
   })
 
   it('should render list layout with task data', async () => {

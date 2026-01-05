@@ -282,6 +282,9 @@ export class BlueprintParser {
       if (!link || !link.startsWith('/')) {
         return
       }
+      if (link === '/' || link === '') {
+        return
+      }
       const normalized = this.normalizeRoutePattern(link)
       const hasMatch = routes.some(route => this.routePatternsMatch(normalized, route.pattern))
       if (!hasMatch) {

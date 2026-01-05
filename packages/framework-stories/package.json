@@ -1,0 +1,26 @@
+{
+  "name": "@zebric/framework-stories",
+  "version": "0.0.1",
+  "description": "User stories and integration tests for the Zebric framework",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "stories": "vitest run --runInBand",
+    "pretest": "pnpm --filter @zebric/runtime-core build",
+    "prestories": "pnpm --filter @zebric/runtime-core build"
+  },
+  "dependencies": {
+    "@zebric/runtime-core": "workspace:*",
+    "@zebric/runtime-node": "workspace:*",
+    "@zebric/cli": "workspace:*",
+    "undici": "^6.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  }
+}
