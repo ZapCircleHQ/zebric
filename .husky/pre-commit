@@ -1,5 +1,3 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
 
 changed=$(git diff --name-only --cached -- 'packages/runtime-core/src/renderer/layout-templates/*.liquid' 'packages/runtime-core/src/renderer/auth-templates/*.liquid')
 
