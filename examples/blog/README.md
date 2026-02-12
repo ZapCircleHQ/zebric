@@ -90,7 +90,7 @@ The example works and renders correctly! Here's what's been tested and verified:
 
 ## Learn More
 
-- [ZBL Engine Documentation](../../docs/)
+- [Zebric Documentation](../../docs/)
 - [Blueprint Specification](../../ZBL-Engine-Specification.md)
 - [Plugin System](../../packages/runtime/docs/PLUGIN-SYSTEM.md)
 - [HTML Rendering](../../docs/HTML-RENDERING.md)

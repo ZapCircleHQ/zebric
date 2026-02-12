@@ -1,0 +1,33 @@
+---
+label: Run
+order: 3
+slug: run/runtime
+title: Runtime & Deployment
+description: How to run Zebric in Node or Workers.
+---
+
+## Node Runtime
+
+```bash
+pnpm --filter @zebric/runtime-node dev
+```
+
+- Serves blueprint-defined routes via Hono.
+- Configurable via env vars (`PORT`, database connection, etc.).
+
+## Workers Runtime
+
+Use the Workers example in `examples/workers-blog/`.
+
+```bash
+pnpm --filter workers-blog dev
+```
+
+## Deployments
+
+1. **Docker:** `pnpm --filter @zebric/runtime-node build` then `docker build .`
+2. **Cloudflare Workers:** `wrangler deploy` inside the Workers example.
+
+### Observability
+- Watch the audit logs (`packages/runtime-node/src/security/audit-logger.ts`).
+- Runtime link validation errors surface during blueprint load (e.g., invalid redirects).

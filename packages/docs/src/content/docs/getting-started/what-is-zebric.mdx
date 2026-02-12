@@ -1,0 +1,55 @@
+---
+label: What is Zebric?
+order: 1
+slug: getting-started/what-is-zebric
+title: What is Zebric?
+description: Overview of why the Zebric framework is different.
+---
+
+Zebric is an LLM-native framework for building internal applications without generating tons of code.
+
+Zebric is different because it is **declarative**. 
+
+In a blueprint, you describe:
+
+* What you are building
+* The data you want to store
+* Who has access to what
+* How the system behaves
+
+Zebric's runtime engine handles everything else.
+
+## Why Zebric?
+
+In 2026, vibe coding tools create new applications in minutes - we no longer are limited by the speed of writing code manually. This is fantastic for prototyping, user research, and quick throwaways.
+
+Moving that code into production becomes a lot tougher:
+
+* There's too much code to review, so senior and staff engineers now become a bottleneck
+* Generated applications don't always follow a common architecture - you may have Next.js in one application, and React Router in another - both work, but now you've created lots of work down the road to standardize application dependencies
+* Teams don't understand the code they ship, they just know that it works
+* When the application breaks, no one has an intuitive sense of how data flows within the application.
+
+This leads to a state where pull requests either languish or quickly get approved without real understanding, and technical debt builds up for every application.
+
+## Defining Behavior, Not Code
+
+Zebric takes a different approach. You define how the system works, and the Zebric Runtime Engine enforces that behavior.
+
+Each web application is now a blueprint, or collection of blueprints. These are not tied to specific technical details.
+
+When you use Zebric, you need to think about what the purpose of the application is, who is going to use it, and how it interfaces with external systems - all of that is captured in the blueprint.
+
+The good news - if you ever decide you want to migrate off of Zebric, you can use that blueprint with any LLM to create a whole new application in the web framework of your choice.
+
+## Zebric and LLMs
+
+We've gone down the path of code generation with web application frameworks before - everything from Enterprise JavaBeans to Rails scaffolding - ending up with lots of boilerplate code scattered across multiple service layers.
+
+Using LLMs to create applications just turbocharges this process.
+
+In addition, LLMs will go ahead and add all kinds of things you may or may not want to your projects - even if you try and specify everything up front in the prompt.
+
+Zebric reduces the amount of surface area LLMs have to work with. They have to work within the constraints of Zebric.
+
+

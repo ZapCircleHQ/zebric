@@ -1,0 +1,44 @@
+---
+label: Zebric Quickstart (5 min)
+order: 3
+slug: getting-started/quickstart
+title: Zebric Quickstart (5 minutes)
+description: Run your first Zebric application with a single command and a single blueprint.
+---
+
+This quick start gets you up and running with a Zebric web application on your local machine as quickly as possible.
+
+## Prerequisities
+
+You'll need a recent (20.x or above) version of [Node.js](https://www.node.js.org)
+
+That's it to get started!
+
+## Create a Blueprints
+
+Create a new file named `blog.toml`. Copy the following contents into that file:
+
+```toml
+[app]
+name = "My Blog"
+description = "A simple internal blogging tool"
+
+[[entities]]
+name = "Post"
+
+    [[entities.fields]]
+    name = "title"
+    type = "string"
+    required = true
+
+    [[entities.fields]]
+    name = "body"
+    type = "text"
+    required = true
+
+    [[entities.fields]]
+    name = "published"
+    type = "boolean"
+    default = false
+```
+

@@ -1,0 +1,37 @@
+---
+title: Welcome to Zebric
+description: Build and run blueprints that power internal tools and workflows.
+template: splash
+hero:
+  tagline: Ship secure internal tools without scaffolding code.
+  actions:
+    - text: Quick Start
+      link: /build/blueprint/
+      icon: right-arrow
+    - text: Learn More
+      link: /introduction/overview/
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Why Zebric?
+
+<CardGrid>
+  <Card title="Declarative blueprints" icon="layers">
+    Model data, layouts, behaviors, and workflows in a single blueprint file and let the runtime render it at run time.
+  </Card>
+  <Card title="Runtime-driven" icon="bolt">
+    No code generation—changes hot reload instantly in the Node or Workers runtime.
+  </Card>
+  <Card title="Avoid reviewing generated code" icon="check">
+    Zebric applications have less code, making them easier to understand and review.
+  </Card>
+</CardGrid>
+
+## Next steps
+
+1. Visit the [Introduction](/introduction/overview/) for key concepts.
+2. Follow the [Quick Start](/building/blueprint/) to edit your first blueprint.
+3. Run the [developer onboarding guide](/guides/developer-onboarding/) or another story to explore real flows.
