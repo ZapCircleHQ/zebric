@@ -328,7 +328,7 @@ describe('WorkflowExecutor', () => {
 
       expect(mockDataLayer.update).toHaveBeenCalledWith(
         'user',
-        { id: '123' },
+        '123',
         { name: 'Jane' }
       )
     })
@@ -354,7 +354,7 @@ describe('WorkflowExecutor', () => {
 
       await executor.execute(workflow, context)
 
-      expect(mockDataLayer.delete).toHaveBeenCalledWith('user', { id: '123' })
+      expect(mockDataLayer.delete).toHaveBeenCalledWith('user', '123')
     })
 
     it('should execute find query', async () => {

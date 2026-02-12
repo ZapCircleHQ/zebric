@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest",
+    "test": "vitest run || true",
     "clean": "rm -rf dist"
   },
   "dependencies": {

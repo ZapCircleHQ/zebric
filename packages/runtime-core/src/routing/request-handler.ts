@@ -285,8 +285,8 @@ export class RequestHandler {
 
       const body = request.body as Record<string, any>
 
-      // Validate form data
-      const validationErrors = this.validateForm(page.form, body)
+      // Validate form data (skip required checks for partial updates)
+      const validationErrors = this.validateForm(page.form, body, true)
       if (validationErrors.length > 0) {
         return this.jsonResponse(400, {
           error: 'Validation failed',
@@ -483,12 +483,18 @@ export class RequestHandler {
 
   private validateForm(
     form: Form,
-    data: Record<string, any>
+    data: Record<string, any>,
+    isUpdate = false
   ): Array<{ field: string; message: string }> {
     const errors: Array<{ field: string; message: string }> = []
 
     for (const field of form.fields) {
       const value = data[field.name]
+
+      // For updates, skip required checks on fields not included in the request
+      if (isUpdate && value === undefined) {
+        continue
+      }
 
       // Required check
       if (field.required && (value === undefined || value === null || value === '')) {

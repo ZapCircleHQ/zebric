@@ -150,6 +150,21 @@ export class AccessControl {
       return condition
     }
 
+    // String shorthand conditions (e.g., "public", "authenticated", "owner")
+    if (typeof condition === 'string') {
+      switch (condition) {
+        case 'public':
+          return true
+        case 'authenticated':
+          return !!session?.user
+        case 'owner':
+          if (!session?.user?.id || !data) return false
+          return data.userId === session.user.id
+        default:
+          return false
+      }
+    }
+
     // AND condition
     if ('and' in condition && Array.isArray(condition.and)) {
       return condition.and.every(c => this.evaluateCondition(c, session, data))

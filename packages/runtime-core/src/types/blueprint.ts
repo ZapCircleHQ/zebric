@@ -95,6 +95,7 @@ export interface FieldAccessRules {
 
 export type AccessCondition =
   | boolean
+  | string
   | { [key: string]: any }
   | { or: AccessCondition[] }
   | { and: AccessCondition[] }

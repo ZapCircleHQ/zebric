@@ -56,8 +56,9 @@ export class RouteMatcher {
     pattern: string
   ): Record<string, string> | null {
     // Convert pattern to regex
+    // Supports both :param and {param} syntax
     const paramNames: string[] = []
-    const regexPattern = pattern.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, name) => {
+    const regexPattern = pattern.replace(/(?::|\{)([a-zA-Z_][a-zA-Z0-9_]*)(?:\})?/g, (_, name) => {
       paramNames.push(name)
       return '([^/]+)'
     })
@@ -110,7 +111,7 @@ export class RouteMatcher {
    *   generatePath('/posts/:id', { id: '123' }) -> '/posts/123'
    */
   generatePath(pattern: string, params: Record<string, string>): string {
-    return pattern.replace(/:([a-zA-Z_][a-zA-Z0-9_]*)/g, (_, name) => {
+    return pattern.replace(/(?::|\{)([a-zA-Z_][a-zA-Z0-9_]*)(?:\})?/g, (_, name) => {
       const value = params[name]
       if (!value) {
         throw new Error(`Missing parameter: ${name}`)
