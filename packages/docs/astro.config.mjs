@@ -18,8 +18,8 @@ export default defineConfig({
 					items: [{ label: 'Overview', slug: 'introduction/overview' }],
 				},
 				{
-					label: 'Build',
-					items: [{ label: 'Blueprint Fundamentals', slug: 'build/blueprint' }],
+					label: 'Building',
+					items: [{ label: 'Blueprint Fundamentals', slug: 'building/blueprint' }],
 				},
 				{
 					label: 'Run',

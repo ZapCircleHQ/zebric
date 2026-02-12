@@ -1,0 +1,37 @@
+---
+label: Building
+order: 2
+slug: building/blueprint
+title: Blueprint Fundamentals
+description: Define entities, pages, behaviors, and workflows.
+---
+
+Blueprints are TOML documents that describe your application. Key sections:
+
+## Entities
+Define fields, relations, and access rules. Example:
+
+```toml
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID" },
+  { name = "title", type = "Text", required = true }
+]
+```
+
+## Pages
+Bind routes to layouts. Example list page:
+
+```toml
+[page."/tasks"]
+title = "All Tasks"
+layout = "list"
+[page."/tasks".query.tasks]
+entity = "Task"
+```
+
+## Behaviors & Workflows
+Use `behavior.render` for custom UI and `workflow.*` for automation. See `examples/onboarding/blueprint.toml` for a full workflow.
+
+## Testing Blueprints
+Use `pnpm --filter @zebric/framework-stories test` to ensure your stories stay green.
