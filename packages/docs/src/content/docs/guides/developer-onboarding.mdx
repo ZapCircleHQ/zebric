@@ -1,0 +1,21 @@
+---
+label: Guides
+order: 4
+slug: guides/developer-onboarding
+title: Guide – Developer Onboarding
+description: Walk through the onboarding blueprint and actions.
+---
+
+This guide mirrors `examples/onboarding/blueprint.toml` and the `developer-onboarding` story.
+
+## Entities
+- `Developer`, `AccessItem`, `OnboardingTask`, `RampMilestone`
+
+## Pages
+- Dashboard, list, detail with action bar, form for new hires.
+
+## Action Bar & Workflows
+- Status transitions trigger the `AdvanceDeveloperStatus` workflow via `/actions/AdvanceDeveloperStatus`.
+
+## Validation
+- Run `pnpm --filter @zebric/framework-stories test` to ensure the onboarding story remains green.

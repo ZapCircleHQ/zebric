@@ -6,19 +6,32 @@ import starlight from '@astrojs/starlight';
 export default defineConfig({
 	integrations: [
 		starlight({
-			title: 'My Docs',
-			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/withastro/starlight' }],
+			title: 'Zebric Docs',
+			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ZapCircleHQ/zebric' }],
 			sidebar: [
 				{
+					label: 'Getting Started',
+					items: [{ label: 'What is Zebric', slug: 'getting-started/what-is-zebric' }],
+				},
+				{
+					label: 'Introduction',
+					items: [{ label: 'Overview', slug: 'introduction/overview' }],
+				},
+				{
+					label: 'Build',
+					items: [{ label: 'Blueprint Fundamentals', slug: 'build/blueprint' }],
+				},
+				{
+					label: 'Run',
+					items: [{ label: 'Runtime & Deployment', slug: 'run/runtime' }],
+				},
+				{
 					label: 'Guides',
-					items: [
-						// Each item here is one entry in the navigation menu.
-						{ label: 'Example Guide', slug: 'guides/example' },
-					],
+					items: [{ label: 'Developer Onboarding', slug: 'guides/developer-onboarding' }],
 				},
 				{
 					label: 'Reference',
-					autogenerate: { directory: 'reference' },
+					items: [{ label: 'APIs & Commands', slug: 'reference/api' }],
 				},
 			],
 		}),

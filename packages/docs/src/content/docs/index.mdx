@@ -1,40 +1,37 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Welcome to Zebric
+description: Build and run blueprints that power internal tools and workflows.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
-  image:
-    file: ../../assets/houston.webp
+  tagline: Ship secure internal tools without scaffolding code.
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Quick Start
+      link: /build/blueprint/
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
+    - text: Learn More
+      link: /introduction/overview/
       icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
+## Why Zebric?
+
+<CardGrid>
+  <Card title="Declarative blueprints" icon="layers">
+    Model data, layouts, behaviors, and workflows in a single blueprint file and let the runtime render it at run time.
+  </Card>
+  <Card title="Runtime-driven" icon="bolt">
+    No code generation—changes hot reload instantly in the Node or Workers runtime.
+  </Card>
+  <Card title="Avoid reviewing generated code" icon="check">
+    Zebric applications have less code, making them easier to understand and review
+  </Card>
+</CardGrid>
+
 ## Next steps
 
-<CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
-	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
-	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
-	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
-	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
-	</Card>
-</CardGrid>
+1. Visit the [Introduction](/introduction/overview/) for key concepts.
+2. Follow the [Quick Start](/build/blueprint/) to edit your first blueprint.
+3. Run the [developer onboarding guide](/guides/developer-onboarding/) or another story to explore real flows.

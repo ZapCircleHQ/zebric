@@ -1,0 +1,19 @@
+---
+label: Reference
+order: 5
+slug: reference/api
+title: Reference – APIs & Commands
+description: CLI commands, story runners, environment variables.
+---
+
+## CLI
+- `pnpm --filter @zebric/cli dev` – start the CLI.
+- `pnpm --filter @zebric/runtime-node build` – compile the node runtime.
+
+## Story Runner
+- `pnpm --filter @zebric/framework-stories test` – execute all user stories.
+
+## Environment Variables
+- `PORT`: runtime-node port.
+- `DATABASE_URL`: connection string for Drizzle.
+- `TAILWIND_BUILD`: handled automatically via `@zebric/runtime-core` postinstall.
