@@ -107,6 +107,7 @@ export class BlueprintParser {
       pages: [],
       auth: parsed.auth,
       ui: parsed.ui,
+      notifications: parsed.notifications,
     }
 
     // Transform [entity.Name] to entities array

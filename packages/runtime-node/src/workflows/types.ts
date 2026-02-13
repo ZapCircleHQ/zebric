@@ -73,6 +73,8 @@ export interface WorkflowContext {
     entity?: string
     event?: string
     data?: any
+    before?: any
+    after?: any
   }
   variables: Record<string, any>
   session?: any

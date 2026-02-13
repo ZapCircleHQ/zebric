@@ -32,6 +32,14 @@ export interface WorkflowExecutorOptions {
   emailService?: EmailService
   httpClient?: HttpClient
   notificationService?: NotificationManager
+  onEntityEvent?: (event: {
+    entity: string
+    event: 'create' | 'update' | 'delete'
+    before?: any
+    after?: any
+    sourceWorkflow: string
+    depth: number
+  }) => Promise<void>
 }
 
 export class WorkflowExecutor {
@@ -40,6 +48,7 @@ export class WorkflowExecutor {
   private emailService?: EmailService
   private httpClient?: HttpClient
   private notificationService?: NotificationManager
+  private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
 
   constructor(options: WorkflowExecutorOptions) {
     this.dataLayer = options.dataLayer
@@ -47,6 +56,7 @@ export class WorkflowExecutor {
     this.emailService = options.emailService
     this.httpClient = options.httpClient
     this.notificationService = options.notificationService
+    this.onEntityEvent = options.onEntityEvent
   }
 
   /**
@@ -168,7 +178,11 @@ export class WorkflowExecutor {
         if (!data) {
           throw new Error('Create action requires data')
         }
-        return this.dataLayer.create(step.entity, data)
+        {
+          const created = await this.dataLayer.create(step.entity, data)
+          await this.emitEntityEvent(step.entity, 'create', undefined, created, context)
+          return created
+        }
 
       case 'update':
         if (!data) {
@@ -179,7 +193,10 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Update action requires an id in the where clause')
           }
-          return this.dataLayer.update(step.entity, targetId, data)
+          const before = await this.dataLayer.findById(step.entity, targetId)
+          const updated = await this.dataLayer.update(step.entity, targetId, data)
+          await this.emitEntityEvent(step.entity, 'update', before, updated, context)
+          return updated
         }
 
       case 'delete':
@@ -188,7 +205,10 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Delete action requires an id in the where clause')
           }
-          return this.dataLayer.delete(step.entity, targetId)
+          const before = await this.dataLayer.findById(step.entity, targetId)
+          await this.dataLayer.delete(step.entity, targetId)
+          await this.emitEntityEvent(step.entity, 'delete', before || { id: targetId }, undefined, context)
+          return { deleted: true }
         }
 
       case 'find':
@@ -437,6 +457,30 @@ export class WorkflowExecutor {
     }
 
     return undefined
+  }
+
+  private async emitEntityEvent(
+    entity: string,
+    event: 'create' | 'update' | 'delete',
+    before: any,
+    after: any,
+    context: WorkflowContext
+  ): Promise<void> {
+    if (!this.onEntityEvent) {
+      return
+    }
+
+    const depth = Number((context.variables as any)?.__zebric?.depth || 0)
+    const sourceWorkflow = String((context.variables as any)?.__zebric?.sourceWorkflow || 'unknown')
+
+    await this.onEntityEvent({
+      entity,
+      event,
+      before,
+      after,
+      sourceWorkflow,
+      depth
+    })
   }
 
   /**

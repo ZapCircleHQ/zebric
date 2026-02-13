@@ -369,6 +369,30 @@ id = "{{ trigger.data.id }}"
 [workflow.ScoreRequestOnCreate.steps.data]
 status = "triage"
 
+[workflow.NotifyResolvedRequestToSlack]
+description = "Notify Slack when a request transitions into resolved."
+trigger = { entity = "Request", event = "update", condition = { "after.status" = "resolved", "before.status" = { "$ne" = "resolved" } } }
+
+[[workflow.NotifyResolvedRequestToSlack.steps]]
+type = "notify"
+adapter = "slack_dispatch"
+channel = "#dispatch-resolved"
+body = "Resolved: {{ trigger.after.title }} (request {{ trigger.after.id }})"
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[[notifications.adapters]]
+name = "slack_dispatch"
+type = "slack"
+[notifications.adapters.config]
+botToken = "replace-with-slack-bot-token"
+defaultChannel = "#dispatch-resolved"
+
 [auth]
 providers = ["email"]
 

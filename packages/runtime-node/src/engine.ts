@@ -208,6 +208,7 @@ export class ZebricEngine extends EventEmitter {
           tracer: this.tracer,
           metrics: this.metrics,
           pendingSchemaDiff: this.pendingSchemaDiff,
+          workflowManager: this.workflowManager,
           getHealthStatus: () => this.getHealth(),
           host: adminHost,
           port: adminPort,
@@ -386,6 +387,15 @@ export class ZebricEngine extends EventEmitter {
 
       this.blueprint = newBlueprint
       this.state.blueprint = newBlueprint
+
+      if (this.adminServer) {
+        this.adminServer.updateDependencies({
+          blueprint: newBlueprint,
+          state: this.state,
+          pendingSchemaDiff: this.pendingSchemaDiff,
+          workflowManager: this.workflowManager,
+        })
+      }
 
       // Update plugin API provider with new blueprint
       if (this.pluginAPIProvider) {

@@ -15,6 +15,7 @@ describe('WorkflowExecutor', () => {
   let mockHttpClient: HttpClient
   let mockEmailService: EmailService
   let mockNotificationService: { send: ReturnType<typeof vi.fn> }
+  let mockEntityEventHandler: ReturnType<typeof vi.fn>
   let executor: WorkflowExecutor
 
   beforeEach(() => {
@@ -23,6 +24,7 @@ describe('WorkflowExecutor', () => {
       create: vi.fn().mockResolvedValue({ id: '123' }),
       update: vi.fn().mockResolvedValue({ id: '123', updated: true }),
       delete: vi.fn().mockResolvedValue({ deleted: true }),
+      findById: vi.fn().mockResolvedValue({ id: '123', status: 'triage' }),
       execute: vi.fn().mockResolvedValue([{ id: '123', name: 'Test' }]),
     } as any
 
@@ -39,12 +41,14 @@ describe('WorkflowExecutor', () => {
     mockNotificationService = {
       send: vi.fn().mockResolvedValue(undefined),
     }
+    mockEntityEventHandler = vi.fn().mockResolvedValue(undefined)
 
     executor = new WorkflowExecutor({
       dataLayer: mockDataLayer,
       httpClient: mockHttpClient,
       emailService: mockEmailService,
       notificationService: mockNotificationService as any,
+      onEntityEvent: mockEntityEventHandler,
     })
   })
 
@@ -302,6 +306,43 @@ describe('WorkflowExecutor', () => {
         email: 'john@example.com',
       })
       expect(context.variables.newUser).toEqual({ id: '123' })
+    })
+
+    it('should propagate entity events from query update steps', async () => {
+      const workflow: Workflow = {
+        name: 'propagate-update-event',
+        trigger: { entity: 'user', event: 'update' },
+        steps: [
+          {
+            type: 'query',
+            entity: 'user',
+            action: 'update',
+            where: { id: '123' },
+            data: { status: 'resolved' },
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: { type: 'entity', entity: 'user', event: 'update' },
+        variables: {
+          __zebric: {
+            sourceWorkflow: 'upstream-workflow',
+            depth: 2,
+          },
+        },
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockEntityEventHandler).toHaveBeenCalledWith({
+        entity: 'user',
+        event: 'update',
+        before: { id: '123', status: 'triage' },
+        after: { id: '123', updated: true },
+        sourceWorkflow: 'upstream-workflow',
+        depth: 2,
+      })
     })
 
     it('should execute update query', async () => {

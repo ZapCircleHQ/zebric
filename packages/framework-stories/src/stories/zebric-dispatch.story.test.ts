@@ -54,4 +54,19 @@ describe('Story: zebric-dispatch', () => {
     expect(statusWorkflow?.trigger?.manual).toBe(true)
     expect(bucketWorkflow?.trigger?.manual).toBe(true)
   })
+
+  it('configures Slack notifications for resolved request transitions', () => {
+    expect(blueprint.notifications?.adapters.some((adapter) => adapter.name === 'slack_dispatch' && adapter.type === 'slack')).toBe(true)
+
+    const notifyWorkflow = blueprint.workflows?.find((workflow) => workflow.name === 'NotifyResolvedRequestToSlack')
+    expect(notifyWorkflow).toBeDefined()
+    expect(notifyWorkflow?.trigger?.entity).toBe('Request')
+    expect(notifyWorkflow?.trigger?.event).toBe('update')
+    expect(notifyWorkflow?.trigger?.condition).toEqual({
+      'after.status': 'resolved',
+      'before.status': { $ne: 'resolved' }
+    })
+    expect(notifyWorkflow?.steps[0]?.type).toBe('notify')
+    expect((notifyWorkflow?.steps[0] as any)?.adapter).toBe('slack_dispatch')
+  })
 })
