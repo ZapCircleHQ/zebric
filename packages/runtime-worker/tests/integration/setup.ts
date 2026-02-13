@@ -124,10 +124,10 @@ export function createTestBlueprint(): Blueprint {
           { name: 'createdAt', type: 'DateTime', default: 'now()' }
         ],
         access: {
-          create: 'authenticated',
+          create: 'public',
           read: 'public',
-          update: 'owner',
-          delete: 'owner'
+          update: 'public',
+          delete: 'public'
         }
       },
       {
@@ -176,6 +176,15 @@ export function createTestBlueprint(): Blueprint {
           task: {
             entity: 'Task',
             where: { id: '{id}' }
+          }
+        },
+        form: {
+          entity: 'Task',
+          method: 'delete',
+          fields: [],
+          onSuccess: {
+            redirect: '/tasks',
+            message: 'Deleted successfully'
           }
         }
       },

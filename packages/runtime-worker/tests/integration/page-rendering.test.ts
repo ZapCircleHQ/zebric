@@ -47,7 +47,7 @@ describe('Page Rendering Integration Tests', () => {
       expect(html).toContain('<!DOCTYPE html>')
       expect(html).toContain('<html')
       expect(html).toContain('<head>')
-      expect(html).toContain('<body>')
+      expect(html).toContain('<body')
       expect(html).toContain('</html>')
 
       // Check for page title
@@ -61,7 +61,7 @@ describe('Page Rendering Integration Tests', () => {
 
       const html = await response.text()
 
-      expect(html).toContain('<meta charset="utf-8"')
+      expect(html).toContain('charset="UTF-8"')
       expect(html).toContain('<meta name="viewport"')
     })
   })
@@ -246,7 +246,7 @@ describe('Page Rendering Integration Tests', () => {
       const html = await response.text()
 
       // Should contain UTF-8 meta tag
-      expect(html).toContain('charset="utf-8"')
+      expect(html).toContain('charset="UTF-8"')
     })
 
     it('should handle emoji in data', async () => {

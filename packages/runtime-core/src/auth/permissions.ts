@@ -176,6 +176,21 @@ export class PermissionManager {
       return condition
     }
 
+    // String shorthand conditions
+    if (typeof condition === 'string') {
+      switch (condition) {
+        case 'public':
+          return true
+        case 'authenticated':
+          return !!context.session?.user
+        case 'owner':
+          if (!context.session?.user?.id || !context.data) return false
+          return context.data.userId === context.session.user.id
+        default:
+          return false
+      }
+    }
+
     // AND condition
     if ('and' in condition && Array.isArray(condition.and)) {
       return condition.and.every(c => this.evaluateAccessCondition(c, context))

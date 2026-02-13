@@ -61,19 +61,29 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build runtime dependencies for tests
+        run: |
+          pnpm --filter @zebric/runtime-core build
+          pnpm --filter @zebric/runtime-hono build
+          pnpm --filter @zebric/notifications build
+
       - name: Run tests
-        run: pnpm --filter @zebric/runtime test
+        run: |
+          pnpm --filter @zebric/runtime-core test
+          pnpm --filter @zebric/runtime-node test
+          pnpm --filter @zebric/runtime-worker exec vitest run src
 
       - name: Generate coverage report
-        run: pnpm --filter @zebric/runtime test -- --coverage
-        continue-on-error: true
+        run: |
+          pnpm --filter @zebric/runtime-core test:coverage
+          pnpm --filter @zebric/runtime-node test:coverage
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./packages/runtime/coverage/coverage-final.json
-          flags: runtime
+          files: ./packages/runtime-core/coverage/coverage-final.json,./packages/runtime-node/coverage/coverage-final.json
+          flags: runtime-core,runtime-node
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
@@ -137,12 +147,12 @@ jobs:
       - name: Test task-tracker blueprint parse
         run: |
           echo "Testing task-tracker blueprint..."
-          node packages/cli/dist/index.js validate examples/task-tracker/blueprint.toml || echo "Validation not yet implemented"
+          node packages/cli/dist/index.js validate --blueprint examples/task-tracker/blueprint.toml
 
       - name: Test blog blueprint parse
         run: |
           echo "Testing blog blueprint..."
-          node packages/cli/dist/index.js validate examples/blog/blueprint.toml || echo "Validation not yet implemented"
+          node packages/cli/dist/index.js validate --blueprint examples/blog/blueprint.toml
 
   all-checks:
     name: All Checks Passed
