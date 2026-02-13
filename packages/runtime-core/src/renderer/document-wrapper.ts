@@ -262,13 +262,27 @@ export class DocumentWrapper {
               // Check if form has file inputs
               const hasFiles = Array.from(formData.entries()).some(([_, value]) => value instanceof File)
               const csrfEntry = formData.get('_csrf')
-              const csrfHeader = csrfEntry ? String(csrfEntry) : null
+              const cookieCsrf = document.cookie
+                .split(';')
+                .map(part => part.trim())
+                .find(part => part.startsWith('csrf-token='))
+                ?.split('=')
+                ?.slice(1)
+                ?.join('=')
+              const cookieToken = cookieCsrf ? decodeURIComponent(cookieCsrf) : null
+              const formToken = csrfEntry ? String(csrfEntry) : null
+              const csrfValue = cookieToken || formToken
+              if (csrfValue) {
+                formData.set('_csrf', csrfValue)
+              }
+              const csrfHeader = csrfValue
 
               let response
               if (hasFiles) {
                 // Use multipart/form-data for file uploads
                 response = await fetch(form.action, {
                   method: form.getAttribute('method') || 'POST',
+                  credentials: 'same-origin',
                   headers: {
                     'Accept': 'application/json',
                     ...(csrfHeader ? { 'x-csrf-token': csrfHeader } : {})
@@ -281,6 +295,7 @@ export class DocumentWrapper {
                 const data = Object.fromEntries(formData)
                 response = await fetch(form.action, {
                   method: form.getAttribute('method') || 'POST',
+                  credentials: 'same-origin',
                   headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',

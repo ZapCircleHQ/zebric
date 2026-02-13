@@ -273,6 +273,52 @@ describe('WorkflowExecutor', () => {
         body: undefined,
         template: 'Welcome {{variables.userName}}',
         params: { app: 'OpsHub' },
+        metadata: undefined,
+      })
+    })
+
+    it('should execute notify step with resolved metadata', async () => {
+      const workflow: Workflow = {
+        name: 'notify-metadata-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Request {{trigger.after.id}} resolved',
+            metadata: {
+              threadTs: '{{trigger.after.threadTs}}',
+              mrkdwn: true,
+            },
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { id: 'req_123', threadTs: '1700000000.123456' },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Request req_123 resolved',
+        template: undefined,
+        params: undefined,
+        metadata: {
+          threadTs: '1700000000.123456',
+          mrkdwn: true,
+        },
       })
     })
   })

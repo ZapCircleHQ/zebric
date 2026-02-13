@@ -57,6 +57,8 @@ describe('Story: zebric-dispatch', () => {
 
   it('configures Slack notifications for resolved request transitions', () => {
     expect(blueprint.notifications?.adapters.some((adapter) => adapter.name === 'slack_dispatch' && adapter.type === 'slack')).toBe(true)
+    const slackAdapter = blueprint.notifications?.adapters.find((adapter) => adapter.name === 'slack_dispatch')
+    expect((slackAdapter as any)?.config?.botTokenEnv).toBe('SLACK_BOT_TOKEN')
 
     const notifyWorkflow = blueprint.workflows?.find((workflow) => workflow.name === 'NotifyResolvedRequestToSlack')
     expect(notifyWorkflow).toBeDefined()
@@ -68,5 +70,9 @@ describe('Story: zebric-dispatch', () => {
     })
     expect(notifyWorkflow?.steps[0]?.type).toBe('notify')
     expect((notifyWorkflow?.steps[0] as any)?.adapter).toBe('slack_dispatch')
+    expect((notifyWorkflow?.steps[0] as any)?.metadata).toEqual({
+      threadTs: '{{ trigger.after.sourceRef }}',
+      mrkdwn: true
+    })
   })
 })

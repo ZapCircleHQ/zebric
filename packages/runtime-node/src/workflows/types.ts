@@ -55,6 +55,7 @@ export interface WorkflowStep {
   // Notification step
   adapter?: string
   channel?: string
+  metadata?: Record<string, any>
 }
 
 export interface Workflow {

@@ -134,22 +134,22 @@ export class ZebricEngine extends EventEmitter {
       this.sessionManager = sessionManager
       // permissionManager is used internally by subsystem initializer
 
-      // 6. Initialize Workflows
-      this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
-
-      // 7. Initialize File Storage
-      await this.fileStorage.initialize()
-
-      // 8. Initialize Plugin API Provider
-      this.initializePluginAPIProvider()
-
-      // 8. Load Plugins (after core systems are initialized)
-      await this.loadPlugins()
-
-      // 9. Initialize Notifications
+      // 6. Initialize Notifications
       this.notificationManager = this.subsystemInitializer.initializeNotifications()
 
-      // 10. Create Hono adapter with all dependencies
+      // 7. Initialize Workflows
+      this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
+
+      // 8. Initialize File Storage
+      await this.fileStorage.initialize()
+
+      // 9. Initialize Plugin API Provider
+      this.initializePluginAPIProvider()
+
+      // 10. Load Plugins (after core systems are initialized)
+      await this.loadPlugins()
+
+      // 11. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'

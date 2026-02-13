@@ -84,16 +84,30 @@ export class ComponentRenderers {
               `
               : safe(items.map(item => {
                 const itemId = getItemIdentifier(item)
+                const detailHref = this.utils.resolveEntityLink(detailPath, entity?.name, item)
                 return html`
                 <tr class="${this.theme.tableRow}">
-                  ${safe(fields.map(f => html`
-                    <td class="${this.theme.tableCell}">
-                      ${this.utils.formatValue(item[f.name], f.type)}
-                    </td>
-                  `.html).join(''))}
+                  ${safe(fields.map((f, index) => {
+                    const value = this.utils.formatValue(item[f.name], f.type)
+                    return html`
+                      <td class="${this.theme.tableCell}">
+                        ${index === 0
+                          ? html`
+                            <a
+                              href="${detailHref}"
+                              class="${this.theme.linkPrimary}"
+                              aria-label="View ${escapeHtmlAttr(itemId)} details"
+                            >
+                              ${value}
+                            </a>
+                          `
+                          : value}
+                      </td>
+                    `.html
+                  }).join(''))}
                   <td class="${this.theme.tableCell} ${this.theme.tableActions}">
                     <a
-                      href="${this.utils.resolveEntityLink(detailPath, entity?.name, item)}"
+                      href="${detailHref}"
                       class="${this.theme.linkPrimary}"
                       aria-label="View ${escapeHtmlAttr(itemId)}"
                     >

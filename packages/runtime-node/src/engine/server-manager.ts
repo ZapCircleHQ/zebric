@@ -329,15 +329,23 @@ export class ServerManager {
         return Response.json({ error: 'Workflow name is required' }, { status: 400 })
       }
 
-      const session = await this.sessionManager.getSession(c.req.raw)
-      if (!session) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
       let body: Record<string, any> = {}
 
       try {
         body = await this.parseActionRequestBody(c)
+        const pagePath = typeof body.page === 'string' ? body.page : undefined
+        const sourcePage = pagePath
+          ? this.blueprint.pages.find((page) => page.path === pagePath)
+          : undefined
+        const authRequired = sourcePage
+          ? sourcePage.auth !== 'none' && sourcePage.auth !== 'optional'
+          : true
+
+        const session = await this.sessionManager.getSession(c.req.raw)
+        if (authRequired && !session) {
+          return Response.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+
         const payload = this.parseActionPayload(body.payload)
         const entity = typeof body.entity === 'string' ? body.entity : undefined
         const recordId = typeof body.recordId === 'string' ? body.recordId : undefined
@@ -590,7 +598,8 @@ export class ServerManager {
 
     if (contentType.includes('application/json')) {
       try {
-        return await c.req.json<Record<string, any>>()
+        const parsed = await c.req.json<Record<string, any>>()
+        return this.normalizeActionBody(parsed)
       } catch {
         return {}
       }
@@ -599,7 +608,7 @@ export class ServerManager {
     if (contentType.includes('application/x-www-form-urlencoded') || contentType.includes('multipart/form-data')) {
       try {
         const body = await c.req.parseBody()
-        return body as Record<string, any>
+        return this.normalizeActionBody(body as Record<string, any>)
       } catch {
         return {}
       }
@@ -622,6 +631,40 @@ export class ServerManager {
     }
 
     return value
+  }
+
+  private normalizeActionBody(body: Record<string, any>): Record<string, any> {
+    const normalized: Record<string, any> = {}
+    for (const [key, value] of Object.entries(body || {})) {
+      if (typeof value === 'string') {
+        normalized[key] = this.decodeHtmlEntities(value)
+      } else {
+        normalized[key] = value
+      }
+    }
+    return normalized
+  }
+
+  private decodeHtmlEntities(input: string): string {
+    if (!input || !input.includes('&')) {
+      return input
+    }
+
+    return input
+      .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => {
+        const code = Number.parseInt(hex, 16)
+        return Number.isFinite(code) ? String.fromCharCode(code) : _m
+      })
+      .replace(/&#([0-9]+);/g, (_m, dec) => {
+        const code = Number.parseInt(dec, 10)
+        return Number.isFinite(code) ? String.fromCharCode(code) : _m
+      })
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
   }
 
   private acceptsJson(c: Context): boolean {
@@ -744,11 +787,14 @@ export class ServerManager {
   private async applyCsrfProtection(c: Context): Promise<Response | void> {
     const method = c.req.method.toUpperCase()
     const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
-    const existingToken = getCookie(c, this.csrfCookieName)
+    const existingTokenRaw = getCookie(c, this.csrfCookieName)
+    const existingToken = this.normalizeCsrfToken(existingTokenRaw)
 
     if (isSafeMethod) {
-      if (!existingToken) {
-        setCookie(c, this.csrfCookieName, randomUUID(), {
+      const token = existingToken || randomUUID()
+      Reflect.set(c.req.raw, '__zebricCsrfToken', token)
+      if (!existingTokenRaw) {
+        setCookie(c, this.csrfCookieName, token, {
           httpOnly: false,
           sameSite: 'strict',
           secure: false,
@@ -758,14 +804,51 @@ export class ServerManager {
       return
     }
 
-    let submittedToken = c.req.header('x-csrf-token') || undefined
+    let submittedToken =
+      c.req.raw.headers.get('x-csrf-token')
+      || c.req.raw.headers.get('X-CSRF-Token')
+      || c.req.header('x-csrf-token')
+      || undefined
     if (!submittedToken) {
       submittedToken = await this.extractCsrfToken(c)
     }
+    submittedToken = this.normalizeCsrfToken(submittedToken)
+
+    // Self-heal missing/stale cookie when request provides a valid token.
+    if (!existingToken && submittedToken) {
+      setCookie(c, this.csrfCookieName, submittedToken, {
+        httpOnly: false,
+        sameSite: 'strict',
+        secure: false,
+        path: '/'
+      })
+      return
+    }
+
+    // If cookie drifted but request token is present, rotate cookie to submitted token.
+    if (existingToken && submittedToken && existingToken !== submittedToken) {
+      setCookie(c, this.csrfCookieName, submittedToken, {
+        httpOnly: false,
+        sameSite: 'strict',
+        secure: false,
+        path: '/'
+      })
+      return
+    }
 
     if (!existingToken || !submittedToken || existingToken !== submittedToken) {
+      const diagnostics = this.config.dev?.logLevel === 'debug'
+        ? {
+            method,
+            path: new URL(c.req.url).pathname,
+            hasCookieToken: Boolean(existingToken),
+            hasSubmittedToken: Boolean(submittedToken),
+            cookieTokenPreview: existingToken ? existingToken.slice(0, 8) : null,
+            submittedTokenPreview: submittedToken ? submittedToken.slice(0, 8) : null
+          }
+        : undefined
       return Response.json(
-        { error: 'Invalid CSRF token' },
+        { error: 'Invalid CSRF token', diagnostics },
         { status: 403 }
       )
     }
@@ -786,6 +869,20 @@ export class ServerManager {
     c.header('X-Frame-Options', 'DENY')
     c.header('X-XSS-Protection', '1; mode=block')
     c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+
+  private normalizeCsrfToken(value: string | undefined): string | undefined {
+    if (!value) {
+      return undefined
+    }
+    const trimmed = value.trim()
+    if (!trimmed) {
+      return undefined
+    }
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+      return trimmed.slice(1, -1)
+    }
+    return trimmed
   }
 
   private getMimeType(filename: string): string {

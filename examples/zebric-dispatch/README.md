@@ -49,6 +49,19 @@ pnpm --filter zebric-dispatch dev
 
 Then open http://localhost:3000.
 
+### Slack Notification Wiring
+
+Dispatch includes a `NotifyResolvedRequestToSlack` workflow that runs when a `Request` transitions to `resolved`.
+
+Set these env vars before starting the app to enable real Slack delivery:
+
+```bash
+export SLACK_BOT_TOKEN="xoxb-..."
+export SLACK_DEFAULT_CHANNEL="#dispatch-resolved"
+```
+
+Without `SLACK_BOT_TOKEN`, the Slack adapter is not initialized and resolved-notification jobs will fail.
+
 ## Workflow Smoke Test
 
 With Dispatch running locally:

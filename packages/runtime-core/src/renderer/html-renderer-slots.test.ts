@@ -71,6 +71,7 @@ describe('HTMLRenderer - Layout Slots', () => {
       expect(html).toContain('Tasks')
       expect(html).toContain('Task 1')
       expect(html).toContain('Task 2')
+      expect(html).toContain('href="&#x2F;tasks&#x2F;1"')
     })
 
     it('should render an empty table with zero-row description when list has no data', () => {

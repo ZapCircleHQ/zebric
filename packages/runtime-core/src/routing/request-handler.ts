@@ -716,6 +716,10 @@ export class RequestHandler {
   }
 
   private getCsrfTokenFromCookies(request: HttpRequest): string | undefined {
+    const injectedToken = request.headers['x-zebric-csrf-token']
+    if (typeof injectedToken === 'string' && injectedToken.length > 0) {
+      return injectedToken
+    }
     const cookieHeader = (request.headers['cookie'] as string) || (request.headers['Cookie'] as string)
     if (!cookieHeader) {
       return undefined

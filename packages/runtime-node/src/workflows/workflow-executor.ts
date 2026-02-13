@@ -279,6 +279,7 @@ export class WorkflowExecutor {
     const subject = step.subject ? this.resolveVariables(step.subject, context) : undefined
     const body = step.body ? this.resolveVariables(step.body, context) : undefined
     const params = step.params ? this.resolveVariables(step.params, context) : undefined
+    const metadata = step.metadata ? this.resolveVariables(step.metadata, context) : undefined
 
     await this.notificationService.send({
       adapter: step.adapter,
@@ -288,6 +289,7 @@ export class WorkflowExecutor {
       body,
       template: step.template,
       params,
+      metadata,
     })
   }
 
