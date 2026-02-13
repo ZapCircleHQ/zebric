@@ -432,6 +432,7 @@ export class ServerManager {
           const data = await c.req.json<Record<string, any>>()
           const session = await this.sessionManager.getSession(c.req.raw)
           const result = await this.queryExecutor.create(entity.name, data, { session })
+          await this.triggerEntityWorkflows(entity.name, 'create', result)
           return Response.json(result, { status: 201 })
         } catch (error) {
           console.error(`Create ${entity.name} error:`, error)
@@ -494,6 +495,7 @@ export class ServerManager {
           const data = await c.req.json<Record<string, any>>()
           const session = await this.sessionManager.getSession(c.req.raw)
           const result = await this.queryExecutor.update(entity.name, id, data, { session })
+          await this.triggerEntityWorkflows(entity.name, 'update', result)
           return Response.json(result)
         } catch (error) {
           console.error(`Update ${entity.name} error:`, error)
@@ -512,8 +514,12 @@ export class ServerManager {
       this.app.delete(entityPathWithId, async (c) => {
         try {
           const { id } = c.req.param() as { id: string }
+          const existing = this.workflowManager
+            ? await this.queryExecutor.findById(entity.name, id).catch(() => null)
+            : null
           const session = await this.sessionManager.getSession(c.req.raw)
           await this.queryExecutor.delete(entity.name, id, { session })
+          await this.triggerEntityWorkflows(entity.name, 'delete', existing || { id })
           return Response.json({ success: true })
         } catch (error) {
           console.error(`Delete ${entity.name} error:`, error)
@@ -526,6 +532,22 @@ export class ServerManager {
           )
         }
       })
+    }
+  }
+
+  private async triggerEntityWorkflows(
+    entity: string,
+    event: 'create' | 'update' | 'delete',
+    record: any
+  ): Promise<void> {
+    if (!this.workflowManager) {
+      return
+    }
+
+    try {
+      await this.workflowManager.triggerEntityEvent(entity, event, record)
+    } catch (error) {
+      console.error(`Failed to trigger ${event} workflows for ${entity}:`, error)
     }
   }
 

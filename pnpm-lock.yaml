@@ -98,6 +98,15 @@ importers:
         specifier: ^3.78.12
         version: 3.114.15(@cloudflare/workers-types@4.20251109.0)
 
+  examples/zebric-dispatch:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
   packages/cli:
     dependencies:
       '@zebric/runtime-node':

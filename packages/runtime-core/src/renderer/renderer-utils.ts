@@ -13,14 +13,14 @@ export class RendererUtils {
    * Get display fields from a record and entity definition
    */
   getDisplayFields(record: any, entity?: any): Array<{name: string, type: string}> {
-    if (!record) return []
-
     // If we have entity definition, use it
     if (entity?.fields) {
       return entity.fields
         .filter((f: any) => !['id', 'createdAt', 'updatedAt'].includes(f.name))
         .map((f: any) => ({ name: f.name, type: f.type }))
     }
+
+    if (!record) return []
 
     // Otherwise infer from record
     return Object.keys(record)

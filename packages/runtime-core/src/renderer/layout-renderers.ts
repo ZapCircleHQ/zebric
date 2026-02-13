@@ -89,20 +89,20 @@ export class LayoutRenderers {
       () => this.componentRenderers.renderPageHeader(page, entity)
     )
 
-    const emptyBody = this.renderSlot(
-      page,
-      'list.empty',
-      context,
-      { entity },
-      () => this.componentRenderers.renderEmptyState(entity?.name || 'items')
-    )
-
     const tableBody = this.renderSlot(
       page,
       'list.body',
       context,
       { entity, items },
       () => this.componentRenderers.renderTable(items, entity)
+    )
+
+    const emptyBody = this.renderSlot(
+      page,
+      'list.empty',
+      context,
+      { entity, items },
+      () => tableBody
     )
 
     const segments = {

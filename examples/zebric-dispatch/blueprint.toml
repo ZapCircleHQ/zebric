@@ -1,0 +1,378 @@
+version = "0.1.0"
+
+[project]
+name = "Zebric Dispatch"
+version = "0.1.0"
+description = "Internal approvals workflow, work intake, and agent collaboration app."
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.TeamMember]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", unique = true, required = true },
+  { name = "role", type = "Enum", values = ["engineer", "pm", "founder", "support"], required = true },
+  { name = "team", type = "Text", required = true },
+  { name = "slackHandle", type = "Text" }
+]
+
+[entity.RequestCluster]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "theme", type = "Text" },
+  { name = "summary", type = "LongText" },
+  { name = "quarterBucket", type = "Enum", values = ["committed", "maybe", "not_now"], default = "maybe" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Request]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", required = true },
+  { name = "source", type = "Enum", values = ["slack", "linear", "github", "notion", "manual"], required = true },
+  { name = "sourceRef", type = "Text" },
+  { name = "status", type = "Enum", values = ["new", "triage", "planned", "in_progress", "blocked", "resolved"], default = "new" },
+  { name = "priority", type = "Enum", values = ["low", "normal", "high", "critical"], default = "normal" },
+  { name = "priorityScore", type = "Integer", default = 50 },
+  { name = "severity", type = "Enum", values = ["low", "medium", "high", "urgent"], default = "medium" },
+  { name = "customerImpact", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "arrBand", type = "Enum", values = ["unknown", "small", "mid", "enterprise"], default = "unknown" },
+  { name = "pathway", type = "Text" },
+  { name = "summary", type = "LongText" },
+  { name = "intakeChannel", type = "Text" },
+  { name = "clusterId", type = "Ref", ref = "RequestCluster.id" },
+  { name = "duplicateOfId", type = "Ref", ref = "Request.id" },
+  { name = "assigneeId", type = "Ref", ref = "TeamMember.id" },
+  { name = "reporterId", type = "Ref", ref = "TeamMember.id" },
+  { name = "blueprintBehavior", type = "Text" },
+  { name = "blueprintPath", type = "Text" },
+  { name = "slaDueAt", type = "DateTime" },
+  { name = "lastActivityAt", type = "DateTime", default = "now" },
+  { name = "resolvedAt", type = "DateTime" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Request.relations]
+cluster = { type = "belongsTo", entity = "RequestCluster", foreign_key = "clusterId" }
+assignee = { type = "belongsTo", entity = "TeamMember", foreign_key = "assigneeId" }
+reporter = { type = "belongsTo", entity = "TeamMember", foreign_key = "reporterId" }
+
+[entity.ExternalSignal]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id" },
+  { name = "source", type = "Enum", values = ["slack", "linear", "github", "notion", "email"], required = true },
+  { name = "externalId", type = "Text", required = true },
+  { name = "externalUrl", type = "Text" },
+  { name = "payload", type = "JSON" },
+  { name = "receivedAt", type = "DateTime", default = "now" }
+]
+
+[entity.RequestDecision]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "changedById", type = "Ref", ref = "TeamMember.id" },
+  { name = "previousPriority", type = "Enum", values = ["low", "normal", "high", "critical"] },
+  { name = "newPriority", type = "Enum", values = ["low", "normal", "high", "critical"] },
+  { name = "previousStatus", type = "Enum", values = ["new", "triage", "planned", "in_progress", "blocked", "resolved"] },
+  { name = "newStatus", type = "Enum", values = ["new", "triage", "planned", "in_progress", "blocked", "resolved"] },
+  { name = "quarterBucket", type = "Enum", values = ["committed", "maybe", "not_now"] },
+  { name = "reason", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.RequestDecision.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+changedBy = { type = "belongsTo", entity = "TeamMember", foreign_key = "changedById" }
+
+[entity.PullRequestLink]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "provider", type = "Enum", values = ["github"], default = "github" },
+  { name = "prNumber", type = "Integer", required = true },
+  { name = "prUrl", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["open", "merged", "closed"], default = "open" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "Dispatch Dashboard"
+auth = "none"
+layout = "dashboard"
+
+[page."/".query.hotRequests]
+entity = "Request"
+where = { priority = "critical" }
+orderBy = { updatedAt = "desc" }
+limit = 8
+
+[page."/".query.blockedRequests]
+entity = "Request"
+where = { status = "blocked" }
+orderBy = { updatedAt = "desc" }
+limit = 8
+
+[page."/".query.roadmapCandidates]
+entity = "Request"
+where = { status = "planned" }
+orderBy = { priorityScore = "desc" }
+limit = 12
+
+[page."/inbox"]
+title = "Dispatch Inbox"
+auth = "none"
+layout = "list"
+
+[page."/inbox".query.requests]
+entity = "Request"
+where = { status = "new" }
+orderBy = { createdAt = "desc" }
+limit = 100
+include = ["assignee", "cluster"]
+
+[page."/triage"]
+title = "Triage Queue"
+auth = "none"
+layout = "list"
+
+[page."/triage".query.requests]
+entity = "Request"
+where = { status = "triage" }
+orderBy = { priorityScore = "desc" }
+limit = 100
+include = ["assignee", "cluster"]
+
+[page."/requests/new"]
+title = "Capture Request"
+auth = "none"
+layout = "form"
+
+[page."/requests/new".form]
+entity = "Request"
+method = "create"
+
+[[page."/requests/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+placeholder = "Customer cannot complete checkout on Safari"
+
+[[page."/requests/new".form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 6
+required = true
+placeholder = "Paste Slack thread summary or issue details"
+
+[[page."/requests/new".form.fields]]
+name = "source"
+type = "select"
+label = "Source"
+required = true
+options = [
+  { value = "slack", label = "Slack" },
+  { value = "linear", label = "Linear" },
+  { value = "github", label = "GitHub" },
+  { value = "notion", label = "Notion" },
+  { value = "manual", label = "Manual" }
+]
+
+[[page."/requests/new".form.fields]]
+name = "sourceRef"
+type = "text"
+label = "Source Reference"
+placeholder = "Slack thread URL / Linear issue key / GitHub issue URL"
+
+[[page."/requests/new".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+options = [
+  { value = "low", label = "Low" },
+  { value = "normal", label = "Normal" },
+  { value = "high", label = "High" },
+  { value = "critical", label = "Critical" }
+]
+default = "normal"
+
+[page."/requests/new".form.onSuccess]
+redirect = "/requests/{id}"
+message = "Dispatch request captured and queued for triage."
+
+[page."/requests/:id"]
+title = "Request Detail"
+auth = "none"
+layout = "detail"
+
+[page."/requests/:id".query.request]
+entity = "Request"
+where = { id = "$params.id" }
+include = ["assignee", "cluster", "reporter"]
+
+[page."/requests/:id".query.signals]
+entity = "ExternalSignal"
+where = { requestId = "$params.id" }
+orderBy = { receivedAt = "desc" }
+
+[page."/requests/:id".query.decisions]
+entity = "RequestDecision"
+where = { requestId = "$params.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/requests/:id".query.prs]
+entity = "PullRequestLink"
+where = { requestId = "$params.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/requests/:id".actionBar]
+title = "Triage Actions"
+description = "Advance lifecycle, sync state, and keep request context clean."
+statusField = "status"
+
+[[page."/requests/:id".actionBar.actions]]
+label = "Move to triage"
+workflow = "SetRequestStatus"
+style = "secondary"
+payload = { status = "triage" }
+successMessage = "Request moved to triage."
+
+[[page."/requests/:id".actionBar.actions]]
+label = "Mark planned"
+workflow = "SetRequestStatus"
+style = "primary"
+payload = { status = "planned" }
+successMessage = "Request marked as planned."
+
+[[page."/requests/:id".actionBar.actions]]
+label = "Mark resolved"
+workflow = "SetRequestStatus"
+style = "secondary"
+payload = { status = "resolved" }
+successMessage = "Request marked as resolved."
+
+[[page."/requests/:id".actionBar.secondaryActions]]
+label = "Set Committed"
+workflow = "SetQuarterBucket"
+style = "ghost"
+payload = { quarterBucket = "committed" }
+successMessage = "Roadmap bucket updated to committed."
+
+[[page."/requests/:id".actionBar.secondaryActions]]
+label = "Set Maybe"
+workflow = "SetQuarterBucket"
+style = "ghost"
+payload = { quarterBucket = "maybe" }
+successMessage = "Roadmap bucket updated to maybe."
+
+[[page."/requests/:id".actionBar.secondaryActions]]
+label = "Set Not now"
+workflow = "SetQuarterBucket"
+style = "ghost"
+payload = { quarterBucket = "not_now" }
+successMessage = "Roadmap bucket updated to not now."
+
+[page."/clusters"]
+title = "Request Clusters"
+auth = "none"
+layout = "list"
+
+[page."/clusters".query.clusters]
+entity = "RequestCluster"
+orderBy = { updatedAt = "desc" }
+limit = 100
+
+[page."/clusters/:id"]
+title = "Cluster Detail"
+auth = "none"
+layout = "detail"
+
+[page."/clusters/:id".query.cluster]
+entity = "RequestCluster"
+where = { id = "$params.id" }
+
+[page."/clusters/:id".query.requests]
+entity = "Request"
+where = { clusterId = "$params.id" }
+orderBy = { priorityScore = "desc" }
+limit = 200
+
+[page."/roadmap"]
+title = "Roadmap Themes"
+auth = "none"
+layout = "list"
+
+[page."/roadmap".query.requests]
+entity = "Request"
+where = { status = "planned" }
+orderBy = { priorityScore = "desc" }
+limit = 200
+include = ["cluster", "assignee"]
+
+# ==========================================
+# Workflows
+# ==========================================
+
+[workflow.SetRequestStatus]
+description = "Manual action from request detail page to update status."
+trigger = { manual = true }
+
+[[workflow.SetRequestStatus.steps]]
+type = "query"
+entity = "Request"
+action = "update"
+[workflow.SetRequestStatus.steps.where]
+id = "{{ variables.data.record.id }}"
+[workflow.SetRequestStatus.steps.data]
+status = "{{ variables.data.payload.status }}"
+
+[workflow.SetQuarterBucket]
+description = "Manual action to set roadmap bucket and leave an audit decision record."
+trigger = { manual = true }
+
+[[workflow.SetQuarterBucket.steps]]
+type = "query"
+entity = "RequestDecision"
+action = "create"
+[workflow.SetQuarterBucket.steps.data]
+requestId = "{{ variables.data.record.id }}"
+quarterBucket = "{{ variables.data.payload.quarterBucket }}"
+reason = "Updated from request detail action bar."
+
+[workflow.ScoreRequestOnCreate]
+description = "Seed a baseline priority score from severity and impact metadata."
+trigger = { entity = "Request", event = "create" }
+
+[[workflow.ScoreRequestOnCreate.steps]]
+type = "query"
+entity = "Request"
+action = "update"
+[workflow.ScoreRequestOnCreate.steps.where]
+id = "{{ trigger.data.id }}"
+[workflow.ScoreRequestOnCreate.steps.data]
+status = "triage"
+
+[auth]
+providers = ["email"]
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

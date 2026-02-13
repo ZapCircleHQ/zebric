@@ -34,6 +34,13 @@ export const stories: StoryDefinition[] = [
     blueprintPath: 'examples/blog/blueprint.toml',
     description: 'Verifies author relations, slug validation, and published-only visibility for the blog starter blueprint.',
     tests: ['src/stories/blog.story.test.ts']
+  },
+  {
+    id: 'zebric-dispatch',
+    title: 'Teams triage product requests through the Dispatch workflow',
+    blueprintPath: 'examples/zebric-dispatch/blueprint.toml',
+    description: 'Validates dashboard/list/detail/form routing, intake form option labels, and action-bar workflows for request lifecycle updates.',
+    tests: ['src/stories/zebric-dispatch.story.test.ts']
   }
 ]
 

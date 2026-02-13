@@ -43,13 +43,13 @@ export class ComponentRenderers {
    * Render table of items
    */
   renderTable(items: any[], entity?: any): SafeHtml {
-    if (items.length === 0) return safe('')
-
     const fields = this.utils.getDisplayFields(items[0], entity)
     const detailPath = this.utils.getEntityPagePath(entity?.name, 'detail')
     const editPath = this.utils.getEntityPagePath(entity?.name, 'update')
     const entityName = entity?.name || 'items'
     const tableCaption = `${entityName.charAt(0).toUpperCase()}${entityName.slice(1)} list`
+    const dataColumns = fields.length > 0 ? fields.length : 1
+    const rowCountDescription = `${items.length} row${items.length === 1 ? '' : 's'} of data`
 
     // Helper to get a readable identifier for an item
     const getItemIdentifier = (item: any): string => {
@@ -60,6 +60,7 @@ export class ComponentRenderers {
 
     return html`
       <div class="${this.theme.card}">
+        <p class="px-6 pt-6 text-sm text-gray-500">${rowCountDescription}</p>
         <table class="${this.theme.table}">
           <caption class="sr-only">${tableCaption}</caption>
           <thead>
@@ -73,34 +74,42 @@ export class ComponentRenderers {
             </tr>
           </thead>
           <tbody>
-            ${safe(items.map(item => {
-              const itemId = getItemIdentifier(item)
-              return html`
-              <tr class="${this.theme.tableRow}">
-                ${safe(fields.map(f => html`
-                  <td class="${this.theme.tableCell}">
-                    ${this.utils.formatValue(item[f.name], f.type)}
+            ${items.length === 0
+              ? html`
+                <tr class="${this.theme.tableRow}">
+                  <td colspan="${dataColumns + 1}" class="${this.theme.tableCell} text-gray-500">
+                    No rows to display.
                   </td>
-                `.html).join(''))}
-                <td class="${this.theme.tableCell} ${this.theme.tableActions}">
-                  <a
-                    href="${this.utils.resolveEntityLink(detailPath, entity?.name, item)}"
-                    class="${this.theme.linkPrimary}"
-                    aria-label="View ${escapeHtmlAttr(itemId)}"
-                  >
-                    View
-                  </a>
-                  <a
-                    href="${this.utils.resolveEntityLink(editPath, entity?.name, item, 'edit')}"
-                    class="${this.theme.linkSecondary}"
-                    aria-label="Edit ${escapeHtmlAttr(itemId)}"
-                  >
-                    Edit
-                  </a>
-                </td>
-              </tr>
-            `.html
-            }).join(''))}
+                </tr>
+              `
+              : safe(items.map(item => {
+                const itemId = getItemIdentifier(item)
+                return html`
+                <tr class="${this.theme.tableRow}">
+                  ${safe(fields.map(f => html`
+                    <td class="${this.theme.tableCell}">
+                      ${this.utils.formatValue(item[f.name], f.type)}
+                    </td>
+                  `.html).join(''))}
+                  <td class="${this.theme.tableCell} ${this.theme.tableActions}">
+                    <a
+                      href="${this.utils.resolveEntityLink(detailPath, entity?.name, item)}"
+                      class="${this.theme.linkPrimary}"
+                      aria-label="View ${escapeHtmlAttr(itemId)}"
+                    >
+                      View
+                    </a>
+                    <a
+                      href="${this.utils.resolveEntityLink(editPath, entity?.name, item, 'edit')}"
+                      class="${this.theme.linkSecondary}"
+                      aria-label="Edit ${escapeHtmlAttr(itemId)}"
+                    >
+                      Edit
+                    </a>
+                  </td>
+                </tr>
+              `.html
+              }).join(''))}
           </tbody>
         </table>
       </div>
@@ -419,15 +428,30 @@ export class ComponentRenderers {
         `
 
       case 'select':
+        {
+          const selectedValue = value === undefined || value === null ? '' : String(value)
+          const options = Array.isArray(field.options) ? field.options : []
+          const optionHtml = options.map((opt: any) => {
+            const isObjectOption = typeof opt === 'object' && opt !== null
+            const rawValue = isObjectOption ? (opt.value ?? opt.label ?? '') : opt
+            const rawLabel = isObjectOption ? (opt.label ?? opt.value ?? '') : opt
+            const optionValue = rawValue === undefined || rawValue === null ? '' : String(rawValue)
+            const optionLabel = rawLabel === undefined || rawLabel === null ? '' : String(rawLabel)
+            const isSelected = selectedValue === optionValue
+
+            return `
+              <option value="${escapeHtmlAttr(optionValue)}" ${isSelected ? 'selected' : ''}>
+                ${escapeHtml(optionLabel)}
+              </option>
+            `
+          }).join('')
+
         return `
           <select ${baseAttrs} class="${this.theme.select}">
-            ${field.options?.map((opt: any) => `
-              <option value="${escapeHtmlAttr(opt)}" ${value === opt ? 'selected' : ''}>
-                ${escapeHtml(opt)}
-              </option>
-            `).join('')}
+            ${optionHtml}
           </select>
         `
+        }
 
       case 'checkbox':
         return `
@@ -576,28 +600,6 @@ export class ComponentRenderers {
               View all →
             </a>
           ` : ''}
-        </div>
-      </div>
-    `
-  }
-
-  /**
-   * Render empty state message
-   */
-  renderEmptyState(entityName: string): SafeHtml {
-    const createPath = this.utils.getEntityPagePath(entityName, 'create')
-    const createHref = createPath || `${this.utils.collectionPath(entityName)}/new`
-
-    return html`
-      <div class="${this.theme.card}">
-        <div class="${this.theme.emptyState}">
-          <p class="text-gray-500">No ${entityName.toLowerCase()} found</p>
-          <a
-            href="${createHref}"
-            class="${this.theme.buttonPrimary} mt-4 inline-block"
-          >
-            Create first ${entityName.toLowerCase()}
-          </a>
         </div>
       </div>
     `

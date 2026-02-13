@@ -182,7 +182,7 @@ export class QueryExecutor {
     }
 
     // Set timestamps
-    const now = Date.now()
+    const now = new Date()
     if (!data.createdAt && table.createdAt) {
       data.createdAt = now
     }
@@ -260,7 +260,7 @@ export class QueryExecutor {
     }
 
     // Update timestamp
-    const now = Date.now()
+    const now = new Date()
     if (table.updatedAt) {
       data.updatedAt = now
     }
