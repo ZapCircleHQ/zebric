@@ -425,8 +425,8 @@ export class WorkflowExecutor {
     if (typeof value === 'string') {
       // Replace {{variable}} patterns
       return value.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
-        const resolved = this.getValueByPath(context, path.trim())
-        return resolved !== undefined ? String(resolved) : match
+        const resolved = this.resolveTemplateValue(context, path.trim())
+        return resolved !== undefined ? this.formatTemplateValue(resolved) : match
       })
     }
 
@@ -443,6 +443,125 @@ export class WorkflowExecutor {
     }
 
     return value
+  }
+
+  private resolveTemplateValue(context: WorkflowContext, path: string): any {
+    const resolved = this.getValueByPath(context, path)
+    if (resolved !== undefined) {
+      return resolved
+    }
+
+    const suffixes = ['.value', '.label', '.id']
+    for (const suffix of suffixes) {
+      if (!path.endsWith(suffix)) {
+        continue
+      }
+
+      const basePath = path.slice(0, -suffix.length)
+      const baseValue = this.getValueByPath(context, basePath)
+      if (baseValue === undefined) {
+        continue
+      }
+
+      if (baseValue && typeof baseValue === 'object') {
+        const key = suffix.slice(1)
+        const direct = (baseValue as any)[key]
+        if (direct !== undefined && direct !== null) {
+          return direct
+        }
+      }
+
+      return baseValue
+    }
+
+    return undefined
+  }
+
+  private coerceTemplateValue(value: any): any {
+    let current = value
+    for (let depth = 0; depth < 5; depth++) {
+      if (!current || typeof current !== 'object') {
+        return current
+      }
+
+      if ('value' in current && current.value !== undefined && current.value !== null) {
+        current = current.value
+        continue
+      }
+
+      if ('id' in current && current.id !== undefined && current.id !== null) {
+        current = current.id
+        continue
+      }
+
+      if ('label' in current && current.label !== undefined && current.label !== null) {
+        current = current.label
+        continue
+      }
+
+      return JSON.stringify(current)
+    }
+
+    return typeof current === 'object' ? JSON.stringify(current) : current
+  }
+
+  private formatTemplateValue(value: any): string {
+    const primitive = this.extractPrimitiveValue(value)
+    if (primitive === undefined || primitive === null) {
+      return ''
+    }
+    return String(primitive)
+  }
+
+  private extractPrimitiveValue(value: any, depth = 0): any {
+    if (depth > 8) {
+      return undefined
+    }
+    if (value === null || value === undefined) {
+      return value
+    }
+    const type = typeof value
+    if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+      return value
+    }
+    if (value instanceof Date) {
+      return value.toISOString()
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const extracted = this.extractPrimitiveValue(item, depth + 1)
+        if (extracted !== undefined && extracted !== null) {
+          return extracted
+        }
+      }
+      return undefined
+    }
+    if (type === 'object') {
+      const preferredKeys = ['value', 'label', 'text', 'name', 'title', 'id']
+      for (const key of preferredKeys) {
+        if (key in value) {
+          const extracted = this.extractPrimitiveValue((value as any)[key], depth + 1)
+          if (extracted !== undefined && extracted !== null) {
+            return extracted
+          }
+        }
+      }
+
+      for (const entry of Object.values(value)) {
+        const extracted = this.extractPrimitiveValue(entry, depth + 1)
+        if (extracted !== undefined && extracted !== null) {
+          return extracted
+        }
+      }
+
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return undefined
+      }
+    }
+
+    return String(value)
   }
 
   private extractIdFromWhere(where: any): string | undefined {

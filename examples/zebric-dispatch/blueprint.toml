@@ -385,7 +385,7 @@ unfurlMedia = false
 blocks = [
   { type = "header", text = { type = "plain_text", text = "Resolved in Zebric Dispatch" } },
   { type = "section", text = { type = "mrkdwn", text = "*<http://localhost:3000/requests/{{ trigger.after.id }}|{{ trigger.after.title }}>*\n`{{ trigger.after.id }}`" } },
-  { type = "section", fields = [{ type = "mrkdwn", text = "*Status:*\n{{ trigger.after.status }}" }, { type = "mrkdwn", text = "*Priority:*\n{{ trigger.after.priority }}" }, { type = "mrkdwn", text = "*Source:*\n{{ trigger.after.source }}" }, { type = "mrkdwn", text = "*Assignee ID:*\n{{ trigger.after.assigneeId }}" }] },
+  { type = "section", fields = [{ type = "mrkdwn", text = "*Status:*\n{{ trigger.after.status }}" }, { type = "mrkdwn", text = "*Priority:*\n{{ trigger.after.priority.label }}" }, { type = "mrkdwn", text = "*Source:*\n{{ trigger.after.source.label }}" }, { type = "mrkdwn", text = "*Assignee ID:*\n{{ trigger.after.assigneeId }}" }] },
   { type = "actions", elements = [{ type = "button", text = { type = "plain_text", text = "Open in Dispatch" }, style = "primary", url = "http://localhost:3000/requests/{{ trigger.after.id }}" }] }
 ]
 
