@@ -1,5 +1,50 @@
 Zebric Dispatch — User Stories (Chaotic Startup Edition)
 
+## Implementation Checklist (Current)
+
+Legend: `[x] done`, `[~] partial`, `[ ] not started`
+
+- [~] 1.1 Slack Message -> Request
+- [~] 1.2 Linear Ticket Sync
+- [~] 1.3 GitHub Issues Sync
+- [~] 1.4 Notion Docs -> Requests
+
+- [ ] 2.1 Automatic Duplicate Detection
+- [~] 2.2 Request Clustering
+- [ ] 2.3 Suggested Merges
+
+- [x] 3.1 Founder Dashboard
+- [~] 3.2 Priority Scoring
+- [ ] 3.3 SLA Alerts
+
+- [ ] 4.1 Summaries
+- [ ] 4.2 Behavioral Context
+- [ ] 4.3 Intelligent Routing
+
+- [ ] 5.1 Bi-Directional Sync with Linear
+- [x] 5.2 GitHub PR Linking
+- [x] 5.3 Slack Notification on Resolution
+
+- [~] 6.1 Inbox Zero-Style Triage Panel
+- [~] 6.2 Auto-Fill Metadata
+- [ ] 6.3 Quick Assign from Slack
+
+- [ ] 7.1 Quarter Themes View
+- [x] 7.2 What’s Scheduled / What’s Not
+- [x] 7.3 Change History
+
+- [~] 8.1 Behavior-Level Impact
+- [ ] 8.2 Behavior Drift Alerts
+- [ ] 8.3 Suggest Behavior Updates
+
+- [ ] 9.1 Fire Detection
+- [ ] 9.2 Team Load Radar
+- [ ] 9.3 Customer Trends
+
+- [ ] 10.1 Zero Setup Import
+- [ ] 10.2 No Forced Process Changes
+- [ ] 10.3 Progressive Enhancement
+
 🎯 Personas
 
 To make this concrete, we’ll use three startup personas:
