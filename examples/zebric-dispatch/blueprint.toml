@@ -134,6 +134,11 @@ where = { status = "planned" }
 orderBy = { priorityScore = "desc" }
 limit = 12
 
+[page."/".query.recentSignals]
+entity = "ExternalSignal"
+orderBy = { receivedAt = "desc" }
+limit = 12
+
 [page."/inbox"]
 title = "Dispatch Inbox"
 auth = "none"
@@ -157,6 +162,25 @@ where = { status = "triage" }
 orderBy = { priorityScore = "desc" }
 limit = 100
 include = ["assignee", "cluster"]
+
+[page."/external-signals"]
+title = "Inbound Signals"
+auth = "none"
+layout = "list"
+
+[page."/external-signals".query.signals]
+entity = "ExternalSignal"
+orderBy = { receivedAt = "desc" }
+limit = 100
+
+[page."/external-signals/:id"]
+title = "Signal Detail"
+auth = "none"
+layout = "detail"
+
+[page."/external-signals/:id".query.signal]
+entity = "ExternalSignal"
+where = { id = "$params.id" }
 
 [page."/requests/new"]
 title = "Capture Request"
