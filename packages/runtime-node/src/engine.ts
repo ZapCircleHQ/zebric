@@ -187,6 +187,7 @@ export class ZebricEngine extends EventEmitter {
         tracer: this.tracer,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
+        notificationManager: this.notificationManager,
         getHealthStatus: () => this.getHealth(),
       })
 

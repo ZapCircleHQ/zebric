@@ -58,9 +58,24 @@ Set these env vars before starting the app to enable real Slack delivery:
 ```bash
 export SLACK_BOT_TOKEN="xoxb-..."
 export SLACK_DEFAULT_CHANNEL="#dispatch-resolved"
+export SLACK_SIGNING_SECRET="..."
 ```
 
 Without `SLACK_BOT_TOKEN`, the Slack adapter is not initialized and resolved-notification jobs will fail.
+
+### Slack Inbound Wiring
+
+Dispatch also includes `CaptureSlackInboundSignal`, which captures inbound Slack Events API callbacks into `ExternalSignal`.
+
+Configure your Slack app Event Subscriptions Request URL to:
+
+```text
+http://localhost:3000/notifications/slack_dispatch/inbound
+```
+
+Notes:
+- Inbound requests require valid Slack signature headers.
+- `SLACK_SIGNING_SECRET` must be configured or inbound requests are rejected.
 
 ## Workflow Smoke Test
 

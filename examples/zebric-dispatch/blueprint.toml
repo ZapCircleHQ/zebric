@@ -389,6 +389,17 @@ blocks = [
   { type = "actions", elements = [{ type = "button", text = { type = "plain_text", text = "Open in Dispatch" }, style = "primary", url = "http://localhost:3000/requests/{{ trigger.after.id }}" }] }
 ]
 
+[workflow.CaptureSlackInboundSignal]
+description = "Capture inbound Slack callback events into ExternalSignal for downstream workflows."
+trigger = { webhook = "/notifications/slack_dispatch/inbound" }
+
+[[workflow.CaptureSlackInboundSignal.steps]]
+type = "condition"
+if = { "variables.webhook.body.type" = "event_callback" }
+then = [
+  { type = "query", entity = "ExternalSignal", action = "create", data = { source = "slack", externalId = "{{ variables.webhook.body.event.ts }}", payload = { eventType = "{{ variables.webhook.body.event.type }}", teamId = "{{ variables.webhook.body.team_id }}", channel = "{{ variables.webhook.body.event.channel }}", user = "{{ variables.webhook.body.event.user }}", text = "{{ variables.webhook.body.event.text }}" } } }
+]
+
 [notifications]
 default = "console"
 
@@ -401,6 +412,7 @@ name = "slack_dispatch"
 type = "slack"
 [notifications.adapters.config]
 botTokenEnv = "SLACK_BOT_TOKEN"
+signingSecretEnv = "SLACK_SIGNING_SECRET"
 defaultChannel = "#dispatch-resolved"
 defaultChannelEnv = "SLACK_DEFAULT_CHANNEL"
 

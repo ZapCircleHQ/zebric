@@ -18,12 +18,16 @@ registerNotificationAdapterFactory('slack', (config) => {
     botToken,
     botTokenEnv,
     defaultChannel,
-    defaultChannelEnv
+    defaultChannelEnv,
+    signingSecret,
+    signingSecretEnv
   } = (config.config || {}) as {
     botToken?: string
     botTokenEnv?: string
     defaultChannel?: string
     defaultChannelEnv?: string
+    signingSecret?: string
+    signingSecretEnv?: string
   }
 
   const resolvedBotToken =
@@ -36,10 +40,19 @@ registerNotificationAdapterFactory('slack', (config) => {
     (defaultChannelEnv ? process.env[defaultChannelEnv] : undefined) ||
     process.env.SLACK_DEFAULT_CHANNEL
 
+  const resolvedSigningSecret =
+    signingSecret ||
+    (signingSecretEnv ? process.env[signingSecretEnv] : undefined) ||
+    process.env.SLACK_SIGNING_SECRET
+
   if (!resolvedBotToken) {
     throw new Error('Slack adapter requires botToken')
   }
-  return new SlackAdapter(config.name, { botToken: resolvedBotToken, defaultChannel: resolvedDefaultChannel })
+  return new SlackAdapter(config.name, {
+    botToken: resolvedBotToken,
+    defaultChannel: resolvedDefaultChannel,
+    signingSecret: resolvedSigningSecret
+  })
 })
 registerNotificationAdapterFactory('email', (config) => {
   const { from, outboxFile } = (config.config || {}) as { from?: string; outboxFile?: string }

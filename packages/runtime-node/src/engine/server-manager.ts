@@ -6,6 +6,7 @@ import { ulid } from 'ulid'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
@@ -33,6 +34,7 @@ export interface ServerManagerDependencies {
   tracer: RequestTracer
   errorHandler: ErrorHandler
   pendingSchemaDiff: SchemaDiffResult | null
+  notificationManager?: NotificationManager
   getHealthStatus?: () => Promise<any>
 }
 
@@ -52,6 +54,7 @@ export class ServerManager {
   private tracer: RequestTracer
   private errorHandler: ErrorHandler
   private getHealthStatusFn?: () => Promise<any>
+  private notificationManager?: NotificationManager
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
   private csrfCookieName = 'csrf-token'
 
@@ -68,6 +71,7 @@ export class ServerManager {
     this.metrics = deps.metrics
     this.tracer = deps.tracer
     this.errorHandler = deps.errorHandler
+    this.notificationManager = deps.notificationManager
     this.getHealthStatusFn = deps.getHealthStatus
   }
 
@@ -84,6 +88,7 @@ export class ServerManager {
     if (updates.metrics) this.metrics = updates.metrics
     if (updates.tracer) this.tracer = updates.tracer
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
+    if (updates.notificationManager !== undefined) this.notificationManager = updates.notificationManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
   }
 
@@ -200,6 +205,7 @@ export class ServerManager {
     this.registerAuthPages()
     this.registerAuthRoutes()
     this.registerWebhookRoutes()
+    this.registerNotificationRoutes()
     this.registerActionRoutes()
     this.registerAPIRoutes()
     this.registerPageRoutes()
@@ -212,6 +218,39 @@ export class ServerManager {
         },
         { status: 404 }
       )
+    })
+  }
+
+  private registerNotificationRoutes(): void {
+    this.app.all('/notifications/:adapterName/inbound', async (c) => {
+      if (!this.notificationManager) {
+        return Response.json({ error: 'Notification service not configured' }, { status: 404 })
+      }
+
+      const adapterName = c.req.param('adapterName')
+      if (!adapterName) {
+        return Response.json({ error: 'Notification adapter is required' }, { status: 400 })
+      }
+
+      const requestUrl = new URL(c.req.url)
+      const inboundPath = requestUrl.pathname
+      const requestData = {
+        headers: Object.fromEntries(c.req.raw.headers),
+        body: await this.tryParseBody(c.req.raw.clone()),
+        query: Object.fromEntries(requestUrl.searchParams)
+      }
+
+      const response = await this.notificationManager.handleRequest(adapterName, c.req.raw)
+
+      if (response.ok && this.workflowManager && !this.isUrlVerificationRequest(requestData.body)) {
+        try {
+          await this.workflowManager.triggerWebhook(inboundPath, requestData)
+        } catch (error) {
+          console.error(`Failed to trigger workflows for notification inbound path ${inboundPath}:`, error)
+        }
+      }
+
+      return response
     })
   }
 
@@ -785,6 +824,14 @@ export class ServerManager {
   }
 
   private async applyCsrfProtection(c: Context): Promise<Response | void> {
+    const pathname = new URL(c.req.url).pathname
+    const isInboundEndpoint =
+      pathname.startsWith('/webhooks/')
+      || pathname.startsWith('/notifications/')
+    if (isInboundEndpoint) {
+      return
+    }
+
     const method = c.req.method.toUpperCase()
     const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
     const existingTokenRaw = getCookie(c, this.csrfCookieName)
@@ -883,6 +930,10 @@ export class ServerManager {
       return trimmed.slice(1, -1)
     }
     return trimmed
+  }
+
+  private isUrlVerificationRequest(body: any): boolean {
+    return Boolean(body && typeof body === 'object' && body.type === 'url_verification')
   }
 
   private getMimeType(filename: string): string {
