@@ -1,47 +1,54 @@
-# Zebric Dispatch Example
+# Zebric Dispatch
 
-`zebric-dispatch` is an internal workflow app for approvals, request intake, and agent/team collaboration.  
-This first pass implements the core operating loop from `USER-STORIES.md`: collect requests, triage them quickly, and keep roadmap/status decisions visible.
+Agent-native intake, approvals, audit trail, and Slack notifications — defined entirely in a single `blueprint.toml`.
 
-## MVP Scope Implemented
+Zebric Dispatch shows the minimal declarative effort needed for a genuinely useful internal workflow app. One TOML file gives you issue tracking, conditional approval routing, a full audit log, bidirectional Slack integration, and an agent-accessible API — no application code required.
 
-- Unified intake model for `slack`, `linear`, `github`, `notion`, and manual capture
-- Triage-focused request lifecycle (`new` -> `triage` -> `planned` / `in_progress` / `blocked` / `resolved`)
-- Founder-facing dashboard queries (hot requests, blocked items, planned candidates)
-- Request clustering entity for thematic grouping
-- Decision/audit log entity for priority/status reasoning
-- PR linking model for GitHub progress visibility
-- Manual action-bar workflows for fast status and roadmap bucket updates
+## What the Blueprint Declares
 
-## Story Coverage (Initial)
+### Entities
 
-- Covered now:
-  - Story 1.1, 1.2, 1.3, 1.4 (intake data model + capture form)
-  - Story 3.1 (dashboard visibility)
-  - Story 5.2 (PR links)
-  - Story 6.1, 6.2 (triage queue + metadata-first request schema)
-  - Story 7.2, 7.3 (roadmap buckets + change log)
-  - Story 8.1 (request fields for blueprint behavior/path mapping)
-- Stubbed for next iteration:
-  - Sync automations (Linear/GitHub/Slack bi-directional updates)
-  - LLM dedupe, clustering, and routing workflows
-  - SLA stagnation alerts
-  - Fire detection, team load radar, customer trend analytics
+| Entity | Purpose |
+|---|---|
+| **TeamMember** | People (engineers, PMs, approvers) with roles and Slack handles |
+| **Issue** | Requests flowing through `new → triage → in_progress → awaiting_approval → approved/rejected → done` |
+| **Comment** | Threaded discussion on issues (user, agent, or system authored) |
+| **AuditEvent** | Immutable log of every status change, approval, and agent action |
+| **ApprovalRule** | Category-to-role mapping that drives conditional approval gates |
 
-## Files
+### Pages
 
-```text
-zebric-dispatch/
-├── USER-STORIES.md
-├── blueprint.toml
-├── README.md
-├── package.json
-└── test-workflows.sh
-```
+| Route | Layout | What it shows |
+|---|---|---|
+| `/` | Dashboard | New issues and items awaiting approval |
+| `/issues` | List | All issues with assignee and requester |
+| `/board` | Dashboard | Kanban-style columns by status |
+| `/issues/new` | Form | Create an issue with category and priority |
+| `/issues/:id` | Detail | Issue detail with comments, audit log, and action bar |
+
+### Workflows
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| **SetIssueStatus** | Manual (action bar) | Updates status + writes an audit event |
+| **RequestApprovalIfNeeded** | Manual (action bar) | Checks ApprovalRule for the category; if a rule exists, moves to `awaiting_approval` and sends a Slack notification with approve/reject buttons |
+| **NotifyDoneToSlack** | Issue status → `done` | Posts a "Done" notification to Slack |
+| **HandleSlackApprovalActions** | Webhook (`/notifications/slack_dispatch/actions`) | Processes Slack button clicks to approve or reject, with audit logging |
+| **LogAuditEvent** | Manual (reusable helper) | Appends an audit event |
+
+### Agent Skill
+
+The `dispatch` skill exposes a structured API for LLM agents:
+
+- `create_issue` — POST `/api/issues`
+- `get_issue` — GET `/api/issues/{id}`
+- `set_status` — POST `/api/issues/{id}/status`
+- `add_comment` — POST `/api/issues/{id}/comments`
+- `get_audit` — GET `/api/issues/{id}/audit`
 
 ## Run
 
-From repo root:
+From the repo root:
 
 ```bash
 pnpm --filter zebric-dispatch dev
@@ -49,45 +56,42 @@ pnpm --filter zebric-dispatch dev
 
 Then open http://localhost:3000.
 
-### Slack Notification Wiring
+### Seed a Dev User
 
-Dispatch includes a `NotifyResolvedRequestToSlack` workflow that runs when a `Request` transitions to `resolved`.
+With the dev server running:
 
-Set these env vars before starting the app to enable real Slack delivery:
+```bash
+pnpm --filter zebric-dispatch seed:user
+```
+
+Optional overrides:
+
+```bash
+BASE_URL=http://127.0.0.1:3000 \
+DEV_EMAIL=dev@zebric.local \
+DEV_PASSWORD='DevPass123!' \
+DEV_NAME='Dispatch Developer' \
+pnpm --filter zebric-dispatch seed:user
+```
+
+### Slack Setup
+
+Dispatch includes bidirectional Slack integration: outbound notifications with Block Kit approve/reject buttons, and inbound webhook handling for those button clicks.
+
+Set these env vars before starting the app:
 
 ```bash
 export SLACK_BOT_TOKEN="xoxb-..."
-export SLACK_DEFAULT_CHANNEL="#dispatch-resolved"
 export SLACK_SIGNING_SECRET="..."
+export SLACK_DEFAULT_CHANNEL="#dispatch"
 ```
 
-Without `SLACK_BOT_TOKEN`, the Slack adapter is not initialized and resolved-notification jobs will fail.
+Without `SLACK_BOT_TOKEN`, the Slack adapter is not initialized and notification workflows will fail silently.
 
-### Slack Inbound Wiring
+For inbound webhooks (Slack button callbacks), configure your Slack app's Interactivity Request URL to:
 
-Dispatch also includes `CaptureSlackInboundSignal`, which captures inbound Slack Events API callbacks into `ExternalSignal`.
-
-Configure your Slack app Event Subscriptions Request URL to:
-
-```text
-http://localhost:3000/notifications/slack_dispatch/inbound
+```
+http://yourexternalurl/notifications/slack_dispatch/actions
 ```
 
-Notes:
-- Inbound requests require valid Slack signature headers.
-- `SLACK_SIGNING_SECRET` must be configured or inbound requests are rejected.
-
-## Workflow Smoke Test
-
-With Dispatch running locally:
-
-```bash
-BASE_URL=http://127.0.0.1:3000 ./examples/zebric-dispatch/test-workflows.sh
-```
-
-## Suggested Next Build Steps
-
-1. Add ingestion workflows that create/update `Request` from webhook payloads in `ExternalSignal`.
-2. Add webhook/LLM workflow for duplicate detection and cluster suggestions.
-3. Add SLA policy workflow (`schedule`) and escalation notifications for stagnating critical requests.
-4. Add custom triage panel behavior with keyboard shortcuts for inbox-zero flow.
+Use ngrok or a similar tool to expose your local port 3000.
