@@ -790,7 +790,20 @@ export class ServerManager {
 
     let body: Record<string, any> = {}
     if (action.method !== 'GET') {
-      body = await c.req.json<Record<string, any>>().catch(() => ({}))
+      const rawBody: Record<string, any> = await c.req.json<Record<string, any>>().catch(() => ({}))
+      // If the action declares a body schema, only keep declared fields.
+      // This prevents user-injected keys from reaching workflow templates
+      // (e.g. an attacker adding a "url" field that a webhook step resolves).
+      if (action.body && Object.keys(action.body).length > 0) {
+        const allowed = new Set(Object.keys(action.body))
+        for (const key of Object.keys(rawBody)) {
+          if (allowed.has(key)) {
+            body[key] = rawBody[key]
+          }
+        }
+      } else {
+        body = rawBody
+      }
     }
 
     const params: Record<string, string> = {}
@@ -939,37 +952,12 @@ export class ServerManager {
   }
 
   private normalizeActionBody(body: Record<string, any>): Record<string, any> {
-    const normalized: Record<string, any> = {}
-    for (const [key, value] of Object.entries(body || {})) {
-      if (typeof value === 'string') {
-        normalized[key] = this.decodeHtmlEntities(value)
-      } else {
-        normalized[key] = value
-      }
-    }
-    return normalized
-  }
-
-  private decodeHtmlEntities(input: string): string {
-    if (!input || !input.includes('&')) {
-      return input
-    }
-
-    return input
-      .replace(/&#x([0-9a-fA-F]+);/g, (_m, hex) => {
-        const code = Number.parseInt(hex, 16)
-        return Number.isFinite(code) ? String.fromCharCode(code) : _m
-      })
-      .replace(/&#([0-9]+);/g, (_m, dec) => {
-        const code = Number.parseInt(dec, 10)
-        return Number.isFinite(code) ? String.fromCharCode(code) : _m
-      })
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&apos;/g, "'")
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
+    if (!body || typeof body !== 'object') return {}
+    // Pass values through as-is. JSON bodies need no decoding, and
+    // form-encoded bodies are already decoded by the framework.
+    // Decoding HTML entities here would re-introduce XSS vectors
+    // (e.g. &lt;script&gt; → <script>) if values reach templates.
+    return { ...body }
   }
 
   private acceptsJson(c: Context): boolean {
@@ -978,13 +966,21 @@ export class ServerManager {
   }
 
   private resolveActionRedirect(provided?: string, referer?: string): string {
-    if (provided && provided.length > 0) {
+    if (provided && this.isSafeRedirect(provided)) {
       return provided
     }
-    if (referer && referer.length > 0) {
+    if (referer && this.isSafeRedirect(referer)) {
       return referer
     }
     return '/'
+  }
+
+  private isSafeRedirect(url: string): boolean {
+    if (!url || url.length === 0) return false
+    // Must be a relative path starting with a single slash.
+    // Reject protocol-relative URLs (//evil.com), absolute URLs
+    // (http://evil.com), and dangerous schemes (javascript:, data:).
+    return url.startsWith('/') && !url.startsWith('//') && !url.includes('://')
   }
 
   private setFlashMessage(c: Context, message: string | undefined, type: 'success' | 'error' | 'info' | 'warning' = 'info'): void {
@@ -1100,9 +1096,14 @@ export class ServerManager {
 
     const method = c.req.method.toUpperCase()
 
-    // Bearer token requests are inherently CSRF-safe (tokens are never auto-sent by browsers)
+    // Only skip CSRF for bearer tokens that resolve to a valid API key.
+    // A garbage bearer token must NOT bypass CSRF, since skill routes fall
+    // back to cookie-based session auth when the token is unrecognized.
     const authHeader = c.req.header('authorization') || ''
-    if (authHeader.toLowerCase().startsWith('bearer ')) return
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      const token = authHeader.slice(7)
+      if (this.apiKeys.has(token)) return
+    }
 
     const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
     const existingTokenRaw = getCookie(c, this.csrfCookieName)

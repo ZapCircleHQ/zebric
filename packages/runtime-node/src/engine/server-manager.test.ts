@@ -466,3 +466,273 @@ describe('security: path traversal guard integration', () => {
     expect(blocked).toBe(false)
   })
 })
+
+// ============================================================================
+// Medium severity security fix regression tests
+// ============================================================================
+
+describe('security: CSRF skip only for valid API keys', () => {
+  it('rejects POST with garbage bearer token and no CSRF cookie', async () => {
+    // A garbage bearer token should NOT skip CSRF. Before the fix, any
+    // "Authorization: Bearer anything" would bypass CSRF entirely.
+    const sm = new ServerManager(stubDeps())
+    const app = initApp(sm)
+
+    const res = await app.request('/health', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer garbage-token',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    })
+
+    expect(res.status).toBe(403)
+    const body = await res.json() as any
+    expect(body.error).toBe('Invalid CSRF token')
+  })
+
+  it('allows POST with valid API key bearer token (skips CSRF)', async () => {
+    process.env.TEST_KEY = 'valid-api-key-123'
+    const sm = new ServerManager(stubDeps({
+      auth: {
+        providers: ['email'],
+        apiKeys: [{ name: 'agent', keyEnv: 'TEST_KEY' }],
+      },
+    }))
+    const app = initApp(sm)
+
+    // Valid API key bearer token should skip CSRF
+    const res = await app.request('/health', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer valid-api-key-123',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    })
+
+    // Should pass CSRF (not 403). Will hit the actual route handler.
+    expect(res.status).not.toBe(403)
+    delete process.env.TEST_KEY
+  })
+
+  it('rejects POST with bearer token that does not match any API key', async () => {
+    process.env.TEST_KEY = 'real-key'
+    const sm = new ServerManager(stubDeps({
+      auth: {
+        providers: ['email'],
+        apiKeys: [{ name: 'agent', keyEnv: 'TEST_KEY' }],
+      },
+    }))
+    const app = initApp(sm)
+
+    const res = await app.request('/health', {
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer wrong-key',
+        'content-type': 'application/json',
+      },
+      body: '{}',
+    })
+
+    expect(res.status).toBe(403)
+    delete process.env.TEST_KEY
+  })
+})
+
+describe('security: no HTML entity decoding in action body', () => {
+  it('does not decode HTML entities in normalizeActionBody', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    const input = {
+      title: '&lt;script&gt;alert(1)&lt;/script&gt;',
+      status: '&amp;active',
+      clean: 'hello world',
+    }
+    const result = smAny.normalizeActionBody(input)
+
+    // Values must pass through untouched — no decoding
+    expect(result.title).toBe('&lt;script&gt;alert(1)&lt;/script&gt;')
+    expect(result.status).toBe('&amp;active')
+    expect(result.clean).toBe('hello world')
+  })
+
+  it('handles empty and null input', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.normalizeActionBody({})).toEqual({})
+    expect(smAny.normalizeActionBody(null)).toEqual({})
+    expect(smAny.normalizeActionBody(undefined)).toEqual({})
+  })
+})
+
+describe('security: open redirect prevention', () => {
+  it('allows relative paths', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.isSafeRedirect('/')).toBe(true)
+    expect(smAny.isSafeRedirect('/issues')).toBe(true)
+    expect(smAny.isSafeRedirect('/issues/123')).toBe(true)
+    expect(smAny.isSafeRedirect('/issues?status=open')).toBe(true)
+  })
+
+  it('rejects absolute URLs', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.isSafeRedirect('https://evil.com')).toBe(false)
+    expect(smAny.isSafeRedirect('http://evil.com/phish')).toBe(false)
+  })
+
+  it('rejects protocol-relative URLs', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.isSafeRedirect('//evil.com')).toBe(false)
+    expect(smAny.isSafeRedirect('//evil.com/path')).toBe(false)
+  })
+
+  it('rejects javascript: and data: schemes', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.isSafeRedirect('javascript:alert(1)')).toBe(false)
+    expect(smAny.isSafeRedirect('data:text/html,<h1>hi</h1>')).toBe(false)
+  })
+
+  it('rejects empty and null values', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.isSafeRedirect('')).toBe(false)
+    expect(smAny.isSafeRedirect(undefined)).toBe(false)
+    expect(smAny.isSafeRedirect(null)).toBe(false)
+  })
+
+  it('resolveActionRedirect falls back to / for unsafe values', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.resolveActionRedirect('https://evil.com')).toBe('/')
+    expect(smAny.resolveActionRedirect('//evil.com')).toBe('/')
+    expect(smAny.resolveActionRedirect(undefined, 'https://evil.com')).toBe('/')
+    expect(smAny.resolveActionRedirect(undefined, undefined)).toBe('/')
+  })
+
+  it('resolveActionRedirect uses safe provided value', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.resolveActionRedirect('/issues/123')).toBe('/issues/123')
+  })
+
+  it('resolveActionRedirect falls back to safe referer', () => {
+    const sm = new ServerManager(stubDeps())
+    const smAny = sm as any
+
+    expect(smAny.resolveActionRedirect(undefined, '/board')).toBe('/board')
+  })
+})
+
+describe('security: workflow body field filtering', () => {
+  it('only passes declared body fields to workflow data', async () => {
+    const capturedData: any[] = []
+    const sm = new ServerManager(stubDeps({
+      skills: [{
+        name: 'dispatch',
+        actions: [{
+          name: 'set_status',
+          method: 'POST',
+          path: '/api/issues/{id}/status',
+          body: { status: 'Enum' },
+          entity: 'Issue',
+          workflow: 'SetIssueStatus',
+        }],
+      }],
+      entities: [{ name: 'Issue', fields: [{ name: 'id', type: 'ULID', primary_key: true }] }],
+      workflowManager: {
+        getWorkflow: () => ({ name: 'SetIssueStatus', steps: [] }),
+        trigger: (_name: string, data: any) => {
+          capturedData.push(data)
+          return { id: 'job-1', workflowName: 'SetIssueStatus', status: 'queued' }
+        },
+      },
+      sessionManager: {
+        getSession: async () => ({ id: 's1', user: { id: 'u1', name: 'Test' } }),
+      },
+      auth: { providers: ['email'] },
+    }))
+    const app = initApp(sm)
+
+    const res = await app.request('/api/issues/abc123/status', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'authorization': 'Bearer csrf-safe', // need to get past CSRF
+        'cookie': 'csrf-token=x',
+        'x-csrf-token': 'x',
+      },
+      body: JSON.stringify({
+        status: 'in_progress',
+        maliciousUrl: 'https://evil.com/ssrf',
+        extraField: 'should-be-dropped',
+      }),
+    })
+
+    // The workflow should have been triggered
+    expect(capturedData).toHaveLength(1)
+    const payload = capturedData[0].payload
+
+    // Only the declared 'status' field should be present
+    expect(payload.status).toBe('in_progress')
+    expect(payload.maliciousUrl).toBeUndefined()
+    expect(payload.extraField).toBeUndefined()
+  })
+
+  it('passes all body fields when no schema is declared', async () => {
+    const capturedData: any[] = []
+    const sm = new ServerManager(stubDeps({
+      skills: [{
+        name: 'dispatch',
+        actions: [{
+          name: 'trigger_generic',
+          method: 'POST',
+          path: '/api/custom/action',
+          // No body schema declared
+          workflow: 'GenericWf',
+        }],
+      }],
+      entities: [],
+      workflowManager: {
+        getWorkflow: () => ({ name: 'GenericWf', steps: [] }),
+        trigger: (_name: string, data: any) => {
+          capturedData.push(data)
+          return { id: 'job-2', workflowName: 'GenericWf', status: 'queued' }
+        },
+      },
+      sessionManager: {
+        getSession: async () => ({ id: 's1', user: { id: 'u1', name: 'Test' } }),
+      },
+      auth: { providers: ['email'] },
+    }))
+    const app = initApp(sm)
+
+    const res = await app.request('/api/custom/action', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'cookie': 'csrf-token=x',
+        'x-csrf-token': 'x',
+      },
+      body: JSON.stringify({ foo: 'bar', baz: 123 }),
+    })
+
+    expect(capturedData).toHaveLength(1)
+    expect(capturedData[0].payload.foo).toBe('bar')
+    expect(capturedData[0].payload.baz).toBe(123)
+  })
+})
