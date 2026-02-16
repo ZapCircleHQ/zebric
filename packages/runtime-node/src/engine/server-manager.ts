@@ -264,7 +264,11 @@ export class ServerManager {
     const root = path.resolve(process.cwd(), 'data/uploads')
     this.app.get('/uploads/*', async (c) => {
       const relative = c.req.path.replace(/^\/uploads\/?/, '')
-      const filePath = path.join(root, relative)
+      const filePath = path.resolve(root, relative)
+      // Prevent path traversal outside the uploads directory
+      if (!filePath.startsWith(root + path.sep) && filePath !== root) {
+        return Response.json({ error: 'File not found' }, { status: 404 })
+      }
       try {
         const data = await fs.readFile(filePath)
         const mimeType = this.getMimeType(filePath)
@@ -378,16 +382,9 @@ export class ServerManager {
 
       try {
         body = await this.parseActionRequestBody(c)
-        const pagePath = typeof body.page === 'string' ? body.page : undefined
-        const sourcePage = pagePath
-          ? this.blueprint.pages.find((page) => page.path === pagePath)
-          : undefined
-        const authRequired = sourcePage
-          ? sourcePage.auth !== 'none' && sourcePage.auth !== 'optional'
-          : true
 
         const session = await this.sessionManager.getSession(c.req.raw)
-        if (authRequired && !session) {
+        if (!session) {
           return Response.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
@@ -1134,28 +1131,6 @@ export class ServerManager {
       submittedToken = await this.extractCsrfToken(c)
     }
     submittedToken = this.normalizeCsrfToken(submittedToken)
-
-    // Self-heal missing/stale cookie when request provides a valid token.
-    if (!existingToken && submittedToken) {
-      setCookie(c, this.csrfCookieName, submittedToken, {
-        httpOnly: false,
-        sameSite: 'strict',
-        secure: false,
-        path: '/'
-      })
-      return
-    }
-
-    // If cookie drifted but request token is present, rotate cookie to submitted token.
-    if (existingToken && submittedToken && existingToken !== submittedToken) {
-      setCookie(c, this.csrfCookieName, submittedToken, {
-        httpOnly: false,
-        sameSite: 'strict',
-        secure: false,
-        path: '/'
-      })
-      return
-    }
 
     if (!existingToken || !submittedToken || existingToken !== submittedToken) {
       const diagnostics = this.config.dev?.logLevel === 'debug'
