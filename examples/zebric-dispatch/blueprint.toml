@@ -408,6 +408,8 @@ description = "Set issue status."
 method = "POST"
 path = "/api/issues/{id}/status"
 body = { status = "Enum" }
+entity = "Issue"
+workflow = "SetIssueStatus"
 
 [[skill.dispatch.actions]]
 name = "add_comment"
@@ -415,12 +417,20 @@ description = "Add a comment to an issue."
 method = "POST"
 path = "/api/issues/{id}/comments"
 body = { body = "LongText", authorType = "Enum" }
+entity = "Comment"
+action = "create"
+[skill.dispatch.actions.mapParams]
+id = "issueId"
 
 [[skill.dispatch.actions]]
 name = "get_audit"
 description = "Fetch audit log for an issue."
 method = "GET"
 path = "/api/issues/{id}/audit"
+entity = "AuditEvent"
+action = "list"
+[skill.dispatch.actions.mapParams]
+id = "issueId"
 
 # ==========================================
 # Notifications / Auth / UI
@@ -444,6 +454,10 @@ defaultChannelEnv = "SLACK_DEFAULT_CHANNEL"
 
 [auth]
 providers = ["email"]
+
+[[auth.apiKeys]]
+name = "dispatch-agent"
+keyEnv = "DISPATCH_AGENT_API_KEY"
 
 [ui]
 render_mode = "server"

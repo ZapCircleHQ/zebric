@@ -8,7 +8,8 @@ import { promises as fs } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
-import type { Blueprint } from '@zebric/runtime-core'
+import type { Blueprint, SkillAction } from '@zebric/runtime-core'
+import { generateOpenAPISpec } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
 import type { SchemaDiffResult } from '../database/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
@@ -56,6 +57,7 @@ export class ServerManager {
   private getHealthStatusFn?: () => Promise<any>
   private notificationManager?: NotificationManager
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
+  private apiKeys = new Map<string, { name: string }>()
   private csrfCookieName = 'csrf-token'
 
   constructor(deps: ServerManagerDependencies) {
@@ -97,6 +99,8 @@ export class ServerManager {
     this.app.onError(this.errorHandler.toHonoHandler())
     this.registerGlobalMiddleware()
     this.registerRoutes()
+
+    this.initApiKeys()
 
     const port = this.config.port || 3000
     const host = this.config.host || '0.0.0.0'
@@ -207,7 +211,9 @@ export class ServerManager {
     this.registerWebhookRoutes()
     this.registerNotificationRoutes()
     this.registerActionRoutes()
+    this.registerSkillRoutes()
     this.registerAPIRoutes()
+    this.registerOpenAPIRoute()
     this.registerPageRoutes()
 
     this.app.notFound(() => {
@@ -493,13 +499,18 @@ export class ServerManager {
         }
       })
 
-      this.app.get(entityPath, async () => {
+      this.app.get(entityPath, async (c) => {
         try {
+          const limitParam = parseInt(c.req.query('limit') || '', 10)
+          const offsetParam = parseInt(c.req.query('offset') || '', 10)
+          const limit = Math.min(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100, 1000)
+          const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
           const results = await this.queryExecutor.execute(
             {
               entity: entity.name,
               orderBy: { createdAt: 'desc' },
-              limit: 100
+              limit,
+              offset,
             },
             {}
           )
@@ -602,10 +613,268 @@ export class ServerManager {
     }
   }
 
+  private registerSkillRoutes(): void {
+    if (!this.blueprint.skills || this.blueprint.skills.length === 0) {
+      return
+    }
+
+    const entityNames = new Set(this.blueprint.entities.map(e => e.name.toLowerCase()))
+
+    for (const skill of this.blueprint.skills) {
+      for (const action of skill.actions) {
+        // Skip actions that map directly to standard CRUD routes
+        if (this.isStandardCrudRoute(action, entityNames)) {
+          continue
+        }
+
+        // Only register actions with entity+action or workflow annotations
+        if (!action.entity && !action.workflow) {
+          continue
+        }
+
+        // Convert {id} path syntax to Hono :id syntax
+        const honoPath = action.path.replace(/\{(\w+)\}/g, ':$1')
+        const method = action.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete'
+
+        this.app[method](honoPath, async (c) => {
+          try {
+            // Auth check — try API key first, then session
+            const authHeader = c.req.header('authorization') || ''
+            let session = null
+            if (authHeader.toLowerCase().startsWith('bearer ')) {
+              const token = authHeader.slice(7)
+              session = this.resolveApiKeySession(token)
+            }
+            if (!session) {
+              session = await this.sessionManager.getSession(c.req.raw)
+            }
+            if (skill.auth !== 'none' && !session) {
+              return Response.json({ error: 'Unauthorized' }, { status: 401 })
+            }
+
+            if (action.workflow) {
+              return await this.handleSkillWorkflow(c, action, session)
+            }
+
+            return await this.handleSkillEntityAction(c, action, session)
+          } catch (error) {
+            console.error(`Skill route error (${skill.name}/${action.name}):`, error)
+            return Response.json(
+              {
+                error: 'Skill action failed',
+                details: error instanceof Error ? error.message : 'Unknown error'
+              },
+              { status: 500 }
+            )
+          }
+        })
+      }
+    }
+  }
+
+  private isStandardCrudRoute(action: SkillAction, entityNames: Set<string>): boolean {
+    // Match paths like /api/{entity}s and /api/{entity}s/:id
+    const match = action.path.match(/^\/api\/(\w+?)s(?:\/\{id\})?$/)
+    if (!match) return false
+
+    const pathEntity = match[1]?.toLowerCase()
+    return !!pathEntity && entityNames.has(pathEntity)
+  }
+
+  private async handleSkillEntityAction(
+    c: Context,
+    action: SkillAction,
+    session: any
+  ): Promise<Response> {
+    const entityName = action.entity!
+
+    switch (action.action) {
+      case 'create': {
+        const body = await c.req.json<Record<string, any>>()
+        // Inject mapped path params as entity fields
+        if (action.mapParams) {
+          for (const [pathParam, entityField] of Object.entries(action.mapParams)) {
+            const value = c.req.param(pathParam)
+            if (value) {
+              body[entityField] = value
+            }
+          }
+        }
+        const result = await this.queryExecutor.create(entityName, body, { session })
+        await this.triggerEntityWorkflows(entityName, 'create', undefined, result)
+        return Response.json(result, { status: 201 })
+      }
+
+      case 'update': {
+        const id = c.req.param('id')
+        if (!id) {
+          return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        }
+        const body = await c.req.json<Record<string, any>>()
+        const before = this.workflowManager
+          ? await this.queryExecutor.findById(entityName, id).catch(() => null)
+          : null
+        const result = await this.queryExecutor.update(entityName, id, body, { session })
+        await this.triggerEntityWorkflows(entityName, 'update', before, result)
+        return Response.json(result)
+      }
+
+      case 'list': {
+        const where: Record<string, any> = {}
+        if (action.mapParams) {
+          for (const [pathParam, entityField] of Object.entries(action.mapParams)) {
+            const value = c.req.param(pathParam)
+            if (value) {
+              where[entityField] = value
+            }
+          }
+        }
+        const limitParam = parseInt(c.req.query('limit') || '', 10)
+        const offsetParam = parseInt(c.req.query('offset') || '', 10)
+        const limit = Math.min(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100, 1000)
+        const offset = Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
+        const results = await this.queryExecutor.execute(
+          {
+            entity: entityName,
+            where,
+            orderBy: { createdAt: 'desc' },
+            limit,
+            offset,
+          },
+          { session }
+        )
+        return Response.json(results)
+      }
+
+      case 'get': {
+        const id = c.req.param('id')
+        if (!id) {
+          return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        }
+        const result = await this.queryExecutor.findById(entityName, id)
+        if (!result) {
+          return Response.json({ error: 'Not found' }, { status: 404 })
+        }
+        return Response.json(result)
+      }
+
+      case 'delete': {
+        const id = c.req.param('id')
+        if (!id) {
+          return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        }
+        const existing = this.workflowManager
+          ? await this.queryExecutor.findById(entityName, id).catch(() => null)
+          : null
+        await this.queryExecutor.delete(entityName, id, { session })
+        await this.triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined)
+        return Response.json({ success: true })
+      }
+
+      default:
+        return Response.json({ error: `Unknown action: ${action.action}` }, { status: 400 })
+    }
+  }
+
+  private async handleSkillWorkflow(
+    c: Context,
+    action: SkillAction,
+    session: any
+  ): Promise<Response> {
+    if (!this.workflowManager) {
+      return Response.json({ error: 'Workflow engine not available' }, { status: 500 })
+    }
+
+    const workflowName = action.workflow!
+    const workflow = this.workflowManager.getWorkflow(workflowName)
+    if (!workflow) {
+      return Response.json({ error: `Workflow '${workflowName}' not found` }, { status: 404 })
+    }
+
+    let body: Record<string, any> = {}
+    if (action.method !== 'GET') {
+      body = await c.req.json<Record<string, any>>().catch(() => ({}))
+    }
+
+    const params: Record<string, string> = {}
+    const pathParams = action.path.match(/\{(\w+)\}/g)
+    if (pathParams) {
+      for (const param of pathParams) {
+        const name = param.slice(1, -1)
+        const value = c.req.param(name)
+        if (value) params[name] = value
+      }
+    }
+
+    // Load the record if entity is specified and we have an id
+    let record = null
+    if (action.entity && params.id) {
+      record = await this.queryExecutor.findById(action.entity, params.id).catch(() => null)
+    }
+
+    const data = {
+      params,
+      body,
+      payload: body,
+      entity: action.entity,
+      recordId: params.id,
+      record,
+      user: session?.user,
+      session,
+    }
+
+    const job = this.workflowManager.trigger(workflowName, data)
+
+    return Response.json({
+      success: true,
+      job: { id: job.id, workflow: workflowName },
+    })
+  }
+
+  private registerOpenAPIRoute(): void {
+    this.app.get('/api/openapi.json', async (c) => {
+      const origin = this.resolveOrigin(c.req.raw)
+      const spec = generateOpenAPISpec(this.blueprint, origin)
+      return Response.json(spec, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300',
+        },
+      })
+    })
+  }
+
   private registerPageRoutes(): void {
     this.app.all('*', async (c) => {
       return this.blueprintAdapter.handle(c.req.raw)
     })
+  }
+
+  private initApiKeys(): void {
+    this.apiKeys.clear()
+    const apiKeyConfigs = this.blueprint.auth?.apiKeys
+    if (!apiKeyConfigs || apiKeyConfigs.length === 0) return
+
+    for (const keyConfig of apiKeyConfigs) {
+      const keyValue = process.env[keyConfig.keyEnv]
+      if (!keyValue) {
+        console.warn(`API key "${keyConfig.name}": env var ${keyConfig.keyEnv} is not set, skipping`)
+        continue
+      }
+      this.apiKeys.set(keyValue, { name: keyConfig.name })
+    }
+  }
+
+  private resolveApiKeySession(bearerToken: string): any | null {
+    const keyConfig = this.apiKeys.get(bearerToken)
+    if (!keyConfig) return null
+    return {
+      id: `apikey-${keyConfig.name}`,
+      userId: keyConfig.name,
+      user: { id: keyConfig.name, name: keyConfig.name, email: '' },
+      expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+      createdAt: new Date(),
+    }
   }
 
   private getHealthStatus(): { healthy: boolean; database: boolean; status: string; timestamp: string } {
@@ -833,6 +1102,11 @@ export class ServerManager {
     }
 
     const method = c.req.method.toUpperCase()
+
+    // Bearer token requests are inherently CSRF-safe (tokens are never auto-sent by browsers)
+    const authHeader = c.req.header('authorization') || ''
+    if (authHeader.toLowerCase().startsWith('bearer ')) return
+
     const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
     const existingTokenRaw = getCookie(c, this.csrfCookieName)
     const existingToken = this.normalizeCsrfToken(existingTokenRaw)

@@ -16,6 +16,7 @@ export interface Blueprint {
   plugins?: PluginConfig[]
   ui?: UIConfig
   notifications?: NotificationsConfig
+  skills?: SkillConfig[]
 }
 
 export interface ProjectConfig {
@@ -265,6 +266,11 @@ export interface WorkflowStep {
 // Auth
 // ============================================================================
 
+export interface ApiKeyConfig {
+  name: string
+  keyEnv: string
+}
+
 export interface AuthConfig {
   providers: string[]
   trustedOrigins?: string[]
@@ -273,6 +279,7 @@ export interface AuthConfig {
     idle_timeout?: number
   }
   permissions?: Record<string, PermissionRule>
+  apiKeys?: ApiKeyConfig[]
 }
 
 export interface PermissionRule {
@@ -325,6 +332,29 @@ export interface TailwindConfig {
   secondary_color?: string
   font_family?: string
   [key: string]: any
+}
+
+// ============================================================================
+// Skills (Agent-facing API)
+// ============================================================================
+
+export interface SkillAction {
+  name: string
+  description?: string
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE'
+  path: string
+  body?: Record<string, string>
+  entity?: string
+  action?: 'create' | 'list' | 'get' | 'update' | 'delete'
+  mapParams?: Record<string, string>
+  workflow?: string
+}
+
+export interface SkillConfig {
+  name: string
+  description?: string
+  auth?: 'required' | 'none'
+  actions: SkillAction[]
 }
 
 // ============================================================================
