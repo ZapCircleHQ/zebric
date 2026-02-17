@@ -37,9 +37,9 @@ export const stories: StoryDefinition[] = [
   },
   {
     id: 'zebric-dispatch',
-    title: 'Teams triage product requests through the Dispatch workflow',
+    title: 'Teams triage issues through the Dispatch workflow',
     blueprintPath: 'examples/zebric-dispatch/blueprint.toml',
-    description: 'Validates dashboard/list/detail/form routing, intake form option labels, and action-bar workflows for request lifecycle updates.',
+    description: 'Validates dashboard/list/detail/form routing, intake form option labels, action-bar workflows for issue lifecycle, and Slack notification wiring.',
     tests: ['src/stories/zebric-dispatch.story.test.ts']
   }
 ]
