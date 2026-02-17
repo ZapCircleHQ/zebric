@@ -1,11 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
 import path from 'node:path'
 import { ServerManager } from './server-manager.js'
+import { initApiKeys } from './server-security.js'
 
 /**
- * Unit tests for API key resolution, pagination param parsing,
- * and security hardening in ServerManager.
+ * Integration tests for ServerManager routes and middleware.
+ * Unit tests for pure utility functions live in server-utils.test.ts.
+ * Unit tests for security functions live in server-security.test.ts.
  */
 
 // Minimal stubs for ServerManager dependencies
@@ -64,175 +66,11 @@ function initApp(sm: ServerManager): Hono {
   const smAny = sm as any
   smAny.app = new Hono()
   smAny.app.onError(smAny.errorHandler.toHonoHandler())
+  smAny.apiKeys = initApiKeys(smAny.blueprint)
   smAny.registerGlobalMiddleware()
   smAny.registerRoutes()
-  smAny.initApiKeys()
   return smAny.app
 }
-
-describe('resolveApiKeySession', () => {
-  it('returns a synthetic session for a valid API key', () => {
-    const env = process.env
-    process.env.TEST_AGENT_KEY = 'secret-key-123'
-
-    const deps = stubDeps({
-      auth: {
-        providers: ['email'],
-        apiKeys: [{ name: 'test-agent', keyEnv: 'TEST_AGENT_KEY' }],
-      },
-    })
-    const sm = new ServerManager(deps)
-
-    // Access private method via bracket notation
-    ;(sm as any).blueprint = deps.blueprint
-    ;(sm as any).initApiKeys()
-
-    const session = (sm as any).resolveApiKeySession('secret-key-123')
-    expect(session).not.toBeNull()
-    expect(session.user.id).toBe('test-agent')
-    expect(session.user.name).toBe('test-agent')
-    expect(session.userId).toBe('test-agent')
-
-    // Clean up
-    delete process.env.TEST_AGENT_KEY
-  })
-
-  it('returns null for an unknown token', () => {
-    process.env.TEST_AGENT_KEY = 'secret-key-123'
-
-    const deps = stubDeps({
-      auth: {
-        providers: ['email'],
-        apiKeys: [{ name: 'test-agent', keyEnv: 'TEST_AGENT_KEY' }],
-      },
-    })
-    const sm = new ServerManager(deps)
-    ;(sm as any).initApiKeys()
-
-    const session = (sm as any).resolveApiKeySession('wrong-key')
-    expect(session).toBeNull()
-
-    delete process.env.TEST_AGENT_KEY
-  })
-
-  it('skips API keys when env var is not set', () => {
-    delete process.env.MISSING_KEY
-
-    const deps = stubDeps({
-      auth: {
-        providers: ['email'],
-        apiKeys: [{ name: 'ghost-agent', keyEnv: 'MISSING_KEY' }],
-      },
-    })
-    const sm = new ServerManager(deps)
-
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    ;(sm as any).initApiKeys()
-
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('MISSING_KEY')
-    )
-    expect((sm as any).apiKeys.size).toBe(0)
-
-    warnSpy.mockRestore()
-  })
-
-  it('handles empty apiKeys array', () => {
-    const deps = stubDeps({
-      auth: {
-        providers: ['email'],
-        apiKeys: [],
-      },
-    })
-    const sm = new ServerManager(deps)
-    ;(sm as any).initApiKeys()
-
-    expect((sm as any).apiKeys.size).toBe(0)
-  })
-
-  it('handles no auth config', () => {
-    const deps = stubDeps()
-    const sm = new ServerManager(deps)
-    ;(sm as any).initApiKeys()
-
-    expect((sm as any).apiKeys.size).toBe(0)
-  })
-})
-
-describe('pagination param parsing', () => {
-  it('clamps limit to max 1000', () => {
-    const limitParam = parseInt('5000', 10)
-    const limit = Math.min(
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
-      1000
-    )
-    expect(limit).toBe(1000)
-  })
-
-  it('defaults limit to 100 when not provided', () => {
-    const limitParam = parseInt('', 10)
-    const limit = Math.min(
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
-      1000
-    )
-    expect(limit).toBe(100)
-  })
-
-  it('uses provided limit when valid', () => {
-    const limitParam = parseInt('50', 10)
-    const limit = Math.min(
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
-      1000
-    )
-    expect(limit).toBe(50)
-  })
-
-  it('defaults limit to 100 for negative values', () => {
-    const limitParam = parseInt('-5', 10)
-    const limit = Math.min(
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
-      1000
-    )
-    expect(limit).toBe(100)
-  })
-
-  it('defaults limit to 100 for zero', () => {
-    const limitParam = parseInt('0', 10)
-    const limit = Math.min(
-      Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100,
-      1000
-    )
-    expect(limit).toBe(100)
-  })
-
-  it('returns undefined offset when not provided', () => {
-    const offsetParam = parseInt('', 10)
-    const offset =
-      Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
-    expect(offset).toBeUndefined()
-  })
-
-  it('returns offset when valid', () => {
-    const offsetParam = parseInt('20', 10)
-    const offset =
-      Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
-    expect(offset).toBe(20)
-  })
-
-  it('allows offset of 0', () => {
-    const offsetParam = parseInt('0', 10)
-    const offset =
-      Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
-    expect(offset).toBe(0)
-  })
-
-  it('returns undefined offset for negative values', () => {
-    const offsetParam = parseInt('-10', 10)
-    const offset =
-      Number.isFinite(offsetParam) && offsetParam >= 0 ? offsetParam : undefined
-    expect(offset).toBeUndefined()
-  })
-})
 
 // ============================================================================
 // Security fix regression tests
@@ -441,9 +279,6 @@ describe('security: path traversal guard integration', () => {
   // by calling the private method logic on a real ServerManager instance.
 
   it('rejects traversal via direct method test', async () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
     const root = path.resolve(process.cwd(), 'data/uploads')
 
     // Simulate a traversal relative path
@@ -455,8 +290,6 @@ describe('security: path traversal guard integration', () => {
   })
 
   it('allows legitimate relative path via direct method test', async () => {
-    const sm = new ServerManager(stubDeps())
-
     const root = path.resolve(process.cwd(), 'data/uploads')
 
     const relative = 'documents/report.pdf'
@@ -538,103 +371,6 @@ describe('security: CSRF skip only for valid API keys', () => {
 
     expect(res.status).toBe(403)
     delete process.env.TEST_KEY
-  })
-})
-
-describe('security: no HTML entity decoding in action body', () => {
-  it('does not decode HTML entities in normalizeActionBody', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    const input = {
-      title: '&lt;script&gt;alert(1)&lt;/script&gt;',
-      status: '&amp;active',
-      clean: 'hello world',
-    }
-    const result = smAny.normalizeActionBody(input)
-
-    // Values must pass through untouched — no decoding
-    expect(result.title).toBe('&lt;script&gt;alert(1)&lt;/script&gt;')
-    expect(result.status).toBe('&amp;active')
-    expect(result.clean).toBe('hello world')
-  })
-
-  it('handles empty and null input', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.normalizeActionBody({})).toEqual({})
-    expect(smAny.normalizeActionBody(null)).toEqual({})
-    expect(smAny.normalizeActionBody(undefined)).toEqual({})
-  })
-})
-
-describe('security: open redirect prevention', () => {
-  it('allows relative paths', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.isSafeRedirect('/')).toBe(true)
-    expect(smAny.isSafeRedirect('/issues')).toBe(true)
-    expect(smAny.isSafeRedirect('/issues/123')).toBe(true)
-    expect(smAny.isSafeRedirect('/issues?status=open')).toBe(true)
-  })
-
-  it('rejects absolute URLs', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.isSafeRedirect('https://evil.com')).toBe(false)
-    expect(smAny.isSafeRedirect('http://evil.com/phish')).toBe(false)
-  })
-
-  it('rejects protocol-relative URLs', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.isSafeRedirect('//evil.com')).toBe(false)
-    expect(smAny.isSafeRedirect('//evil.com/path')).toBe(false)
-  })
-
-  it('rejects javascript: and data: schemes', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.isSafeRedirect('javascript:alert(1)')).toBe(false)
-    expect(smAny.isSafeRedirect('data:text/html,<h1>hi</h1>')).toBe(false)
-  })
-
-  it('rejects empty and null values', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.isSafeRedirect('')).toBe(false)
-    expect(smAny.isSafeRedirect(undefined)).toBe(false)
-    expect(smAny.isSafeRedirect(null)).toBe(false)
-  })
-
-  it('resolveActionRedirect falls back to / for unsafe values', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.resolveActionRedirect('https://evil.com')).toBe('/')
-    expect(smAny.resolveActionRedirect('//evil.com')).toBe('/')
-    expect(smAny.resolveActionRedirect(undefined, 'https://evil.com')).toBe('/')
-    expect(smAny.resolveActionRedirect(undefined, undefined)).toBe('/')
-  })
-
-  it('resolveActionRedirect uses safe provided value', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.resolveActionRedirect('/issues/123')).toBe('/issues/123')
-  })
-
-  it('resolveActionRedirect falls back to safe referer', () => {
-    const sm = new ServerManager(stubDeps())
-    const smAny = sm as any
-
-    expect(smAny.resolveActionRedirect(undefined, '/board')).toBe('/board')
   })
 })
 
