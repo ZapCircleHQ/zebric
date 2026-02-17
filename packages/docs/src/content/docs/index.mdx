@@ -6,10 +6,10 @@ hero:
   tagline: Ship secure internal tools without scaffolding code.
   actions:
     - text: Quick Start
-      link: /building/blueprint/
+      link: /getting-started/quickstart/
       icon: right-arrow
     - text: Learn More
-      link: /introduction/overview/
+      link: /getting-started/what-is-zebric/
       icon: external
       variant: minimal
 ---
@@ -20,18 +20,20 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 
 <CardGrid>
   <Card title="Declarative blueprints" icon="layers">
-    Model data, layouts, behaviors, and workflows in a single blueprint file and let the runtime render it at run time.
+    Define data models, pages, access rules, workflows, and notifications in a single TOML file. The runtime engine renders it, no code generation at runtime.
   </Card>
   <Card title="Runtime-driven" icon="bolt">
-    No code generation—changes hot reload instantly in the Node or Workers runtime.
+    Changes hot-reload instantly during development. No build step, no scaffolding. Works with Node.js/Docker and Cloudflare Workers.
   </Card>
-  <Card title="Avoid reviewing generated code" icon="check">
-    Zebric applications have less code, making them easier to understand and review.
+  <Card title="Built-in security" icon="check">
+    Authentication, role-based access control, CSRF protection, and audit logging are included out of the box.
   </Card>
 </CardGrid>
 
-## Next steps
+## Next Steps
 
-1. Visit the [Introduction](/introduction/overview/) for key concepts.
-2. Follow the [Quick Start](/building/blueprint/) to edit your first blueprint.
-3. Run the [developer onboarding guide](/guides/developer-onboarding/) or another story to explore real flows.
+1. Read [What is Zebric?](/getting-started/what-is-zebric/) to understand the approach
+2. Follow the [Quickstart](/getting-started/quickstart/) to run your first app in 5 minutes
+3. Explore the [Blueprint Reference](/building/blueprint/) for entities, pages, forms, and queries
+4. Add [Workflows & Notifications](/building/workflows/) to automate processes
+5. Review [Security & Auth](/building/security/) for access control and API keys

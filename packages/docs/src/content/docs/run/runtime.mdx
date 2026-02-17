@@ -3,31 +3,148 @@ label: Run
 order: 3
 slug: run/runtime
 title: Runtime & Deployment
-description: How to run Zebric in Node or Workers.
+description: Run Zebric with Node.js or Cloudflare Workers, and deploy to production.
 ---
 
 ## Node Runtime
 
+The primary way to run Zebric in development:
+
 ```bash
-pnpm --filter @zebric/runtime-node dev
+zebric dev --blueprint blueprint.toml --port 3000 --seed
 ```
 
-- Serves blueprint-defined routes via Hono.
-- Configurable via env vars (`PORT`, database connection, etc.).
+This starts a Hono HTTP server with:
+- Hot reload via WebSocket (blueprint changes apply instantly)
+- SQLite database (auto-created from entity definitions)
+- Server-side HTML rendering with Tailwind CSS
+- CSRF protection, security headers, and session management
+
+### Engine Configuration
+
+When using the engine programmatically:
+
+```typescript
+import { ZebricEngine } from '@zebric/runtime-node'
+
+const engine = new ZebricEngine({
+  blueprintPath: './blueprint.toml',
+  port: 3000,
+  host: 'localhost',
+  database: {
+    type: 'sqlite',       // or 'postgres'
+    filename: './data.db', // SQLite path
+  },
+  dev: {
+    hotReload: true,
+    seed: true,
+    logLevel: 'info',     // debug | info | warn | error
+    logQueries: false,
+  },
+})
+
+await engine.start()
+```
+
+### Database Options
+
+**SQLite** (default):
+```typescript
+database: {
+  type: 'sqlite',
+  filename: './data.db'
+}
+```
+
+**PostgreSQL**:
+```typescript
+database: {
+  type: 'postgres',
+  url: 'postgres://user:pass@localhost:5432/mydb'
+}
+```
 
 ## Workers Runtime
 
-Use the Workers example in `examples/workers-blog/`.
+Deploy to Cloudflare Workers using `@zebric/runtime-worker`:
 
 ```bash
-pnpm --filter workers-blog dev
+cd examples/workers-blog
+pnpm dev        # Local development
+wrangler deploy  # Deploy to Cloudflare
 ```
 
-## Deployments
+The Workers runtime uses the same blueprint format but runs on Cloudflare's edge network.
 
-1. **Docker:** `pnpm --filter @zebric/runtime-node build` then `docker build .`
-2. **Cloudflare Workers:** `wrangler deploy` inside the Workers example.
+## Deployment
 
-### Observability
-- Watch the audit logs (`packages/runtime-node/src/security/audit-logger.ts`).
-- Runtime link validation errors surface during blueprint load (e.g., invalid redirects).
+### Docker
+
+```dockerfile
+FROM node:20-slim
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN npm install -g pnpm && pnpm install --prod
+COPY blueprint.toml ./
+EXPOSE 3000
+CMD ["npx", "zebric", "dev", "--blueprint", "blueprint.toml"]
+```
+
+### Cloudflare Workers
+
+```bash
+wrangler deploy
+```
+
+## Observability
+
+### Audit Logging
+
+Security events are written as JSON to `./data/audit.log` (configurable). Events include authentication attempts, access control denials, CSRF violations, data access, and suspicious activity. Each entry includes timestamp, event type, severity, user context, and sanitized metadata.
+
+Sensitive fields (passwords, tokens, API keys) are automatically redacted.
+
+### Metrics
+
+The engine exposes Prometheus-format metrics with `zbl_*` prefixed counters and histograms:
+
+```
+GET /metrics    # on the admin port
+```
+
+Available metrics:
+- `zbl_requests_total` — total HTTP requests
+- `zbl_request_duration_ms` — request duration histogram (buckets: 25, 50, 100, 250, 500, 1000, 2000ms)
+- `zbl_requests_by_route_total` — requests per route
+- `zbl_requests_by_status_total` — requests by status code family (2xx, 4xx, etc.)
+- `zbl_query_duration_ms` — database query duration histogram per entity
+- `zbl_route_cache_hits` / `zbl_route_cache_misses` — route cache performance
+
+### Health Check
+
+```
+GET /health    # on the admin port
+```
+
+Returns health status with a 200 (healthy) or 503 (unhealthy) status code.
+
+### Admin Server
+
+The admin server runs on a separate port (default: **3030**, bound to **127.0.0.1** only) and exposes:
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Engine health status |
+| `/metrics` | Prometheus-format metrics |
+| `/blueprint` | Current parsed blueprint |
+| `/state` | Engine state |
+| `/entities` | Entity summary |
+| `/pages` | Page routes and layouts |
+| `/workflows` | Workflow definitions, job counts, and stats |
+| `/workflows/visualization` | HTML workflow graph visualization |
+| `/traces` | Request traces (with `?limit=N`) |
+| `/traces/errors` | Error traces |
+| `/traces/slow` | Slow traces (with `?threshold=1000`) |
+| `/traces/stats` | Trace statistics |
+| `/schema-diff` | Pending database schema changes |
+| `/plugins` | Loaded plugin list |

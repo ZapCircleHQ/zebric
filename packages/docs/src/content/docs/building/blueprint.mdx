@@ -2,36 +2,334 @@
 label: Building
 order: 2
 slug: building/blueprint
-title: Blueprint Fundamentals
-description: Define entities, pages, behaviors, and workflows.
+title: Blueprint Reference
+description: Complete reference for entities, pages, forms, access control, and UI configuration.
 ---
 
-Blueprints are TOML documents that describe your application. Key sections:
+Blueprints are TOML files that declaratively define your application. This page covers every section of a blueprint.
 
-## Entities
-Define fields, relations, and access rules. Example:
+## Project
+
+Every blueprint starts with a version and project metadata:
 
 ```toml
-[entity.Task]
+version = "0.1.0"
+
+[project]
+name = "My App"
+version = "1.0.0"
+description = "An internal tool"
+
+[project.runtime]
+min_version = "0.1.0"
+```
+
+## Entities
+
+Entities define your data model. The runtime creates database tables automatically.
+
+```toml
+[entity.Post]
 fields = [
-  { name = "id", type = "ULID" },
-  { name = "title", type = "Text", required = true }
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["draft", "published"], default = "draft" },
+  { name = "authorId", type = "Ref", ref = "User.id", index = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+```
+
+### Field Types
+
+| Type | Description |
+|------|-------------|
+| `ULID` | Primary key, auto-generated unique identifier |
+| `UUID` | UUID identifier |
+| `Text` | Short text (VARCHAR) |
+| `LongText` | Long text (TEXT) |
+| `Email` | Email address with validation |
+| `Integer` | Whole numbers |
+| `Float` | Decimal numbers |
+| `Boolean` | true/false |
+| `DateTime` | Date and time |
+| `Date` | Date only |
+| `JSON` | JSON data |
+| `Enum` | Enumerated values (use `values = [...]`) |
+| `Ref` | Foreign key reference (use `ref = "Entity.field"`) |
+
+### Field Options
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `primary_key` | boolean | Mark as primary key |
+| `unique` | boolean | Enforce uniqueness |
+| `index` | boolean | Create database index |
+| `required` | boolean | Cannot be null |
+| `nullable` | boolean | Explicitly allow null |
+| `default` | any | Default value (`"now"` for DateTime) |
+| `values` | string[] | Allowed values for Enum type |
+| `ref` | string | Foreign key target for Ref type |
+
+### Relations
+
+```toml
+[entity.User.relations]
+posts = { type = "hasMany", entity = "Post", foreign_key = "authorId" }
+
+[entity.Post.relations]
+author = { type = "belongsTo", entity = "User", foreign_key = "authorId" }
+```
+
+Relation types: `hasMany`, `hasOne`, `belongsTo`, `manyToMany` (requires `through`).
+
+### Access Control
+
+Define who can read, create, update, or delete records:
+
+```toml
+# Simple boolean
+[entity.Post.access]
+read = true
+create = true
+update = { authorId = "$currentUser.id" }
+delete = { "$currentUser.role" = "admin" }
+```
+
+Use `$currentUser` to reference the logged-in user's fields. Combine conditions with `or`/`and`:
+
+```toml
+[entity.Post.access]
+read = { or = [{ status = "published" }, { authorId = "$currentUser.id" }] }
+```
+
+Field-level access:
+
+```toml
+[entity.User]
+fields = [
+  { name = "email", type = "Email", access = { read = true, write = { "$currentUser.role" = "admin" } } }
 ]
 ```
 
 ## Pages
-Bind routes to layouts. Example list page:
+
+Pages bind URL paths to layouts and queries.
+
+### Layout Types
+
+| Layout | Description |
+|--------|-------------|
+| `list` | Table view of query results |
+| `detail` | Single record display |
+| `form` | Create/update/delete forms |
+| `dashboard` | Widgets and summary cards |
+| `auth` | Authentication pages (sign-in) |
+
+### List Page
 
 ```toml
-[page."/tasks"]
-title = "All Tasks"
+[page."/posts"]
+title = "All Posts"
+auth = "none"
 layout = "list"
-[page."/tasks".query.tasks]
-entity = "Task"
+
+[page."/posts".query.posts]
+entity = "Post"
+where = { status = "published" }
+orderBy = { createdAt = "desc" }
+limit = 20
+include = ["author"]
 ```
 
-## Behaviors & Workflows
-Use `behavior.render` for custom UI and `workflow.*` for automation. See `examples/onboarding/blueprint.toml` for a full workflow.
+### Detail Page
+
+```toml
+[page."/posts/:id"]
+title = "Post Detail"
+auth = "none"
+layout = "detail"
+
+[page."/posts/:id".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+include = ["author"]
+```
+
+### Dashboard Page
+
+```toml
+[page."/"]
+title = "Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[page."/".query.recentPosts]
+entity = "Post"
+orderBy = { createdAt = "desc" }
+limit = 5
+
+[page."/".query.totalUsers]
+entity = "User"
+```
+
+### Query Options
+
+| Option | Description |
+|--------|-------------|
+| `entity` | Entity to query |
+| `where` | Filter conditions (use `$params.id` for URL params) |
+| `orderBy` | Sort order (`{ field = "asc" }` or `"desc"`) |
+| `limit` | Maximum number of results |
+| `offset` | Skip N results |
+| `include` | Related entities to include |
+
+## Forms
+
+Forms handle record creation and updates.
+
+```toml
+[page."/posts/new"]
+title = "New Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/new".form]
+entity = "Post"
+method = "create"
+
+[[page."/posts/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+options = [
+  { value = "general", label = "General" },
+  { value = "finance", label = "Finance" }
+]
+
+[[page."/posts/new".form.fields]]
+name = "body"
+type = "textarea"
+label = "Content"
+rows = 10
+required = true
+
+[page."/posts/new".form.onSuccess]
+redirect = "/posts/{id}"
+message = "Post created!"
+```
+
+### Form Field Types
+
+`text`, `textarea`, `email`, `password`, `number`, `select`, `checkbox`, `radio`, `file`, `date`, `datetime`
+
+### Form Field Options
+
+| Option | Description |
+|--------|-------------|
+| `label` | Display label |
+| `placeholder` | Placeholder text |
+| `required` | Field is required |
+| `default` | Default value |
+| `options` | Choices for select/radio (string array or `{ value, label }` objects) |
+| `rows` | Number of rows for textarea |
+| `pattern` | Regex validation pattern |
+| `error_message` | Custom error message |
+| `min` / `max` | Number range constraints |
+| `accept` | Accepted file types for file input |
+
+## Action Bar
+
+Detail pages can include an action bar with workflow triggers:
+
+```toml
+[page."/issues/:id"]
+title = "Issue Detail"
+layout = "detail"
+
+[page."/issues/:id".actionBar]
+statusField = "status"
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Set Status"
+workflow = "SetIssueStatus"
+style = "primary"
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Request Approval"
+workflow = "RequestApprovalIfNeeded"
+style = "secondary"
+```
+
+## Layout Slots
+
+Customize layout rendering with named slots:
+
+| Layout | Available Slots |
+|--------|----------------|
+| `list` | `list.header`, `list.body`, `list.empty` |
+| `detail` | `detail.main`, `detail.related` |
+| `form` | `form.form` |
+| `dashboard` | `dashboard.widgets` |
+
+## UI Configuration
+
+```toml
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true
+
+[ui.tailwind]
+primary_color = "#3B82F6"
+```
+
+Built-in themes: `default`, `minimal`, `dashboard`.
+
+## Authentication
+
+```toml
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+[[auth.apiKeys]]
+name = "my-agent"
+keyEnv = "MY_API_KEY"
+```
+
+## Notifications
+
+```toml
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[[notifications.adapters]]
+name = "slack_ops"
+type = "slack"
+[notifications.adapters.config]
+botTokenEnv = "SLACK_BOT_TOKEN"
+defaultChannel = "#ops"
+```
+
+Adapter types: `console`, `slack`, `email`.
 
 ## Testing Blueprints
-Use `pnpm --filter @zebric/framework-stories test` to ensure your stories stay green.
+
+Use the framework stories package to test your blueprints:
+
+```bash
+pnpm --filter @zebric/framework-stories test
+```
+
+See the `examples/` directory for complete blueprint files.

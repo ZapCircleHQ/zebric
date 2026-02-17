@@ -11,7 +11,10 @@ export default defineConfig({
 			sidebar: [
 				{
 					label: 'Getting Started',
-					items: [{ label: 'What is Zebric', slug: 'getting-started/what-is-zebric' }],
+					items: [
+						{ label: 'What is Zebric', slug: 'getting-started/what-is-zebric' },
+						{ label: 'Quickstart', slug: 'getting-started/quickstart' },
+					],
 				},
 				{
 					label: 'Introduction',
@@ -19,7 +22,11 @@ export default defineConfig({
 				},
 				{
 					label: 'Building',
-					items: [{ label: 'Blueprint Fundamentals', slug: 'building/blueprint' }],
+					items: [
+						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
+						{ label: 'Workflows & Notifications', slug: 'building/workflows' },
+						{ label: 'Security & Auth', slug: 'building/security' },
+					],
 				},
 				{
 					label: 'Run',
@@ -31,7 +38,11 @@ export default defineConfig({
 				},
 				{
 					label: 'Reference',
-					items: [{ label: 'APIs & Commands', slug: 'reference/api' }],
+					items: [
+						{ label: 'CLI', slug: 'reference/cli' },
+						{ label: 'REST API & OpenAPI', slug: 'reference/api' },
+						{ label: 'Skills', slug: 'reference/skills' },
+					],
 				},
 			],
 		}),

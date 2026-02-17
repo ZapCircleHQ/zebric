@@ -1,0 +1,56 @@
+---
+label: CLI
+order: 1
+slug: reference/cli
+title: CLI Reference
+description: Zebric CLI commands, flags, and environment variables.
+---
+
+## Commands
+
+### `zebric dev`
+
+Start a development server with hot reload:
+
+```bash
+zebric dev --blueprint blueprint.toml --port 3000 --seed
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-b, --blueprint <path>` | `blueprint.json` | Path to blueprint file |
+| `-p, --port <number>` | `3000` | Port to listen on |
+| `-h, --host <host>` | `localhost` | Host to bind to |
+| `--seed` | — | Seed database with sample data |
+
+### `zebric validate`
+
+Validate a blueprint without starting the engine:
+
+```bash
+zebric validate --blueprint blueprint.toml
+```
+
+Returns validation errors and warnings without starting a server. Useful for CI checks.
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `PORT` | Server port (default: 3000) |
+| `HOST` | Server host (default: localhost) |
+| `DATABASE_URL` | Database connection string |
+| `SLACK_BOT_TOKEN` | Slack bot token (for Slack notification adapter) |
+| `SLACK_SIGNING_SECRET` | Slack webhook signing secret |
+
+API key environment variables are defined per key in `[[auth.apiKeys]]` using the `keyEnv` field.
+
+## Story Runner
+
+Run integration tests for example blueprints:
+
+```bash
+pnpm --filter @zebric/framework-stories test
+```
+
+Stories validate that blueprint parsing, page routing, form configuration, workflow wiring, and notification setup all remain correct.

@@ -1,0 +1,105 @@
+---
+label: Skills
+order: 3
+slug: reference/skills
+title: Skills Reference
+description: Define agent-facing APIs with structured actions for AI agents and external tools.
+---
+
+Skills define structured, agent-facing APIs in your blueprint. They give AI agents and external tools a typed interface to interact with your application.
+
+## Defining a Skill
+
+```toml
+[skill.dispatch]
+description = "Create and manage issues in Zebric Dispatch."
+
+[[skill.dispatch.actions]]
+name = "create_issue"
+description = "Create a new issue."
+method = "POST"
+path = "/api/issues"
+body = { title = "Text", description = "LongText", category = "Enum" }
+
+[[skill.dispatch.actions]]
+name = "get_issue"
+description = "Fetch an issue by id."
+method = "GET"
+path = "/api/issues/{id}"
+
+[[skill.dispatch.actions]]
+name = "set_status"
+description = "Set issue status via workflow."
+method = "POST"
+path = "/api/issues/{id}/status"
+body = { status = "Enum" }
+entity = "Issue"
+workflow = "SetIssueStatus"
+
+[[skill.dispatch.actions]]
+name = "add_comment"
+description = "Add a comment to an issue."
+method = "POST"
+path = "/api/issues/{id}/comments"
+body = { body = "LongText", authorType = "Enum" }
+entity = "Comment"
+action = "create"
+[skill.dispatch.actions.mapParams]
+id = "issueId"
+```
+
+## Action Options
+
+| Field | Description |
+|-------|-------------|
+| `name` | Action identifier (used by agents to invoke the action) |
+| `description` | Human-readable description of what the action does |
+| `method` | HTTP method (`GET`, `POST`, `PUT`, `DELETE`) |
+| `path` | URL path (supports `{id}` placeholders for dynamic segments) |
+| `body` | Request body schema — keys are field names, values are types |
+| `entity` | Entity to operate on (for CRUD actions) |
+| `action` | CRUD action: `create`, `list`, `get`, `update`, `delete` |
+| `workflow` | Workflow to trigger when the action is invoked |
+| `mapParams` | Map URL path params to entity fields (e.g., `{ id = "issueId" }`) |
+
+## How Skills Work
+
+1. You define skills and actions in your blueprint
+2. The runtime registers API routes for each action
+3. Agents authenticate via API keys and call the action endpoints
+4. Actions execute the specified CRUD operation or trigger the named workflow
+
+## Pairing with API Keys
+
+Skills are typically used with API key authentication:
+
+```toml
+[auth]
+providers = ["email"]
+
+[[auth.apiKeys]]
+name = "dispatch-agent"
+keyEnv = "DISPATCH_AGENT_API_KEY"
+
+[skill.dispatch]
+description = "Manage dispatch issues."
+
+[[skill.dispatch.actions]]
+name = "create_issue"
+method = "POST"
+path = "/api/issues"
+body = { title = "Text" }
+```
+
+The agent authenticates with the API key and calls the skill actions:
+
+```bash
+curl -X POST http://localhost:3000/api/issues \
+  -H "Authorization: Bearer $DISPATCH_AGENT_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Server disk full"}'
+```
+
+## OpenAPI Integration
+
+Skill actions are included in the auto-generated OpenAPI spec at `/api/openapi.json`, making them discoverable by agents that support OpenAPI tool definitions.

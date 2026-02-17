@@ -2,20 +2,124 @@
 label: Guides
 order: 4
 slug: guides/developer-onboarding
-title: Guide – Developer Onboarding
-description: Walk through the onboarding blueprint and actions.
+title: Guide - Developer Onboarding Example
+description: Walk through the onboarding blueprint to understand dashboards, action bars, and workflows.
 ---
 
-This guide mirrors `examples/onboarding/blueprint.toml` and the `developer-onboarding` story.
+This guide walks through `examples/onboarding/blueprint.toml` — a real blueprint that demonstrates dashboards, detail pages with action bars, forms, and workflows.
+
+## What It Builds
+
+A developer onboarding tool where HR can:
+- See a dashboard of new hires and their progress
+- View details for each developer with status and assigned tasks
+- Advance developers through onboarding stages via action bar buttons
+- Create new hire records with a form
 
 ## Entities
-- `Developer`, `AccessItem`, `OnboardingTask`, `RampMilestone`
+
+The blueprint defines four entities:
+
+- **Developer** — the new hire being onboarded (name, email, status, start date)
+- **AccessItem** — system access grants (e.g., GitHub, AWS, Slack)
+- **OnboardingTask** — checklist items for each new hire
+- **RampMilestone** — timeline milestones (30/60/90-day goals)
+
+Each entity uses relations to connect back to the Developer.
 
 ## Pages
-- Dashboard, list, detail with action bar, form for new hires.
 
-## Action Bar & Workflows
-- Status transitions trigger the `AdvanceDeveloperStatus` workflow via `/actions/AdvanceDeveloperStatus`.
+### Dashboard (`/`)
 
-## Validation
-- Run `pnpm --filter @zebric/framework-stories test` to ensure the onboarding story remains green.
+A dashboard layout with summary queries:
+
+```toml
+[page."/"]
+title = "Onboarding Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[page."/".query.newHires]
+entity = "Developer"
+where = { status = "new" }
+
+[page."/".query.inProgress]
+entity = "Developer"
+where = { status = "in_progress" }
+```
+
+### Developer Detail (`/developers/:id`)
+
+A detail page with an **action bar** that triggers workflows:
+
+```toml
+[page."/developers/:id"]
+title = "Developer Detail"
+auth = "required"
+layout = "detail"
+
+[page."/developers/:id".actionBar]
+statusField = "status"
+
+[[page."/developers/:id".actionBar.actions]]
+label = "Advance Status"
+workflow = "AdvanceDeveloperStatus"
+style = "primary"
+```
+
+The action bar displays the developer's current status and provides buttons to trigger the `AdvanceDeveloperStatus` workflow.
+
+### New Hire Form (`/developers/new`)
+
+A form page for creating new developer records:
+
+```toml
+[page."/developers/new"]
+title = "Add New Hire"
+auth = "required"
+layout = "form"
+
+[page."/developers/new".form]
+entity = "Developer"
+method = "create"
+
+[page."/developers/new".form.onSuccess]
+redirect = "/developers/{id}"
+```
+
+## Workflows
+
+The `AdvanceDeveloperStatus` workflow is a manual workflow triggered from the action bar. It updates the developer's status field through the onboarding stages.
+
+```toml
+[workflow.AdvanceDeveloperStatus]
+description = "Move developer to the next onboarding stage."
+
+[workflow.AdvanceDeveloperStatus.trigger]
+manual = true
+```
+
+## Related Data
+
+The detail page automatically renders related data sections:
+- **Access Items** — shown as a checklist
+- **Ramp Milestones** — shown as a timeline
+- **Onboarding Tasks** — shown as a checklist
+
+The runtime detects the relationship and renders the appropriate component (checklist, timeline, or activity feed) based on the data shape.
+
+## Running the Story Test
+
+Verify the blueprint stays correct:
+
+```bash
+pnpm --filter @zebric/framework-stories test -- --grep "developer-onboarding"
+```
+
+## Key Patterns Demonstrated
+
+1. **Dashboard + detail + form** page composition
+2. **Action bars** with workflow-backed buttons
+3. **Related data sections** with smart rendering
+4. **Manual workflows** triggered from the UI
+5. **Access control** requiring authentication on all pages
