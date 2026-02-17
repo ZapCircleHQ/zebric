@@ -22,7 +22,19 @@ import type {
   FlashMessage
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
-import { AccessControl } from '../database/access-control.js'
+import {
+  wantsJson,
+  jsonResponse,
+  htmlResponse,
+  redirectResponse,
+  getFlashMessage,
+  clearFlashCookieHeader,
+  getCsrfTokenFromCookies,
+  extractIp,
+  replacePlaceholders
+} from './request-utils.js'
+import { executeFormAction, validateForm, checkFormAuthorization } from './form-processor.js'
+import { resolveSession, buildLoginRedirect } from './session-resolver.js'
 
 export interface RequestHandlerConfig {
   blueprint: Blueprint
@@ -71,8 +83,8 @@ export class RequestHandler {
     request: HttpRequest
   ): Promise<HttpResponse> {
     const page = match.page
-    const session = await this.getSession(request)
-    const flash = this.getFlashMessage(request)
+    const session = await resolveSession(request, this.sessionManager)
+    const flash = getFlashMessage(request)
 
     try {
       // Check auth - Secure by default: require authentication unless explicitly none or optional
@@ -81,14 +93,14 @@ export class RequestHandler {
       if (authRequired && !session) {
         this.auditLogger?.logAccessDenied(page.path, 'read', undefined, { session, request })
 
-        if (this.wantsJson(request)) {
-          return this.jsonResponse(401, {
+        if (wantsJson(request)) {
+          return jsonResponse(401, {
             error: 'Authentication required',
             message: 'You must be logged in to access this page',
-            login: this.buildLoginRedirect(page, request)
+            login: buildLoginRedirect(page, request, this.blueprint, this.defaultOrigin)
           })
         } else {
-          return this.redirectResponse(this.buildLoginRedirect(page, request))
+          return redirectResponse(buildLoginRedirect(page, request, this.blueprint, this.defaultOrigin))
         }
       }
 
@@ -112,15 +124,15 @@ export class RequestHandler {
         resource: page.path,
         success: true,
         userId: session?.user?.id,
-        ipAddress: this.extractIp(request),
+        ipAddress: extractIp(request),
         userAgent: request.headers['user-agent'] as string
       })
 
-      const csrfToken = this.getCsrfTokenFromCookies(request)
+      const csrfToken = getCsrfTokenFromCookies(request)
 
-      if (this.wantsJson(request) || !this.renderer) {
+      if (wantsJson(request) || !this.renderer) {
         // Return JSON for API requests or if no renderer
-        return this.jsonResponse(200, {
+        return jsonResponse(200, {
           page: page.path,
           title: page.title,
           layout: page.layout,
@@ -129,7 +141,7 @@ export class RequestHandler {
           query: match.query,
           flash,
           csrfToken
-        }, flash ? { 'Set-Cookie': this.clearFlashCookieHeader() } : undefined)
+        }, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
       } else {
         // Render HTML
         const html = this.renderer.renderPage({
@@ -142,7 +154,7 @@ export class RequestHandler {
           csrfToken
         })
 
-        return this.htmlResponse(200, html, flash ? { 'Set-Cookie': this.clearFlashCookieHeader() } : undefined)
+        return htmlResponse(200, html, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
       }
     } catch (error) {
       return this.handleError(error, session, page.path, request)
@@ -157,7 +169,7 @@ export class RequestHandler {
     request: HttpRequest
   ): Promise<HttpResponse> {
     const page = match.page
-    const session = await this.getSession(request)
+    const session = await resolveSession(request, this.sessionManager)
 
     try {
       // Check auth - Secure by default
@@ -166,20 +178,20 @@ export class RequestHandler {
       if (authRequired && !session) {
         this.auditLogger?.logAccessDenied(page.path, 'create', undefined, { session, request })
 
-        return this.jsonResponse(401, {
+        return jsonResponse(401, {
           error: 'Authentication required',
           message: 'You must be logged in to perform this action'
         })
       }
 
       if (!page.form) {
-        return this.jsonResponse(400, { error: 'No form defined for this page' })
+        return jsonResponse(400, { error: 'No form defined for this page' })
       }
 
       const body = request.body as Record<string, any>
 
       // Validate form data
-      const validationErrors = this.validateForm(page.form, body)
+      const validationErrors = validateForm(page.form, body)
       if (validationErrors.length > 0) {
         this.auditLogger?.log({
           eventType: 'INVALID_INPUT',
@@ -191,35 +203,37 @@ export class RequestHandler {
           metadata: { errors: validationErrors }
         })
 
-        return this.jsonResponse(400, {
+        return jsonResponse(400, {
           error: 'Validation failed',
           errors: validationErrors
         })
       }
 
       // Check authorization for create action
-      const authorized = await this.checkFormAuthorization(
+      const authorized = await checkFormAuthorization(
         page.form,
         'create',
         body,
-        session
+        session,
+        this.blueprint,
+        this.queryExecutor
       )
 
       if (!authorized) {
         this.auditLogger?.logAccessDenied(page.path, 'create', page.form.entity, { session, request })
 
-        return this.jsonResponse(403, {
+        return jsonResponse(403, {
           error: 'Access denied',
           message: 'You do not have permission to create this resource'
         })
       }
 
       // Execute form action
-      const result = await this.executeFormAction(page.form, body, {
+      const result = await executeFormAction(page.form, body, {
         params: match.params,
         query: match.query,
         session
-      })
+      }, this.queryExecutor)
 
       // Log successful create
       this.auditLogger?.logDataAccess(
@@ -233,19 +247,19 @@ export class RequestHandler {
 
       // Handle success
       if (page.form.onSuccess?.redirect) {
-        const redirectPath = this.replacePlaceholders(
+        const redirectPath = replacePlaceholders(
           page.form.onSuccess.redirect,
           { ...match.params, ...result }
         )
 
-        return this.jsonResponse(200, {
+        return jsonResponse(200, {
           success: true,
           redirect: redirectPath,
           message: page.form.onSuccess.message,
           data: result
         })
       } else {
-        return this.jsonResponse(200, {
+        return jsonResponse(200, {
           success: true,
           message: page.form.onSuccess?.message || 'Success',
           data: result
@@ -264,7 +278,7 @@ export class RequestHandler {
     request: HttpRequest
   ): Promise<HttpResponse> {
     const page = match.page
-    const session = await this.getSession(request)
+    const session = await resolveSession(request, this.sessionManager)
 
     try {
       // Check auth - Secure by default
@@ -273,22 +287,22 @@ export class RequestHandler {
       if (authRequired && !session) {
         this.auditLogger?.logAccessDenied(page.path, 'update', undefined, { session, request })
 
-        return this.jsonResponse(401, {
+        return jsonResponse(401, {
           error: 'Authentication required',
           message: 'You must be logged in to perform this action'
         })
       }
 
       if (!page.form || page.form.method !== 'update') {
-        return this.jsonResponse(400, { error: 'No update form defined for this page' })
+        return jsonResponse(400, { error: 'No update form defined for this page' })
       }
 
       const body = request.body as Record<string, any>
 
       // Validate form data (skip required checks for partial updates)
-      const validationErrors = this.validateForm(page.form, body, true)
+      const validationErrors = validateForm(page.form, body, true)
       if (validationErrors.length > 0) {
-        return this.jsonResponse(400, {
+        return jsonResponse(400, {
           error: 'Validation failed',
           errors: validationErrors
         })
@@ -296,29 +310,31 @@ export class RequestHandler {
 
       // Check authorization for update action
       const updateId = match.params.id || body.id
-      const authorized = await this.checkFormAuthorization(
+      const authorized = await checkFormAuthorization(
         page.form,
         'update',
         { ...body, id: updateId },
         session,
+        this.blueprint,
+        this.queryExecutor,
         updateId
       )
 
       if (!authorized) {
         this.auditLogger?.logAccessDenied(page.path, 'update', page.form.entity, { session, request })
 
-        return this.jsonResponse(403, {
+        return jsonResponse(403, {
           error: 'Access denied',
           message: 'You do not have permission to update this resource'
         })
       }
 
       // Execute update
-      const result = await this.executeFormAction(page.form, body, {
+      const result = await executeFormAction(page.form, body, {
         params: match.params,
         query: match.query,
         session
-      })
+      }, this.queryExecutor)
 
       // Log successful update
       this.auditLogger?.logDataAccess(
@@ -330,7 +346,7 @@ export class RequestHandler {
         { session, request }
       )
 
-      return this.jsonResponse(200, {
+      return jsonResponse(200, {
         success: true,
         message: 'Updated successfully',
         data: result
@@ -348,7 +364,7 @@ export class RequestHandler {
     request: HttpRequest
   ): Promise<HttpResponse> {
     const page = match.page
-    const session = await this.getSession(request)
+    const session = await resolveSession(request, this.sessionManager)
 
     try {
       // Check auth - Secure by default
@@ -357,41 +373,43 @@ export class RequestHandler {
       if (authRequired && !session) {
         this.auditLogger?.logAccessDenied(page.path, 'delete', undefined, { session, request })
 
-        return this.jsonResponse(401, {
+        return jsonResponse(401, {
           error: 'Authentication required',
           message: 'You must be logged in to perform this action'
         })
       }
 
       if (!page.form || page.form.method !== 'delete') {
-        return this.jsonResponse(400, { error: 'No delete action defined for this page' })
+        return jsonResponse(400, { error: 'No delete action defined for this page' })
       }
 
       // Check authorization for delete action
       const deleteId = match.params.id
-      const authorized = await this.checkFormAuthorization(
+      const authorized = await checkFormAuthorization(
         page.form,
         'delete',
         { id: deleteId },
         session,
+        this.blueprint,
+        this.queryExecutor,
         deleteId
       )
 
       if (!authorized) {
         this.auditLogger?.logAccessDenied(page.path, 'delete', page.form.entity, { session, request })
 
-        return this.jsonResponse(403, {
+        return jsonResponse(403, {
           error: 'Access denied',
           message: 'You do not have permission to delete this resource'
         })
       }
 
       // Execute delete
-      await this.executeFormAction(page.form, {}, {
+      await executeFormAction(page.form, {}, {
         params: match.params,
         query: match.query,
         session
-      })
+      }, this.queryExecutor)
 
       // Log successful delete
       this.auditLogger?.logDataAccess(
@@ -403,7 +421,7 @@ export class RequestHandler {
         { session, request }
       )
 
-      return this.jsonResponse(200, {
+      return jsonResponse(200, {
         success: true,
         message: 'Deleted successfully'
       })
@@ -415,19 +433,6 @@ export class RequestHandler {
   // ==========================================================================
   // Helper Methods
   // ==========================================================================
-
-  private async getSession(request: HttpRequest): Promise<any> {
-    if (!this.sessionManager) {
-      return null
-    }
-
-    try {
-      return await this.sessionManager.getSession(request)
-    } catch (error) {
-      console.error('Session retrieval error:', error)
-      return null
-    }
-  }
 
   private async executeQuery(queryDef: Query, context: RequestContext): Promise<any> {
     if (!this.queryExecutor) {
@@ -441,193 +446,6 @@ export class RequestHandler {
       console.error('Query execution error:', error)
       return []
     }
-  }
-
-  private async executeFormAction(
-    form: Form,
-    data: Record<string, any>,
-    context: RequestContext
-  ): Promise<any> {
-    if (!this.queryExecutor) {
-      throw new Error('No query executor available')
-    }
-
-    try {
-      switch (form.method) {
-        case 'create':
-          return await this.queryExecutor.create(form.entity, data, context)
-
-        case 'update':
-          const updateId = context.params?.id || data.id
-          if (!updateId) {
-            throw new Error('No ID provided for update')
-          }
-          return await this.queryExecutor.update(form.entity, updateId, data, context)
-
-        case 'delete':
-          const deleteId = context.params?.id || data.id
-          if (!deleteId) {
-            throw new Error('No ID provided for delete')
-          }
-          await this.queryExecutor.delete(form.entity, deleteId, context)
-          return { id: deleteId, deleted: true }
-
-        default:
-          throw new Error(`Unknown form method: ${form.method}`)
-      }
-    } catch (error) {
-      console.error('Form action error:', error)
-      throw error
-    }
-  }
-
-  private validateForm(
-    form: Form,
-    data: Record<string, any>,
-    isUpdate = false
-  ): Array<{ field: string; message: string }> {
-    const errors: Array<{ field: string; message: string }> = []
-
-    for (const field of form.fields) {
-      const value = data[field.name]
-
-      // For updates, skip required checks on fields not included in the request
-      if (isUpdate && value === undefined) {
-        continue
-      }
-
-      // Required check
-      if (field.required && (value === undefined || value === null || value === '')) {
-        errors.push({
-          field: field.name,
-          message: `${field.label || field.name} is required`
-        })
-      }
-
-      // Pattern check
-      if (field.pattern && value) {
-        const regex = new RegExp(field.pattern)
-        if (!regex.test(value)) {
-          errors.push({
-            field: field.name,
-            message: field.error_message || 'Invalid format'
-          })
-        }
-      }
-
-      // Min/max checks for numbers
-      if (field.type === 'number' && value !== undefined && value !== null) {
-        if (field.min !== undefined && value < field.min) {
-          errors.push({
-            field: field.name,
-            message: `Must be at least ${field.min}`
-          })
-        }
-        if (field.max !== undefined && value > field.max) {
-          errors.push({
-            field: field.name,
-            message: `Must be at most ${field.max}`
-          })
-        }
-      }
-    }
-
-    return errors
-  }
-
-  private replacePlaceholders(template: string, values: Record<string, any>): string {
-    return template.replace(/\{(\w+)\}/g, (_, key) => {
-      return values[key] !== undefined ? String(values[key]) : `{${key}}`
-    })
-  }
-
-  private async checkFormAuthorization(
-    form: Form,
-    action: 'create' | 'update' | 'delete',
-    data: Record<string, any>,
-    session: any,
-    recordId?: string
-  ): Promise<boolean> {
-    // Get entity from blueprint
-    if (!this.blueprint?.entities) {
-      return false
-    }
-
-    const entity = this.blueprint.entities.find((item: any) => item?.name === form.entity)
-    if (!entity || typeof entity !== 'object') {
-      return false
-    }
-
-    // For update/delete, fetch existing record to check ownership
-    if ((action === 'update' || action === 'delete') && recordId && this.queryExecutor) {
-      try {
-        const existingRecord = await this.queryExecutor.findById(form.entity, recordId)
-        data = { ...existingRecord, ...data }
-      } catch (error) {
-        return false
-      }
-    }
-
-    try {
-      const hasAccess = await AccessControl.checkAccess({
-        session,
-        action,
-        entity: entity as any,
-        data
-      })
-
-      return hasAccess
-    } catch (error) {
-      console.error('Authorization check error:', error)
-      return false
-    }
-  }
-
-  private wantsJson(request: HttpRequest): boolean {
-    const accept = request.headers.accept || ''
-    if (!accept) return false
-    const wantsJson = accept.includes('application/json')
-    const wantsHtml = accept.includes('text/html') || accept.includes('application/xhtml+xml')
-    return wantsJson && !wantsHtml
-  }
-
-  private buildLoginRedirect(page: Page, request: HttpRequest): string {
-    const loginPath = this.findLoginPath()
-    const separator = loginPath.includes('?') ? '&' : '?'
-    const callbackTarget = this.getCallbackPath(request, page.path)
-    const origin = this.resolveOrigin(request)
-    const callback = encodeURIComponent(origin + callbackTarget)
-    return `${loginPath}${separator}callbackURL=${callback}`
-  }
-
-  private findLoginPath(): string {
-    const pages = this.blueprint?.pages || []
-    const explicit = pages.find((page) => page.path.includes('sign-in') || page.path.includes('login'))
-    return explicit?.path || '/auth/sign-in'
-  }
-
-  private getCallbackPath(request: HttpRequest, fallbackPath: string): string {
-    try {
-      const url = new URL(request.url)
-      const path = url.pathname + (url.search || '')
-      return path.startsWith('/') ? path : `/${path}`
-    } catch {
-      return fallbackPath.startsWith('/') ? fallbackPath : `/${fallbackPath}`
-    }
-  }
-
-  private resolveOrigin(request: HttpRequest): string {
-    const fallback = new URL(this.defaultOrigin)
-    const url = new URL(request.url)
-    const protocol = url.protocol.replace(':', '') || fallback.protocol.replace(':', '') || 'http'
-    const host = url.host || fallback.host || 'localhost:3000'
-    return `${protocol}://${host}`
-  }
-
-  private extractIp(request: HttpRequest): string {
-    return (request.headers['x-forwarded-for'] as string)?.split(',')[0] ||
-           (request.headers['x-real-ip'] as string) ||
-           'unknown'
   }
 
   private handleError(error: any, session: any, resource: string, request: HttpRequest): HttpResponse {
@@ -645,82 +463,11 @@ export class RequestHandler {
         resource,
         success: false,
         userId: session?.user?.id,
-        ipAddress: this.extractIp(request),
+        ipAddress: extractIp(request),
         metadata: this.errorSanitizer.getLogDetails(error)
       })
     }
 
-    return this.jsonResponse(sanitized.statusCode, sanitized)
-  }
-
-  private jsonResponse(status: number, data: any, headers: Record<string, string> = {}): HttpResponse {
-    return {
-      status,
-      headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify(data)
-    }
-  }
-
-  private htmlResponse(status: number, html: string, headers: Record<string, string> = {}): HttpResponse {
-    return {
-      status,
-      headers: { 'Content-Type': 'text/html', ...headers },
-      body: html
-    }
-  }
-
-  private redirectResponse(location: string, headers: Record<string, string> = {}): HttpResponse {
-    return {
-      status: 303,
-      headers: { 'Location': location, ...headers },
-      body: ''
-    }
-  }
-
-  private getFlashMessage(request: HttpRequest): FlashMessage | undefined {
-    const cookieHeader = (request.headers['cookie'] as string) || (request.headers['Cookie'] as string)
-    if (!cookieHeader) {
-      return undefined
-    }
-
-    const cookies = this.parseCookies(cookieHeader)
-    const raw = cookies['flash']
-    if (!raw) {
-      return undefined
-    }
-
-    try {
-      const decoded = decodeURIComponent(raw)
-      const parsed = JSON.parse(decoded)
-      if (parsed && typeof parsed.text === 'string') {
-        return parsed
-      }
-    } catch {
-      return undefined
-    }
-
-    return undefined
-  }
-
-  private parseCookies(cookieHeader: string): Record<string, string> {
-    return cookieHeader.split(';').reduce<Record<string, string>>((acc, part) => {
-      const [name, ...rest] = part.split('=')
-      if (!name) return acc
-      acc[name.trim()] = rest.join('=').trim()
-      return acc
-    }, {})
-  }
-
-  private clearFlashCookieHeader(): string {
-    return 'flash=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax'
-  }
-
-  private getCsrfTokenFromCookies(request: HttpRequest): string | undefined {
-    const cookieHeader = (request.headers['cookie'] as string) || (request.headers['Cookie'] as string)
-    if (!cookieHeader) {
-      return undefined
-    }
-    const cookies = this.parseCookies(cookieHeader)
-    return cookies['csrf-token']
+    return jsonResponse(sanitized.statusCode, sanitized)
   }
 }

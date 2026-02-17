@@ -157,6 +157,10 @@ export class BlueprintHttpAdapter {
     request.headers.forEach((value, key) => {
       headers[key] = value
     })
+    const injectedCsrfToken = Reflect.get(request as object, '__zebricCsrfToken')
+    if (typeof injectedCsrfToken === 'string' && injectedCsrfToken.length > 0) {
+      headers['x-zebric-csrf-token'] = injectedCsrfToken
+    }
 
     return {
       method: request.method,

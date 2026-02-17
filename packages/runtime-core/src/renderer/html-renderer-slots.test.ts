@@ -71,6 +71,31 @@ describe('HTMLRenderer - Layout Slots', () => {
       expect(html).toContain('Tasks')
       expect(html).toContain('Task 1')
       expect(html).toContain('Task 2')
+      expect(html).toContain('href="&#x2F;tasks&#x2F;1"')
+    })
+
+    it('should render an empty table with zero-row description when list has no data', () => {
+      const page: Page = {
+        path: '/tasks',
+        title: 'Tasks',
+        layout: 'list',
+        queries: {
+          tasks: { entity: 'Task' }
+        }
+      }
+
+      const context: RenderContext = {
+        page,
+        data: { tasks: [] },
+        params: {},
+        query: {}
+      }
+
+      const html = renderer.renderPage(context)
+      expect(html).toContain('<table')
+      expect(html).toContain('0 rows of data')
+      expect(html).toContain('No rows to display.')
+      expect(html).not.toContain('Create first task')
     })
 
     it('should override list.header slot', () => {
@@ -267,6 +292,44 @@ describe('HTMLRenderer - Layout Slots', () => {
   })
 
   describe('Form Layout Slots', () => {
+    it('should render object-based select options with their labels', () => {
+      const page: Page = {
+        path: '/requests/new',
+        title: 'Capture Request',
+        layout: 'form',
+        form: {
+          entity: 'Task',
+          method: 'create',
+          fields: [
+            {
+              name: 'source',
+              type: 'select',
+              label: 'Source',
+              default: 'slack',
+              options: [
+                { value: 'slack', label: 'Slack' },
+                { value: 'github', label: 'GitHub' }
+              ]
+            }
+          ]
+        }
+      }
+
+      const context: RenderContext = {
+        page,
+        data: {},
+        params: {},
+        query: {}
+      }
+
+      const html = renderer.renderPage(context)
+      expect(html).toContain('<option value="slack" selected>')
+      expect(html).toContain('Slack')
+      expect(html).toContain('<option value="github"')
+      expect(html).toContain('GitHub')
+      expect(html).not.toContain('[object Object]')
+    })
+
     it('should override form.form slot', () => {
       const page: Page = {
         path: '/tasks/new',

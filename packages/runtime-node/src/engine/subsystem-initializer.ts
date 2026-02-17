@@ -204,6 +204,10 @@ export class SubsystemInitializer {
    * Initialize workflows
    */
   async initializeWorkflows(): Promise<WorkflowManager | undefined> {
+    if (!this.notificationManager) {
+      this.initializeNotifications()
+    }
+
     // Initialize HTTP client for workflow webhooks
     const httpClient = new ProductionHttpClient({
       timeout: parseInt(process.env.WORKFLOW_HTTP_TIMEOUT || '30000'),

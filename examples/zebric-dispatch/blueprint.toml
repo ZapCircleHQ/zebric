@@ -1,0 +1,465 @@
+version = "0.1.0"
+
+[project]
+name = "Zebric Dispatch"
+version = "0.1.0"
+description = "Agent-native intake + approvals + audit trail + Slack notifications."
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.TeamMember]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", unique = true, required = true },
+  { name = "role", type = "Enum", values = ["engineer", "pm", "founder", "support", "approver_finance", "approver_platform", "approver_security"], required = true },
+  { name = "team", type = "Text", required = true },
+  { name = "slackHandle", type = "Text" }
+]
+
+[entity.Issue]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", required = true },
+
+  # For routing + approvals
+  { name = "category", type = "Enum", values = ["general", "finance", "platform", "security"], default = "general" },
+
+  { name = "status", type = "Enum", values = ["new", "triage", "in_progress", "awaiting_approval", "approved", "rejected", "done"], default = "new" },
+  { name = "priority", type = "Enum", values = ["low", "normal", "high", "critical"], default = "normal" },
+
+  # Actors
+  { name = "requesterId", type = "Ref", ref = "TeamMember.id" },
+  { name = "assigneeId", type = "Ref", ref = "TeamMember.id" },
+
+  # Optional linkage
+  { name = "source", type = "Enum", values = ["manual", "slack", "agent"], default = "manual" },
+  { name = "sourceRef", type = "Text" },
+
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Issue.relations]
+requester = { type = "belongsTo", entity = "TeamMember", foreign_key = "requesterId" }
+assignee  = { type = "belongsTo", entity = "TeamMember", foreign_key = "assigneeId" }
+
+[entity.Comment]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "issueId", type = "Ref", ref = "Issue.id", required = true },
+  { name = "authorId", type = "Ref", ref = "TeamMember.id" },
+  { name = "authorType", type = "Enum", values = ["user", "agent", "system"], default = "user" },
+  { name = "body", type = "LongText", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Comment.relations]
+issue  = { type = "belongsTo", entity = "Issue", foreign_key = "issueId" }
+author = { type = "belongsTo", entity = "TeamMember", foreign_key = "authorId" }
+
+[entity.AuditEvent]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "issueId", type = "Ref", ref = "Issue.id", required = true },
+
+  { name = "actorType", type = "Enum", values = ["user", "agent", "system"], required = true },
+  { name = "actorId", type = "Ref", ref = "TeamMember.id" },
+  { name = "action", type = "Text", required = true },
+
+  # Keep this flexible without inventing more entities
+  { name = "metadata", type = "JSON" },
+
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.AuditEvent.relations]
+issue = { type = "belongsTo", entity = "Issue", foreign_key = "issueId" }
+actor = { type = "belongsTo", entity = "TeamMember", foreign_key = "actorId" }
+
+[entity.ApprovalRule]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+
+  # match category -> required role
+  { name = "category", type = "Enum", values = ["finance", "platform", "security"], required = true },
+  { name = "requiredRole", type = "Enum", values = ["approver_finance", "approver_platform", "approver_security"], required = true },
+
+  { name = "isEnabled", type = "Boolean", default = true },
+
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "Dispatch"
+auth = "none"
+layout = "dashboard"
+
+[page."/".query.summaryNew]
+entity = "Issue"
+where = { status = "new" }
+limit = 10
+orderBy = { createdAt = "desc" }
+
+[page."/".query.summaryAwaitingApproval]
+entity = "Issue"
+where = { status = "awaiting_approval" }
+limit = 10
+orderBy = { updatedAt = "desc" }
+
+[page."/issues"]
+title = "Issues"
+auth = "none"
+layout = "list"
+
+[page."/issues".query.issues]
+entity = "Issue"
+orderBy = { updatedAt = "desc" }
+limit = 200
+include = ["assignee", "requester"]
+
+# “Board” view: implemented as filtered lists per status (keeps blueprint simple)
+[page."/board"]
+title = "Board"
+auth = "none"
+layout = "dashboard"
+
+[page."/board".query.new]
+entity = "Issue"
+where = { status = "new" }
+orderBy = { updatedAt = "desc" }
+limit = 50
+
+[page."/board".query.triage]
+entity = "Issue"
+where = { status = "triage" }
+orderBy = { updatedAt = "desc" }
+limit = 50
+
+[page."/board".query.inProgress]
+entity = "Issue"
+where = { status = "in_progress" }
+orderBy = { updatedAt = "desc" }
+limit = 50
+
+[page."/board".query.awaitingApproval]
+entity = "Issue"
+where = { status = "awaiting_approval" }
+orderBy = { updatedAt = "desc" }
+limit = 50
+
+[page."/issues/new"]
+title = "New Issue"
+auth = "none"
+layout = "form"
+
+[page."/issues/new".form]
+entity = "Issue"
+method = "create"
+
+[[page."/issues/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+placeholder = "Request: approve vendor contract"
+
+[[page."/issues/new".form.fields]]
+name = "description"
+type = "textarea"
+label = "Description"
+rows = 6
+required = true
+
+[[page."/issues/new".form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+options = [
+  { value = "general", label = "General" },
+  { value = "finance", label = "Finance" },
+  { value = "platform", label = "Platform" },
+  { value = "security", label = "Security" }
+]
+default = "general"
+
+[[page."/issues/new".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+options = [
+  { value = "low", label = "Low" },
+  { value = "normal", label = "Normal" },
+  { value = "high", label = "High" },
+  { value = "critical", label = "Critical" }
+]
+default = "normal"
+
+[page."/issues/new".form.onSuccess]
+redirect = "/issues/{id}"
+message = "Issue created."
+
+[page."/issues/:id"]
+title = "Issue"
+auth = "none"
+layout = "detail"
+
+[page."/issues/:id".query.issue]
+entity = "Issue"
+where = { id = "$params.id" }
+include = ["assignee", "requester"]
+
+[page."/issues/:id".query.comments]
+entity = "Comment"
+where = { issueId = "$params.id" }
+orderBy = { createdAt = "asc" }
+include = ["author"]
+
+[page."/issues/:id".query.audit]
+entity = "AuditEvent"
+where = { issueId = "$params.id" }
+orderBy = { createdAt = "desc" }
+include = ["actor"]
+
+[page."/issues/:id".actionBar]
+title = "Actions"
+description = "Move status, request approval, and close the loop."
+statusField = "status"
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Move to triage"
+workflow = "SetIssueStatus"
+style = "secondary"
+payload = { status = "triage" }
+successMessage = "Moved to triage."
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Start work"
+workflow = "SetIssueStatus"
+style = "primary"
+payload = { status = "in_progress" }
+successMessage = "Marked in progress."
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Request approval"
+workflow = "RequestApprovalIfNeeded"
+style = "secondary"
+payload = {}
+successMessage = "Approval requested (if required)."
+
+[[page."/issues/:id".actionBar.actions]]
+label = "Mark done"
+workflow = "SetIssueStatus"
+style = "secondary"
+payload = { status = "done" }
+successMessage = "Marked done."
+
+# ==========================================
+# Workflows
+# ==========================================
+
+[workflow.LogAuditEvent]
+description = "Reusable helper: append audit event."
+trigger = { manual = true }
+
+[[workflow.LogAuditEvent.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.LogAuditEvent.steps.data]
+issueId = "{{ variables.data.issueId }}"
+actorType = "{{ variables.data.actorType }}"
+actorId = "{{ variables.data.actorId }}"
+action = "{{ variables.data.action }}"
+metadata = "{{ variables.data.metadata }}"
+
+[workflow.SetIssueStatus]
+description = "Update issue status + write audit event."
+trigger = { manual = true }
+
+[[workflow.SetIssueStatus.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+[workflow.SetIssueStatus.steps.where]
+id = "{{ variables.data.record.id }}"
+[workflow.SetIssueStatus.steps.data]
+status = "{{ variables.data.payload.status }}"
+
+[[workflow.SetIssueStatus.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.SetIssueStatus.steps.data]
+issueId = "{{ variables.data.record.id }}"
+actorType = "user"
+actorId = "{{ variables.data.user.id }}"
+action = "issue.status_changed"
+metadata = { to = "{{ variables.data.payload.status }}" }
+
+[workflow.RequestApprovalIfNeeded]
+description = "If category requires approval, move to awaiting_approval + notify Slack; else no-op but still audit."
+trigger = { manual = true }
+
+# Find rule for this category (if enabled)
+[[workflow.RequestApprovalIfNeeded.steps]]
+type = "query"
+entity = "ApprovalRule"
+action = "findOne"
+[workflow.RequestApprovalIfNeeded.steps.where]
+category = "{{ variables.data.record.category }}"
+isEnabled = true
+
+# If rule exists -> move to awaiting_approval
+[[workflow.RequestApprovalIfNeeded.steps]]
+type = "condition"
+if = { "steps.0.result.id" = { "$exists" = true } }
+then = [
+  { type = "query", entity = "Issue", action = "update", where = { id = "{{ variables.data.record.id }}" }, data = { status = "awaiting_approval" } },
+  { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.data.record.id }}", actorType = "user", actorId = "{{ variables.data.user.id }}", action = "issue.approval_requested", metadata = { category = "{{ variables.data.record.category }}", requiredRole = "{{ steps.0.result.requiredRole }}" } } },
+  { type = "notify", adapter = "slack_dispatch", body = "Approval required: {{ variables.data.record.title }} ({{ variables.data.record.category }})", metadata = { mrkdwn = true, blocks = [
+      { type = "header", text = { type = "plain_text", text = "Approval Required" } },
+      { type = "section", text = { type = "mrkdwn", text = "*<http://localhost:3000/issues/{{ variables.data.record.id }}|{{ variables.data.record.title }}>*\n`{{ variables.data.record.id }}`" } },
+      { type = "section", fields = [
+        { type = "mrkdwn", text = "*Category:*\n{{ variables.data.record.category }}" },
+        { type = "mrkdwn", text = "*Priority:*\n{{ variables.data.record.priority.label }}" },
+        { type = "mrkdwn", text = "*Status:*\nawaiting_approval" }
+      ] },
+      { type = "actions", elements = [
+        { type = "button", text = { type = "plain_text", text = "Approve" }, style = "primary", value = "{{ variables.data.record.id }}", action_id = "dispatch_approve" },
+        { type = "button", text = { type = "plain_text", text = "Reject" }, style = "danger", value = "{{ variables.data.record.id }}", action_id = "dispatch_reject" },
+        { type = "button", text = { type = "plain_text", text = "Open in Dispatch" }, url = "http://localhost:3000/issues/{{ variables.data.record.id }}" }
+      ] }
+    ] } }
+]
+else = [
+  { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.data.record.id }}", actorType = "user", actorId = "{{ variables.data.user.id }}", action = "issue.approval_not_required", metadata = { category = "{{ variables.data.record.category }}" } } }
+]
+
+[workflow.NotifyDoneToSlack]
+description = "Notify Slack when an issue transitions to done."
+trigger = { entity = "Issue", event = "update", condition = { "after.status" = "done", "before.status" = { "$ne" = "done" } } }
+
+[[workflow.NotifyDoneToSlack.steps]]
+type = "notify"
+adapter = "slack_dispatch"
+body = "Done: {{ trigger.after.title }} (issue {{ trigger.after.id }})"
+[workflow.NotifyDoneToSlack.steps.metadata]
+mrkdwn = true
+unfurlLinks = false
+unfurlMedia = false
+blocks = [
+  { type = "header", text = { type = "plain_text", text = "Done in Zebric Dispatch" } },
+  { type = "section", text = { type = "mrkdwn", text = "*<http://localhost:3000/issues/{{ trigger.after.id }}|{{ trigger.after.title }}>*\n`{{ trigger.after.id }}`" } }
+]
+
+[workflow.HandleSlackApprovalActions]
+description = "Handle Slack interactive button callbacks for approve/reject."
+trigger = { webhook = "/notifications/slack_dispatch/actions" }
+
+# NOTE: exact Slack payload shape depends on your adapter. This keeps the intent clear.
+[[workflow.HandleSlackApprovalActions.steps]]
+type = "condition"
+if = { "variables.webhook.body.action_id" = "dispatch_approve" }
+then = [
+  { type = "query", entity = "Issue", action = "update", where = { id = "{{ variables.webhook.body.value }}" }, data = { status = "approved" } },
+  { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.webhook.body.value }}", actorType = "user", action = "issue.approved_via_slack", metadata = { slackUser = "{{ variables.webhook.body.user_id }}" } } }
+]
+else = [
+  { type = "query", entity = "Issue", action = "update", where = { id = "{{ variables.webhook.body.value }}" }, data = { status = "rejected" } },
+  { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.webhook.body.value }}", actorType = "user", action = "issue.rejected_via_slack", metadata = { slackUser = "{{ variables.webhook.body.user_id }}" } } }
+]
+
+# ==========================================
+# Agent Skill (minimal, discoverable)
+# ==========================================
+
+[skill.dispatch]
+description = "Create and manage issues in Zebric Dispatch."
+
+[[skill.dispatch.actions]]
+name = "create_issue"
+description = "Create a new issue."
+method = "POST"
+path = "/api/issues"
+body = { title = "Text", description = "LongText", category = "Enum", priority = "Enum", source = "Enum", sourceRef = "Text" }
+
+[[skill.dispatch.actions]]
+name = "get_issue"
+description = "Fetch an issue by id."
+method = "GET"
+path = "/api/issues/{id}"
+
+[[skill.dispatch.actions]]
+name = "set_status"
+description = "Set issue status."
+method = "POST"
+path = "/api/issues/{id}/status"
+body = { status = "Enum" }
+entity = "Issue"
+workflow = "SetIssueStatus"
+
+[[skill.dispatch.actions]]
+name = "add_comment"
+description = "Add a comment to an issue."
+method = "POST"
+path = "/api/issues/{id}/comments"
+body = { body = "LongText", authorType = "Enum" }
+entity = "Comment"
+action = "create"
+[skill.dispatch.actions.mapParams]
+id = "issueId"
+
+[[skill.dispatch.actions]]
+name = "get_audit"
+description = "Fetch audit log for an issue."
+method = "GET"
+path = "/api/issues/{id}/audit"
+entity = "AuditEvent"
+action = "list"
+[skill.dispatch.actions.mapParams]
+id = "issueId"
+
+# ==========================================
+# Notifications / Auth / UI
+# ==========================================
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[[notifications.adapters]]
+name = "slack_dispatch"
+type = "slack"
+[notifications.adapters.config]
+botTokenEnv = "SLACK_BOT_TOKEN"
+signingSecretEnv = "SLACK_SIGNING_SECRET"
+defaultChannel = "#dispatch"
+defaultChannelEnv = "SLACK_DEFAULT_CHANNEL"
+
+[auth]
+providers = ["email"]
+
+[[auth.apiKeys]]
+name = "dispatch-agent"
+keyEnv = "DISPATCH_AGENT_API_KEY"
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

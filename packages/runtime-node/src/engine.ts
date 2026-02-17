@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
-import { SessionManager, ErrorSanitizer, type QueryExecutorPort, type SessionManagerPort, type RendererPort, type AuditLoggerPort } from '@zebric/runtime-core'
+import { SessionManager, ErrorSanitizer, type RendererPort } from '@zebric/runtime-core'
 import { AuditLogger } from './security/index.js'
 import { BlueprintWatcher, ReloadServer, getReloadScript } from './hot-reload/index.js'
 import type { WorkflowManager } from './workflows/index.js'
@@ -30,6 +30,8 @@ import type {
   HealthStatus,
   ZebricEngineAPI,
 } from './types/index.js'
+import { createQueryExecutorPort, createSessionManagerPort, createAuditLoggerPort } from './engine-port-factory.js'
+import { setupGracefulShutdown, setupHotReload as setupHotReloadFn, loadPlugins as loadPluginsFn, initializePluginAPIProvider } from './engine-lifecycle.js'
 
 const ENGINE_VERSION = '0.1.1'
 
@@ -134,22 +136,32 @@ export class ZebricEngine extends EventEmitter {
       this.sessionManager = sessionManager
       // permissionManager is used internally by subsystem initializer
 
-      // 6. Initialize Workflows
-      this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
-
-      // 7. Initialize File Storage
-      await this.fileStorage.initialize()
-
-      // 8. Initialize Plugin API Provider
-      this.initializePluginAPIProvider()
-
-      // 8. Load Plugins (after core systems are initialized)
-      await this.loadPlugins()
-
-      // 9. Initialize Notifications
+      // 6. Initialize Notifications
       this.notificationManager = this.subsystemInitializer.initializeNotifications()
 
-      // 10. Create Hono adapter with all dependencies
+      // 7. Initialize Workflows
+      this.workflowManager = await this.subsystemInitializer.initializeWorkflows()
+
+      // 8. Initialize File Storage
+      await this.fileStorage.initialize()
+
+      // 9. Initialize Plugin API Provider
+      this.pluginAPIProvider = initializePluginAPIProvider({
+        queryExecutor: this.queryExecutor,
+        authProvider: this.authProvider,
+        sessionManager: this.sessionManager,
+        cache: this.cache,
+        auditLogger: this.auditLogger,
+        workflowManager: this.workflowManager,
+        blueprint: this.blueprint,
+        config: this.config,
+        eventEmitter: this,
+      })
+
+      // 10. Load Plugins (after core systems are initialized)
+      await loadPluginsFn(this.blueprint, this.plugins, this.getEngineAPI())
+
+      // 11. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'
@@ -164,10 +176,10 @@ export class ZebricEngine extends EventEmitter {
 
       this.blueprintAdapter = new BlueprintHttpAdapter({
         blueprint: this.blueprint,
-        queryExecutor: this.createQueryExecutorPort(),
-        sessionManager: this.createSessionManagerPort(),
+        queryExecutor: createQueryExecutorPort(this.queryExecutor),
+        sessionManager: createSessionManagerPort(this.sessionManager),
         renderer: rendererPort,
-        auditLogger: this.createAuditLoggerPort(),
+        auditLogger: createAuditLoggerPort(this.auditLogger),
         errorSanitizer: this.errorSanitizer,
         defaultOrigin
       })
@@ -187,6 +199,7 @@ export class ZebricEngine extends EventEmitter {
         tracer: this.tracer,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
+        notificationManager: this.notificationManager,
         getHealthStatus: () => this.getHealth(),
       })
 
@@ -208,6 +221,7 @@ export class ZebricEngine extends EventEmitter {
           tracer: this.tracer,
           metrics: this.metrics,
           pendingSchemaDiff: this.pendingSchemaDiff,
+          workflowManager: this.workflowManager,
           getHealthStatus: () => this.getHealth(),
           host: adminHost,
           port: adminPort,
@@ -218,14 +232,29 @@ export class ZebricEngine extends EventEmitter {
 
       // 13. Setup Hot Reload (if in dev mode)
       if (this.config.dev?.hotReload) {
-        await this.setupHotReload()
+        const result = await setupHotReloadFn({
+          server: this.server!,
+          blueprintPath: this.config.blueprintPath,
+          rendererInstance: this.rendererInstance,
+          reloadCallback: async (blueprint) => {
+            await this.reload(blueprint)
+          },
+          errorCallback: (error) => {
+            console.error('Blueprint watcher error:', error)
+            if (this.reloadServer) {
+              this.reloadServer.notifyError(error.message)
+            }
+          },
+        })
+        this.blueprintWatcher = result.watcher
+        this.reloadServer = result.reloadServer
       }
 
       this.state.status = 'running'
       this.state.startedAt = new Date()
 
       // Setup graceful shutdown handlers
-      this.setupGracefulShutdown()
+      setupGracefulShutdown(() => this.stop(), this.shutdownTimeout)
 
       console.log('\n✅ Engine ready!')
       console.log(`📱 Server: http://${this.config.host || 'localhost'}:${this.config.port}`)
@@ -287,49 +316,6 @@ export class ZebricEngine extends EventEmitter {
   }
 
   /**
-   * Setup graceful shutdown handlers for SIGTERM and SIGINT
-   */
-  private setupGracefulShutdown(): void {
-    const gracefulShutdown = async (signal: string) => {
-      console.log(`\n⚠️  Received ${signal}, starting graceful shutdown...`)
-
-      // Set a timeout to force shutdown if graceful shutdown takes too long
-      const forceShutdownTimer = setTimeout(() => {
-        console.error('❌ Graceful shutdown timed out, forcing exit')
-        process.exit(1)
-      }, this.shutdownTimeout)
-
-      try {
-        await this.stop()
-        clearTimeout(forceShutdownTimer)
-        process.exit(0)
-      } catch (error) {
-        console.error('❌ Error during graceful shutdown:', error)
-        clearTimeout(forceShutdownTimer)
-        process.exit(1)
-      }
-    }
-
-    // Handle SIGTERM (e.g., from Docker, Kubernetes)
-    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'))
-
-    // Handle SIGINT (e.g., Ctrl+C)
-    process.on('SIGINT', () => gracefulShutdown('SIGINT'))
-
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      console.error('❌ Uncaught exception:', error)
-      gracefulShutdown('uncaughtException')
-    })
-
-    // Handle unhandled promise rejections
-    process.on('unhandledRejection', (reason, promise) => {
-      console.error('❌ Unhandled rejection at:', promise, 'reason:', reason)
-      gracefulShutdown('unhandledRejection')
-    })
-  }
-
-  /**
    * Reload Blueprint (hot reload)
    */
   async reload(newBlueprint?: Blueprint): Promise<void> {
@@ -386,6 +372,15 @@ export class ZebricEngine extends EventEmitter {
 
       this.blueprint = newBlueprint
       this.state.blueprint = newBlueprint
+
+      if (this.adminServer) {
+        this.adminServer.updateDependencies({
+          blueprint: newBlueprint,
+          state: this.state,
+          pendingSchemaDiff: this.pendingSchemaDiff,
+          workflowManager: this.workflowManager,
+        })
+      }
 
       // Update plugin API provider with new blueprint
       if (this.pluginAPIProvider) {
@@ -497,149 +492,5 @@ export class ZebricEngine extends EventEmitter {
     this.loader.validateVersion(this.blueprint, ENGINE_VERSION)
 
     console.log(`✅ Loaded Blueprint: ${this.blueprint.project.name} v${this.blueprint.project.version}`)
-  }
-
-  /**
-   * Load plugins defined in Blueprint
-   */
-  private async loadPlugins(): Promise<void> {
-    if (!this.blueprint.plugins || this.blueprint.plugins.length === 0) {
-      console.log('ℹ️  No plugins configured')
-      return
-    }
-
-    const engineAPI = this.getEngineAPI()
-
-    for (const pluginDef of this.blueprint.plugins) {
-      if (!pluginDef.enabled) {
-        console.log(`⏭️  Skipping disabled plugin: ${pluginDef.name}`)
-        continue
-      }
-
-      try {
-        await this.plugins.load(pluginDef.name, pluginDef, engineAPI)
-      } catch (error) {
-        console.error(`Failed to load plugin ${pluginDef.name}:`, error)
-        // Continue loading other plugins
-      }
-    }
-
-    console.log(`✅ Loaded ${this.plugins.count()} plugins`)
-  }
-
-  /**
-   * Initialize plugin API provider (after auth and cache are ready)
-   */
-  private initializePluginAPIProvider(): void {
-    this.pluginAPIProvider = new PluginAPIProvider({
-      queryExecutor: this.queryExecutor,
-      authProvider: this.authProvider,
-      sessionManager: this.sessionManager,
-      cache: this.cache,
-      auditLogger: this.auditLogger,
-      workflowManager: this.workflowManager,
-      blueprint: this.blueprint,
-      config: this.config,
-      eventEmitter: this,
-    })
-  }
-
-  /**
-   * Setup hot reload (development mode only)
-   */
-  private async setupHotReload(): Promise<void> {
-    // Initialize ReloadServer with WebSocket
-    if (!this.server) {
-      throw new Error('Server not started')
-    }
-
-    this.reloadServer = new ReloadServer({
-      server: this.server as any,
-      path: '/__reload',
-    })
-
-    // Inject reload script into HTML renderer
-    const reloadScript = getReloadScript()
-    if (this.rendererInstance && typeof this.rendererInstance.setReloadScript === 'function') {
-      this.rendererInstance.setReloadScript(reloadScript)
-    }
-
-    // Initialize BlueprintWatcher
-    this.blueprintWatcher = new BlueprintWatcher({
-      blueprintPath: this.config.blueprintPath,
-      onReload: async (blueprint) => {
-        await this.reload(blueprint)
-      },
-      onError: (error) => {
-        console.error('Blueprint watcher error:', error)
-        if (this.reloadServer) {
-          this.reloadServer.notifyError(error.message)
-        }
-      },
-    })
-
-    // Start watching
-    this.blueprintWatcher.start()
-
-    console.log('✅ Hot reload enabled')
-  }
-
-  private createQueryExecutorPort(): QueryExecutorPort {
-    return {
-      execute: (query, context) => this.queryExecutor.execute(query, context),
-      create: (entity, data, context) => this.queryExecutor.create(entity, data, context),
-      update: (entity, id, data, context) => this.queryExecutor.update(entity, id, data, context),
-      delete: (entity, id, context) => this.queryExecutor.delete(entity, id, context),
-      findById: (entity, id) => this.queryExecutor.findById(entity, id)
-    }
-  }
-
-  private createSessionManagerPort(): SessionManagerPort {
-    return {
-      getSession: async (request) => {
-        const headers = new Headers()
-        Object.entries(request.headers).forEach(([key, value]) => {
-          if (typeof value === 'string') {
-            headers.set(key, value)
-          } else if (Array.isArray(value) && value.length > 0) {
-            headers.set(key, value[0])
-          }
-        })
-
-        const fetchRequest = new Request(request.url, {
-          method: request.method,
-          headers
-        })
-
-        return this.sessionManager.getSession(fetchRequest)
-      }
-    }
-  }
-
-  private createAuditLoggerPort(): AuditLoggerPort {
-    return {
-      log: (event: any) => {
-        this.auditLogger.log({
-          eventType: event.eventType as any,
-          action: event.action,
-          severity: (event.severity as any) || 'INFO',
-          resource: event.resource,
-          success: event.success !== false,
-          userId: event.userId,
-          ipAddress: event.ipAddress,
-          userAgent: event.userAgent,
-          metadata: event.metadata
-        })
-      },
-      logAccessDenied: (resource: string, action: string, entity?: string, context?: any) => {
-        this.auditLogger.logAccessDenied(resource, action, context?.userId, {
-          entityType: entity,
-          ...context
-        })
-      },
-      logDataAccess: (action, entity, recordId, userId, success, context) => {
-        this.auditLogger.logDataAccess(action as any, entity, recordId, userId, success ?? true, context)
-      }
-    }
   }
 }

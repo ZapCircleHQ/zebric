@@ -1,6 +1,6 @@
 {
   "name": "@zebric/framework-stories",
-  "version": "0.0.1",
+  "version": "0.2.1",
   "description": "User stories and integration tests for the Zebric framework",
   "type": "module",
   "private": true,

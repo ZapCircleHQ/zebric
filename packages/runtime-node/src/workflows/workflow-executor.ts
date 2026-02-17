@@ -32,6 +32,14 @@ export interface WorkflowExecutorOptions {
   emailService?: EmailService
   httpClient?: HttpClient
   notificationService?: NotificationManager
+  onEntityEvent?: (event: {
+    entity: string
+    event: 'create' | 'update' | 'delete'
+    before?: any
+    after?: any
+    sourceWorkflow: string
+    depth: number
+  }) => Promise<void>
 }
 
 export class WorkflowExecutor {
@@ -40,6 +48,7 @@ export class WorkflowExecutor {
   private emailService?: EmailService
   private httpClient?: HttpClient
   private notificationService?: NotificationManager
+  private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
 
   constructor(options: WorkflowExecutorOptions) {
     this.dataLayer = options.dataLayer
@@ -47,6 +56,7 @@ export class WorkflowExecutor {
     this.emailService = options.emailService
     this.httpClient = options.httpClient
     this.notificationService = options.notificationService
+    this.onEntityEvent = options.onEntityEvent
   }
 
   /**
@@ -168,7 +178,11 @@ export class WorkflowExecutor {
         if (!data) {
           throw new Error('Create action requires data')
         }
-        return this.dataLayer.create(step.entity, data)
+        {
+          const created = await this.dataLayer.create(step.entity, data)
+          await this.emitEntityEvent(step.entity, 'create', undefined, created, context)
+          return created
+        }
 
       case 'update':
         if (!data) {
@@ -179,7 +193,10 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Update action requires an id in the where clause')
           }
-          return this.dataLayer.update(step.entity, targetId, data)
+          const before = await this.dataLayer.findById(step.entity, targetId)
+          const updated = await this.dataLayer.update(step.entity, targetId, data)
+          await this.emitEntityEvent(step.entity, 'update', before, updated, context)
+          return updated
         }
 
       case 'delete':
@@ -188,7 +205,10 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Delete action requires an id in the where clause')
           }
-          return this.dataLayer.delete(step.entity, targetId)
+          const before = await this.dataLayer.findById(step.entity, targetId)
+          await this.dataLayer.delete(step.entity, targetId)
+          await this.emitEntityEvent(step.entity, 'delete', before || { id: targetId }, undefined, context)
+          return { deleted: true }
         }
 
       case 'find':
@@ -259,6 +279,7 @@ export class WorkflowExecutor {
     const subject = step.subject ? this.resolveVariables(step.subject, context) : undefined
     const body = step.body ? this.resolveVariables(step.body, context) : undefined
     const params = step.params ? this.resolveVariables(step.params, context) : undefined
+    const metadata = step.metadata ? this.resolveVariables(step.metadata, context) : undefined
 
     await this.notificationService.send({
       adapter: step.adapter,
@@ -268,6 +289,7 @@ export class WorkflowExecutor {
       body,
       template: step.template,
       params,
+      metadata,
     })
   }
 
@@ -403,8 +425,8 @@ export class WorkflowExecutor {
     if (typeof value === 'string') {
       // Replace {{variable}} patterns
       return value.replace(/\{\{([^}]+)\}\}/g, (match, path) => {
-        const resolved = this.getValueByPath(context, path.trim())
-        return resolved !== undefined ? String(resolved) : match
+        const resolved = this.resolveTemplateValue(context, path.trim())
+        return resolved !== undefined ? this.formatTemplateValue(resolved) : match
       })
     }
 
@@ -423,6 +445,125 @@ export class WorkflowExecutor {
     return value
   }
 
+  private resolveTemplateValue(context: WorkflowContext, path: string): any {
+    const resolved = this.getValueByPath(context, path)
+    if (resolved !== undefined) {
+      return resolved
+    }
+
+    const suffixes = ['.value', '.label', '.id']
+    for (const suffix of suffixes) {
+      if (!path.endsWith(suffix)) {
+        continue
+      }
+
+      const basePath = path.slice(0, -suffix.length)
+      const baseValue = this.getValueByPath(context, basePath)
+      if (baseValue === undefined) {
+        continue
+      }
+
+      if (baseValue && typeof baseValue === 'object') {
+        const key = suffix.slice(1)
+        const direct = (baseValue as any)[key]
+        if (direct !== undefined && direct !== null) {
+          return direct
+        }
+      }
+
+      return baseValue
+    }
+
+    return undefined
+  }
+
+  private coerceTemplateValue(value: any): any {
+    let current = value
+    for (let depth = 0; depth < 5; depth++) {
+      if (!current || typeof current !== 'object') {
+        return current
+      }
+
+      if ('value' in current && current.value !== undefined && current.value !== null) {
+        current = current.value
+        continue
+      }
+
+      if ('id' in current && current.id !== undefined && current.id !== null) {
+        current = current.id
+        continue
+      }
+
+      if ('label' in current && current.label !== undefined && current.label !== null) {
+        current = current.label
+        continue
+      }
+
+      return JSON.stringify(current)
+    }
+
+    return typeof current === 'object' ? JSON.stringify(current) : current
+  }
+
+  private formatTemplateValue(value: any): string {
+    const primitive = this.extractPrimitiveValue(value)
+    if (primitive === undefined || primitive === null) {
+      return ''
+    }
+    return String(primitive)
+  }
+
+  private extractPrimitiveValue(value: any, depth = 0): any {
+    if (depth > 8) {
+      return undefined
+    }
+    if (value === null || value === undefined) {
+      return value
+    }
+    const type = typeof value
+    if (type === 'string' || type === 'number' || type === 'boolean' || type === 'bigint') {
+      return value
+    }
+    if (value instanceof Date) {
+      return value.toISOString()
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const extracted = this.extractPrimitiveValue(item, depth + 1)
+        if (extracted !== undefined && extracted !== null) {
+          return extracted
+        }
+      }
+      return undefined
+    }
+    if (type === 'object') {
+      const preferredKeys = ['value', 'label', 'text', 'name', 'title', 'id']
+      for (const key of preferredKeys) {
+        if (key in value) {
+          const extracted = this.extractPrimitiveValue((value as any)[key], depth + 1)
+          if (extracted !== undefined && extracted !== null) {
+            return extracted
+          }
+        }
+      }
+
+      for (const entry of Object.values(value)) {
+        const extracted = this.extractPrimitiveValue(entry, depth + 1)
+        if (extracted !== undefined && extracted !== null) {
+          return extracted
+        }
+      }
+
+      try {
+        return JSON.stringify(value)
+      } catch {
+        return undefined
+      }
+    }
+
+    return String(value)
+  }
+
   private extractIdFromWhere(where: any): string | undefined {
     if (!where) {
       return undefined
@@ -437,6 +578,30 @@ export class WorkflowExecutor {
     }
 
     return undefined
+  }
+
+  private async emitEntityEvent(
+    entity: string,
+    event: 'create' | 'update' | 'delete',
+    before: any,
+    after: any,
+    context: WorkflowContext
+  ): Promise<void> {
+    if (!this.onEntityEvent) {
+      return
+    }
+
+    const depth = Number((context.variables as any)?.__zebric?.depth || 0)
+    const sourceWorkflow = String((context.variables as any)?.__zebric?.sourceWorkflow || 'unknown')
+
+    await this.onEntityEvent({
+      entity,
+      event,
+      before,
+      after,
+      sourceWorkflow,
+      depth
+    })
   }
 
   /**

@@ -60,4 +60,20 @@ describe('BlueprintHttpAdapter', () => {
     expect(response.status).toBe(200)
     expect(await response.text()).toBe('rendered-content')
   })
+
+  it('propagates injected csrf token from request metadata', async () => {
+    const csrfRenderer: RendererPort = {
+      renderPage: (context: any) => context.csrfToken || 'missing-csrf'
+    }
+    const adapter = new BlueprintHttpAdapter({
+      blueprint: structuredClone(testBlueprint),
+      renderer: csrfRenderer
+    })
+    const request = new Request('http://example.com/')
+    Reflect.set(request, '__zebricCsrfToken', 'csrf-from-middleware')
+
+    const response = await adapter.handle(request)
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('csrf-from-middleware')
+  })
 })

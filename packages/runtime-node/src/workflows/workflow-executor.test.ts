@@ -15,6 +15,7 @@ describe('WorkflowExecutor', () => {
   let mockHttpClient: HttpClient
   let mockEmailService: EmailService
   let mockNotificationService: { send: ReturnType<typeof vi.fn> }
+  let mockEntityEventHandler: ReturnType<typeof vi.fn>
   let executor: WorkflowExecutor
 
   beforeEach(() => {
@@ -23,6 +24,7 @@ describe('WorkflowExecutor', () => {
       create: vi.fn().mockResolvedValue({ id: '123' }),
       update: vi.fn().mockResolvedValue({ id: '123', updated: true }),
       delete: vi.fn().mockResolvedValue({ deleted: true }),
+      findById: vi.fn().mockResolvedValue({ id: '123', status: 'triage' }),
       execute: vi.fn().mockResolvedValue([{ id: '123', name: 'Test' }]),
     } as any
 
@@ -39,12 +41,14 @@ describe('WorkflowExecutor', () => {
     mockNotificationService = {
       send: vi.fn().mockResolvedValue(undefined),
     }
+    mockEntityEventHandler = vi.fn().mockResolvedValue(undefined)
 
     executor = new WorkflowExecutor({
       dataLayer: mockDataLayer,
       httpClient: mockHttpClient,
       emailService: mockEmailService,
       notificationService: mockNotificationService as any,
+      onEntityEvent: mockEntityEventHandler,
     })
   })
 
@@ -269,6 +273,245 @@ describe('WorkflowExecutor', () => {
         body: undefined,
         template: 'Welcome {{variables.userName}}',
         params: { app: 'OpsHub' },
+        metadata: undefined,
+      })
+    })
+
+    it('should execute notify step with resolved metadata', async () => {
+      const workflow: Workflow = {
+        name: 'notify-metadata-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Request {{trigger.after.id}} resolved',
+            metadata: {
+              threadTs: '{{trigger.after.threadTs}}',
+              mrkdwn: true,
+            },
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { id: 'req_123', threadTs: '1700000000.123456' },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Request req_123 resolved',
+        template: undefined,
+        params: undefined,
+        metadata: {
+          threadTs: '1700000000.123456',
+          mrkdwn: true,
+        },
+      })
+    })
+
+    it('should resolve .value template fallback when source data is scalar', async () => {
+      const workflow: Workflow = {
+        name: 'notify-value-fallback-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Priority {{trigger.after.priority.value}}',
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { priority: 'high' },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Priority high',
+        template: undefined,
+        params: undefined,
+        metadata: undefined,
+      })
+    })
+
+    it('should coerce object template values using value property', async () => {
+      const workflow: Workflow = {
+        name: 'notify-value-object-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Source {{trigger.after.source}}',
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { source: { value: 'slack', label: 'Slack' } },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Source slack',
+        template: undefined,
+        params: undefined,
+        metadata: undefined,
+      })
+    })
+
+    it('should recursively unwrap nested value objects for template interpolation', async () => {
+      const workflow: Workflow = {
+        name: 'notify-value-nested-object-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Priority {{trigger.after.priority.value}}',
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { priority: { value: { value: 'high', label: 'High' } } },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Priority high',
+        template: undefined,
+        params: undefined,
+        metadata: undefined,
+      })
+    })
+
+    it('should resolve .label fallback when field is scalar', async () => {
+      const workflow: Workflow = {
+        name: 'notify-label-fallback-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Priority {{trigger.after.priority.label}}',
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: { priority: 'high' },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Priority high',
+        template: undefined,
+        params: undefined,
+        metadata: undefined,
+      })
+    })
+
+    it('should format complex object template values to readable scalar text', async () => {
+      const workflow: Workflow = {
+        name: 'notify-complex-object-format-test',
+        trigger: { entity: 'request', event: 'update' },
+        steps: [
+          {
+            type: 'notify',
+            adapter: 'slack',
+            channel: '#dispatch',
+            body: 'Priority {{trigger.after.priority.label}} Source {{trigger.after.source.label}}',
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: {
+          type: 'entity',
+          entity: 'request',
+          event: 'update',
+          after: {
+            priority: { label: { text: 'High' } },
+            source: { label: { name: 'Slack' } },
+          },
+        },
+        variables: {},
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockNotificationService.send).toHaveBeenCalledWith({
+        adapter: 'slack',
+        channel: '#dispatch',
+        to: undefined,
+        subject: undefined,
+        body: 'Priority High Source Slack',
+        template: undefined,
+        params: undefined,
+        metadata: undefined,
       })
     })
   })
@@ -302,6 +545,43 @@ describe('WorkflowExecutor', () => {
         email: 'john@example.com',
       })
       expect(context.variables.newUser).toEqual({ id: '123' })
+    })
+
+    it('should propagate entity events from query update steps', async () => {
+      const workflow: Workflow = {
+        name: 'propagate-update-event',
+        trigger: { entity: 'user', event: 'update' },
+        steps: [
+          {
+            type: 'query',
+            entity: 'user',
+            action: 'update',
+            where: { id: '123' },
+            data: { status: 'resolved' },
+          },
+        ],
+      }
+
+      const context: WorkflowContext = {
+        trigger: { type: 'entity', entity: 'user', event: 'update' },
+        variables: {
+          __zebric: {
+            sourceWorkflow: 'upstream-workflow',
+            depth: 2,
+          },
+        },
+      }
+
+      await executor.execute(workflow, context)
+
+      expect(mockEntityEventHandler).toHaveBeenCalledWith({
+        entity: 'user',
+        event: 'update',
+        before: { id: '123', status: 'triage' },
+        after: { id: '123', updated: true },
+        sourceWorkflow: 'upstream-workflow',
+        depth: 2,
+      })
     })
 
     it('should execute update query', async () => {

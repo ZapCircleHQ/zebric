@@ -41,6 +41,9 @@ export * from './auth/provider.js'
 export * from './auth/permissions.js'
 export * from './auth/session.js'
 
+// API
+export * from './api/openapi-generator.js'
+
 // Routing
 export * from './routing/route-matcher.js'
 export * from './routing/request-handler.js'

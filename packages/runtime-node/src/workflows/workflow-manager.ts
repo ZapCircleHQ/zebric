@@ -22,6 +22,7 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
 export class WorkflowManager extends EventEmitter {
   private queue: WorkflowQueue
   private executor: WorkflowExecutor
+  private readonly maxEntityTriggerDepth = 5
 
   constructor(options: WorkflowManagerOptions) {
     super()
@@ -41,6 +42,12 @@ export class WorkflowManager extends EventEmitter {
       emailService: options.emailService,
       httpClient: options.httpClient,
       notificationService: options.notificationService,
+      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth }) => {
+        await this.triggerEntityEvent(entity, event, { before, after }, {
+          sourceWorkflow,
+          depth: depth + 1
+        })
+      }
     })
 
     // Connect queue to executor
@@ -132,22 +139,38 @@ export class WorkflowManager extends EventEmitter {
   async triggerEntityEvent(
     entity: string,
     event: 'create' | 'update' | 'delete',
-    data: any
+    data: any,
+    options?: { sourceWorkflow?: string; depth?: number }
   ): Promise<WorkflowJob[]> {
+    const normalizedData = this.normalizeEntityEventData(data)
+    const depth = options?.depth ?? 0
+    if (depth > this.maxEntityTriggerDepth) {
+      console.warn(`Skipping entity trigger for ${entity}.${event}: exceeded propagation depth (${depth})`)
+      return []
+    }
+
     const workflows = this.queue.getAllWorkflows()
     const jobs: WorkflowJob[] = []
 
     for (const workflow of workflows) {
-      if (this.matchesEntityTrigger(workflow.trigger, entity, event, data)) {
+      if (this.matchesEntityTrigger(workflow.trigger, entity, event, normalizedData)) {
         const context: WorkflowContext = {
           trigger: {
             type: 'entity',
             entity,
             event,
-            data,
+            data: normalizedData.after,
+            before: normalizedData.before,
+            after: normalizedData.after,
           },
           variables: {
-            entity: data,
+            entity: normalizedData.after,
+            before: normalizedData.before,
+            after: normalizedData.after,
+            __zebric: {
+              sourceWorkflow: options?.sourceWorkflow,
+              depth,
+            },
           },
         }
 
@@ -277,7 +300,7 @@ export class WorkflowManager extends EventEmitter {
     trigger: WorkflowTrigger,
     entity: string,
     event: 'create' | 'update' | 'delete',
-    data: any
+    data: { before?: any; after: any }
   ): boolean {
     if (!trigger.entity || !trigger.event) {
       return false
@@ -293,7 +316,12 @@ export class WorkflowManager extends EventEmitter {
 
     // Check condition if specified
     if (trigger.condition) {
-      return this.evaluateCondition(trigger.condition, data)
+      const conditionData = {
+        ...(data.after && typeof data.after === 'object' ? data.after : {}),
+        before: data.before,
+        after: data.after,
+      }
+      return this.evaluateCondition(trigger.condition, conditionData)
     }
 
     return true
@@ -326,10 +354,65 @@ export class WorkflowManager extends EventEmitter {
    */
   private evaluateCondition(condition: Record<string, any>, data: any): boolean {
     for (const [key, value] of Object.entries(condition)) {
-      if (data[key] !== value) {
+      if (key === '$and') {
+        if (!Array.isArray(value)) {
+          return false
+        }
+        return value.every((cond) => this.evaluateCondition(cond, data))
+      }
+
+      if (key === '$or') {
+        if (!Array.isArray(value)) {
+          return false
+        }
+        return value.some((cond) => this.evaluateCondition(cond, data))
+      }
+
+      const actualValue = this.getValueByPath(data, key)
+
+      if (value && typeof value === 'object') {
+        for (const [op, expected] of Object.entries(value)) {
+          switch (op) {
+            case '$eq':
+              if (actualValue !== expected) return false
+              break
+            case '$ne':
+              if (actualValue === expected) return false
+              break
+            default:
+              return false
+          }
+        }
+      } else if (actualValue !== value) {
         return false
       }
     }
     return true
+  }
+
+  private normalizeEntityEventData(data: any): { before?: any; after: any } {
+    if (data && typeof data === 'object' && ('before' in data || 'after' in data)) {
+      const after = (data as any).after ?? {}
+      return {
+        before: (data as any).before,
+        after,
+      }
+    }
+
+    return { after: data }
+  }
+
+  private getValueByPath(obj: any, path: string): any {
+    const parts = path.split('.')
+    let current = obj
+
+    for (const part of parts) {
+      if (current === undefined || current === null) {
+        return undefined
+      }
+      current = current[part]
+    }
+
+    return current
   }
 }

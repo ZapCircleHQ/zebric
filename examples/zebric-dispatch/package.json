@@ -1,0 +1,16 @@
+{
+  "name": "zebric-dispatch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dispatch example app built with Zebric",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "seed:user": "bash seed-dev-user.sh",
+    "audit:layouts": "node audit-layouts.mjs",
+    "audit:layouts:live": "node audit-live-layouts.mjs"
+  },
+  "dependencies": {
+    "@zebric/cli": "workspace:*",
+    "@zebric/runtime-node": "workspace:*"
+  }
+}

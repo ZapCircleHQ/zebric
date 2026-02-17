@@ -55,6 +55,7 @@ export interface WorkflowStep {
   // Notification step
   adapter?: string
   channel?: string
+  metadata?: Record<string, any>
 }
 
 export interface Workflow {
@@ -73,6 +74,8 @@ export interface WorkflowContext {
     entity?: string
     event?: string
     data?: any
+    before?: any
+    after?: any
   }
   variables: Record<string, any>
   session?: any

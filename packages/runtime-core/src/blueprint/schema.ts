@@ -242,6 +242,11 @@ const PermissionRuleSchema = z.object({
   deny: z.array(z.string()).optional(),
 })
 
+const ApiKeyConfigSchema = z.object({
+  name: z.string(),
+  keyEnv: z.string(),
+})
+
 const AuthConfigSchema = z.object({
   providers: z.array(z.string()),
   trustedOrigins: z.array(z.string()).optional(),
@@ -252,6 +257,7 @@ const AuthConfigSchema = z.object({
     })
     .optional(),
   permissions: z.record(PermissionRuleSchema).optional(),
+  apiKeys: z.array(ApiKeyConfigSchema).optional(),
 })
 
 // ============================================================================
@@ -308,6 +314,29 @@ const NotificationsConfigSchema = z.object({
 })
 
 // ============================================================================
+// Skills (Agent-facing API)
+// ============================================================================
+
+const SkillActionSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  method: z.enum(['GET', 'POST', 'PUT', 'DELETE']),
+  path: z.string(),
+  body: z.record(z.string()).optional(),
+  entity: z.string().optional(),
+  action: z.enum(['create', 'list', 'get', 'update', 'delete']).optional(),
+  mapParams: z.record(z.string()).optional(),
+  workflow: z.string().optional(),
+})
+
+const SkillConfigSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  auth: z.enum(['required', 'none']).optional(),
+  actions: z.array(SkillActionSchema),
+})
+
+// ============================================================================
 // Main Blueprint Schema
 // ============================================================================
 
@@ -331,6 +360,7 @@ export const BlueprintSchema = z.object({
   plugins: z.array(PluginConfigSchema).optional(),
   ui: UIConfigSchema.optional(),
   notifications: NotificationsConfigSchema.optional(),
+  skills: z.array(SkillConfigSchema).optional(),
 })
 
 export type BlueprintSchemaType = z.infer<typeof BlueprintSchema>

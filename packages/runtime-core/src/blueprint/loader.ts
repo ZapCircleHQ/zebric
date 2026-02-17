@@ -107,6 +107,7 @@ export class BlueprintParser {
       pages: [],
       auth: parsed.auth,
       ui: parsed.ui,
+      notifications: parsed.notifications,
     }
 
     // Transform [entity.Name] to entities array
@@ -153,6 +154,17 @@ export class BlueprintParser {
         transformed.plugins.push({
           name: pluginName,
           ...(pluginDef as any),
+        })
+      }
+    }
+
+    // Handle skills if present
+    if (parsed.skill) {
+      transformed.skills = []
+      for (const [skillName, skillDef] of Object.entries(parsed.skill)) {
+        transformed.skills.push({
+          name: skillName,
+          ...(skillDef as any),
         })
       }
     }
@@ -253,6 +265,27 @@ export class BlueprintParser {
           errors.push(
             `Workflow "${workflow.name}" trigger references unknown entity "${triggerEntity}"`
           )
+        }
+      }
+    }
+
+    // Check skill entity and workflow references
+    if (blueprint.skills) {
+      const workflowNames = new Set(
+        (blueprint.workflows || []).map((w) => w.name)
+      )
+      for (const skill of blueprint.skills) {
+        for (const action of skill.actions) {
+          if (action.entity && !entityNames.has(action.entity)) {
+            errors.push(
+              `Skill "${skill.name}" action "${action.name}" references unknown entity "${action.entity}"`
+            )
+          }
+          if (action.workflow && !workflowNames.has(action.workflow)) {
+            errors.push(
+              `Skill "${skill.name}" action "${action.name}" references unknown workflow "${action.workflow}"`
+            )
+          }
         }
       }
     }
