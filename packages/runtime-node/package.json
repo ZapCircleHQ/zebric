@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-node",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Zebric Runtime Node.js Adapter - Hono, SQLite, PostgreSQL, S3, Redis",
   "type": "module",
   "main": "./dist/index.js",

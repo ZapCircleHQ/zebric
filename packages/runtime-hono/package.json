@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-hono",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Shared Hono adapter for Zebric runtimes",
   "type": "module",
   "main": "./dist/index.js",
