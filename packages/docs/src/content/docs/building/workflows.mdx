@@ -1,0 +1,204 @@
+---
+label: Workflows & Notifications
+order: 3
+slug: building/workflows
+title: Workflows & Notifications
+description: Automate processes with workflows and deliver alerts via Slack, email, or console.
+---
+
+Workflows automate multi-step processes in your application. They can be triggered by entity events, manual actions from the UI, or webhooks.
+
+## Defining a Workflow
+
+```toml
+[workflow.SetIssueStatus]
+description = "Update issue status and write an audit event."
+
+[workflow.SetIssueStatus.trigger]
+manual = true
+
+[[workflow.SetIssueStatus.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+[workflow.SetIssueStatus.steps.where]
+id = "{{ variables.data.record.id }}"
+[workflow.SetIssueStatus.steps.data]
+status = "{{ variables.data.payload.status }}"
+```
+
+## Trigger Types
+
+### Manual Triggers
+
+Triggered from the UI via action bar buttons on detail pages:
+
+```toml
+[workflow.ApproveRequest.trigger]
+manual = true
+```
+
+Wire it to a page action bar:
+
+```toml
+[[page."/issues/:id".actionBar.actions]]
+label = "Approve"
+workflow = "ApproveRequest"
+style = "primary"
+```
+
+### Entity Event Triggers
+
+Fire when records are created, updated, or deleted:
+
+```toml
+[workflow.NotifyOnDone.trigger]
+entity = "Issue"
+event = "update"
+
+[workflow.NotifyOnDone.trigger.condition]
+"after.status" = "done"
+"before.status" = { "$ne" = "done" }
+```
+
+The condition uses `before.*` and `after.*` to compare the record's state before and after the change. The `$ne` operator means "not equal".
+
+### Webhook Triggers
+
+Receive events from external systems:
+
+```toml
+[workflow.HandleSlackCommand.trigger]
+webhook = "/webhooks/slack"
+```
+
+## Step Types
+
+### Query Steps
+
+Perform database operations:
+
+```toml
+[[workflow.MyWorkflow.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+[workflow.MyWorkflow.steps.where]
+id = "{{ variables.data.record.id }}"
+[workflow.MyWorkflow.steps.data]
+status = "closed"
+```
+
+Actions: `create`, `update`, `delete`, `findOne`.
+
+### Condition Steps
+
+Branch based on previous step results:
+
+```toml
+[[workflow.MyWorkflow.steps]]
+type = "condition"
+if = { "steps.0.result.id" = { "$exists" = true } }
+then = [
+  { type = "query", entity = "Issue", action = "update", where = { id = "{{ variables.data.record.id }}" }, data = { status = "awaiting_approval" } }
+]
+else = [
+  { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.data.record.id }}" } }
+]
+```
+
+### Notify Steps
+
+Send notifications via configured adapters:
+
+```toml
+[[workflow.MyWorkflow.steps]]
+type = "notify"
+adapter = "slack_dispatch"
+body = "Issue resolved: {{ trigger.after.title }}"
+[workflow.MyWorkflow.steps.metadata]
+mrkdwn = true
+```
+
+### Webhook Steps
+
+Make HTTP requests to external services:
+
+```toml
+[[workflow.MyWorkflow.steps]]
+type = "webhook"
+url = "https://api.example.com/events"
+method = "POST"
+body = { issueId = "{{ variables.data.record.id }}" }
+```
+
+## Template Variables
+
+Workflow steps can reference data using `{{ }}` template syntax:
+
+| Variable | Description |
+|----------|-------------|
+| `variables.data.record` | The current record |
+| `variables.data.payload` | Data sent with the action |
+| `trigger.before` | Record state before update (event triggers) |
+| `trigger.after` | Record state after update (event triggers) |
+| `steps.N.result` | Result of step N (zero-indexed) |
+
+## Notifications
+
+Notifications are delivered through adapters. Configure them in the `[notifications]` section.
+
+### Console Adapter
+
+Logs to stdout (useful for development):
+
+```toml
+[[notifications.adapters]]
+name = "console"
+type = "console"
+```
+
+### Slack Adapter
+
+Posts messages to Slack channels:
+
+```toml
+[[notifications.adapters]]
+name = "slack_ops"
+type = "slack"
+[notifications.adapters.config]
+botTokenEnv = "SLACK_BOT_TOKEN"
+signingSecretEnv = "SLACK_SIGNING_SECRET"
+defaultChannel = "#ops"
+```
+
+| Config | Description |
+|--------|-------------|
+| `botTokenEnv` | Environment variable holding the Slack bot token |
+| `signingSecretEnv` | Environment variable for webhook signing secret |
+| `defaultChannel` | Default channel for messages |
+| `defaultChannelEnv` | Env var for default channel |
+
+The Slack adapter also handles inbound webhooks for interactive messages.
+
+### Email Adapter
+
+Sends email notifications:
+
+```toml
+[[notifications.adapters]]
+name = "email"
+type = "email"
+[notifications.adapters.config]
+from = "noreply@example.com"
+outboxFile = "./data/email-outbox.log"
+```
+
+### Setting a Default
+
+```toml
+[notifications]
+default = "console"
+```
+
+The default adapter is used when a notify step doesn't specify an adapter.

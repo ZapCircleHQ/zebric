@@ -1,0 +1,133 @@
+---
+label: Security & Auth
+order: 4
+slug: building/security
+title: Security & Authentication
+description: Authentication providers, access control, CSRF protection, and API keys.
+---
+
+Zebric includes built-in security features for authentication, authorization, and request protection.
+
+## Authentication
+
+Enable email/password authentication:
+
+```toml
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+```
+
+Authentication is powered by Better Auth with server-side session management.
+
+### Page-Level Auth
+
+Control authentication requirements per page:
+
+```toml
+[page."/dashboard"]
+title = "Dashboard"
+auth = "required"    # Must be logged in
+layout = "dashboard"
+
+[page."/posts"]
+title = "Public Posts"
+auth = "none"        # No login needed
+layout = "list"
+
+[page."/profile"]
+title = "My Profile"
+auth = "optional"    # Shows user info if logged in
+layout = "detail"
+```
+
+### Auth Pages
+
+The `auth` layout renders sign-in and sign-up forms:
+
+```toml
+[page."/sign-in"]
+title = "Sign In"
+layout = "auth"
+```
+
+## Access Control
+
+### Entity-Level Access
+
+Define CRUD permissions on entities:
+
+```toml
+[entity.Post.access]
+read = true                              # Anyone can read
+create = true                            # Anyone can create
+update = { authorId = "$currentUser.id" } # Only author can update
+delete = { "$currentUser.role" = "admin" } # Only admins can delete
+```
+
+### Condition Operators
+
+| Pattern | Description |
+|---------|-------------|
+| `{ field = "value" }` | Field equals value |
+| `{ field = "$currentUser.id" }` | Field matches current user |
+| `{ "$currentUser.role" = "admin" }` | Current user has role |
+| `{ or = [...] }` | Any condition matches |
+| `{ and = [...] }` | All conditions match |
+
+### Combined Conditions
+
+```toml
+# Authors can see their own drafts; everyone sees published posts
+[entity.Post.access]
+read = { or = [{ status = "published" }, { authorId = "$currentUser.id" }] }
+```
+
+### Field-Level Access
+
+Restrict read/write on individual fields:
+
+```toml
+[entity.User]
+fields = [
+  { name = "email", type = "Email", access = { read = true, write = { "$currentUser.role" = "admin" } } },
+  { name = "salary", type = "Integer", access = { read = { "$currentUser.role" = "admin" }, write = false } }
+]
+```
+
+## API Keys
+
+For agents, REST API clients, or external integrations:
+
+```toml
+[[auth.apiKeys]]
+name = "dispatch-agent"
+keyEnv = "DISPATCH_AGENT_API_KEY"
+```
+
+API key requests skip CSRF validation but still go through access control. Send the key in the `Authorization` header:
+
+```
+Authorization: Bearer <api-key-value>
+```
+
+## Built-In Protections
+
+Zebric applies these security measures automatically:
+
+- **CSRF protection** on all state-changing requests (POST, PUT, DELETE)
+- **Security headers** (CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy)
+- **Open redirect prevention** on login redirect flows
+- **Path traversal protection** on file resolution
+- **HTML entity encoding** to prevent XSS
+- **Workflow body filtering** to prevent injection in workflow payloads
+- **Audit logging** for security-relevant events
+- **Error sanitization** to avoid leaking internal details
+
+## Session Configuration
+
+```toml
+[auth.session]
+duration = 86400       # Session duration in seconds (default: 24 hours)
+idle_timeout = 3600    # Idle timeout in seconds
+```

@@ -6,39 +6,117 @@ title: Zebric Quickstart (5 minutes)
 description: Run your first Zebric application with a single command and a single blueprint.
 ---
 
-This quick start gets you up and running with a Zebric web application on your local machine as quickly as possible.
+This quick start gets you up and running with a Zebric web application on your local machine.
 
-## Prerequisities
+## Prerequisites
 
-You'll need a recent (20.x or above) version of [Node.js](https://www.node.js.org)
+You'll need a recent (20.x or above) version of [Node.js](https://www.nodejs.org).
 
-That's it to get started!
+## Install Zebric
 
-## Create a Blueprints
-
-Create a new file named `blog.toml`. Copy the following contents into that file:
-
-```toml
-[app]
-name = "My Blog"
-description = "A simple internal blogging tool"
-
-[[entities]]
-name = "Post"
-
-    [[entities.fields]]
-    name = "title"
-    type = "string"
-    required = true
-
-    [[entities.fields]]
-    name = "body"
-    type = "text"
-    required = true
-
-    [[entities.fields]]
-    name = "published"
-    type = "boolean"
-    default = false
+```bash
+npm install -g @zebric/cli
 ```
 
+## Create a Blueprint
+
+Create a new file named `blueprint.toml`:
+
+```toml
+version = "0.1.0"
+
+[project]
+name = "My Blog"
+version = "1.0.0"
+description = "A simple blog"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# Define a Post entity with three fields
+[entity.Post]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "published", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+# Home page — list all posts
+[page."/"]
+title = "All Posts"
+auth = "none"
+layout = "list"
+
+[page."/".query.posts]
+entity = "Post"
+orderBy = { createdAt = "desc" }
+
+# Create-post form
+[page."/posts/new"]
+title = "New Post"
+auth = "none"
+layout = "form"
+
+[page."/posts/new".form]
+entity = "Post"
+method = "create"
+
+[[page."/posts/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "body"
+type = "textarea"
+label = "Body"
+rows = 10
+required = true
+
+[page."/posts/new".form.onSuccess]
+redirect = "/"
+message = "Post created!"
+
+# Post detail page
+[page."/posts/:id"]
+title = "Post Detail"
+auth = "none"
+layout = "detail"
+
+[page."/posts/:id".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+```
+
+## Start the Dev Server
+
+```bash
+zebric dev --blueprint blueprint.toml --seed
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser. You'll see:
+
+- A list page at `/` showing all posts
+- A form at `/posts/new` to create a post
+- A detail page at `/posts/:id` for each post
+
+## What Just Happened?
+
+Zebric read your TOML blueprint and:
+
+1. **Created a SQLite database** with a `Post` table matching your entity definition
+2. **Generated routes** for each page (`/`, `/posts/new`, `/posts/:id`)
+3. **Rendered server-side HTML** using the layout type you specified (list, form, detail)
+4. **Wired up CRUD operations** so the form creates records and the list queries them
+
+No code was generated. The runtime interprets the blueprint directly.
+
+## Next Steps
+
+- Add [authentication](/reference/api/) with `[auth]` and `providers = ["email"]`
+- Define [access control](/building/blueprint/) on entities with `[entity.Post.access]`
+- Add [workflows](/building/workflows/) to automate status transitions
+- Explore the [example blueprints](https://github.com/ZapCircleHQ/zebric/tree/main/examples) for more patterns

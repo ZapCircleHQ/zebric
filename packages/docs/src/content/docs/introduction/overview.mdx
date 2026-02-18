@@ -3,19 +3,52 @@ label: Introduction
 order: 1
 slug: introduction/overview
 title: Zebric Overview
-description: Key concepts and quick start.
+description: Key concepts, architecture, and packages.
 ---
 
-Welcome to the Zebric documentation. This guide orients new builders to the framework, from blueprints to the runtime engines.
+Welcome to the Zebric documentation. This page orients you to the framework's architecture and key concepts.
 
 ## Key Concepts
 
-- **Blueprints** define data models, pages, behaviors, and workflows.
-- **Runtime Engines** render blueprints at run time, no code generation required. Currently supports a Node engine and a Cloudflare Workers engine.
-- **Stories** capture real product flows (see the Framework Stories package) and keep the experience bulletproof.
+- **Blueprints** are TOML files that declare your data models, pages, access rules, workflows, and notifications. One blueprint defines one application.
+- **Runtime Engines** interpret blueprints at run time — no code generation. Changes hot-reload instantly during development.
+- **Entities** define your data model (fields, relations, access rules). The runtime auto-creates database tables and REST API endpoints.
+- **Pages** bind URL paths to layouts (list, detail, form, dashboard) and queries.
+- **Workflows** automate multi-step processes — triggered by entity events, webhooks, or manual actions.
+- **Themes** control the look and feel. Built-in themes ship with Tailwind CSS classes.
+
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| `@zebric/runtime-core` | Rendering, routing, types, and blueprint parsing |
+| `@zebric/runtime-node` | Node.js runtime engine (Hono + SQLite/Postgres) |
+| `@zebric/runtime-hono` | Hono HTTP adapter |
+| `@zebric/runtime-worker` | Cloudflare Workers runtime |
+| `@zebric/cli` | `zebric dev` and `zebric validate` commands |
+| `@zebric/notifications` | Slack, email, and console notification adapters |
+| `@zebric/plugin-sdk` | Plugin development kit |
+| `@zebric/themes` | Built-in themes (default, minimal, dashboard) |
+| `@zebric/framework-stories` | Integration test stories for example blueprints |
+
+## How It Works
+
+```
+blueprint.toml  →  BlueprintParser  →  Runtime Engine  →  HTTP Server
+                                            ↓
+                                    SQLite / Postgres
+```
+
+1. You write a `blueprint.toml` describing your application
+2. The `BlueprintParser` validates and parses it into a `Blueprint` object
+3. The runtime engine creates database tables, registers routes, and renders pages
+4. The HTTP server (Hono) handles requests, enforces access control, and executes workflows
 
 ## Quick Start
 
-1. Clone the repo and install dependencies: `pnpm install`
-2. Start the dev server for an example: `pnpm --filter blog-example dev`
-3. Explore thensample blueprints in `examples/`
+```bash
+npm install -g @zebric/cli
+zebric dev --blueprint blueprint.toml --seed
+```
+
+See the [Quickstart guide](/getting-started/quickstart/) for a complete walkthrough.

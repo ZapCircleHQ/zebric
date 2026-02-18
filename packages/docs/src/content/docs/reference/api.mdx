@@ -1,19 +1,74 @@
 ---
-label: Reference
-order: 5
+label: REST API
+order: 2
 slug: reference/api
-title: Reference – APIs & Commands
-description: CLI commands, story runners, environment variables.
+title: REST API & OpenAPI
+description: Auto-generated REST endpoints, query parameters, and OpenAPI spec.
 ---
 
-## CLI
-- `pnpm --filter @zebric/cli dev` – start the CLI.
-- `pnpm --filter @zebric/runtime-node build` – compile the node runtime.
+## REST Endpoints
 
-## Story Runner
-- `pnpm --filter @zebric/framework-stories test` – execute all user stories.
+The runtime auto-generates REST endpoints for every entity defined in your blueprint.
+Entity routes are pluralized with a trailing `s` (for example, `Issue` -> `/api/issues`):
 
-## Environment Variables
-- `PORT`: runtime-node port.
-- `DATABASE_URL`: connection string for Drizzle.
-- `TAILWIND_BUILD`: handled automatically via `@zebric/runtime-core` postinstall.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/<entity-name>s` | List records |
+| `GET` | `/api/<entity-name>s/:id` | Get single record |
+| `POST` | `/api/<entity-name>s` | Create record |
+| `PUT` | `/api/<entity-name>s/:id` | Update record |
+| `DELETE` | `/api/<entity-name>s/:id` | Delete record |
+
+Requests can authenticate via session cookies or API keys.
+
+## Query Parameters
+
+List endpoints support pagination:
+
+```
+GET /api/issues?limit=25&offset=25
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `limit` | Maximum number of results (default `100`, max `1000`) |
+| `offset` | Number of records to skip |
+
+## Authentication
+
+### Session-Based
+
+Browser requests use session cookies automatically. Pages with `auth = "required"` redirect to the login page.
+
+### API Keys
+
+For programmatic access, send an API key in the `Authorization` header:
+
+```
+Authorization: Bearer <api-key-value>
+```
+
+API keys are defined in the blueprint:
+
+```toml
+[[auth.apiKeys]]
+name = "my-agent"
+keyEnv = "MY_API_KEY"
+```
+
+API key requests skip CSRF validation but still go through access control.
+
+## OpenAPI
+
+Zebric generates an OpenAPI specification from your blueprint. Access it at:
+
+```
+GET /api/openapi.json
+```
+
+The spec includes all entities, their fields, and available operations. Use it with:
+
+- API clients (Postman, Insomnia)
+- Documentation generators (Swagger UI, Redoc)
+- AI agents and code generators
+- Type generation tools
