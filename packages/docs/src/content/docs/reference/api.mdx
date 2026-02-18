@@ -8,32 +8,31 @@ description: Auto-generated REST endpoints, query parameters, and OpenAPI spec.
 
 ## REST Endpoints
 
-The runtime auto-generates REST endpoints for every entity defined in your blueprint:
+The runtime auto-generates REST endpoints for every entity defined in your blueprint.
+Entity routes are pluralized with a trailing `s` (for example, `Issue` -> `/api/issues`):
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/:entity` | List records |
-| `GET` | `/api/:entity/:id` | Get single record |
-| `POST` | `/api/:entity` | Create record |
-| `PUT` | `/api/:entity/:id` | Update record |
-| `DELETE` | `/api/:entity/:id` | Delete record |
+| `GET` | `/api/<entity-name>s` | List records |
+| `GET` | `/api/<entity-name>s/:id` | Get single record |
+| `POST` | `/api/<entity-name>s` | Create record |
+| `PUT` | `/api/<entity-name>s/:id` | Update record |
+| `DELETE` | `/api/<entity-name>s/:id` | Delete record |
 
-All endpoints respect entity-level access control rules defined in your blueprint. Requests can authenticate via session cookies or API keys.
+Requests can authenticate via session cookies or API keys.
 
 ## Query Parameters
 
-List endpoints support filtering, sorting, and pagination:
+List endpoints support pagination:
 
 ```
-GET /api/Post?status=published&orderBy=createdAt&order=desc&limit=10
+GET /api/issues?limit=25&offset=25
 ```
 
 | Parameter | Description |
 |-----------|-------------|
-| `orderBy` | Field to sort by |
-| `order` | Sort direction (`asc` or `desc`) |
-| `limit` | Maximum number of results |
-| Any field name | Filter by field value (e.g., `status=published`) |
+| `limit` | Maximum number of results (default `100`, max `1000`) |
+| `offset` | Number of records to skip |
 
 ## Authentication
 
