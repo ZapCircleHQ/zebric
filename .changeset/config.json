@@ -4,7 +4,15 @@
   "commit": false,
   "fixed": [],
   "linked": [
-    ["@zebric/runtime", "@zebric/cli", "@zebric/plugin-sdk", "@zebric/themes"]
+    [
+      "@zebric/runtime-core",
+      "@zebric/runtime-hono",
+      "@zebric/runtime-node",
+      "@zebric/runtime-worker",
+      "@zebric/cli",
+      "@zebric/plugin-sdk",
+      "@zebric/themes"
+    ]
   ],
   "access": "public",
   "baseBranch": "main",
