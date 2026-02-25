@@ -71,7 +71,7 @@ jobs:
         run: |
           pnpm --filter @zebric/runtime-core test
           pnpm --filter @zebric/runtime-node test
-          pnpm --filter @zebric/runtime-worker exec vitest run src
+          pnpm --filter @zebric/runtime-worker test
 
       - name: Generate coverage report
         run: |
@@ -154,10 +154,70 @@ jobs:
           echo "Testing blog blueprint..."
           node packages/cli/dist/index.js validate --blueprint examples/blog/blueprint.toml
 
+  worker-smoke-test:
+    name: Worker Smoke Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run runtime-worker smoke suite
+        run: pnpm --filter @zebric/runtime-worker test:smoke
+
+  docs-quality:
+    name: Docs Quality
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build docs
+        run: pnpm -C packages/docs build
+
+      - name: Astro docs check
+        run: pnpm -C packages/docs astro check --yes
+
+      - name: Link check built docs
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: --verbose --no-progress --exclude-mail packages/docs/dist/**/*.html
+
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [quality, test, build, blueprint-smoke-test]
+    needs: [quality, test, build, blueprint-smoke-test, worker-smoke-test, docs-quality]
     if: always()
 
     steps:
@@ -167,11 +227,15 @@ jobs:
           echo "Tests: ${{ needs.test.result }}"
           echo "Build: ${{ needs.build.result }}"
           echo "Blueprint: ${{ needs.blueprint-smoke-test.result }}"
+          echo "Worker Smoke: ${{ needs.worker-smoke-test.result }}"
+          echo "Docs: ${{ needs.docs-quality.result }}"
 
           if [ "${{ needs.quality.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \
              [ "${{ needs.build.result }}" != "success" ] || \
-             [ "${{ needs.blueprint-smoke-test.result }}" != "success" ]; then
+             [ "${{ needs.blueprint-smoke-test.result }}" != "success" ] || \
+             [ "${{ needs.worker-smoke-test.result }}" != "success" ] || \
+             [ "${{ needs.docs-quality.result }}" != "success" ]; then
             echo "One or more checks failed"
             exit 1
           fi

@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
+    "test:smoke": "vitest run tests/integration/page-rendering.test.ts",
     "dev": "tsc --watch"
   },
   "keywords": [

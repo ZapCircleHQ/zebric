@@ -5,6 +5,29 @@ All notable changes to the Zebric Framework will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - Unreleased
+
+### Focus
+
+- Developer experience improvements
+- Documentation quality and accuracy
+- Cloudflare Workers reliability and parity with Node runtime
+
+### Planned
+
+**Cloudflare Runtime**
+- Add required CI coverage for runtime-worker unit and integration paths
+- Add dedicated worker smoke tests to catch regressions earlier
+- Improve Node/Workers behavioral parity checks for routing, rendering, and CRUD
+
+**Developer Experience**
+- Improve CLI and runtime error messages with actionable remediation guidance
+- Add contributor-friendly scripts and checks for common local workflows
+
+**Documentation**
+- Add CI quality gates for docs build, type/content checks, and link validation
+- Update docs for Worker usage and troubleshooting based on real test coverage
+
 ## [0.1.0] - 2025-10-17
 
 ### Initial Release
@@ -161,5 +184,6 @@ First public release of Zebric Framework - a declarative web application framewo
 
 ---
 
+[0.2.2]: https://github.com/yourusername/zebric/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/yourusername/zebric/compare/v0.1.0...v0.2.1
 [0.1.0]: https://github.com/yourusername/zebric/releases/tag/v0.1.0
