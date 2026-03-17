@@ -19,7 +19,8 @@
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:smoke": "vitest run tests/integration/page-rendering.test.ts",
+    "test:smoke": "vitest run tests/integration/",
+    "test:coverage": "vitest run --coverage",
     "dev": "tsc --watch"
   },
   "keywords": [
@@ -41,6 +42,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
     "@types/better-sqlite3": "^7.6.9",
+    "@vitest/coverage-v8": "^1.6.1",
     "better-sqlite3": "^9.6.0",
     "miniflare": "^4.20251105.0",
     "typescript": "^5.7.2",
