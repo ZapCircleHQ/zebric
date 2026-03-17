@@ -41,6 +41,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:agent-browser": "RUN_AGENT_BROWSER_E2E=1 vitest run tests/e2e/agent-browser.e2e.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
