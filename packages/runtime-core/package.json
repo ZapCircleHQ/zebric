@@ -47,6 +47,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bench": "vitest bench",
     "clean": "rm -rf dist",
     "lint": "eslint src --ext .ts"
   },
