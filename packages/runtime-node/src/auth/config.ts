@@ -4,7 +4,7 @@
  * Configures Better Auth for the Zebric Engine.
  */
 
-import { betterAuth } from 'better-auth'
+import { betterAuth, type Auth } from 'better-auth'
 import Database from 'better-sqlite3'
 import type { Blueprint, AuthProvider, AuthProviderConfig } from '@zebric/runtime-core'
 import { BetterAuthProvider } from './better-auth-provider.js'
@@ -26,8 +26,8 @@ export interface BetterAuthConfig extends AuthProviderConfig {
 /**
  * Create Better Auth instance configured for Zebric Engine
  */
-export function createAuth(config: BetterAuthConfig): ReturnType<typeof betterAuth> {
-  const { databaseUrl, blueprint, baseURL, secret, trustedOrigins} = config
+export function createAuth(config: BetterAuthConfig): Auth<any> {
+  const { databaseUrl, blueprint, baseURL, secret, trustedOrigins } = config
 
   // Get auth providers from Blueprint
   const providers = blueprint.auth?.providers || ['email']

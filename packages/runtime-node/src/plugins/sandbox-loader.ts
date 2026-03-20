@@ -109,7 +109,7 @@ export class SandboxModuleLoader {
     cache.set(filename, module)
 
     await module.link(async (specifier) => {
-      return loader.linkModule(specifier, filename, context, cache)
+      return this.linkModule(specifier, filename, context, cache)
     })
 
     return module
