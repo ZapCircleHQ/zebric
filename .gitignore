@@ -2,6 +2,7 @@ docs.notpublished/
 internal/
 .claude/
 starters/cloudflare-workers-test/
+memory/
 
 data/
 tsconfig.tsbuildinfo
