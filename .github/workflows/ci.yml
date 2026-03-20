@@ -37,7 +37,6 @@ jobs:
 
       - name: Lint check
         run: pnpm lint
-        continue-on-error: true
 
   test:
     name: Tests
@@ -209,7 +208,7 @@ jobs:
         run: pnpm -C packages/docs build
 
       - name: Astro docs check
-        run: pnpm -C packages/docs astro check --yes
+        run: pnpm -C packages/docs check
 
       - name: Link check built docs
         uses: lycheeverse/lychee-action@v2
