@@ -151,7 +151,7 @@ export class SubsystemInitializer {
   }> {
     const dbPath = this.config.dev?.dbPath || './data/app.db'
     const host = this.config.host || 'localhost'
-    const port = this.config.port || 3000
+    const port = this.config.port ?? 3000
     const baseURL = `http://${host}:${port}`
 
     // Create permission manager from Blueprint

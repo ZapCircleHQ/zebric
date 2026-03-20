@@ -72,7 +72,7 @@ export interface EngineAPI {
   workflows: {
     trigger(name: string, context: any): Promise<void>
   }
-  on(event: string, handler: Function): void
+  on(event: string, handler: (...args: unknown[]) => void): void
   emit(event: string, data: any): void
   blueprint: any
   log: {

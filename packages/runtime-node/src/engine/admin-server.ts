@@ -94,7 +94,7 @@ export class AdminServer {
     this.app.get('/', () => {
       return Response.json({
         name: 'Zebric Admin Server',
-        version: '0.1.1',
+        version: this.state.version,
         endpoints: {
           blueprint: '/blueprint',
           state: '/state',

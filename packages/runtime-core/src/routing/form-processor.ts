@@ -26,20 +26,22 @@ export async function executeFormAction(
       case 'create':
         return await queryExecutor.create(form.entity, data, context)
 
-      case 'update':
+      case 'update': {
         const updateId = context.params?.id || data.id
         if (!updateId) {
           throw new Error('No ID provided for update')
         }
         return await queryExecutor.update(form.entity, updateId, data, context)
+      }
 
-      case 'delete':
+      case 'delete': {
         const deleteId = context.params?.id || data.id
         if (!deleteId) {
           throw new Error('No ID provided for delete')
         }
         await queryExecutor.delete(form.entity, deleteId, context)
         return { id: deleteId, deleted: true }
+      }
 
       default:
         throw new Error(`Unknown form method: ${form.method}`)

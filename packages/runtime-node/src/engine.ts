@@ -165,7 +165,7 @@ export class ZebricEngine extends EventEmitter {
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'
-      const port = this.config.port || 3000
+      const port = this.config.port ?? 3000
       const defaultOrigin = `http://${host}:${port}`
 
       const RendererClass = this.config.rendererClass || HTMLRenderer

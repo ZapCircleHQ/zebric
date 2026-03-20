@@ -114,7 +114,7 @@ export class ServerManager {
     this.registerGlobalMiddleware()
     this.registerRoutes()
 
-    const port = this.config.port || 3000
+    const port = this.config.port ?? 3000
     const host = this.config.host || '0.0.0.0'
     this.server = serve(
       {

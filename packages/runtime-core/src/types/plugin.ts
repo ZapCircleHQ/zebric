@@ -98,7 +98,7 @@ export interface EngineAPI {
   }
 
   // Events
-  on(event: string, handler: Function): void
+  on(event: string, handler: (...args: unknown[]) => void): void
   emit(event: string, data: any): void
 
   // Blueprint (read-only)
