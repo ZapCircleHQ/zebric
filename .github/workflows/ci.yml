@@ -7,6 +7,34 @@ on:
     branches: [main, develop]
 
 jobs:
+  changeset:
+    name: Changeset Required
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Require changeset for published package changes
+        run: pnpm changeset:check origin/${{ github.base_ref }}
+
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -218,18 +246,24 @@ jobs:
   all-checks:
     name: All Checks Passed
     runs-on: ubuntu-latest
-    needs: [quality, test, build, blueprint-smoke-test, worker-smoke-test, docs-quality]
+    needs: [changeset, quality, test, build, blueprint-smoke-test, worker-smoke-test, docs-quality]
     if: always()
 
     steps:
       - name: Check job results
         run: |
+          echo "Changeset: ${{ needs.changeset.result }}"
           echo "Quality: ${{ needs.quality.result }}"
           echo "Tests: ${{ needs.test.result }}"
           echo "Build: ${{ needs.build.result }}"
           echo "Blueprint: ${{ needs.blueprint-smoke-test.result }}"
           echo "Worker Smoke: ${{ needs.worker-smoke-test.result }}"
           echo "Docs: ${{ needs.docs-quality.result }}"
+
+          if [ "${{ needs.changeset.result }}" != "success" ] && [ "${{ needs.changeset.result }}" != "skipped" ]; then
+            echo "Changeset check failed"
+            exit 1
+          fi
 
           if [ "${{ needs.quality.result }}" != "success" ] || \
              [ "${{ needs.test.result }}" != "success" ] || \

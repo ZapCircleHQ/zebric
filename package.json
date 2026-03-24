@@ -19,6 +19,7 @@
     "lint": "eslint \"packages/*/src/**/*.{ts,js,mjs}\" \"packages/docs/*.mjs\" \"packages/docs/src/**/*.ts\" \"plugins/*/src/**/*.{ts,js,mjs}\" \"examples/**/*.{ts,mjs}\" \"scripts/**/*.{ts,js,mjs}\" \"starters/**/*.{ts,js,mjs}\" --no-error-on-unmatched-pattern",
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
+    "changeset:check": "node scripts/check-changeset-pr.mjs",
     "version": "changeset version",
     "release:check": "node scripts/check-release-versions.mjs",
     "release": "pnpm release:check && pnpm build && changeset publish",
