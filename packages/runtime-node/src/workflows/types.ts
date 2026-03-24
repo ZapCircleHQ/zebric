@@ -69,6 +69,11 @@ export interface Workflow {
 }
 
 export interface WorkflowContext {
+  trace?: {
+    correlationId?: string
+    requestId?: string
+    executionId?: string
+  }
   trigger: {
     type: 'entity' | 'webhook' | 'schedule' | 'manual'
     entity?: string

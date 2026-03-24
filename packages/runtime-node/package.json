@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@zebric/notifications": "workspace:*",
+    "@zebric/observability": "workspace:*",
     "@hono/node-server": "^1.19.5",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",

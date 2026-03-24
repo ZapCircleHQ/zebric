@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
 import path from 'node:path'
+import { createLogger } from '@zebric/observability'
 import { ServerManager } from './server-manager.js'
 import { initApiKeys } from './server-security.js'
 
@@ -47,6 +48,9 @@ function stubDeps(overrides: Record<string, any> = {}) {
       endSpan: () => {},
       endTrace: () => {},
     },
+    logger: createLogger({
+      transport: { write: () => {} },
+    }),
     errorHandler: {
       toHonoHandler: () => (err: any, c: any) => {
         return c.json({ error: 'Internal error' }, 500)

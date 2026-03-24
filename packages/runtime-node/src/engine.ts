@@ -24,6 +24,7 @@ import type { Blueprint } from '@zebric/runtime-core'
 import { HTMLRenderer } from './renderer/index.js'
 import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { NotificationManager } from '@zebric/notifications'
+import { createLogger, type Logger } from '@zebric/observability'
 import type {
   EngineConfig,
   EngineState,
@@ -56,6 +57,7 @@ export class ZebricEngine extends EventEmitter {
   private workflowManager?: WorkflowManager
   private metrics: MetricsRegistry
   private tracer: RequestTracer
+  private logger: Logger
   private cache!: CacheInterface
   private pluginAPIProvider!: PluginAPIProvider
   private subsystemInitializer!: SubsystemInitializer
@@ -77,8 +79,14 @@ export class ZebricEngine extends EventEmitter {
       pendingSchemaDiff: null,
     }
 
+    this.logger = createLogger({
+      level: config.dev?.logLevel ?? 'info',
+      serviceName: '@zebric/runtime-node',
+      environment: process.env.NODE_ENV,
+    })
+
     this.loader = new BlueprintLoader()
-    this.plugins = new PluginRegistry()
+    this.plugins = new PluginRegistry(this.logger)
 
     this.fileStorage = new FileStorage()
 
@@ -104,7 +112,9 @@ export class ZebricEngine extends EventEmitter {
    * Start the engine
    */
   async start(): Promise<void> {
-    console.log('🚀 Starting Zebric Engine...\n')
+    this.logger.info('Starting Zebric engine', {
+      blueprintPath: this.config.blueprintPath,
+    })
 
     try {
       this.state.status = 'starting'
@@ -120,6 +130,7 @@ export class ZebricEngine extends EventEmitter {
         plugins: this.plugins,
         auditLogger: this.auditLogger,
         errorSanitizer: this.errorSanitizer,
+        logger: this.logger,
       })
 
       // 3. Initialize Cache
@@ -197,6 +208,7 @@ export class ZebricEngine extends EventEmitter {
         blueprintAdapter: this.blueprintAdapter,
         metrics: this.metrics,
         tracer: this.tracer,
+        logger: this.logger,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
         notificationManager: this.notificationManager,
@@ -223,6 +235,9 @@ export class ZebricEngine extends EventEmitter {
           pendingSchemaDiff: this.pendingSchemaDiff,
           workflowManager: this.workflowManager,
           getHealthStatus: () => this.getHealth(),
+          logger: this.logger.child({
+            operation: 'admin-server',
+          }),
           host: adminHost,
           port: adminPort,
         })
@@ -256,8 +271,9 @@ export class ZebricEngine extends EventEmitter {
       // Setup graceful shutdown handlers
       setupGracefulShutdown(() => this.stop(), this.shutdownTimeout)
 
-      console.log('\n✅ Engine ready!')
-      console.log(`📱 Server: http://${this.config.host || 'localhost'}:${this.config.port}`)
+      this.logger.info('Engine ready', {
+        serverUrl: `http://${this.config.host || 'localhost'}:${this.config.port}`,
+      })
       if (this.config.dev && this.adminServer) {
         // Get the actual port the admin server is listening on
         const adminServerInstance = this.adminServer.getServer()

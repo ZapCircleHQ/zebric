@@ -9,6 +9,7 @@
  */
 
 import type { Blueprint } from '@zebric/runtime-core'
+import type { Logger } from '@zebric/observability'
 import type { EngineConfig } from '../types/index.js'
 import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
@@ -27,6 +28,7 @@ export interface SubsystemInitializerDependencies {
   plugins: PluginRegistry
   auditLogger: AuditLogger
   errorSanitizer: ErrorSanitizer
+  logger: Logger
 }
 
 export interface InitializedSubsystems {
@@ -48,6 +50,7 @@ export class SubsystemInitializer {
   private config: EngineConfig
   private metrics: MetricsRegistry
   private plugins: PluginRegistry
+  private logger: Logger
 
   // Initialized subsystems
   private database?: DatabaseConnection
@@ -64,6 +67,7 @@ export class SubsystemInitializer {
     this.config = deps.config
     this.metrics = deps.metrics
     this.plugins = deps.plugins
+    this.logger = deps.logger
   }
 
   /**
@@ -226,6 +230,9 @@ export class SubsystemInitializer {
       pluginRegistry: this.plugins,
       httpClient,
       notificationService: this.notificationManager,
+      logger: this.logger.child({
+        operation: 'workflow-manager',
+      }),
       maxConcurrent: 10,
       retryDelay: 1000,
       maxRetries: 3,
@@ -243,12 +250,35 @@ export class SubsystemInitializer {
     }
 
     // Set up workflow event handlers
+    this.workflowManager.on('job:started', (job) => {
+      this.logger.info('Workflow job started', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+      })
+    })
+
     this.workflowManager.on('job:completed', (job) => {
-      console.log(`✅ Workflow job completed: ${job.workflowName} (${job.id})`)
+      this.logger.info('Workflow job completed', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+      })
     })
 
     this.workflowManager.on('job:failed', (job) => {
-      console.error(`❌ Workflow job failed: ${job.workflowName} (${job.id}) - ${job.error}`)
+      this.logger.error('Workflow job failed', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+        error: job.error,
+      })
     })
 
     return this.workflowManager

@@ -5,6 +5,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import { createExecutionId, type Logger } from '@zebric/observability'
 import { WorkflowQueue, type WorkflowQueueOptions } from './workflow-queue.js'
 import { WorkflowExecutor } from './workflow-executor.js'
 import type { Workflow, WorkflowJob, WorkflowContext, WorkflowTrigger } from './types.js'
@@ -17,15 +18,18 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   emailService?: any
   httpClient?: any
   notificationService?: NotificationManager
+  logger?: Logger
 }
 
 export class WorkflowManager extends EventEmitter {
   private queue: WorkflowQueue
   private executor: WorkflowExecutor
+  private logger?: Logger
   private readonly maxEntityTriggerDepth = 5
 
   constructor(options: WorkflowManagerOptions) {
     super()
+    this.logger = options.logger
 
     // Initialize queue
     this.queue = new WorkflowQueue({
@@ -42,10 +46,17 @@ export class WorkflowManager extends EventEmitter {
       emailService: options.emailService,
       httpClient: options.httpClient,
       notificationService: options.notificationService,
-      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth }) => {
+      logger: options.logger,
+      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, trace }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
           sourceWorkflow,
-          depth: depth + 1
+          depth: depth + 1,
+          trace: trace
+            ? {
+                correlationId: trace.correlationId,
+                requestId: trace.requestId,
+              }
+            : undefined,
         })
       }
     })
@@ -115,8 +126,20 @@ export class WorkflowManager extends EventEmitter {
   /**
    * Trigger a workflow manually
    */
-  trigger(workflowName: string, data?: any): WorkflowJob {
+  trigger(
+    workflowName: string,
+    data?: any,
+    options?: {
+      correlationId?: string
+      requestId?: string
+    }
+  ): WorkflowJob {
     const context: WorkflowContext = {
+      trace: {
+        correlationId: options?.correlationId,
+        requestId: options?.requestId,
+        executionId: createExecutionId(),
+      },
       trigger: {
         type: 'manual',
         data,
@@ -140,7 +163,14 @@ export class WorkflowManager extends EventEmitter {
     entity: string,
     event: 'create' | 'update' | 'delete',
     data: any,
-    options?: { sourceWorkflow?: string; depth?: number }
+    options?: {
+      sourceWorkflow?: string
+      depth?: number
+      trace?: {
+        correlationId?: string
+        requestId?: string
+      }
+    }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
     const depth = options?.depth ?? 0
@@ -155,6 +185,11 @@ export class WorkflowManager extends EventEmitter {
     for (const workflow of workflows) {
       if (this.matchesEntityTrigger(workflow.trigger, entity, event, normalizedData)) {
         const context: WorkflowContext = {
+          trace: {
+            correlationId: options?.trace?.correlationId,
+            requestId: options?.trace?.requestId,
+            executionId: createExecutionId(),
+          },
           trigger: {
             type: 'entity',
             entity,
@@ -189,6 +224,8 @@ export class WorkflowManager extends EventEmitter {
     headers: Record<string, string>
     body?: any
     query?: Record<string, string>
+    correlationId?: string
+    requestId?: string
   }): Promise<WorkflowJob[]> {
     const workflows = this.queue.getAllWorkflows()
     const jobs: WorkflowJob[] = []
@@ -196,6 +233,11 @@ export class WorkflowManager extends EventEmitter {
     for (const workflow of workflows) {
       if (this.matchesWebhookTrigger(workflow.trigger, path)) {
         const context: WorkflowContext = {
+          trace: {
+            correlationId: request.correlationId,
+            requestId: request.requestId,
+            executionId: createExecutionId(),
+          },
           trigger: {
             type: 'webhook',
             data: request.body,
@@ -228,6 +270,9 @@ export class WorkflowManager extends EventEmitter {
     for (const workflow of workflows) {
       if (this.matchesScheduleTrigger(workflow.trigger, cronExpression)) {
         const context: WorkflowContext = {
+          trace: {
+            executionId: createExecutionId(),
+          },
           trigger: {
             type: 'schedule',
           },

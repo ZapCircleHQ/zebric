@@ -33,6 +33,8 @@ export function createHonoLoggerMiddleware(
       path: getPath(c),
     })
 
+    Reflect.set(c.req.raw, 'correlationId', correlationId)
+    Reflect.set(c.req.raw, 'requestId', requestId)
     c.set(HONO_LOGGER_KEY, requestLogger)
     c.header(correlationHeaderName, correlationId)
     c.header(requestIdHeaderName, requestId)

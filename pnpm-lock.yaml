@@ -294,6 +294,9 @@ importers:
       '@zebric/notifications':
         specifier: workspace:*
         version: link:../notifications
+      '@zebric/observability':
+        specifier: workspace:*
+        version: link:../observability
       '@zebric/runtime-core':
         specifier: workspace:*
         version: link:../runtime-core

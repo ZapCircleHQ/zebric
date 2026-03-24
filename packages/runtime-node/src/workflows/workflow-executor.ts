@@ -13,6 +13,7 @@ import type {
 } from './types.js'
 import type { QueryExecutor } from '../database/query-executor.js'
 import type { NotificationManager } from '@zebric/notifications'
+import { createWorkflowLogger, type Logger } from '@zebric/observability'
 
 export interface EmailService {
   send(to: string, subject: string, body: string, template?: string): Promise<void>
@@ -32,6 +33,7 @@ export interface WorkflowExecutorOptions {
   emailService?: EmailService
   httpClient?: HttpClient
   notificationService?: NotificationManager
+  logger?: Logger
   onEntityEvent?: (event: {
     entity: string
     event: 'create' | 'update' | 'delete'
@@ -39,6 +41,7 @@ export interface WorkflowExecutorOptions {
     after?: any
     sourceWorkflow: string
     depth: number
+    trace?: WorkflowContext['trace']
   }) => Promise<void>
 }
 
@@ -48,6 +51,7 @@ export class WorkflowExecutor {
   private emailService?: EmailService
   private httpClient?: HttpClient
   private notificationService?: NotificationManager
+  private logger?: Logger
   private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
 
   constructor(options: WorkflowExecutorOptions) {
@@ -56,6 +60,7 @@ export class WorkflowExecutor {
     this.emailService = options.emailService
     this.httpClient = options.httpClient
     this.notificationService = options.notificationService
+    this.logger = options.logger
     this.onEntityEvent = options.onEntityEvent
   }
 
@@ -64,6 +69,14 @@ export class WorkflowExecutor {
    */
   async execute(workflow: Workflow, context: WorkflowContext): Promise<WorkflowExecutionResult> {
     const logs: WorkflowLog[] = []
+    const workflowLogger = this.logger
+      ? createWorkflowLogger(this.logger, workflow.name, {
+          correlationId: context.trace?.correlationId,
+          requestId: context.trace?.requestId,
+          executionId: context.trace?.executionId,
+          triggerType: context.trigger.type,
+        })
+      : undefined
 
     const log = (level: WorkflowLog['level'], message: string, data?: any) => {
       logs.push({
@@ -72,6 +85,28 @@ export class WorkflowExecutor {
         message,
         data,
       })
+
+      if (!workflowLogger) {
+        return
+      }
+
+      const logContext = data !== undefined ? { data } : undefined
+      switch (level) {
+        case 'debug':
+          workflowLogger.debug(message, logContext)
+          break
+        case 'info':
+          workflowLogger.info(message, logContext)
+          break
+        case 'warn':
+          workflowLogger.warn(message, logContext)
+          break
+        case 'error':
+          workflowLogger.error(message, {
+            error: data,
+          })
+          break
+      }
     }
 
     try {
@@ -600,7 +635,8 @@ export class WorkflowExecutor {
       before,
       after,
       sourceWorkflow,
-      depth
+      depth,
+      trace: context.trace,
     })
   }
 

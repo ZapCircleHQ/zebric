@@ -1,7 +1,8 @@
 import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
-import { ulid } from 'ulid'
 import type { NotificationManager } from '@zebric/notifications'
+import type { Logger } from '@zebric/observability'
+import { createHonoLoggerMiddleware } from '@zebric/observability/hono'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
@@ -46,6 +47,7 @@ export interface ServerManagerDependencies {
   blueprintAdapter: BlueprintHttpAdapter
   metrics: MetricsRegistry
   tracer: RequestTracer
+  logger: Logger
   errorHandler: ErrorHandler
   pendingSchemaDiff: SchemaDiffResult | null
   notificationManager?: NotificationManager
@@ -66,6 +68,7 @@ export class ServerManager {
   private blueprintAdapter: BlueprintHttpAdapter
   private metrics: MetricsRegistry
   private tracer: RequestTracer
+  private logger: Logger
   private errorHandler: ErrorHandler
   private getHealthStatusFn?: () => Promise<any>
   private notificationManager?: NotificationManager
@@ -85,6 +88,7 @@ export class ServerManager {
     this.blueprintAdapter = deps.blueprintAdapter
     this.metrics = deps.metrics
     this.tracer = deps.tracer
+    this.logger = deps.logger
     this.errorHandler = deps.errorHandler
     this.notificationManager = deps.notificationManager
     this.getHealthStatusFn = deps.getHealthStatus
@@ -102,6 +106,7 @@ export class ServerManager {
     if (updates.blueprintAdapter) this.blueprintAdapter = updates.blueprintAdapter
     if (updates.metrics) this.metrics = updates.metrics
     if (updates.tracer) this.tracer = updates.tracer
+    if (updates.logger) this.logger = updates.logger
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
     if (updates.notificationManager !== undefined) this.notificationManager = updates.notificationManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
@@ -123,7 +128,7 @@ export class ServerManager {
         hostname: host
       },
       () => {
-        console.log(`✅ HTTP Server listening on ${host}:${port}`)
+        this.logger.info('HTTP server listening', { host, port })
       }
     )
 
@@ -146,9 +151,14 @@ export class ServerManager {
   }
 
   private registerGlobalMiddleware(): void {
+    this.app.use('*', createHonoLoggerMiddleware(this.logger, {
+      logStart: false,
+      logEnd: true,
+    }))
+
     this.app.use('*', async (c, next) => {
-      const requestId = ulid()
-      const traceId = requestId
+      const requestId = Reflect.get(c.req.raw, 'requestId')
+      const traceId = Reflect.get(c.req.raw, 'correlationId')
       Reflect.set(c.req.raw, 'requestId', requestId)
       Reflect.set(c.req.raw, 'traceId', traceId)
 
@@ -165,7 +175,8 @@ export class ServerManager {
           url: c.req.url,
           headers: Array.from(c.req.raw.headers.keys()),
           ip: getClientIp(c),
-          userAgent: c.req.header('user-agent')
+          userAgent: c.req.header('user-agent'),
+          requestId,
         }
       )
 
