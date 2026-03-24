@@ -69,11 +69,11 @@ function getRequestId(c: Context): string | undefined {
 }
 
 function setCorrelationId(c: Context, correlationId: string): void {
-  ;(c as any).set('correlationId', correlationId)
+  (c as any).set('correlationId', correlationId)
 }
 
 function setRequestId(c: Context, requestId: string): void {
-  ;(c as any).set('requestId', requestId)
+  (c as any).set('requestId', requestId)
 }
 
 export class ServerManager {
