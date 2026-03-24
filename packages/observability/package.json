@@ -1,0 +1,39 @@
+{
+  "name": "@zebric/observability",
+  "version": "0.1.0",
+  "description": "Cross-runtime operational logging and correlation utilities for Zebric",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./hono": {
+      "types": "./dist/hono.d.ts",
+      "default": "./dist/hono.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run --coverage=false"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "hono": "^4.9.9"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1"
+  },
+  "peerDependencies": {
+    "hono": ">=4.0.0"
+  }
+}
