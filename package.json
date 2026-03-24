@@ -20,6 +20,7 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
     "version": "changeset version",
+    "release:check": "node scripts/check-release-versions.mjs",
     "release": "pnpm build && changeset publish",
     "build:templates": "node scripts/build-layout-templates.mjs",
     "prepare": "husky"

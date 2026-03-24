@@ -74,6 +74,9 @@ Pre-release verification checklist for the current monorepo layout and CI pipeli
   - [ ] Root version is correct in `package.json`
   - [ ] Published package versions are correct in each package `package.json`
   - [ ] `repository`, `license`, and `files` fields are correct for publishable packages
+  ```bash
+  pnpm release:check
+  ```
 
 - [ ] Expected build artifacts exist
   ```bash
