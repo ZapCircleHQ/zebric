@@ -8,6 +8,17 @@ export interface ActionHandlerDeps {
   workflowManager?: WorkflowManager
 }
 
+function getCorrelationId(c: Context): string | undefined {
+  return (c as any).get('correlationId') as string | undefined
+    ?? c.req.header('x-correlation-id')
+    ?? undefined
+}
+
+function getRequestId(c: Context): string | undefined {
+  return (c as any).get('requestId') as string | undefined
+    ?? undefined
+}
+
 export async function handleSkillEntityAction(
   c: Context,
   action: SkillAction,
@@ -31,8 +42,8 @@ export async function handleSkillEntityAction(
       }
       const result = await queryExecutor.create(entityName, body, { session })
       await triggerEntityWorkflows(entityName, 'create', undefined, result, workflowManager, {
-        correlationId: Reflect.get(c.req.raw, 'correlationId'),
-        requestId: Reflect.get(c.req.raw, 'requestId'),
+        correlationId: getCorrelationId(c),
+        requestId: getRequestId(c),
       })
       return Response.json(result, { status: 201 })
     }
@@ -48,8 +59,8 @@ export async function handleSkillEntityAction(
         : null
       const result = await queryExecutor.update(entityName, id, body, { session })
       await triggerEntityWorkflows(entityName, 'update', before, result, workflowManager, {
-        correlationId: Reflect.get(c.req.raw, 'correlationId'),
-        requestId: Reflect.get(c.req.raw, 'requestId'),
+        correlationId: getCorrelationId(c),
+        requestId: getRequestId(c),
       })
       return Response.json(result)
     }
@@ -103,8 +114,8 @@ export async function handleSkillEntityAction(
         : null
       await queryExecutor.delete(entityName, id, { session })
       await triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined, workflowManager, {
-        correlationId: Reflect.get(c.req.raw, 'correlationId'),
-        requestId: Reflect.get(c.req.raw, 'requestId'),
+        correlationId: getCorrelationId(c),
+        requestId: getRequestId(c),
       })
       return Response.json({ success: true })
     }
@@ -178,8 +189,8 @@ export async function handleSkillWorkflow(
   }
 
   const job = workflowManager.trigger(workflowName, data, {
-    correlationId: Reflect.get(c.req.raw, 'correlationId'),
-    requestId: Reflect.get(c.req.raw, 'requestId'),
+    correlationId: getCorrelationId(c),
+    requestId: getRequestId(c),
   })
 
   return Response.json({

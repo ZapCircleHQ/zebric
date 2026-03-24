@@ -29,6 +29,17 @@ import {
   isStandardCrudRoute,
 } from './server-action-handlers.js'
 
+function getCorrelationId(c: any): string | undefined {
+  return (c as any).get('correlationId') as string | undefined
+    ?? c.req.header('x-correlation-id')
+    ?? undefined
+}
+
+function getRequestId(c: any): string | undefined {
+  return (c as any).get('requestId') as string | undefined
+    ?? undefined
+}
+
 export function registerStaticUploads(app: Hono): void {
   const root = path.resolve(process.cwd(), 'data/uploads')
   app.get('/uploads/*', async (c) => {
@@ -105,8 +116,8 @@ export function registerWebhookRoutes(app: Hono, workflowManager?: WorkflowManag
         headers: Object.fromEntries(c.req.raw.headers),
         body: await tryParseBody(c.req.raw),
         query: Object.fromEntries(new URL(c.req.url).searchParams),
-        correlationId: Reflect.get(c.req.raw, 'correlationId'),
-        requestId: Reflect.get(c.req.raw, 'requestId'),
+        correlationId: getCorrelationId(c),
+        requestId: getRequestId(c),
       })
 
       if (jobs.length === 0) {
@@ -159,8 +170,8 @@ export function registerNotificationRoutes(
       headers: Object.fromEntries(c.req.raw.headers),
       body: await tryParseBody(c.req.raw.clone()),
       query: Object.fromEntries(requestUrl.searchParams),
-      correlationId: Reflect.get(c.req.raw, 'correlationId'),
-      requestId: Reflect.get(c.req.raw, 'requestId'),
+      correlationId: getCorrelationId(c),
+      requestId: getRequestId(c),
     }
 
     const response = await notificationManager.handleRequest(adapterName, c.req.raw)
@@ -241,8 +252,8 @@ export function registerActionRoutes(
       }
 
       const job = workflowManager!.trigger(workflowName, actionData, {
-        correlationId: Reflect.get(c.req.raw, 'correlationId'),
-        requestId: Reflect.get(c.req.raw, 'requestId'),
+        correlationId: getCorrelationId(c),
+        requestId: getRequestId(c),
       })
 
       const redirectTarget = resolveActionRedirect(
@@ -387,8 +398,8 @@ export function registerAPIRoutes(
         const session = await sessionManager.getSession(c.req.raw)
         const result = await queryExecutor.create(entity.name, data, { session })
         await triggerEntityWorkflows(entity.name, 'create', undefined, result, workflowManager, {
-          correlationId: Reflect.get(c.req.raw, 'correlationId'),
-          requestId: Reflect.get(c.req.raw, 'requestId'),
+          correlationId: getCorrelationId(c),
+          requestId: getRequestId(c),
         })
         return Response.json(result, { status: 201 })
       } catch (error) {
@@ -461,8 +472,8 @@ export function registerAPIRoutes(
         const session = await sessionManager.getSession(c.req.raw)
         const result = await queryExecutor.update(entity.name, id, data, { session })
         await triggerEntityWorkflows(entity.name, 'update', before, result, workflowManager, {
-          correlationId: Reflect.get(c.req.raw, 'correlationId'),
-          requestId: Reflect.get(c.req.raw, 'requestId'),
+          correlationId: getCorrelationId(c),
+          requestId: getRequestId(c),
         })
         return Response.json(result)
       } catch (error) {
@@ -488,8 +499,8 @@ export function registerAPIRoutes(
         const session = await sessionManager.getSession(c.req.raw)
         await queryExecutor.delete(entity.name, id, { session })
         await triggerEntityWorkflows(entity.name, 'delete', existing || { id }, undefined, workflowManager, {
-          correlationId: Reflect.get(c.req.raw, 'correlationId'),
-          requestId: Reflect.get(c.req.raw, 'requestId'),
+          correlationId: getCorrelationId(c),
+          requestId: getRequestId(c),
         })
         return Response.json({ success: true })
       } catch (error) {

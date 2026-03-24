@@ -4,6 +4,8 @@ import { createRequestLogger } from './scopes.js'
 import type { Logger, RequestLoggingOptions } from './types.js'
 
 export const HONO_LOGGER_KEY = 'logger'
+export const HONO_CORRELATION_ID_KEY = 'correlationId'
+export const HONO_REQUEST_ID_KEY = 'requestId'
 
 function getPath(c: Context): string {
   const url = new URL(c.req.url)
@@ -33,8 +35,8 @@ export function createHonoLoggerMiddleware(
       path: getPath(c),
     })
 
-    Reflect.set(c.req.raw, 'correlationId', correlationId)
-    Reflect.set(c.req.raw, 'requestId', requestId)
+    c.set(HONO_CORRELATION_ID_KEY, correlationId)
+    c.set(HONO_REQUEST_ID_KEY, requestId)
     c.set(HONO_LOGGER_KEY, requestLogger)
     c.header(correlationHeaderName, correlationId)
     c.header(requestIdHeaderName, requestId)
@@ -45,6 +47,8 @@ export function createHonoLoggerMiddleware(
 
     try {
       await next()
+      c.res.headers.set(correlationHeaderName, correlationId)
+      c.res.headers.set(requestIdHeaderName, requestId)
       if (logEnd) {
         requestLogger.info('Request completed', {
           statusCode: c.res.status,
@@ -61,4 +65,15 @@ export function createHonoLoggerMiddleware(
 
 export function getHonoLogger(c: Context): Logger | undefined {
   return c.get(HONO_LOGGER_KEY)
+}
+
+export function getHonoCorrelationId(c: Context): string | undefined {
+  return c.get(HONO_CORRELATION_ID_KEY)
+    ?? c.req.header('x-correlation-id')
+    ?? undefined
+}
+
+export function getHonoRequestId(c: Context): string | undefined {
+  return c.get(HONO_REQUEST_ID_KEY)
+    ?? undefined
 }

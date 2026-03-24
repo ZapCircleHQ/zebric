@@ -1,8 +1,11 @@
 import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
+import type { Context } from 'hono'
 import type { NotificationManager } from '@zebric/notifications'
-import type { Logger } from '@zebric/observability'
-import { createHonoLoggerMiddleware } from '@zebric/observability/hono'
+import { createRequestId, type Logger } from '@zebric/observability'
+import {
+  createHonoLoggerMiddleware,
+} from '@zebric/observability/hono'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
@@ -52,6 +55,25 @@ export interface ServerManagerDependencies {
   pendingSchemaDiff: SchemaDiffResult | null
   notificationManager?: NotificationManager
   getHealthStatus?: () => Promise<any>
+}
+
+function getCorrelationId(c: Context): string | undefined {
+  return (c as any).get('correlationId') as string | undefined
+    ?? c.req.header('x-correlation-id')
+    ?? undefined
+}
+
+function getRequestId(c: Context): string | undefined {
+  return (c as any).get('requestId') as string | undefined
+    ?? undefined
+}
+
+function setCorrelationId(c: Context, correlationId: string): void {
+  ;(c as any).set('correlationId', correlationId)
+}
+
+function setRequestId(c: Context, requestId: string): void {
+  ;(c as any).set('requestId', requestId)
 }
 
 export class ServerManager {
@@ -157,8 +179,10 @@ export class ServerManager {
     }))
 
     this.app.use('*', async (c, next) => {
-      const requestId = Reflect.get(c.req.raw, 'requestId')
-      const traceId = Reflect.get(c.req.raw, 'correlationId')
+      const traceId = getCorrelationId(c) ?? 'unknown-correlation-id'
+      const requestId = getRequestId(c) ?? createRequestId()
+      setCorrelationId(c, traceId)
+      setRequestId(c, requestId)
       Reflect.set(c.req.raw, 'requestId', requestId)
       Reflect.set(c.req.raw, 'traceId', traceId)
 
