@@ -7,16 +7,9 @@ async function readJson(path) {
 }
 
 async function main() {
-  const rootPath = join(process.cwd(), 'package.json')
-  const rootPackage = await readJson(rootPath)
-  const expectedVersion = rootPackage.version
-
-  if (!expectedVersion) {
-    throw new Error('Root package.json is missing a version field')
-  }
-
   const packagesDir = join(process.cwd(), 'packages')
   const packageDirs = await readdir(packagesDir, { withFileTypes: true })
+  const publishedPackages = []
   const mismatches = []
 
   for (const entry of packageDirs) {
@@ -27,14 +20,11 @@ async function main() {
     try {
       const pkg = await readJson(packagePath)
       if (pkg.private) continue
-
-      if (pkg.version !== expectedVersion) {
-        mismatches.push({
-          name: pkg.name ?? entry.name,
-          path: packagePath,
-          version: pkg.version ?? '(missing)',
-        })
-      }
+      publishedPackages.push({
+        name: pkg.name ?? entry.name,
+        path: packagePath,
+        version: pkg.version ?? '(missing)',
+      })
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         continue
@@ -43,15 +33,29 @@ async function main() {
     }
   }
 
+  const versions = new Set(publishedPackages.map((pkg) => pkg.version))
+  if (versions.size > 1) {
+    const expectedVersion = publishedPackages[0]?.version ?? '(missing)'
+    for (const pkg of publishedPackages) {
+      if (pkg.version !== expectedVersion) {
+        mismatches.push(pkg)
+      }
+    }
+  }
+
   if (mismatches.length > 0) {
-    console.error(`Release version mismatch: expected ${expectedVersion}`)
-    for (const mismatch of mismatches) {
-      console.error(`- ${mismatch.name} (${mismatch.version}) -> ${mismatch.path}`)
+    console.error('Release version mismatch across published packages:')
+    for (const pkg of publishedPackages) {
+      console.error(`- ${pkg.name} (${pkg.version}) -> ${pkg.path}`)
     }
     process.exit(1)
   }
 
-  console.log(`Release versions aligned at ${expectedVersion}`)
+  if (publishedPackages.length === 0) {
+    throw new Error('No published packages found under packages/')
+  }
+
+  console.log(`Release versions aligned at ${publishedPackages[0].version}`)
 }
 
 main().catch((error) => {

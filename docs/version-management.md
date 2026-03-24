@@ -31,10 +31,11 @@ This will:
 **Example interaction:**
 ```
 🦋  Which packages would you like to include?
-◉ @zebric/runtime
+◉ @zebric/runtime-core
+◉ @zebric/runtime-node
 ◉ @zebric/cli
+◯ @zebric/observability
 ◯ @zebric/plugin-sdk
-◯ @zebric/themes
 
 🦋  What kind of change is this for the selected packages?
 ◯ patch (bug fixes)
@@ -45,33 +46,25 @@ This will:
 Added file upload support with local storage
 ```
 
-### 2. Before Release: Apply Changesets
+### 2. Merge Changes Into `main`
 
-When you're ready to release, apply all pending changesets:
+Once a PR with a changeset is merged, the release workflow on `main` will:
+1. Detect all pending changesets
+2. Open or update a `Release packages` PR
+3. Apply version bumps to all linked published packages
+4. Update changelog entries from the changeset summaries
 
-```bash
-pnpm version
-```
+### 3. Review And Merge The Release PR
 
-This will:
-1. Read all changeset files in `.changeset/`
-2. Bump versions in all affected `package.json` files
-3. Update `CHANGELOG.md` files
-4. Delete the processed changeset files
-5. Update interdependencies automatically
+The `Release packages` PR is the human review point. Before merging it:
+1. Confirm the version bump level is correct
+2. Confirm the generated changelog text is clear and user-facing
+3. Confirm CI is green on the release PR
 
-### 3. Release to npm
-
-After versions are bumped and you've committed the changes:
-
-```bash
-pnpm release
-```
-
-This will:
-1. Build all packages
-2. Publish to npm
-3. Create git tags
+When that PR is merged, the workflow will automatically:
+1. Build the workspace
+2. Publish packages to npm
+3. Create GitHub releases for the published packages
 
 ## Configuration
 
@@ -80,7 +73,17 @@ Our setup (`.changeset/config.json`) uses **linked packages**, meaning all core 
 ```json
 {
   "linked": [
-    ["@zebric/runtime", "@zebric/cli", "@zebric/plugin-sdk", "@zebric/themes"]
+    [
+      "@zebric/runtime-core",
+      "@zebric/runtime-hono",
+      "@zebric/runtime-node",
+      "@zebric/runtime-worker",
+      "@zebric/cli",
+      "@zebric/notifications",
+      "@zebric/observability",
+      "@zebric/plugin-sdk",
+      "@zebric/themes"
+    ]
   ]
 }
 ```
@@ -106,16 +109,11 @@ pnpm changeset
 git add .changeset/
 git commit -m "Add changeset for auth fix"
 
-# 4. When ready to release (could be multiple changesets)
-pnpm version
-# This bumps 0.1.0 → 0.1.1
+# 4. Merge the PR to main
+# Changesets will open/update the Release packages PR automatically
 
-# 5. Commit version changes
-git add .
-git commit -m "Release v0.1.1"
-
-# 6. Publish
-pnpm release
+# 5. Review and merge the Release packages PR
+# Publishing happens automatically after merge
 ```
 
 ### Scenario 2: New Feature (Minor Release)
@@ -128,14 +126,10 @@ pnpm changeset
 # Select: minor
 # Summary: "Added file upload support with S3 integration"
 
-# 3. When ready to release
-pnpm version
-# This bumps 0.1.1 → 0.2.0
+# 3. Merge the feature PR to main
 
-# 4. Commit and publish
-git add .
-git commit -m "Release v0.2.0"
-pnpm release
+# 4. Review and merge the Release packages PR
+# Publishing happens automatically after merge
 ```
 
 ### Scenario 3: Multiple Changes Before Release
@@ -164,12 +158,10 @@ git merge feature/s3
 pnpm changeset  # "Fixed CORS issue"
 git commit -am "Fix CORS bug"
 
-# Now release everything at once
-pnpm version
-# All three changes are included in the CHANGELOG
-# Version bumps based on highest severity (minor if any feature)
-git commit -am "Release v0.2.0"
-pnpm release
+# Merge the feature PRs to main
+# Changesets collects all pending entries into one Release packages PR
+# Version bumps are based on the highest severity across the pending changesets
+# Merge the Release packages PR to publish
 ```
 
 ## Best Practices
@@ -183,56 +175,59 @@ pnpm release
   - **major**: Breaking changes
 - Commit changesets with your code changes
 - Group related changes in one changeset when appropriate
+- Review the generated `Release packages` PR instead of editing versions by hand
 
 ### ❌ Don't:
-- Don't manually edit `package.json` versions
+- Don't manually edit published package versions
 - Don't create changesets for internal/dev-only changes
-- Don't forget to run `pnpm version` before releasing
+- Don't bypass the generated release PR for normal releases
 - Don't skip changesets thinking "I'll do it later"
 
-## Manual Version Bump (Emergency)
+## Local Commands
 
-If you need to manually bump versions without changesets:
+Useful local commands while working with the automated flow:
 
 ```bash
-# Bump all linked packages
-pnpm -r --filter "@zebric/*" version 0.1.2
-```
+# Add a new changeset
+pnpm changeset
 
-But **prefer using changesets** for consistency!
+# Preview whether pending changesets exist
+pnpm changeset status
+
+# Verify all published package versions are aligned
+pnpm release:check
+```
 
 ## CI/CD Integration
 
-For automated releases in GitHub Actions:
+The GitHub Actions release workflow runs on pushes to `main` and uses `changesets/action`:
 
 ```yaml
 name: Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
           version: 10.30.0
-      - uses: actions/setup-node@v3
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: 'https://registry.npmjs.org'
-
-      - run: pnpm install
-      - run: pnpm build
-      - run: pnpm test
-
       - name: Create Release Pull Request or Publish
         uses: changesets/action@v1
         with:
+          version: pnpm version
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -240,14 +235,14 @@ jobs:
 ```
 
 This will:
-1. Create a "Version Packages" PR with all pending changesets
+1. Create a `Release packages` PR with all pending changesets
 2. When you merge that PR, it automatically publishes to npm
 
 ## Troubleshooting
 
 ### "No changesets found"
 
-You haven't created any changesets yet. Run `pnpm changeset` first.
+There are no unreleased package changes queued. Run `pnpm changeset` in the PR that changes a published package.
 
 ### "Package not found on npm"
 
@@ -255,11 +250,10 @@ Make sure `publishConfig.access: "public"` is set in package.json for scoped pac
 
 ### Versions out of sync
 
-If packages get out of sync, you can reset them:
+Run:
 
 ```bash
-# Manually set all to same version
-pnpm -r --filter "@zebric/*" version 0.1.1
+pnpm release:check
 ```
 
 ## Learn More
@@ -270,4 +264,4 @@ pnpm -r --filter "@zebric/*" version 0.1.1
 
 ---
 
-**Summary**: Instead of manually editing versions, just run `pnpm changeset` after each change, then `pnpm version` when ready to release. Changesets handles everything else!
+**Summary**: Add a changeset in each release-worthy PR, merge to `main`, review the generated `Release packages` PR, and let GitHub Actions publish after that PR is merged.

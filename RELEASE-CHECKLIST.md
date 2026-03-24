@@ -71,7 +71,6 @@ Pre-release verification checklist for the current monorepo layout and CI pipeli
 ## Package And CLI Validation
 
 - [ ] Package metadata is current
-  - [ ] Root version is correct in `package.json`
   - [ ] Published package versions are correct in each package `package.json`
   - [ ] `repository`, `license`, and `files` fields are correct for publishable packages
   ```bash
@@ -149,5 +148,6 @@ Pre-release verification checklist for the current monorepo layout and CI pipeli
 - [ ] `README.md` reflects current package names and commands
 - [ ] `CHANGELOG.md` has release notes for the version being shipped
 - [ ] Docs navigation and links work in the built docs site
-- [ ] Release tag matches the version being published
+- [ ] A "Release packages" PR was created from pending changesets
+- [ ] The release PR version bumps and changelog entries look correct before merge
 - [ ] NPM token and GitHub release permissions are available before tagging
