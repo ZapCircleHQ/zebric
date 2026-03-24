@@ -38,6 +38,8 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
+    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",

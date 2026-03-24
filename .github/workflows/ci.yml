@@ -93,6 +93,7 @@ jobs:
           pnpm --filter @zebric/runtime-core build
           pnpm --filter @zebric/runtime-hono build
           pnpm --filter @zebric/notifications build
+          pnpm --filter @zebric/observability build
           pnpm --filter @zebric/runtime-worker build
 
       - name: Run tests
