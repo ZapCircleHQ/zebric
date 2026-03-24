@@ -37,6 +37,7 @@ export class WorkflowManager extends EventEmitter {
       retryDelay: options.retryDelay,
       maxRetries: options.maxRetries,
       jobTimeout: options.jobTimeout,
+      logger: options.logger,
     })
 
     // Initialize executor
@@ -175,7 +176,16 @@ export class WorkflowManager extends EventEmitter {
     const normalizedData = this.normalizeEntityEventData(data)
     const depth = options?.depth ?? 0
     if (depth > this.maxEntityTriggerDepth) {
-      console.warn(`Skipping entity trigger for ${entity}.${event}: exceeded propagation depth (${depth})`)
+      if (this.logger) {
+        this.logger.warn('Skipping entity trigger because propagation depth was exceeded', {
+          entity,
+          event,
+          depth,
+          maxDepth: this.maxEntityTriggerDepth,
+        })
+      } else {
+        console.warn(`Skipping entity trigger for ${entity}.${event}: exceeded propagation depth (${depth})`)
+      }
       return []
     }
 

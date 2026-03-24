@@ -5,6 +5,7 @@
  */
 
 import { EventEmitter } from 'node:events'
+import type { Logger } from '@zebric/observability'
 import type { WorkflowJob, WorkflowContext, Workflow } from './types.js'
 
 export interface WorkflowQueueOptions {
@@ -12,6 +13,7 @@ export interface WorkflowQueueOptions {
   retryDelay?: number // Delay between retries in ms (default: 1000)
   maxRetries?: number // Default max retries (default: 3)
   jobTimeout?: number // Default job timeout in ms (default: 30000)
+  logger?: Logger
 }
 
 export interface EnqueueOptions {
@@ -29,12 +31,14 @@ export class WorkflowQueue extends EventEmitter {
   private readonly maxConcurrent: number
   private readonly retryDelay: number
   private readonly defaultMaxRetries: number
+  private readonly logger?: Logger
 
   constructor(options: WorkflowQueueOptions = {}) {
     super()
     this.maxConcurrent = options.maxConcurrent || 10
     this.retryDelay = options.retryDelay || 1000
     this.defaultMaxRetries = options.maxRetries || 3
+    this.logger = options.logger
   }
 
   /**
@@ -326,9 +330,23 @@ export class WorkflowQueue extends EventEmitter {
 
     if (job.attempts < maxRetries) {
       // Retry the job
-      console.log(
-        `⚠️  Job ${job.id} failed (attempt ${job.attempts}/${maxRetries}), retrying in ${this.retryDelay}ms...`
-      )
+      if (this.logger) {
+        this.logger.warn('Workflow job failed and will be retried', {
+          workflowName: job.workflowName,
+          jobId: job.id,
+          attempt: job.attempts,
+          maxRetries,
+          retryDelayMs: this.retryDelay,
+          executionId: job.context.trace?.executionId,
+          correlationId: job.context.trace?.correlationId,
+          requestId: job.context.trace?.requestId,
+          error: error.message,
+        })
+      } else {
+        console.log(
+          `⚠️  Job ${job.id} failed (attempt ${job.attempts}/${maxRetries}), retrying in ${this.retryDelay}ms...`
+        )
+      }
 
       job.status = 'pending'
       job.error = error.message
@@ -362,7 +380,14 @@ export class WorkflowQueue extends EventEmitter {
    * Shutdown the queue gracefully
    */
   async shutdown(timeoutMs: number = 30000): Promise<void> {
-    console.log('🛑 Shutting down workflow queue...')
+    if (this.logger) {
+      this.logger.info('Shutting down workflow queue', {
+        runningJobs: this.runningJobs.size,
+        timeoutMs,
+      })
+    } else {
+      console.log('🛑 Shutting down workflow queue...')
+    }
 
     // Stop accepting new jobs
     this.pendingQueue = []
@@ -371,12 +396,23 @@ export class WorkflowQueue extends EventEmitter {
     const startTime = Date.now()
     while (this.runningJobs.size > 0) {
       if (Date.now() - startTime > timeoutMs) {
-        console.warn(`⚠️  Timeout waiting for ${this.runningJobs.size} jobs to complete`)
+        if (this.logger) {
+          this.logger.warn('Timed out waiting for workflow jobs to complete during shutdown', {
+            runningJobs: this.runningJobs.size,
+            timeoutMs,
+          })
+        } else {
+          console.warn(`⚠️  Timeout waiting for ${this.runningJobs.size} jobs to complete`)
+        }
         break
       }
       await new Promise((resolve) => setTimeout(resolve, 100))
     }
 
-    console.log('✅ Workflow queue shut down')
+    if (this.logger) {
+      this.logger.info('Workflow queue shut down')
+    } else {
+      console.log('✅ Workflow queue shut down')
+    }
   }
 }

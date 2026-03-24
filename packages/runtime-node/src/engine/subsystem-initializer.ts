@@ -218,6 +218,9 @@ export class SubsystemInitializer {
       maxPayloadSize: parseInt(process.env.WORKFLOW_MAX_PAYLOAD_SIZE || String(10 * 1024 * 1024)),
       retries: 3,
       circuitBreakerThreshold: 5,
+      logger: this.logger.child({
+        operation: 'workflow-http-client',
+      }),
     })
 
     // Initialize Workflow Manager
