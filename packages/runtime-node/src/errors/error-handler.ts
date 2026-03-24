@@ -6,11 +6,12 @@
 
 import { AppError } from './base-error.js'
 import { ErrorSanitizer } from '@zebric/runtime-core'
+import type { Logger } from '@zebric/observability'
 import type { Context } from 'hono'
 
 export interface ErrorHandlerOptions {
   sanitizer: ErrorSanitizer
-  logger?: any
+  logger?: Logger
   onError?: (error: Error, request: Request) => void | Promise<void>
 }
 
@@ -22,15 +23,16 @@ export class ErrorHandler {
    */
   async handle(error: Error, request: Request): Promise<Response> {
     const requestId = (request as any).requestId || request.headers.get('x-request-id') || 'unknown'
+    const correlationId = (request as any).traceId || request.headers.get('x-correlation-id') || undefined
 
     // Log the error
     if (this.options.sanitizer.shouldLog(error)) {
       const logContext = {
         requestId,
+        correlationId,
         method: request.method || (request as any).method,
         url: request.url || (request as any).url,
-        error: error.message,
-        stack: error.stack,
+        error,
       }
 
       if (error instanceof AppError && error.context) {
@@ -38,7 +40,7 @@ export class ErrorHandler {
       }
 
       if (this.options.logger) {
-        this.options.logger.error(logContext, 'Request error')
+        this.options.logger.error('Request error', logContext)
       } else {
         console.error('Request error:', logContext)
       }
@@ -49,7 +51,15 @@ export class ErrorHandler {
       try {
         await this.options.onError(error, request)
       } catch (err) {
-        console.error('Error in custom error handler:', err)
+        if (this.options.logger) {
+          this.options.logger.error('Error in custom error handler', {
+            requestId,
+            correlationId,
+            error: err,
+          })
+        } else {
+          console.error('Error in custom error handler:', err)
+        }
       }
     }
 

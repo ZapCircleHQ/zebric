@@ -5,6 +5,7 @@
  */
 
 import type { ServerType } from '@hono/node-server'
+import type { Logger } from '@zebric/observability'
 import type { Blueprint, EngineAPI } from '@zebric/runtime-core'
 import type { PluginRegistry } from './plugins/index.js'
 import type { BlueprintWatcher, ReloadServer } from './hot-reload/index.js'
@@ -24,7 +25,8 @@ import { EventEmitter } from 'node:events'
  */
 export function setupGracefulShutdown(
   stopFn: () => Promise<void>,
-  shutdownTimeout: number
+  shutdownTimeout: number,
+  logger?: Logger
 ): void {
   let isShuttingDown = false
 
@@ -32,11 +34,11 @@ export function setupGracefulShutdown(
     if (isShuttingDown) return
     isShuttingDown = true
 
-    console.log(`\n⚠️  Received ${signal}, starting graceful shutdown...`)
+    logger?.warn('Received shutdown signal, starting graceful shutdown', { signal })
 
     // Set a timeout to force shutdown if graceful shutdown takes too long
     const forceShutdownTimer = setTimeout(() => {
-      console.error('❌ Graceful shutdown timed out, forcing exit')
+      logger?.error('Graceful shutdown timed out, forcing exit')
       process.exit(1)
     }, shutdownTimeout)
 
@@ -45,7 +47,7 @@ export function setupGracefulShutdown(
       clearTimeout(forceShutdownTimer)
       process.exit(0)
     } catch (error) {
-      console.error('❌ Error during graceful shutdown:', error)
+      logger?.error('Error during graceful shutdown', { error })
       clearTimeout(forceShutdownTimer)
       process.exit(1)
     }
@@ -59,13 +61,16 @@ export function setupGracefulShutdown(
 
   // Handle uncaught exceptions
   process.on('uncaughtException', (error) => {
-    console.error('❌ Uncaught exception:', error)
+    logger?.error('Uncaught exception', { error })
     gracefulShutdown('uncaughtException')
   })
 
   // Handle unhandled promise rejections
   process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled rejection at:', promise, 'reason:', reason)
+    logger?.error('Unhandled rejection', {
+      promise,
+      error: reason,
+    })
     gracefulShutdown('unhandledRejection')
   })
 }
@@ -76,6 +81,7 @@ export interface HotReloadDeps {
   rendererInstance?: HTMLRenderer
   reloadCallback: (blueprint: Blueprint) => Promise<void>
   errorCallback: (error: Error) => void
+  logger?: Logger
 }
 
 export interface HotReloadResult {
@@ -92,6 +98,9 @@ export async function setupHotReload(deps: HotReloadDeps): Promise<HotReloadResu
   const reloadServer = new RSClass({
     server: deps.server as any,
     path: '/__reload',
+    logger: deps.logger?.child({
+      operation: 'hot-reload-websocket',
+    }),
   })
 
   // Inject reload script into HTML renderer
@@ -105,12 +114,13 @@ export async function setupHotReload(deps: HotReloadDeps): Promise<HotReloadResu
     blueprintPath: deps.blueprintPath,
     onReload: deps.reloadCallback,
     onError: deps.errorCallback,
+    logger: deps.logger,
   })
 
   // Start watching
   blueprintWatcher.start()
 
-  console.log('✅ Hot reload enabled')
+  deps.logger?.info('Hot reload enabled')
 
   return { watcher: blueprintWatcher, reloadServer }
 }
@@ -121,28 +131,32 @@ export async function setupHotReload(deps: HotReloadDeps): Promise<HotReloadResu
 export async function loadPlugins(
   blueprint: Blueprint,
   plugins: PluginRegistry,
-  engineAPI: EngineAPI
+  engineAPI: EngineAPI,
+  logger?: Logger
 ): Promise<void> {
   if (!blueprint.plugins || blueprint.plugins.length === 0) {
-    console.log('ℹ️  No plugins configured')
+    logger?.info('No plugins configured')
     return
   }
 
   for (const pluginDef of blueprint.plugins) {
     if (!pluginDef.enabled) {
-      console.log(`⏭️  Skipping disabled plugin: ${pluginDef.name}`)
+      logger?.info('Skipping disabled plugin', { pluginName: pluginDef.name })
       continue
     }
 
     try {
       await plugins.load(pluginDef.name, pluginDef, engineAPI)
     } catch (error) {
-      console.error(`Failed to load plugin ${pluginDef.name}:`, error)
+      logger?.error('Failed to load plugin during engine startup', {
+        pluginName: pluginDef.name,
+        error,
+      })
       // Continue loading other plugins
     }
   }
 
-  console.log(`✅ Loaded ${plugins.count()} plugins`)
+  logger?.info('Finished loading plugins', { pluginCount: plugins.count() })
 }
 
 export interface PluginAPIDeps {

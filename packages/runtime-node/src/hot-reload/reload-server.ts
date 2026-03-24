@@ -6,10 +6,12 @@
 
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { Server as HTTPServer } from 'node:http'
+import type { Logger } from '@zebric/observability'
 
 export interface ReloadServerOptions {
   server: HTTPServer
   path?: string
+  logger?: Logger
 }
 
 export interface ReloadEvent {
@@ -22,8 +24,10 @@ export interface ReloadEvent {
 export class ReloadServer {
   private wss: WebSocketServer
   private clients = new Set<WebSocket>()
+  private logger?: Logger
 
   constructor(options: ReloadServerOptions) {
+    this.logger = options.logger
     this.wss = new WebSocketServer({
       server: options.server,
       path: options.path || '/__reload',
@@ -31,7 +35,9 @@ export class ReloadServer {
 
     this.wss.on('connection', (ws) => {
       this.clients.add(ws)
-      console.log(`🔌 Live reload client connected (${this.clients.size} total)`)
+      this.logger?.info('Live reload client connected', {
+        clientCount: this.clients.size,
+      })
 
       // Send connected event
       this.sendToClient(ws, {
@@ -42,11 +48,13 @@ export class ReloadServer {
 
       ws.on('close', () => {
         this.clients.delete(ws)
-        console.log(`🔌 Live reload client disconnected (${this.clients.size} remaining)`)
+        this.logger?.info('Live reload client disconnected', {
+          clientCount: this.clients.size,
+        })
       })
 
       ws.on('error', (error) => {
-        console.error('WebSocket error:', error)
+        this.logger?.error('Live reload WebSocket error', { error })
         this.clients.delete(ws)
       })
     })
@@ -109,7 +117,7 @@ export class ReloadServer {
         if (error) {
           reject(error)
         } else {
-          console.log('🔌 Live reload server closed')
+          this.logger?.info('Live reload server closed')
           resolve()
         }
       })

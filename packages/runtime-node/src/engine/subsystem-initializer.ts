@@ -80,7 +80,9 @@ export class SubsystemInitializer {
 
     const config = this.blueprint.notifications
     this.notificationManager = new NotificationManager(config)
-    console.log(`✅ Notifications initialized (${this.notificationManager.listAdapters().join(', ')})`)
+    this.logger.info('Notifications initialized', {
+      adapters: this.notificationManager.listAdapters(),
+    })
     return this.notificationManager
   }
 
@@ -102,6 +104,9 @@ export class SubsystemInitializer {
       this.cache = new RedisCache({
         url: redisUrl,
         keyPrefix: this.config.cache?.keyPrefix,
+        logger: this.logger.child({
+          operation: 'redis-cache',
+        }),
       })
     } else if (cacheType === 'redis' && this.config.cache) {
       this.cache = new RedisCache({
@@ -110,6 +115,9 @@ export class SubsystemInitializer {
         password: this.config.cache.password,
         db: this.config.cache.db,
         keyPrefix: this.config.cache.keyPrefix,
+        logger: this.logger.child({
+          operation: 'redis-cache',
+        }),
       })
     } else {
       // Default to in-memory cache for development
@@ -137,7 +145,7 @@ export class SubsystemInitializer {
 
     this.queryExecutor = new QueryExecutor(this.database, undefined, this.metrics)
 
-    console.log(`✅ Connected to SQLite database: ${dbPath}`)
+    this.logger.info('Connected to SQLite database', { dbPath })
 
     return {
       database: this.database,
@@ -195,7 +203,11 @@ export class SubsystemInitializer {
 
     const roles = this.permissionManager.getAllRoles()
     const roleInfo = roles.length > 0 ? ` with roles: ${roles.join(', ')}` : ''
-    console.log(`✅ Authentication initialized (${this.blueprint.auth?.providers?.join(', ') || 'email'})${roleInfo}`)
+    this.logger.info('Authentication initialized', {
+      providers: this.blueprint.auth?.providers?.join(', ') || 'email',
+      roles,
+      roleInfo,
+    })
 
     return {
       authProvider: this.authProvider,
@@ -247,9 +259,13 @@ export class SubsystemInitializer {
       for (const workflow of this.blueprint.workflows) {
         this.workflowManager.registerWorkflow(workflow as any)
       }
-      console.log(`✅ Workflows initialized (${this.blueprint.workflows.length} workflows registered)`)
+      this.logger.info('Workflows initialized', {
+        workflowCount: this.blueprint.workflows.length,
+      })
     } else {
-      console.log('✅ Workflows initialized (no workflows configured)')
+      this.logger.info('Workflows initialized', {
+        workflowCount: 0,
+      })
     }
 
     // Set up workflow event handlers

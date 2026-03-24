@@ -105,6 +105,9 @@ export class ZebricEngine extends EventEmitter {
     // Initialize error handler
     this.errorHandler = new ErrorHandler({
       sanitizer: this.errorSanitizer,
+      logger: this.logger.child({
+        operation: 'error-handler',
+      }),
     })
   }
 
@@ -170,7 +173,14 @@ export class ZebricEngine extends EventEmitter {
       })
 
       // 10. Load Plugins (after core systems are initialized)
-      await loadPluginsFn(this.blueprint, this.plugins, this.getEngineAPI())
+      await loadPluginsFn(
+        this.blueprint,
+        this.plugins,
+        this.getEngineAPI(),
+        this.logger.child({
+          operation: 'plugin-loading',
+        })
+      )
 
       // 11. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
@@ -255,11 +265,14 @@ export class ZebricEngine extends EventEmitter {
             await this.reload(blueprint)
           },
           errorCallback: (error) => {
-            console.error('Blueprint watcher error:', error)
+            this.logger.error('Blueprint watcher error', { error })
             if (this.reloadServer) {
               this.reloadServer.notifyError(error.message)
             }
           },
+          logger: this.logger.child({
+            operation: 'hot-reload',
+          }),
         })
         this.blueprintWatcher = result.watcher
         this.reloadServer = result.reloadServer
@@ -269,7 +282,13 @@ export class ZebricEngine extends EventEmitter {
       this.state.startedAt = new Date()
 
       // Setup graceful shutdown handlers
-      setupGracefulShutdown(() => this.stop(), this.shutdownTimeout)
+      setupGracefulShutdown(
+        () => this.stop(),
+        this.shutdownTimeout,
+        this.logger.child({
+          operation: 'shutdown',
+        })
+      )
 
       this.logger.info('Engine ready', {
         serverUrl: `http://${this.config.host || 'localhost'}:${this.config.port}`,
@@ -282,12 +301,13 @@ export class ZebricEngine extends EventEmitter {
           : null
         if (address && typeof address === 'object') {
           const adminHost = address.address === '::' ? 'localhost' : address.address
-          console.log(`📊 Admin: http://${adminHost}:${address.port}`)
+          this.logger.info('Admin server ready', {
+            adminUrl: `http://${adminHost}:${address.port}`,
+          })
         }
       }
-      console.log()
     } catch (error) {
-      console.error('❌ Failed to start engine:', error)
+      this.logger.error('Failed to start engine', { error })
       this.state.status = 'stopped'
       throw error
     }
@@ -303,7 +323,7 @@ export class ZebricEngine extends EventEmitter {
     }
     this.isShuttingDown = true
 
-    console.log('👋 Stopping Zebric Engine...')
+    this.logger.info('Stopping Zebric engine')
 
     this.state.status = 'stopping'
 
@@ -328,14 +348,16 @@ export class ZebricEngine extends EventEmitter {
     }
 
     this.state.status = 'stopped'
-    console.log('✅ Engine stopped')
+    this.logger.info('Engine stopped')
   }
 
   /**
    * Reload Blueprint (hot reload)
    */
   async reload(newBlueprint?: Blueprint): Promise<void> {
-    console.log('🔄 Reloading Blueprint...')
+    this.logger.info('Reloading blueprint', {
+      blueprintPath: this.config.blueprintPath,
+    })
 
     this.state.status = 'reloading'
 
@@ -356,7 +378,7 @@ export class ZebricEngine extends EventEmitter {
         try {
           schemaDiff = await this.database.applySchemaDiff(schemaDiff, newBlueprint)
         } catch (error) {
-          console.error('Failed to apply schema changes automatically:', error)
+          this.logger.error('Failed to apply schema changes automatically', { error })
         }
 
         const changeSummary = [
@@ -370,10 +392,15 @@ export class ZebricEngine extends EventEmitter {
           .join(', ')
 
         if (schemaDiff.hasChanges) {
-          const prefix = schemaDiff.hasBreakingChanges
-            ? '⚠️  Schema changes require manual migration'
-            : 'ℹ️  Schema changes pending'
-          console.warn(`${prefix}: ${changeSummary || 'no summary available'}`)
+          this.logger.warn(
+            schemaDiff.hasBreakingChanges
+              ? 'Schema changes require manual migration'
+              : 'Schema changes pending',
+            {
+              changeSummary: changeSummary || 'no summary available',
+              hasBreakingChanges: schemaDiff.hasBreakingChanges,
+            }
+          )
           this.pendingSchemaDiff = schemaDiff
           this.state.pendingSchemaDiff = schemaDiff
         } else {
@@ -425,9 +452,9 @@ export class ZebricEngine extends EventEmitter {
       })
 
       this.state.status = 'running'
-      console.log('✅ Reload complete')
+      this.logger.info('Blueprint reload complete')
     } catch (error) {
-      console.error('❌ Reload failed:', error)
+      this.logger.error('Blueprint reload failed', { error })
 
       // Notify clients of error
       if (this.reloadServer) {
@@ -507,6 +534,9 @@ export class ZebricEngine extends EventEmitter {
     // Validate version compatibility
     this.loader.validateVersion(this.blueprint, ENGINE_VERSION)
 
-    console.log(`✅ Loaded Blueprint: ${this.blueprint.project.name} v${this.blueprint.project.version}`)
+    this.logger.info('Loaded blueprint', {
+      projectName: this.blueprint.project.name,
+      projectVersion: this.blueprint.project.version,
+    })
   }
 }
