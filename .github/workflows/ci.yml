@@ -242,7 +242,7 @@ jobs:
       - name: Link check built docs
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --verbose --no-progress --exclude-mail packages/docs/dist/**/*.html
+          args: --verbose --no-progress packages/docs/dist/**/*.html
 
   all-checks:
     name: All Checks Passed
