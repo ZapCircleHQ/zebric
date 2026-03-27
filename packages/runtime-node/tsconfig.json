@@ -16,8 +16,7 @@
 
     // Strict mode
     "strict": true,
-    // TODO: Re-enable once we fix all array access patterns
-    // "noUncheckedIndexedAccess": true,
+    "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true,

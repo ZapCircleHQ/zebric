@@ -6,6 +6,7 @@
 
 import { watch, type FSWatcher } from 'chokidar'
 import { readFile } from 'node:fs/promises'
+import type { Logger } from '@zebric/observability'
 import { BlueprintParser, detectFormat } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 
@@ -13,6 +14,7 @@ export interface BlueprintWatcherOptions {
   blueprintPath: string
   onReload: (blueprint: Blueprint) => Promise<void>
   onError?: (error: Error) => void
+  logger?: Logger
 }
 
 export class BlueprintWatcher {
@@ -25,7 +27,9 @@ export class BlueprintWatcher {
    * Start watching blueprint file for changes
    */
   start(): void {
-    console.log(`👀 Watching for Blueprint changes: ${this.options.blueprintPath}`)
+    this.options.logger?.info('Watching blueprint for changes', {
+      blueprintPath: this.options.blueprintPath,
+    })
 
     this.watcher = watch(this.options.blueprintPath, {
       persistent: true,
@@ -38,13 +42,12 @@ export class BlueprintWatcher {
 
     this.watcher.on('change', async (path) => {
       if (this.isReloading) {
-        console.log('⏳ Reload already in progress, skipping...')
+        this.options.logger?.info('Blueprint reload already in progress, skipping duplicate change event')
         return
       }
 
       this.isReloading = true
-      console.log(`\n📝 Blueprint changed: ${path}`)
-      console.log('🔄 Reloading...')
+      this.options.logger?.info('Blueprint changed, reloading', { path })
 
       try {
         const startTime = Date.now()
@@ -56,9 +59,9 @@ export class BlueprintWatcher {
         await this.options.onReload(blueprint)
 
         const duration = Date.now() - startTime
-        console.log(`✅ Reload complete in ${duration}ms\n`)
+        this.options.logger?.info('Blueprint reload complete', { durationMs: duration })
       } catch (error) {
-        console.error('❌ Failed to reload Blueprint:', error)
+        this.options.logger?.error('Failed to reload blueprint', { error })
         if (this.options.onError) {
           this.options.onError(error as Error)
         }
@@ -68,7 +71,7 @@ export class BlueprintWatcher {
     })
 
     this.watcher.on('error', (error) => {
-      console.error('❌ Blueprint watcher error:', error)
+      this.options.logger?.error('Blueprint watcher error', { error })
       if (this.options.onError) {
         this.options.onError(error)
       }
@@ -82,7 +85,7 @@ export class BlueprintWatcher {
     if (this.watcher) {
       await this.watcher.close()
       this.watcher = null
-      console.log('👋 Stopped watching Blueprint')
+      this.options.logger?.info('Stopped watching blueprint')
     }
   }
 

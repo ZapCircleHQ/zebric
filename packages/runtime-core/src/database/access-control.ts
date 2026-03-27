@@ -303,7 +303,7 @@ export class AccessControl {
     const filtered: Record<string, any> = {}
 
     for (const fieldName of accessibleFields) {
-      if (data.hasOwnProperty(fieldName)) {
+      if (Object.prototype.hasOwnProperty.call(data, fieldName)) {
         filtered[fieldName] = data[fieldName]
       }
     }

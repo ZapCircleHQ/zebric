@@ -9,6 +9,7 @@
  */
 
 import type { Blueprint } from '@zebric/runtime-core'
+import type { Logger } from '@zebric/observability'
 import type { EngineConfig } from '../types/index.js'
 import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
@@ -27,6 +28,7 @@ export interface SubsystemInitializerDependencies {
   plugins: PluginRegistry
   auditLogger: AuditLogger
   errorSanitizer: ErrorSanitizer
+  logger: Logger
 }
 
 export interface InitializedSubsystems {
@@ -48,6 +50,7 @@ export class SubsystemInitializer {
   private config: EngineConfig
   private metrics: MetricsRegistry
   private plugins: PluginRegistry
+  private logger: Logger
 
   // Initialized subsystems
   private database?: DatabaseConnection
@@ -64,6 +67,7 @@ export class SubsystemInitializer {
     this.config = deps.config
     this.metrics = deps.metrics
     this.plugins = deps.plugins
+    this.logger = deps.logger
   }
 
   /**
@@ -76,7 +80,9 @@ export class SubsystemInitializer {
 
     const config = this.blueprint.notifications
     this.notificationManager = new NotificationManager(config)
-    console.log(`✅ Notifications initialized (${this.notificationManager.listAdapters().join(', ')})`)
+    this.logger.info('Notifications initialized', {
+      adapters: this.notificationManager.listAdapters(),
+    })
     return this.notificationManager
   }
 
@@ -98,6 +104,9 @@ export class SubsystemInitializer {
       this.cache = new RedisCache({
         url: redisUrl,
         keyPrefix: this.config.cache?.keyPrefix,
+        logger: this.logger.child({
+          operation: 'redis-cache',
+        }),
       })
     } else if (cacheType === 'redis' && this.config.cache) {
       this.cache = new RedisCache({
@@ -106,6 +115,9 @@ export class SubsystemInitializer {
         password: this.config.cache.password,
         db: this.config.cache.db,
         keyPrefix: this.config.cache.keyPrefix,
+        logger: this.logger.child({
+          operation: 'redis-cache',
+        }),
       })
     } else {
       // Default to in-memory cache for development
@@ -133,7 +145,7 @@ export class SubsystemInitializer {
 
     this.queryExecutor = new QueryExecutor(this.database, undefined, this.metrics)
 
-    console.log(`✅ Connected to SQLite database: ${dbPath}`)
+    this.logger.info('Connected to SQLite database', { dbPath })
 
     return {
       database: this.database,
@@ -151,7 +163,7 @@ export class SubsystemInitializer {
   }> {
     const dbPath = this.config.dev?.dbPath || './data/app.db'
     const host = this.config.host || 'localhost'
-    const port = this.config.port || 3000
+    const port = this.config.port ?? 3000
     const baseURL = `http://${host}:${port}`
 
     // Create permission manager from Blueprint
@@ -191,7 +203,11 @@ export class SubsystemInitializer {
 
     const roles = this.permissionManager.getAllRoles()
     const roleInfo = roles.length > 0 ? ` with roles: ${roles.join(', ')}` : ''
-    console.log(`✅ Authentication initialized (${this.blueprint.auth?.providers?.join(', ') || 'email'})${roleInfo}`)
+    this.logger.info('Authentication initialized', {
+      providers: this.blueprint.auth?.providers?.join(', ') || 'email',
+      roles,
+      roleInfo,
+    })
 
     return {
       authProvider: this.authProvider,
@@ -214,6 +230,9 @@ export class SubsystemInitializer {
       maxPayloadSize: parseInt(process.env.WORKFLOW_MAX_PAYLOAD_SIZE || String(10 * 1024 * 1024)),
       retries: 3,
       circuitBreakerThreshold: 5,
+      logger: this.logger.child({
+        operation: 'workflow-http-client',
+      }),
     })
 
     // Initialize Workflow Manager
@@ -226,6 +245,9 @@ export class SubsystemInitializer {
       pluginRegistry: this.plugins,
       httpClient,
       notificationService: this.notificationManager,
+      logger: this.logger.child({
+        operation: 'workflow-manager',
+      }),
       maxConcurrent: 10,
       retryDelay: 1000,
       maxRetries: 3,
@@ -237,18 +259,45 @@ export class SubsystemInitializer {
       for (const workflow of this.blueprint.workflows) {
         this.workflowManager.registerWorkflow(workflow as any)
       }
-      console.log(`✅ Workflows initialized (${this.blueprint.workflows.length} workflows registered)`)
+      this.logger.info('Workflows initialized', {
+        workflowCount: this.blueprint.workflows.length,
+      })
     } else {
-      console.log('✅ Workflows initialized (no workflows configured)')
+      this.logger.info('Workflows initialized', {
+        workflowCount: 0,
+      })
     }
 
     // Set up workflow event handlers
+    this.workflowManager.on('job:started', (job) => {
+      this.logger.info('Workflow job started', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+      })
+    })
+
     this.workflowManager.on('job:completed', (job) => {
-      console.log(`✅ Workflow job completed: ${job.workflowName} (${job.id})`)
+      this.logger.info('Workflow job completed', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+      })
     })
 
     this.workflowManager.on('job:failed', (job) => {
-      console.error(`❌ Workflow job failed: ${job.workflowName} (${job.id}) - ${job.error}`)
+      this.logger.error('Workflow job failed', {
+        workflowName: job.workflowName,
+        jobId: job.id,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        executionId: job.context.trace?.executionId,
+        error: job.error,
+      })
     })
 
     return this.workflowManager

@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-worker",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zebric Runtime - CloudFlare Workers Adapter",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,8 +17,13 @@
     "LICENSE"
   ],
   "scripts": {
+    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
+    "pretest:smoke": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
     "build": "tsc",
     "test": "vitest run",
+    "test:smoke": "vitest run tests/integration/",
+    "test:coverage": "vitest run --coverage",
     "dev": "tsc --watch"
   },
   "keywords": [
@@ -40,6 +45,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20241127.0",
     "@types/better-sqlite3": "^7.6.9",
+    "@vitest/coverage-v8": "^1.6.1",
     "better-sqlite3": "^9.6.0",
     "miniflare": "^4.20251105.0",
     "typescript": "^5.7.2",

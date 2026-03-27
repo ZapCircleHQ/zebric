@@ -70,14 +70,19 @@ describe('ErrorHandler', () => {
     const onError = vi.fn(async () => {
       throw new Error('handler fail')
     })
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const handler = new ErrorHandler({ sanitizer: sanitizer as any, onError })
+    const logger = { error: vi.fn() }
+    const handler = new ErrorHandler({ sanitizer: sanitizer as any, onError, logger: logger as any })
 
     await handler.handle(new Error('boom'), new Request('http://example.com/'))
 
     expect(onError).toHaveBeenCalled()
-    expect(consoleSpy).toHaveBeenCalled()
-    consoleSpy.mockRestore()
+    expect(logger.error).toHaveBeenCalledWith(
+      'Error in custom error handler',
+      expect.objectContaining({
+        requestId: 'unknown',
+        error: expect.any(Error),
+      })
+    )
   })
 
   it('adapts to Hono onError hook via toHonoHandler', async () => {

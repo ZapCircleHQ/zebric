@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Context } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
+import type { Logger } from '@zebric/observability'
 import type { Blueprint } from '@zebric/runtime-core'
 import type { EngineState } from '../types/index.js'
 import type { PluginRegistry } from '../plugins/index.js'
@@ -18,6 +19,7 @@ export interface AdminServerDependencies {
   pendingSchemaDiff: SchemaDiffResult | null
   workflowManager?: WorkflowManager
   getHealthStatus?: () => Promise<any>
+  logger: Logger
   host?: string
   port?: number
 }
@@ -33,6 +35,7 @@ export class AdminServer {
   private pendingSchemaDiff: SchemaDiffResult | null
   private workflowManager?: WorkflowManager
   private getHealthStatusFn?: () => Promise<any>
+  private logger: Logger
   private host: string
   private port: number
 
@@ -45,6 +48,7 @@ export class AdminServer {
     this.pendingSchemaDiff = deps.pendingSchemaDiff
     this.workflowManager = deps.workflowManager
     this.getHealthStatusFn = deps.getHealthStatus
+    this.logger = deps.logger
     this.host = deps.host || '127.0.0.1'
     this.port = deps.port !== undefined ? deps.port : 3030
   }
@@ -58,6 +62,7 @@ export class AdminServer {
     if (updates.pendingSchemaDiff !== undefined) this.pendingSchemaDiff = updates.pendingSchemaDiff
     if (updates.workflowManager !== undefined) this.workflowManager = updates.workflowManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
+    if (updates.logger) this.logger = updates.logger
   }
 
   async start(): Promise<ServerType> {
@@ -69,7 +74,10 @@ export class AdminServer {
       hostname: this.host,
       port: this.port
     }, () => {
-      console.log(`📊 Admin Server listening on ${this.host}:${this.port}`)
+      this.logger.info('Admin server listening', {
+        host: this.host,
+        port: this.port,
+      })
     })
 
     return this.server
@@ -94,7 +102,7 @@ export class AdminServer {
     this.app.get('/', () => {
       return Response.json({
         name: 'Zebric Admin Server',
-        version: '0.1.1',
+        version: this.state.version,
         endpoints: {
           blueprint: '/blueprint',
           state: '/state',

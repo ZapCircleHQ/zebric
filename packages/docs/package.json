@@ -2,11 +2,12 @@
   "name": "zebric-docs",
   "type": "module",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
+    "check": "astro check",
     "preview": "astro preview",
     "astro": "astro"
   },
@@ -14,5 +15,9 @@
     "@astrojs/starlight": "^0.37.2",
     "astro": "^5.6.1",
     "sharp": "^0.34.2"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.4",
+    "typescript": "^5.4.5"
   }
 }

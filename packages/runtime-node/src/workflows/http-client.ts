@@ -10,6 +10,7 @@
  */
 
 import type { HttpClient } from './workflow-executor.js'
+import type { Logger } from '@zebric/observability'
 
 export interface HttpClientConfig {
   /** Request timeout in milliseconds (default: 30000) */
@@ -28,6 +29,8 @@ export interface HttpClientConfig {
   circuitBreakerThreshold?: number
   /** Circuit breaker reset timeout in milliseconds */
   circuitBreakerResetTimeout?: number
+  /** Optional structured logger */
+  logger?: Logger
 }
 
 interface CircuitBreakerState {
@@ -36,11 +39,24 @@ interface CircuitBreakerState {
   state: 'closed' | 'open' | 'half-open'
 }
 
+interface ResolvedHttpClientConfig {
+  timeout: number
+  maxPayloadSize: number
+  retries: number
+  retryDelay: number
+  maxRetryDelay: number
+  backoffMultiplier: number
+  circuitBreakerThreshold: number
+  circuitBreakerResetTimeout: number
+}
+
 export class ProductionHttpClient implements HttpClient {
-  private config: Required<HttpClientConfig>
+  private config: ResolvedHttpClientConfig
   private circuitBreakers: Map<string, CircuitBreakerState> = new Map()
+  private logger?: Logger
 
   constructor(config: HttpClientConfig = {}) {
+    this.logger = config.logger
     this.config = {
       timeout: config.timeout ?? 30000,
       maxPayloadSize: config.maxPayloadSize ?? 10 * 1024 * 1024, // 10MB
@@ -104,11 +120,14 @@ export class ProductionHttpClient implements HttpClient {
           this.config.maxRetryDelay
         )
 
-        console.warn(
-          `HTTP request failed (attempt ${attempt + 1}/${this.config.retries + 1}), ` +
-          `retrying in ${delay}ms:`,
-          lastError.message
-        )
+        this.logger?.warn('Workflow HTTP request failed and will be retried', {
+          url,
+          method: options.method,
+          attempt: attempt + 1,
+          maxAttempts: this.config.retries + 1,
+          retryDelayMs: delay,
+          error: lastError.message,
+        })
 
         await this.sleep(delay)
       }
@@ -151,7 +170,11 @@ export class ProductionHttpClient implements HttpClient {
         requestOptions.body = JSON.stringify(options.body)
       }
 
-      console.debug(`[HTTP] ${options.method} ${url} (attempt ${attempt + 1})`)
+      this.logger?.debug('Workflow HTTP request attempt', {
+        url,
+        method: options.method,
+        attempt: attempt + 1,
+      })
 
       const response = await fetch(url, requestOptions)
 
@@ -249,7 +272,9 @@ export class ProductionHttpClient implements HttpClient {
       // Check if we should transition to half-open
       if (now - breaker.lastFailureTime >= this.config.circuitBreakerResetTimeout) {
         breaker.state = 'half-open'
-        console.info(`Circuit breaker for ${hostname} transitioned to half-open`)
+        this.logger?.info('Workflow HTTP circuit breaker transitioned to half-open', {
+          hostname,
+        })
       } else {
         throw new Error(
           `Circuit breaker open for ${hostname}. ` +
@@ -274,7 +299,9 @@ export class ProductionHttpClient implements HttpClient {
       // Success in half-open state closes the circuit
       breaker.state = 'closed'
       breaker.failures = 0
-      console.info(`Circuit breaker for ${hostname} closed after successful request`)
+      this.logger?.info('Workflow HTTP circuit breaker closed after successful request', {
+        hostname,
+      })
     } else if (breaker.state === 'closed' && breaker.failures > 0) {
       // Reset failure count on success
       breaker.failures = 0
@@ -296,10 +323,11 @@ export class ProductionHttpClient implements HttpClient {
 
     if (breaker.failures >= this.config.circuitBreakerThreshold) {
       breaker.state = 'open'
-      console.warn(
-        `Circuit breaker opened for ${hostname} after ${breaker.failures} failures. ` +
-        `Will retry after ${this.config.circuitBreakerResetTimeout}ms`
-      )
+      this.logger?.warn('Workflow HTTP circuit breaker opened', {
+        hostname,
+        failures: breaker.failures,
+        resetTimeoutMs: this.config.circuitBreakerResetTimeout,
+      })
     }
 
     this.circuitBreakers.set(hostname, breaker)

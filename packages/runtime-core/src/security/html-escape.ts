@@ -14,7 +14,7 @@ const HTML_ENTITIES: Record<string, string> = {
   '/': '&#x2F;',
 }
 
-const HTML_ENTITIES_REGEX = /[&<>"'\/]/g
+const HTML_ENTITIES_REGEX = /[&<>"'/]/g
 
 /**
  * Escape HTML entities to prevent XSS

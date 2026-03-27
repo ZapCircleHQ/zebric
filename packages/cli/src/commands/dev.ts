@@ -18,12 +18,15 @@ export async function devCommand(options: DevOptions = {}): Promise<void> {
   const blueprintPath = options.blueprint
     ? resolve(process.cwd(), options.blueprint)
     : resolve(process.cwd(), 'blueprint.json')
+  const port = options.port ?? 3000
+  const adminPort = port === 0 ? 0 : port + 30
 
   const engine = new ZebricEngine({
     blueprintPath,
-    port: options.port || 3000,
+    port,
     host: options.host || 'localhost',
     dev: {
+      adminPort,
       hotReload: true,
       seed: options.seed,
       logLevel: 'debug',

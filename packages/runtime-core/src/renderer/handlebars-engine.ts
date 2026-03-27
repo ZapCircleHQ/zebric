@@ -88,11 +88,11 @@ export function createHandlebarsEngine(handlebars?: any): HandlebarsEngine {
   engine.registerHelper('lte', (a: number, b: number) => a <= b)
   engine.registerHelper('and', (...args: any[]) => {
     // Handlebars passes options as last argument
-    const options = args.pop()
+    args.pop()
     return args.every(Boolean)
   })
   engine.registerHelper('or', (...args: any[]) => {
-    const options = args.pop()
+    args.pop()
     return args.some(Boolean)
   })
   engine.registerHelper('not', (value: any) => !value)

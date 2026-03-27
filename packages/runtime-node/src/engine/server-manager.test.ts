@@ -1,8 +1,12 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
 import path from 'node:path'
+import { createLogger } from '@zebric/observability'
+import type { LogRecord } from '@zebric/observability'
 import { ServerManager } from './server-manager.js'
 import { initApiKeys } from './server-security.js'
+import { WorkflowManager } from '../workflows/workflow-manager.js'
+import type { WorkflowJob, Workflow } from '../workflows/types.js'
 
 /**
  * Integration tests for ServerManager routes and middleware.
@@ -47,9 +51,12 @@ function stubDeps(overrides: Record<string, any> = {}) {
       endSpan: () => {},
       endTrace: () => {},
     },
+    logger: createLogger({
+      transport: { write: () => {} },
+    }),
     errorHandler: {
       toHonoHandler: () => (err: any, c: any) => {
-        return c.json({ error: 'Internal error' }, 500)
+        return c.json({ error: 'Internal error', details: err?.message ?? String(err) }, 500)
       },
     },
     pendingSchemaDiff: null,
@@ -470,5 +477,116 @@ describe('security: workflow body field filtering', () => {
     expect(capturedData).toHaveLength(1)
     expect(capturedData[0].payload.foo).toBe('bar')
     expect(capturedData[0].payload.baz).toBe(123)
+  })
+})
+
+describe('observability: request to workflow correlation', () => {
+  it('propagates correlation and request ids from the HTTP request into workflow execution logs', async () => {
+    const records: LogRecord[] = []
+    const tracer = {
+      startTrace: vi.fn(),
+      startSpan: vi.fn(() => 'span-correlation'),
+      endSpan: vi.fn(),
+      endTrace: vi.fn(),
+    }
+    const logger = createLogger({
+      level: 'debug',
+      transport: {
+        write: (record) => {
+          records.push(record)
+        },
+      },
+    })
+
+    const workflowManager = new WorkflowManager({
+      dataLayer: {
+        execute: async () => [],
+        findById: async () => null,
+        create: async () => ({}),
+        update: async () => ({}),
+        delete: async () => {},
+      } as any,
+      logger,
+    })
+
+    const workflow: Workflow = {
+      name: 'issue-created-audit',
+      trigger: {
+        entity: 'Issue',
+        event: 'create',
+      },
+      steps: [
+        {
+          type: 'delay',
+          duration: 1,
+        },
+      ],
+    }
+    workflowManager.registerWorkflow(workflow)
+
+    let completedJob: WorkflowJob | undefined
+    const completed = new Promise<WorkflowJob>((resolve) => {
+      workflowManager.once('job:completed', (job: WorkflowJob) => {
+        completedJob = job
+        resolve(job)
+      })
+    })
+
+    const sm = new ServerManager(stubDeps({
+      logger,
+      tracer,
+      blueprint: {
+        version: '1.0',
+        project: { name: 'Test', version: '0.1.0', runtime: { min_version: '0.1.0' } },
+        entities: [{ name: 'Issue', fields: [{ name: 'id', type: 'ULID', primary_key: true }] }],
+        pages: [],
+      },
+      queryExecutor: {
+        execute: async () => [],
+        findById: async () => null,
+        create: async () => ({ id: 'issue_123', title: 'Broken login' }),
+        update: async () => ({}),
+        delete: async () => {},
+      },
+      workflowManager,
+    }))
+    const app = initApp(sm)
+
+    const correlationId = 'corr_integration_test'
+    const csrfToken = 'csrf-integration-test'
+    const response = await app.request('/api/issues', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-correlation-id': correlationId,
+        'x-csrf-token': csrfToken,
+        'cookie': `csrf-token=${csrfToken}`,
+      },
+      body: JSON.stringify({ title: 'Broken login' }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(tracer.startTrace).toHaveBeenCalledWith(correlationId, 'POST', '/api/issues')
+    const startSpanArgs = tracer.startSpan.mock.calls[0]
+    const requestId = startSpanArgs?.[3]?.requestId as string | undefined
+    expect(requestId).toMatch(/^req_/)
+
+    const job = await completed
+    expect(job.workflowName).toBe('issue-created-audit')
+    expect(job.context.trace?.correlationId).toBe(correlationId)
+    expect(job.context.trace?.requestId).toBe(requestId ?? undefined)
+    expect(job.context.trace?.executionId).toMatch(/^exec_/)
+
+    const workflowStartLog = records.find((record) => record.message === 'Starting workflow: issue-created-audit')
+    expect(workflowStartLog?.context.correlationId).toBe(correlationId)
+    expect(workflowStartLog?.context.requestId).toBe(requestId ?? undefined)
+    expect(workflowStartLog?.context.executionId).toBe(job.context.trace?.executionId)
+
+    const workflowCompletedLog = records.find((record) => record.message === 'Workflow completed: issue-created-audit')
+    expect(workflowCompletedLog?.context.correlationId).toBe(correlationId)
+    expect(workflowCompletedLog?.context.requestId).toBe(requestId ?? undefined)
+    expect(workflowCompletedLog?.context.executionId).toBe(job.context.trace?.executionId)
+
+    expect(completedJob?.status).toBe('completed')
   })
 })

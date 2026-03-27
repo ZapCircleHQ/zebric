@@ -1,0 +1,56 @@
+{
+  "root": true,
+  "env": {
+    "browser": true,
+    "es2022": true,
+    "node": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "extends": [
+    "eslint:recommended"
+  ],
+  "ignorePatterns": [
+    "**/coverage/**",
+    "**/*.bench.ts",
+    "**/*.test.ts",
+    "**/dist/**",
+    "**/node_modules/**",
+    ".turbo/**",
+    "coverage/**",
+    "data/**",
+    "docs.notpublished/**",
+    "examples/**/behaviors/**",
+    "internal/**",
+    "memory/**",
+    "packages/docs/dist/**",
+    "packages/runtime-core/src/renderer/generated/**",
+    "packages/runtime-core/src/renderer/styles/tailwind.generated.ts",
+    "packages/runtime-node/tests/**",
+    "packages/runtime-worker/src/test-helpers/**",
+    "packages/runtime-worker/tests/**"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.ts"],
+      "parser": "@typescript-eslint/parser",
+      "plugins": ["@typescript-eslint"],
+      "extends": [
+        "plugin:@typescript-eslint/recommended"
+      ],
+      "rules": {
+        "@typescript-eslint/explicit-module-boundary-types": "off",
+        "@typescript-eslint/no-explicit-any": "off",
+        "@typescript-eslint/no-unused-vars": [
+          "warn",
+          {
+            "argsIgnorePattern": "^_",
+            "varsIgnorePattern": "^_"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-node",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zebric Runtime Node.js Adapter - Hono, SQLite, PostgreSQL, S3, Redis",
   "type": "module",
   "main": "./dist/index.js",
@@ -38,15 +38,19 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
+    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
+    "test:agent-browser": "RUN_AGENT_BROWSER_E2E=1 vitest run tests/e2e/agent-browser.e2e.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "dependencies": {
     "@zebric/notifications": "workspace:*",
+    "@zebric/observability": "workspace:*",
     "@hono/node-server": "^1.19.5",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",

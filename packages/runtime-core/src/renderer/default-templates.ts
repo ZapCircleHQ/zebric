@@ -19,7 +19,7 @@
 
 import { StringTemplate } from './template-system.js'
 import type { RenderContext } from '../routing/request-ports.js'
-import { html, escapeHtml, SafeHtml } from '../security/html-escape.js'
+import { html, escapeHtml } from '../security/html-escape.js'
 import type { Theme } from './theme.js'
 
 /**
@@ -80,7 +80,7 @@ function renderListLayout(context: RenderContext, theme: Theme): string {
  * Render detail layout
  */
 function renderDetailLayout(context: RenderContext, theme: Theme): string {
-  const { page, data } = context
+  const { page } = context
 
   return html`
     <div class="${theme.container}">

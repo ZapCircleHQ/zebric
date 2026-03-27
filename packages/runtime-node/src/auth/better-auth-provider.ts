@@ -4,7 +4,7 @@
  * Implements the AuthProvider interface using Better Auth.
  */
 
-import { betterAuth } from 'better-auth'
+import { betterAuth, type Auth } from 'better-auth'
 import Database from 'better-sqlite3'
 import type { AuthProvider, UserSession } from '@zebric/runtime-core'
 import type { AuthProviderConfig } from './config.js'
@@ -13,7 +13,7 @@ import type { AuthProviderConfig } from './config.js'
  * BetterAuthProvider - Better Auth implementation of AuthProvider
  */
 export class BetterAuthProvider implements AuthProvider {
-  private auth: ReturnType<typeof betterAuth>
+  private auth: Auth<any>
 
   constructor(config: AuthProviderConfig) {
     const { databaseUrl, blueprint, baseURL, secret, trustedOrigins } = config
@@ -55,7 +55,7 @@ export class BetterAuthProvider implements AuthProvider {
   /**
    * Get the underlying Better Auth instance
    */
-  getAuthInstance(): ReturnType<typeof betterAuth> {
+  getAuthInstance(): Auth<any> {
     return this.auth
   }
 

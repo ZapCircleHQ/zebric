@@ -24,6 +24,7 @@ import type { Blueprint } from '@zebric/runtime-core'
 import { HTMLRenderer } from './renderer/index.js'
 import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { NotificationManager } from '@zebric/notifications'
+import { createLogger, type Logger } from '@zebric/observability'
 import type {
   EngineConfig,
   EngineState,
@@ -56,6 +57,7 @@ export class ZebricEngine extends EventEmitter {
   private workflowManager?: WorkflowManager
   private metrics: MetricsRegistry
   private tracer: RequestTracer
+  private logger: Logger
   private cache!: CacheInterface
   private pluginAPIProvider!: PluginAPIProvider
   private subsystemInitializer!: SubsystemInitializer
@@ -77,8 +79,14 @@ export class ZebricEngine extends EventEmitter {
       pendingSchemaDiff: null,
     }
 
+    this.logger = createLogger({
+      level: config.dev?.logLevel ?? 'info',
+      serviceName: '@zebric/runtime-node',
+      environment: process.env.NODE_ENV,
+    })
+
     this.loader = new BlueprintLoader()
-    this.plugins = new PluginRegistry()
+    this.plugins = new PluginRegistry(this.logger)
 
     this.fileStorage = new FileStorage()
 
@@ -97,6 +105,9 @@ export class ZebricEngine extends EventEmitter {
     // Initialize error handler
     this.errorHandler = new ErrorHandler({
       sanitizer: this.errorSanitizer,
+      logger: this.logger.child({
+        operation: 'error-handler',
+      }),
     })
   }
 
@@ -104,7 +115,9 @@ export class ZebricEngine extends EventEmitter {
    * Start the engine
    */
   async start(): Promise<void> {
-    console.log('🚀 Starting Zebric Engine...\n')
+    this.logger.info('Starting Zebric engine', {
+      blueprintPath: this.config.blueprintPath,
+    })
 
     try {
       this.state.status = 'starting'
@@ -120,6 +133,7 @@ export class ZebricEngine extends EventEmitter {
         plugins: this.plugins,
         auditLogger: this.auditLogger,
         errorSanitizer: this.errorSanitizer,
+        logger: this.logger,
       })
 
       // 3. Initialize Cache
@@ -159,13 +173,20 @@ export class ZebricEngine extends EventEmitter {
       })
 
       // 10. Load Plugins (after core systems are initialized)
-      await loadPluginsFn(this.blueprint, this.plugins, this.getEngineAPI())
+      await loadPluginsFn(
+        this.blueprint,
+        this.plugins,
+        this.getEngineAPI(),
+        this.logger.child({
+          operation: 'plugin-loading',
+        })
+      )
 
       // 11. Create Hono adapter with all dependencies
       const host = this.config.host && this.config.host !== '0.0.0.0' && this.config.host !== '::'
         ? this.config.host
         : 'localhost'
-      const port = this.config.port || 3000
+      const port = this.config.port ?? 3000
       const defaultOrigin = `http://${host}:${port}`
 
       const RendererClass = this.config.rendererClass || HTMLRenderer
@@ -197,6 +218,7 @@ export class ZebricEngine extends EventEmitter {
         blueprintAdapter: this.blueprintAdapter,
         metrics: this.metrics,
         tracer: this.tracer,
+        logger: this.logger,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
         notificationManager: this.notificationManager,
@@ -223,6 +245,9 @@ export class ZebricEngine extends EventEmitter {
           pendingSchemaDiff: this.pendingSchemaDiff,
           workflowManager: this.workflowManager,
           getHealthStatus: () => this.getHealth(),
+          logger: this.logger.child({
+            operation: 'admin-server',
+          }),
           host: adminHost,
           port: adminPort,
         })
@@ -240,11 +265,14 @@ export class ZebricEngine extends EventEmitter {
             await this.reload(blueprint)
           },
           errorCallback: (error) => {
-            console.error('Blueprint watcher error:', error)
+            this.logger.error('Blueprint watcher error', { error })
             if (this.reloadServer) {
               this.reloadServer.notifyError(error.message)
             }
           },
+          logger: this.logger.child({
+            operation: 'hot-reload',
+          }),
         })
         this.blueprintWatcher = result.watcher
         this.reloadServer = result.reloadServer
@@ -254,10 +282,17 @@ export class ZebricEngine extends EventEmitter {
       this.state.startedAt = new Date()
 
       // Setup graceful shutdown handlers
-      setupGracefulShutdown(() => this.stop(), this.shutdownTimeout)
+      setupGracefulShutdown(
+        () => this.stop(),
+        this.shutdownTimeout,
+        this.logger.child({
+          operation: 'shutdown',
+        })
+      )
 
-      console.log('\n✅ Engine ready!')
-      console.log(`📱 Server: http://${this.config.host || 'localhost'}:${this.config.port}`)
+      this.logger.info('Engine ready', {
+        serverUrl: `http://${this.config.host || 'localhost'}:${this.config.port}`,
+      })
       if (this.config.dev && this.adminServer) {
         // Get the actual port the admin server is listening on
         const adminServerInstance = this.adminServer.getServer()
@@ -266,12 +301,13 @@ export class ZebricEngine extends EventEmitter {
           : null
         if (address && typeof address === 'object') {
           const adminHost = address.address === '::' ? 'localhost' : address.address
-          console.log(`📊 Admin: http://${adminHost}:${address.port}`)
+          this.logger.info('Admin server ready', {
+            adminUrl: `http://${adminHost}:${address.port}`,
+          })
         }
       }
-      console.log()
     } catch (error) {
-      console.error('❌ Failed to start engine:', error)
+      this.logger.error('Failed to start engine', { error })
       this.state.status = 'stopped'
       throw error
     }
@@ -287,7 +323,7 @@ export class ZebricEngine extends EventEmitter {
     }
     this.isShuttingDown = true
 
-    console.log('👋 Stopping Zebric Engine...')
+    this.logger.info('Stopping Zebric engine')
 
     this.state.status = 'stopping'
 
@@ -312,14 +348,16 @@ export class ZebricEngine extends EventEmitter {
     }
 
     this.state.status = 'stopped'
-    console.log('✅ Engine stopped')
+    this.logger.info('Engine stopped')
   }
 
   /**
    * Reload Blueprint (hot reload)
    */
   async reload(newBlueprint?: Blueprint): Promise<void> {
-    console.log('🔄 Reloading Blueprint...')
+    this.logger.info('Reloading blueprint', {
+      blueprintPath: this.config.blueprintPath,
+    })
 
     this.state.status = 'reloading'
 
@@ -340,7 +378,7 @@ export class ZebricEngine extends EventEmitter {
         try {
           schemaDiff = await this.database.applySchemaDiff(schemaDiff, newBlueprint)
         } catch (error) {
-          console.error('Failed to apply schema changes automatically:', error)
+          this.logger.error('Failed to apply schema changes automatically', { error })
         }
 
         const changeSummary = [
@@ -354,10 +392,15 @@ export class ZebricEngine extends EventEmitter {
           .join(', ')
 
         if (schemaDiff.hasChanges) {
-          const prefix = schemaDiff.hasBreakingChanges
-            ? '⚠️  Schema changes require manual migration'
-            : 'ℹ️  Schema changes pending'
-          console.warn(`${prefix}: ${changeSummary || 'no summary available'}`)
+          this.logger.warn(
+            schemaDiff.hasBreakingChanges
+              ? 'Schema changes require manual migration'
+              : 'Schema changes pending',
+            {
+              changeSummary: changeSummary || 'no summary available',
+              hasBreakingChanges: schemaDiff.hasBreakingChanges,
+            }
+          )
           this.pendingSchemaDiff = schemaDiff
           this.state.pendingSchemaDiff = schemaDiff
         } else {
@@ -409,9 +452,9 @@ export class ZebricEngine extends EventEmitter {
       })
 
       this.state.status = 'running'
-      console.log('✅ Reload complete')
+      this.logger.info('Blueprint reload complete')
     } catch (error) {
-      console.error('❌ Reload failed:', error)
+      this.logger.error('Blueprint reload failed', { error })
 
       // Notify clients of error
       if (this.reloadServer) {
@@ -491,6 +534,9 @@ export class ZebricEngine extends EventEmitter {
     // Validate version compatibility
     this.loader.validateVersion(this.blueprint, ENGINE_VERSION)
 
-    console.log(`✅ Loaded Blueprint: ${this.blueprint.project.name} v${this.blueprint.project.version}`)
+    this.logger.info('Loaded blueprint', {
+      projectName: this.blueprint.project.name,
+      projectVersion: this.blueprint.project.version,
+    })
   }
 }

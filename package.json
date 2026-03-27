@@ -1,6 +1,6 @@
 {
   "name": "zebric",
-  "version": "0.1.1",
+  "version": "0.2.2",
   "description": "Zebric - Runtime Engine for ZBL Blueprint JSON (ZBL Runtime Engine)",
   "private": true,
   "workspaces": [
@@ -15,16 +15,21 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
-    "lint": "turbo run lint",
+    "quick-test": "pnpm --filter @zebric/runtime-core test && pnpm --filter @zebric/runtime-hono test && pnpm --filter @zebric/notifications test && pnpm --filter @zebric/runtime-node test && pnpm --filter @zebric/runtime-worker test && pnpm --filter @zebric/framework-stories test && pnpm --filter @zebric/cli test && pnpm --filter @zebric/plugin-sdk test",
+    "lint": "eslint \"packages/*/src/**/*.{ts,js,mjs}\" \"packages/docs/*.mjs\" \"packages/docs/src/**/*.ts\" \"plugins/*/src/**/*.{ts,js,mjs}\" \"examples/**/*.{ts,mjs}\" \"scripts/**/*.{ts,js,mjs}\" \"starters/**/*.{ts,js,mjs}\" --no-error-on-unmatched-pattern",
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
+    "changeset:check": "node scripts/check-changeset-pr.mjs",
     "version": "changeset version",
-    "release": "pnpm build && changeset publish",
+    "release:check": "node scripts/check-release-versions.mjs",
+    "release": "pnpm release:check && pnpm build && changeset publish",
     "build:templates": "node scripts/build-layout-templates.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.7",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "@types/node": "^20.12.7",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^8.57.0",
@@ -34,5 +39,13 @@
     "typescript": "^5.4.5",
     "vitest": "^1.6.1"
   },
-  "packageManager": "pnpm@8.15.0"
+  "packageManager": "pnpm@10.30.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "sharp",
+      "workerd"
+    ]
+  }
 }

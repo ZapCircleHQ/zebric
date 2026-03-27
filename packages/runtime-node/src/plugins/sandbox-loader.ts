@@ -87,7 +87,6 @@ export class SandboxModuleLoader {
     }
 
     const source = await this.readModuleSource(filename)
-    const loader = this
 
     const module = new vm.SourceTextModule(source, {
       identifier: filename,
@@ -96,13 +95,13 @@ export class SandboxModuleLoader {
         meta.url = pathToFileURL(filename).href
       },
       importModuleDynamically: async (specifier, referencingModule) => {
-        const linked = await loader.linkModule(
+        const linked = await this.linkModule(
           specifier,
           referencingModule.identifier as string,
           context,
           cache
         )
-        await linked.evaluate({ timeout: loader.timeout })
+        await linked.evaluate({ timeout: this.timeout })
         return linked
       },
     })
@@ -110,7 +109,7 @@ export class SandboxModuleLoader {
     cache.set(filename, module)
 
     await module.link(async (specifier) => {
-      return loader.linkModule(specifier, filename, context, cache)
+      return this.linkModule(specifier, filename, context, cache)
     })
 
     return module

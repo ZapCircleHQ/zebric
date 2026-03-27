@@ -27,7 +27,10 @@ export function createSessionManagerPort(sessionManager: SessionManager): Sessio
         if (typeof value === 'string') {
           headers.set(key, value)
         } else if (Array.isArray(value) && value.length > 0) {
-          headers.set(key, value[0])
+          const firstValue = value[0]
+          if (typeof firstValue === 'string') {
+            headers.set(key, firstValue)
+          }
         }
       })
 

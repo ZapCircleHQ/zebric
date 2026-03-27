@@ -9,11 +9,17 @@
 import { resolve } from 'node:path'
 import type { Plugin, LoadedPlugin, EngineAPI } from '@zebric/runtime-core'
 import type { PluginConfig, PluginTrustLevel } from '@zebric/runtime-core'
+import { createPluginLogger, type Logger } from '@zebric/observability'
 import { PluginSandbox } from './sandbox.js'
 
 export class PluginRegistry {
   private plugins = new Map<string, LoadedPlugin>()
   private sandboxes = new Map<string, PluginSandbox>()
+  private logger?: Logger
+
+  constructor(logger?: Logger) {
+    this.logger = logger
+  }
 
   /**
    * Load a plugin from npm package or local path
@@ -23,26 +29,30 @@ export class PluginRegistry {
     pluginConfig: PluginConfig,
     engine: EngineAPI
   ): Promise<void> {
+    const logger = this.logger ? createPluginLogger(this.logger, name, {
+      trustLevel: pluginConfig.trust_level || 'limited',
+    }) : undefined
     const trustLevel = pluginConfig.trust_level || 'limited'
     const capabilities = pluginConfig.capabilities || []
 
     // Security warning for full-access plugins
     if (trustLevel === 'full') {
-      console.warn(`⚠️  Loading FULL ACCESS plugin: ${name}`)
-      console.warn(`   This plugin has unrestricted access to:`)
-      console.warn(`   - Database`)
-      console.warn(`   - Network`)
-      console.warn(`   - File system`)
-      console.warn(`   - Environment variables`)
+      logger?.warn('Loading full access plugin', {
+        capabilities,
+      })
       if (capabilities.length > 0) {
-        console.warn(`   Declared capabilities: ${capabilities.join(', ')}`)
+        logger?.warn('Full access plugin declared capabilities', {
+          capabilities,
+        })
       }
     } else {
-      console.log(`🔒 Loading LIMITED ACCESS plugin: ${name}`)
+      logger?.info('Loading limited access plugin', {
+        capabilities,
+      })
       if (capabilities.length > 0) {
-        console.log(`   Granted capabilities: ${capabilities.join(', ')}`)
-      } else {
-        console.log(`   No capabilities (safe computation only)`)
+        logger?.debug('Limited plugin granted capabilities', {
+          capabilities,
+        })
       }
     }
 
@@ -83,9 +93,7 @@ export class PluginRegistry {
           //
           // For now, "limited" plugins have access restrictions enforced by the EngineAPI
           // they receive, not by VM sandboxing.
-          console.warn(`   ⚠️  WARNING: Plugin init() runs with full Node.js access`)
-          console.warn(`   ⚠️  Sandboxing for init() will be added in v0.2.0`)
-          console.warn(`   ⚠️  Only use plugins from trusted sources`)
+          logger?.warn('Limited plugin init currently runs with full Node.js access')
           await plugin.init(engine, pluginConfig.config || {})
         } else {
           await plugin.init(engine, pluginConfig.config || {})
@@ -99,9 +107,11 @@ export class PluginRegistry {
         plugin,
       })
 
-      console.log(`✅ Plugin loaded: ${name}`)
+      logger?.info('Plugin loaded successfully')
     } catch (error) {
-      console.error(`❌ Failed to load plugin ${name}:`, error)
+      logger?.error('Failed to load plugin', {
+        error,
+      })
       throw new Error(`Plugin load failed: ${name}`)
     }
   }

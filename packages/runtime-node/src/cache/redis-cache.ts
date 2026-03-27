@@ -6,6 +6,7 @@
  */
 
 import Redis from 'ioredis'
+import type { Logger } from '@zebric/observability'
 import type { CacheInterface } from '@zebric/runtime-core'
 
 export interface RedisCacheConfig {
@@ -15,12 +16,15 @@ export interface RedisCacheConfig {
   db?: number
   url?: string
   keyPrefix?: string
+  logger?: Logger
 }
 
 export class RedisCache implements CacheInterface {
   private client: Redis
+  private logger?: Logger
 
   constructor(config: RedisCacheConfig = {}) {
+    this.logger = config.logger
     // If URL is provided, use it
     if (config.url) {
       this.client = new Redis(config.url, {
@@ -49,11 +53,11 @@ export class RedisCache implements CacheInterface {
 
     // Handle connection errors
     this.client.on('error', (err) => {
-      console.error('Redis connection error:', err)
+      this.logger?.error('Redis connection error', { error: err })
     })
 
     this.client.on('connect', () => {
-      console.log('✅ Connected to Redis cache')
+      this.logger?.info('Connected to Redis cache')
     })
   }
 

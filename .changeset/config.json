@@ -10,6 +10,8 @@
       "@zebric/runtime-node",
       "@zebric/runtime-worker",
       "@zebric/cli",
+      "@zebric/notifications",
+      "@zebric/observability",
       "@zebric/plugin-sdk",
       "@zebric/themes"
     ]

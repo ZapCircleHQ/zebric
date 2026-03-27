@@ -6,7 +6,7 @@
  * Platform-specific adapters wrap this core logic.
  */
 
-import type { Blueprint, Page, Query, Form } from '../types/blueprint.js'
+import type { Blueprint, Query } from '../types/blueprint.js'
 import type { RouteMatch } from './route-matcher.js'
 import type {
   HttpRequest,
@@ -16,10 +16,7 @@ import type {
   SessionManagerPort,
   RendererPort,
   AuditLoggerPort,
-  FileStoragePort,
-  AuthorizationPort,
-  RenderContext,
-  FlashMessage
+  FileStoragePort
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
 import {

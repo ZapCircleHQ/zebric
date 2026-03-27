@@ -6,15 +6,22 @@
  * Command-line interface for Zebric Engine (ZBL Runtime).
  */
 
+import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
 import { devCommand, validateCommand } from './commands/index.js'
+
+function getCliVersion(): string {
+  const packageJsonUrl = new URL('../package.json', import.meta.url)
+  const packageJson = JSON.parse(readFileSync(packageJsonUrl, 'utf8')) as { version?: string }
+  return packageJson.version ?? '0.0.0'
+}
 
 const program = new Command()
 
 program
   .name('zebric')
   .description('Zebric - Runtime interpreter for Blueprint JSON (ZBL Engine)')
-  .version('0.1.1')
+  .version(getCliVersion())
 
 // Dev command
 program

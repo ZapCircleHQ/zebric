@@ -126,7 +126,7 @@ export class Zebric {
     const config: EngineConfig = {
       blueprintPath: this.options.blueprintPath,
       host: this.options.host || 'localhost',
-      port: this.options.port || 3000,
+      port: this.options.port ?? 3000,
       theme: this.options.theme,
     }
 
@@ -142,12 +142,13 @@ export class Zebric {
 
     // Add dev config if enabled
     if (this.options.dev) {
+      const port = this.options.port ?? 3000
       config.dev = {
         hotReload: true,
         dbPath: this.options.databaseUrl?.replace('sqlite://', ''),
         logLevel: this.options.logLevel || 'info',
         adminHost: this.options.host || '127.0.0.1',
-        adminPort: (this.options.port || 3000) + 30, // Admin on port + 30
+        adminPort: port === 0 ? 0 : port + 30, // Admin on port + 30, unless using ephemeral ports
       }
     }
 

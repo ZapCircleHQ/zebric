@@ -1,6 +1,6 @@
 {
   "name": "@zebric/cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zebric CLI - Command-line tools for Zebric Engine",
   "type": "module",
   "bin": {
@@ -38,7 +38,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest run || true",
+    "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist"
   },
   "dependencies": {
