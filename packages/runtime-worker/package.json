@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-worker",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Zebric Runtime - CloudFlare Workers Adapter",
   "type": "module",
   "main": "./dist/index.js",
