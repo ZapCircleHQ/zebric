@@ -18,6 +18,7 @@
   ],
   "access": "public",
   "baseBranch": "main",
+  "privatePackages": false,
   "updateInternalDependencies": "patch",
   "ignore": []
 }
