@@ -1,0 +1,80 @@
+---
+slug: courses/build-internal-tools-without-distracting-engineering/lesson-7-polish-with-real-feedback
+title: Lesson 7 - Polish With Real Feedback
+description: Use stakeholder feedback to simplify the app, remove friction, and turn the blueprint into something people will actually adopt.
+---
+
+This lesson is where Maya puts the HarborFlow tool in front of real teammates and learns what still feels rough.
+
+That matters because many internal tools fail for boring reasons:
+
+- labels are unclear
+- statuses mean different things to different people
+- forms ask for the wrong information
+- the app technically works, but no one wants to use it
+
+## The Goal
+
+By the end of this lesson, the HarborFlow tool should feel narrower, clearer, and easier to trust.
+
+This is not feature expansion. It is product refinement.
+
+## What Maya Hears From The Team
+
+Once HarborFlow account managers and ops reviewers try the tool, Maya starts hearing comments like:
+
+- "I do not know what counts as high priority."
+- "I need to know who is reviewing this."
+- "The status names are close, but not quite how we talk about the process."
+- "I need to know what happens after I submit."
+
+These are not bugs. They are product signals.
+
+## What To Tighten
+
+Look for improvements like:
+
+- better field labels
+- clearer help text
+- fewer optional fields
+- more precise status values
+- stronger default values
+- more useful success messages
+
+For HarborFlow, that might mean:
+
+- changing `priority` labels from generic terms to the language ops actually uses
+- renaming `justification` to `Business Justification`
+- clarifying who owns review after submission
+- simplifying any field that people misunderstand on first read
+
+## Cut Before You Add
+
+The default instinct after feedback is to add more functionality.
+
+Resist that.
+
+For this lesson, the better question is:
+
+- what can we remove or simplify so the current flow is easier to use?
+
+This is how the app starts feeling intentional instead of improvised.
+
+## HarborFlow Outcome
+
+By the end of this lesson, Maya is not trying to satisfy every possible exception case. She is trying to make the core exception path obvious enough that the ops team will actually move work through the tool.
+
+That is what makes the next step, deployment, worth doing.
+
+## Lesson Output
+
+By the end of this lesson, you should have:
+
+- clearer field names and labels
+- simpler statuses
+- better defaults and success messaging
+- a release candidate blueprint that feels usable to someone other than the author
+
+## Next Lesson
+
+Continue to [Lesson 8 - Deploy and Roll Out the Tool](/courses/build-internal-tools-without-distracting-engineering/lesson-8-deploy-and-roll-out-the-tool/).

@@ -1,0 +1,104 @@
+---
+slug: courses/build-internal-tools-without-distracting-engineering/lesson-3-shape-the-data-model
+title: Lesson 3 - Shape the Data Model
+description: Refine the starter Request entity into the real business record your team actually needs.
+---
+
+This lesson is where the app stops being a generic demo and starts becoming a useful internal tool.
+
+Take the starter `Request` entity and reshape it around the actual business process.
+
+In the HarborFlow story, this is where Maya stops talking about generic "requests" and starts defining the real object her team works on every day: a customer exception request.
+
+## Start With The Main Record
+
+Rename the main entity to match the real workflow:
+
+- `Request` → `VendorRequest`
+- `Request` → `AccessRequest`
+- `Request` → `HiringRequest`
+- `Request` → `ContractReview`
+
+This matters because the name sets the tone for everything else in the app.
+
+For HarborFlow, the natural change is:
+
+- `Request` → `ExceptionRequest`
+
+## Tighten The Fields
+
+Keep only fields that someone will actually use in the first version.
+
+Typical first-pass changes:
+
+- rename `team` if the workflow really needs `department`, `requesterTeam`, or `costCenter`
+- rename `details` if the workflow needs `businessJustification` or `accessReason`
+- add one or two high-value fields like `owner`, `requestedBy`, or `dueDate`
+- remove anything that exists only because it sounded generic
+
+For HarborFlow, Maya might end up with fields like:
+
+- `customerName`
+- `submittedBy`
+- `exceptionType`
+- `priority`
+- `justification`
+- `status`
+
+## Fix The Status Model
+
+The status values should mirror the real operating sequence.
+
+For example:
+
+```toml
+status = { type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted" }
+```
+
+The important rule is that the statuses should reflect real business transitions, not placeholder words.
+
+For the HarborFlow narrative, the first useful set might be:
+
+- `submitted`
+- `reviewing`
+- `approved`
+- `rejected`
+- `completed`
+
+## Make The Vocabulary Match The Team
+
+Every field and status should sound like something the team would say in Slack, email, or meetings.
+
+That means:
+
+- prefer business language over technical language
+- avoid generic labels if there is a more precise term
+- remove ambiguity where two fields sound almost the same
+
+This is one of the most important moments in the course narrative. Once Maya renames the entity and fields into HarborFlow language, the blueprint stops feeling like a demo and starts feeling like a product her team could actually adopt.
+
+## Review Questions
+
+Before moving on, ask:
+
+- if a teammate saw this entity, would they immediately recognize it?
+- does the status progression match how the work really moves?
+- are any fields missing that block a reviewer from making a decision?
+- are any fields present just because the model invented them?
+
+For HarborFlow, a strong review question is:
+
+- if an ops manager opened this tool cold, would they recognize it as the exception process they already run?
+
+## Lesson Output
+
+By the end of this lesson, you should have:
+
+- a renamed primary entity
+- a cleaner set of fields
+- statuses that match the workflow
+- a vocabulary aligned to the actual team
+
+## Next Lesson
+
+Continue to [Lesson 4 - Improve Intake and Review Pages](/courses/build-internal-tools-without-distracting-engineering/lesson-4-improve-intake-and-review-pages/).

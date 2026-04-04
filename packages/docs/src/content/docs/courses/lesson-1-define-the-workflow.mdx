@@ -1,0 +1,147 @@
+---
+slug: courses/build-internal-tools-without-distracting-engineering/lesson-1-define-the-workflow
+title: Lesson 1 - Define the Workflow
+description: Start with the operational pain, the owner, and the desired outcome before generating a Zebric blueprint.
+---
+
+This lesson starts with the real business problem. The goal is to define a workflow clearly enough that an LLM or a human can turn it into a useful first blueprint.
+
+In the course narrative, this is the moment where Maya, HarborFlow's Head of Operations, decides that the team's "customer exception request" process has become too messy to keep running through Slack and spreadsheets.
+
+Account managers ask for one-off shipping exceptions. Ops managers review them inconsistently. Approvals get lost. No one has a clean list of what is waiting, what is approved, or what is blocked.
+
+## What This Lesson Produces
+
+By the end of this lesson, you should have:
+
+- one internal workflow worth fixing now
+- a named team or person who owns the process
+- a concrete description of the records that move through the workflow
+- a definition of what a successful first version should do
+- a short prompt brief for the LLM
+
+## Choose The Right Workflow
+
+Pick a process with all of these characteristics:
+
+- it happens often enough to matter
+- it is annoying enough that people already complain about it
+- it does not require a full product team to validate
+- it can be improved by better intake, visibility, routing, or approvals
+
+Good examples:
+
+- vendor intake
+- access requests
+- contract review intake
+- customer escalation tracking
+- hiring request approvals
+
+Bad first examples:
+
+- anything requiring deep customer-facing product design
+- anything with many external integrations on day one
+- anything where no one agrees on the process yet
+
+For HarborFlow, the right first workflow is not "all operations." It is one narrow process:
+
+- intake of customer exception requests
+- review by ops
+- approval or rejection
+- visibility into what is still pending
+
+## Capture The Workflow In Plain Language
+
+Write down:
+
+- who submits the request
+- who reviews it
+- what gets stored
+- what statuses it moves through
+- what a submitter needs to provide
+- what a reviewer needs to decide
+- what happens when the request is approved or rejected
+
+Do not start with schema design language. Start with operational language.
+
+For Maya, that plain-language description might sound like this:
+
+- account managers submit exception requests
+- ops reviews whether the request is feasible
+- urgent requests need faster review
+- approved requests move forward for execution
+- rejected requests need a clear reason
+
+## Operator Brief Template
+
+Use a brief like this:
+
+```text
+We need an internal tool for [process name].
+
+The people using it are:
+- [submitter role]
+- [reviewer role]
+- [approver role, if any]
+
+Each record should track:
+- [field 1]
+- [field 2]
+- [field 3]
+
+The workflow goes through these statuses:
+- [status 1]
+- [status 2]
+- [status 3]
+
+Users need:
+- a list view
+- a form to submit a new request
+- a detail page to review a request
+
+The first version is successful if:
+- [success outcome 1]
+- [success outcome 2]
+```
+
+Here is a filled-in version for HarborFlow:
+
+```text
+We need an internal tool for customer exception requests.
+
+The people using it are:
+- account managers who submit requests
+- operations managers who review requests
+- directors who approve unusual or high-priority exceptions
+
+Each record should track:
+- customer name
+- request title
+- priority
+- exception details
+- status
+
+The workflow goes through these statuses:
+- submitted
+- reviewing
+- approved
+- rejected
+- completed
+
+Users need:
+- a list view
+- a form to submit a new request
+- a detail page to review a request
+
+The first version is successful if:
+- the ops team has one place to see every active request
+- reviewers can tell what is waiting and what needs a decision
+```
+
+## Lesson Output
+
+Turn that brief into one final prompt input for the next lesson. Keep it short, concrete, and operational.
+
+## Next Lesson
+
+Continue to [Lesson 2 - Generate the First Blueprint With AI](/courses/build-internal-tools-without-distracting-engineering/lesson-2-generate-the-first-blueprint-with-ai/).
