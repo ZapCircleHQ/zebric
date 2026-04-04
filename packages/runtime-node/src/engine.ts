@@ -6,6 +6,7 @@
 
 import type { ServerType } from '@hono/node-server'
 import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
@@ -34,7 +35,8 @@ import type {
 import { createQueryExecutorPort, createSessionManagerPort, createAuditLoggerPort } from './engine-port-factory.js'
 import { setupGracefulShutdown, setupHotReload as setupHotReloadFn, loadPlugins as loadPluginsFn, initializePluginAPIProvider } from './engine-lifecycle.js'
 
-const ENGINE_VERSION = '0.1.1'
+const require = createRequire(import.meta.url)
+const { version: ENGINE_VERSION } = require('../package.json') as { version: string }
 
 export class ZebricEngine extends EventEmitter {
   private state: EngineState
