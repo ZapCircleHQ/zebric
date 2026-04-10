@@ -1,5 +1,5 @@
 ---
-slug: courses/build-internal-tools-without-distracting-engineering/lesson-5-add-permissions-and-guardrails
+slug: courses/tutorial-ops/lesson-5-add-permissions-and-guardrails
 title: Lesson 5 - Add Permissions and Guardrails
 description: Introduce the minimum access control needed to make the tool safe to share internally.
 ---
@@ -7,6 +7,8 @@ description: Introduce the minimum access control needed to make the tool safe t
 This lesson is where the HarborFlow tool becomes safe enough to use beyond Maya's own laptop.
 
 The first version probably runs with broad access. That is fine for prototyping, but not for internal rollout. Now the tool needs basic guardrails.
+
+Keep editing the same `blueprint.toml`. In this lesson, you will add auth settings and tighten access around the pages and entity you already created.
 
 ## The Goal
 
@@ -41,6 +43,20 @@ auth = "required"
 
 This is the fastest way to move from demo to internal application.
 
+If you have not enabled authentication yet, add a minimal auth setup before requiring sign-in on your pages:
+
+```toml
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+[page."/sign-in"]
+title = "Sign In"
+layout = "auth"
+```
+
+Without that setup, `auth = "required"` will describe the right intent but not give the learner a complete sign-in path.
+
 ## Add Entity Access Rules
 
 Then tighten entity access so the right people can create, read, or update records.
@@ -52,6 +68,24 @@ For HarborFlow, Maya wants:
 - broad internal visibility
 - narrower update rights
 - explicit approval ownership for exceptional requests
+
+One reasonable first cut is:
+
+```toml
+[entity.ExceptionRequest.access]
+read = true
+create = true
+update = { or = [{ "$currentUser.role" = "ops_manager" }, { "$currentUser.role" = "director" }] }
+delete = { "$currentUser.role" = "director" }
+```
+
+That is still simple, but it already creates a meaningful distinction between people who can submit work and people who can change workflow state.
+
+If your process needs tighter controls, start asking questions like:
+
+- should submitters only see requests they created?
+- should reviewers be able to edit every field or only status and notes?
+- should directors be the only people allowed to approve high-priority requests?
 
 ## HarborFlow Guardrail Questions
 
@@ -80,6 +114,26 @@ By the end of this lesson, you should have:
 - basic entity access rules
 - a clearer understanding of who owns each step in the workflow
 
+Use [Security & Authentication](/building/security/) for the exact access-control patterns Zebric supports.
+
+## What Changes In `blueprint.toml`
+
+In this lesson, you are adding security-related sections:
+
+- add an `[auth]` block if the app does not have one yet
+- add an auth page such as `/sign-in`
+- change working pages from public or optional auth to `auth = "required"`
+- add `[entity.ExceptionRequest.access]` rules for CRUD behavior
+
+This is the lesson where the blueprint stops being a local demo and starts becoming an internal application.
+
+## Zebric Concepts In This Lesson
+
+- **Authentication**: page-level sign-in requirements and auth pages
+- **Access Control**: entity-level read, create, update, and delete rules
+- **Pages**: auth requirements now shape who can reach the workflow UI
+- **Entities**: access rules define who can change workflow state
+
 ## Next Lesson
 
-Continue to [Lesson 6 - Add Your First High-Leverage Workflow](/courses/build-internal-tools-without-distracting-engineering/lesson-6-add-your-first-high-leverage-workflow/).
+Continue to [Lesson 6 - Add Your First High-Leverage Workflow](/courses/tutorial-ops/lesson-6-add-your-first-high-leverage-workflow/).

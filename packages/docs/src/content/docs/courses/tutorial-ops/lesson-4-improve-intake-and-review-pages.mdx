@@ -1,5 +1,5 @@
 ---
-slug: courses/build-internal-tools-without-distracting-engineering/lesson-4-improve-intake-and-review-pages
+slug: courses/tutorial-ops/lesson-4-improve-intake-and-review-pages
 title: Lesson 4 - Improve Intake and Review Pages
 description: Refine the list, form, and detail pages so the internal tool feels useful to real operators instead of like a generic CRUD demo.
 ---
@@ -7,6 +7,8 @@ description: Refine the list, form, and detail pages so the internal tool feels 
 This lesson is where the HarborFlow tool starts to feel real.
 
 Maya already has the right core record, but the first version still feels like a generic request tracker. The next step is to make the pages fit how HarborFlow's team actually submits, reviews, and works requests.
+
+Keep editing the same `blueprint.toml`. In this lesson, you are refining the pages that already point at `ExceptionRequest`.
 
 ## The Goal
 
@@ -35,6 +37,59 @@ Practical improvements:
 - remove any field that does not affect triage or approval
 - add success messaging that tells submitters what happens next
 
+For HarborFlow, the intake form might evolve into something like:
+
+```toml
+[page."/requests/new"]
+title = "Submit Exception Request"
+layout = "form"
+auth = "required"
+
+[page."/requests/new".form]
+entity = "ExceptionRequest"
+method = "create"
+
+[[page."/requests/new".form.fields]]
+name = "title"
+type = "text"
+label = "Request Title"
+required = true
+
+[[page."/requests/new".form.fields]]
+name = "customerName"
+type = "text"
+label = "Customer Name"
+required = true
+
+[[page."/requests/new".form.fields]]
+name = "exceptionType"
+type = "text"
+label = "Exception Type"
+required = true
+
+[[page."/requests/new".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+required = true
+options = [
+  { value = "low", label = "Low" },
+  { value = "medium", label = "Medium" },
+  { value = "high", label = "High" }
+]
+
+[[page."/requests/new".form.fields]]
+name = "justification"
+type = "textarea"
+label = "Business Justification"
+required = true
+rows = 6
+
+[page."/requests/new".form.onSuccess]
+redirect = "/requests/{id}"
+message = "Request submitted. Operations will review it next."
+```
+
 ## Make The List Page Useful
 
 The list page is the ops team's working queue. It should help them answer:
@@ -52,6 +107,19 @@ Typical improvements:
 - make titles and page labels more specific
 - reduce visual noise so the queue is easy to scan
 
+That list page might look like:
+
+```toml
+[page."/"]
+title = "Customer Exception Requests"
+layout = "list"
+auth = "required"
+
+[page."/".query.requests]
+entity = "ExceptionRequest"
+orderBy = { createdAt = "desc" }
+```
+
 ## Make The Detail Page Reviewer-Friendly
 
 The detail page should tell the reviewer whether they can make a decision immediately.
@@ -65,6 +133,19 @@ For HarborFlow, the detail page should make it easy to understand:
 - what decision needs to happen next
 
 If a reviewer has to hunt for context, the page is not doing enough.
+
+A simple detail page baseline is:
+
+```toml
+[page."/requests/:id"]
+title = "Exception Request"
+layout = "detail"
+auth = "required"
+
+[page."/requests/:id".query.request]
+entity = "ExceptionRequest"
+where = { id = "$params.id" }
+```
 
 ## HarborFlow Example Changes
 
@@ -84,6 +165,24 @@ By the end of this lesson, you should have:
 - a more useful queue page
 - a detail page that supports actual review work
 
+Use the [Blueprint Reference](/building/blueprint/) if you need to look up form fields, queries, or detail-page options while refining these pages.
+
+## What Changes In `blueprint.toml`
+
+In this lesson, you are mainly editing the page sections:
+
+- update the list page title, auth, and query
+- update the form page fields, labels, and success behavior
+- update the detail page so reviewers can inspect one request clearly
+
+The entity stays mostly stable here. The emphasis is on **page configuration and form design**.
+
+## Zebric Concepts In This Lesson
+
+- **Pages**: list, form, and detail layouts become more specific to the workflow
+- **Forms**: field labels, required rules, and success behavior start mattering
+- **Queries**: list ordering and detail lookups define what each page shows
+
 ## Next Lesson
 
-Continue to [Lesson 5 - Add Permissions and Guardrails](/courses/build-internal-tools-without-distracting-engineering/lesson-5-add-permissions-and-guardrails/).
+Continue to [Lesson 5 - Add Permissions and Guardrails](/courses/tutorial-ops/lesson-5-add-permissions-and-guardrails/).

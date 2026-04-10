@@ -1,5 +1,5 @@
 ---
-slug: courses/build-internal-tools-without-distracting-engineering/lesson-7-polish-with-real-feedback
+slug: courses/tutorial-ops/lesson-7-polish-with-real-feedback
 title: Lesson 7 - Polish With Real Feedback
 description: Use stakeholder feedback to simplify the app, remove friction, and turn the blueprint into something people will actually adopt.
 ---
@@ -48,6 +48,20 @@ For HarborFlow, that might mean:
 - clarifying who owns review after submission
 - simplifying any field that people misunderstand on first read
 
+This is a good point to make tiny, testable edits instead of broad redesigns. For example:
+
+- rename a label from `Priority` to `Ops Priority`
+- change the success message so it says who reviews the request next
+- remove a field that reviewers never use
+- tighten status names if teammates keep interpreting them differently
+
+After each change, run the app again and check the same core flow:
+
+1. create a new request
+2. review the request detail page
+3. trigger the approval workflow
+4. confirm the status and success messaging still make sense
+
 ## Cut Before You Add
 
 The default instinct after feedback is to add more functionality.
@@ -75,6 +89,27 @@ By the end of this lesson, you should have:
 - better defaults and success messaging
 - a release candidate blueprint that feels usable to someone other than the author
 
+If you are not sure whether a change belongs here or in a bigger redesign, bias toward the smaller change and ship another review round.
+
+## What Changes In `blueprint.toml`
+
+This lesson usually produces small edits across sections you already have:
+
+- labels or help text in form fields
+- status values or defaults in the entity
+- success messages in forms
+- wording on page titles or workflow actions
+
+The point is not to add whole new systems. It is to make the current blueprint easier to trust and easier to use.
+
+## Zebric Concepts In This Lesson
+
+- **Blueprints**: iterative refinement instead of first-draft generation
+- **Entities**: statuses and defaults often get clarified here
+- **Forms**: labels, help text, and required fields become more precise
+- **Pages**: titles, actions, and reviewer context get cleaner
+- **Workflows**: confirm that the existing workflow still makes sense after copy and status changes
+
 ## Next Lesson
 
-Continue to [Lesson 8 - Deploy and Roll Out the Tool](/courses/build-internal-tools-without-distracting-engineering/lesson-8-deploy-and-roll-out-the-tool/).
+Continue to [Lesson 8 - Deploy and Roll Out the Tool](/courses/tutorial-ops/lesson-8-deploy-and-roll-out-the-tool/).
