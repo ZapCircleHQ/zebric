@@ -1,4 +1,4 @@
-# @zebric/cli
+# @zebric/runtime-node
 
 ## 0.2.3
 
@@ -6,11 +6,7 @@
 
 - cfd46f3: Fix the Zebric engine version reported by the Node runtime so it follows the package version instead of a stale hard-coded value.
 - Updated dependencies [cfd46f3]
-  - @zebric/runtime-node@0.2.3
-
-## 0.2.0
-
-### Patch Changes
-
-- Updated dependencies
-  - @zebric/runtime@0.2.0
+  - @zebric/notifications@0.2.3
+  - @zebric/observability@0.2.3
+  - @zebric/runtime-core@0.2.3
+  - @zebric/runtime-hono@0.2.3
