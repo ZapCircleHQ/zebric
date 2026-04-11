@@ -1,6 +1,6 @@
 {
   "name": "@zebric/observability",
-  "version": "0.2.3",
+  "version": "0.2.2",
   "description": "Cross-runtime operational logging and correlation utilities for Zebric",
   "type": "module",
   "main": "./dist/index.js",
