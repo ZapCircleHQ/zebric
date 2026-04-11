@@ -189,7 +189,7 @@ export class DocumentWrapper {
       <footer class="border-t border-gray-200 mt-12 py-6">
         <div class="${this.theme.container}">
           <p class="text-center text-sm text-gray-500">
-            Powered by Zebric Engine v0.1.1
+            Powered by Zebric Engine v0.2.3
           </p>
         </div>
       </footer>

@@ -156,7 +156,7 @@ export class ProductionHttpClient implements HttpClient {
     try {
       const headers = {
         'Content-Type': 'application/json',
-        'User-Agent': 'Zebric-Runtime/0.1.1',
+        'User-Agent': 'Zebric-Runtime/0.2.3',
         ...options.headers,
       }
 
