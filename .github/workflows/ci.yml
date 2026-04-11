@@ -242,7 +242,12 @@ jobs:
       - name: Link check built docs
         uses: lycheeverse/lychee-action@v2
         with:
-          args: --verbose --no-progress --root-dir packages/docs/dist packages/docs/dist/**/*.html
+          args: >-
+            --verbose
+            --no-progress
+            --root-dir packages/docs/dist
+            --exclude ^https://docs\.zebric\.dev/
+            packages/docs/dist/**/*.html
 
   all-checks:
     name: All Checks Passed

@@ -1,8 +1,13 @@
 ---
-"@zebric/observability": minor
-"@zebric/runtime-node": minor
-"@zebric/runtime-worker": minor
-"@zebric/cli": minor
+"@zebric/cli": patch
+"@zebric/notifications": patch
+"@zebric/observability": patch
+"@zebric/plugin-sdk": patch
+"@zebric/runtime-core": patch
+"@zebric/runtime-hono": patch
+"@zebric/runtime-node": patch
+"@zebric/runtime-worker": patch
+"@zebric/themes": patch
 ---
 
-Add the new `@zebric/observability` logging layer and integrate it across the Node and Workers runtimes. This release also improves CI reliability and docs quality checks so release validation is more consistent on clean runners.
+Fix the Zebric engine version reported by the Node runtime so it follows the package version instead of a stale hard-coded value.

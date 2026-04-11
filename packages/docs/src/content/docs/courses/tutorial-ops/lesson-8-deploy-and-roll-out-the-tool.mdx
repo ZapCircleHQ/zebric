@@ -1,0 +1,115 @@
+---
+slug: courses/tutorial-ops/lesson-8-deploy-and-roll-out-the-tool
+title: Lesson 8 - Deploy and Roll Out the Tool
+description: Deploy the internal tool, hand it to the team, and close the loop with a lightweight rollout and feedback plan.
+---
+
+This lesson finishes the first HarborFlow product arc.
+
+Maya now has a tool that works locally, reflects the real exception process, and includes enough access control and automation to matter. The next step is to get it into the hands of the team.
+
+## The Goal
+
+By the end of this lesson, the app should no longer be a local prototype. It should be a live internal tool with a clear owner and a simple rollout plan.
+
+## Deployment Mindset
+
+The point of deployment is not to prove technical sophistication. The point is to reduce operational friction for the people doing the work.
+
+For HarborFlow, success looks like:
+
+- account managers can submit requests through the app
+- ops can review from one queue
+- approvals are visible and traceable
+- the team stops relying on scattered Slack threads
+
+## First Deployment Checklist
+
+Keep the first rollout simple:
+
+- deploy one environment the team can access
+- make sure authentication is enabled as needed
+- confirm the database is working
+- verify the main pages and workflow still behave correctly
+- identify who owns support for the first week of use
+
+Before you push the app to a shared environment, do one more local verification pass and keep the blueprint under version control:
+
+```bash
+zebric validate --blueprint blueprint.toml
+zebric dev --blueprint blueprint.toml --port 3000 --seed
+```
+
+Then work through a production-minded checklist:
+
+1. make sure the blueprint has the auth settings and access rules you intend to ship
+2. decide whether you are using SQLite for a small internal rollout or PostgreSQL for a shared environment
+3. configure any notification secrets before enabling Slack or email adapters
+4. run the core workflow end to end in the deployed environment before inviting users
+
+If you need a deployment target beyond local Node development, use the [Runtime & Deployment](/run/runtime/) guide for Docker and Cloudflare Workers options.
+
+## HarborFlow Rollout Plan
+
+Maya does not announce the tool to the whole company at once.
+
+She starts with:
+
+- one operations manager
+- one account manager
+- a narrow class of exception requests
+- one week of observation and cleanup
+
+That gives HarborFlow a controlled rollout instead of a noisy launch.
+
+## What To Watch After Launch
+
+Once the app is live, pay attention to:
+
+- where users still fall back to Slack
+- where reviewers get blocked
+- what fields are ignored
+- whether statuses are actually being used as intended
+- where a second workflow or dashboard would create more leverage
+
+The first deployment is the beginning of real product learning, not the end of the project.
+
+## Lesson Output
+
+By the end of this lesson, you should have:
+
+- a deployed internal tool
+- a short rollout scope
+- a short feedback loop for the first users
+- a list of improvements driven by real usage
+
+## What Changes In `blueprint.toml`
+
+The blueprint may not change much in this lesson unless rollout testing exposes issues.
+
+Typical final edits include:
+
+- tightening auth or access rules
+- adjusting notification adapters or secrets
+- fixing a page title, message, or workflow assumption found during rollout
+
+The bigger change is operational: this is where the blueprint moves from local iteration to a shared runtime environment.
+
+## Zebric Concepts In This Lesson
+
+- **Runtime Engines**: choosing how the blueprint will run outside your laptop
+- **Blueprints**: the single source of truth you deploy and keep iterating on
+- **Authentication and Access Control**: final checks before broader internal use
+- **Workflows and Notifications**: verify they still work in the deployed environment
+
+## What The Full Arc Achieves
+
+In the HarborFlow narrative, Maya has now gone from:
+
+- a messy internal process
+- to a problem brief
+- to a blueprint
+- to a usable workflow tool
+- to a live internal system that reduces operational drag without consuming the engineering roadmap
+
+That is the core promise of the course.

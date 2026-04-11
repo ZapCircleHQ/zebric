@@ -1,0 +1,211 @@
+---
+slug: courses/tutorial-ops/lesson-2-generate-the-first-blueprint-with-ai
+title: Lesson 2 - Generate the First Blueprint With AI
+description: Use an LLM to generate a first-pass Zebric blueprint, then validate it quickly instead of trusting it blindly.
+---
+
+In this lesson, you use the workflow brief from Lesson 1 to generate a first-pass Zebric blueprint.
+
+The objective is speed. You are not trying to get a perfect blueprint on the first attempt.
+
+In the HarborFlow story, Maya takes her plain-language brief for customer exception requests and asks an LLM to turn it into a starting blueprint.
+
+## Recommended Prompt
+
+Use a prompt like this:
+
+```text
+Create a Zebric blueprint.toml for this internal tool:
+
+[paste your workflow brief here]
+
+Requirements:
+- include one main entity for the request being tracked
+- include a list page at "/"
+- include a form page for creating a new record
+- include a detail page for reviewing a record
+- use realistic status values
+- keep the first version simple
+- output valid TOML only
+```
+
+For HarborFlow, the prompt brief would describe:
+
+- account managers submitting customer exception requests
+- ops managers reviewing them
+- statuses like `submitted`, `reviewing`, `approved`, `rejected`, and `completed`
+- a list page, intake form, and review page
+
+## What Good LLM Output Looks Like
+
+A good first draft should give you:
+
+- one clear primary entity
+- sensible field names
+- a short list of statuses
+- a list page
+- a form page
+- a detail page
+
+It does not need to include:
+
+- perfect permissions
+- advanced workflows
+- notifications
+- every edge case in the business process
+
+For Maya, a good first draft is not one that perfectly models HarborFlow's entire operation. It is one that gives her something concrete to run and critique.
+
+## Validate Quickly
+
+Run the blueprint as soon as you get it:
+
+```bash
+zebric validate --blueprint blueprint.toml
+zebric dev --blueprint blueprint.toml --seed
+```
+
+Then review the generated app like an operator:
+
+- does the record type match the business process?
+- are the statuses usable?
+- does the form ask for the right information?
+- does the detail page show what a reviewer actually needs?
+
+In HarborFlow's case, Maya is checking whether the app feels like a real exception-review tool or just a generic request tracker.
+
+## If The LLM Gets It Wrong
+
+If the output is invalid or overcomplicated:
+
+1. simplify the prompt
+2. ask for fewer entities and fewer pages
+3. ask for TOML only
+4. fall back to the starter blueprint below
+
+Use the backup blueprint if you need to keep momentum. The course is about shipping the tool, not proving the LLM can get everything right in one shot.
+
+That fallback matters because many readers will recognize this exact moment: the LLM produces something almost right, but not reliable enough to build on without a known-good baseline.
+
+### Starter Blueprint
+
+Save this as `blueprint.toml` and continue from here:
+
+```toml
+version = "0.1.0"
+
+[project]
+name = "Ops Requests"
+version = "1.0.0"
+description = "Internal request tracker for startup operations"
+
+[project.runtime]
+min_version = "0.2.0"
+
+[entity.Request]
+fields = [
+  { name = "id", type = "ULID", primary_key = true, required = true },
+  { name = "title", type = "Text", required = true },
+  { name = "team", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["new", "reviewing", "approved", "done"], default = "new" },
+  { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "details", type = "LongText", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now()" }
+]
+
+[entity.Request.access]
+create = true
+read = true
+update = true
+delete = true
+
+[page."/"]
+title = "Requests"
+layout = "list"
+auth = "optional"
+
+[page."/".query.requests]
+entity = "Request"
+orderBy = { createdAt = "desc" }
+
+[page."/requests/new"]
+title = "New Request"
+layout = "form"
+auth = "optional"
+
+[page."/requests/new".form]
+entity = "Request"
+method = "create"
+
+[[page."/requests/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/requests/new".form.fields]]
+name = "team"
+type = "text"
+label = "Team"
+required = true
+
+[[page."/requests/new".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+required = true
+options = ["low", "medium", "high"]
+
+[[page."/requests/new".form.fields]]
+name = "details"
+type = "textarea"
+label = "Details"
+required = false
+rows = 6
+
+[page."/requests/new".form.onSuccess]
+redirect = "/"
+message = "Request submitted"
+
+[page."/requests/:id"]
+title = "Request Detail"
+layout = "detail"
+auth = "optional"
+
+[page."/requests/:id".query.request]
+entity = "Request"
+where = { id = "$params.id" }
+```
+
+## Lesson Output
+
+By the end of this lesson, you should have:
+
+- a runnable `blueprint.toml`
+- a short list of what needs to change next
+- a decision on whether to keep the LLM draft or switch to the starter blueprint
+
+From this point on, keep editing the same `blueprint.toml` as you move through the course.
+
+## What Changes In `blueprint.toml`
+
+By the end of this lesson, your `blueprint.toml` should contain:
+
+- project metadata
+- one main entity
+- one list page
+- one create form page
+- one detail page
+
+The goal is coverage, not polish.
+
+## Zebric Concepts In This Lesson
+
+- **Blueprints**: you now have the first working TOML application definition
+- **Entities**: the first draft of the record type appears here
+- **Pages**: list, form, and detail layouts become concrete routes
+- **Runtime Engine**: `zebric validate` and `zebric dev` test whether the blueprint is valid and runnable
+
+## Next Lesson
+
+Continue to [Lesson 3 - Shape the Data Model](/courses/tutorial-ops/lesson-3-shape-the-data-model/).

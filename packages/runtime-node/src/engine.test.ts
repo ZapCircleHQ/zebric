@@ -1,6 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createRequire } from 'node:module'
 import { ZebricEngine } from './engine.js'
 import type { EngineConfig } from './types/index.js'
+
+const require = createRequire(import.meta.url)
+const { version: runtimeNodeVersion } = require('../package.json') as { version: string }
 
 function makeConfig(overrides: Partial<EngineConfig> = {}): EngineConfig {
   return {
@@ -22,7 +26,7 @@ describe('ZebricEngine', () => {
     it('sets version in state', () => {
       const engine = new ZebricEngine(makeConfig())
       const state = engine.getState()
-      expect(state.version).toBe('0.1.1')
+      expect(state.version).toBe(runtimeNodeVersion)
     })
 
     it('initializes pendingSchemaDiff as null', () => {
@@ -63,12 +67,18 @@ describe('ZebricEngine', () => {
   describe('getVersion', () => {
     it('returns the engine version string', () => {
       const engine = new ZebricEngine(makeConfig())
-      expect(engine.getVersion()).toBe('0.1.1')
+      expect(engine.getVersion()).toBe(runtimeNodeVersion)
     })
 
     it('returns a semver-like string', () => {
       const engine = new ZebricEngine(makeConfig())
       expect(engine.getVersion()).toMatch(/^\d+\.\d+\.\d+$/)
+    })
+
+    it('matches the runtime-node package version', () => {
+      const engine = new ZebricEngine(makeConfig())
+      expect(engine.getVersion()).toBe(runtimeNodeVersion)
+      expect(engine.getState().version).toBe(runtimeNodeVersion)
     })
   })
 
