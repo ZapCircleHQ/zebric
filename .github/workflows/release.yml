@@ -22,9 +22,11 @@ jobs:
         with: { version: 10.30.0 }
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org'
-          cache: 'pnpm'
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+          cache: "pnpm"
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@^11.5.1
       - run: pnpm install --frozen-lockfile
       - name: Create release PR or publish
         uses: changesets/action@v1
@@ -36,4 +38,3 @@ jobs:
           createGithubReleases: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

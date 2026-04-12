@@ -5,6 +5,7 @@ This project uses [Changesets](https://github.com/changesets/changesets) to mana
 ## Why Changesets?
 
 Changesets solves several problems in monorepo version management:
+
 - ✅ Automatically bumps versions across all packages
 - ✅ Handles inter-package dependencies correctly
 - ✅ Generates CHANGELOGs automatically
@@ -23,12 +24,14 @@ pnpm changeset
 ```
 
 This will:
+
 1. Ask which packages changed
 2. Ask if it's a patch, minor, or major change
 3. Ask for a summary of changes
 4. Create a markdown file in `.changeset/` with your changes
 
 **Example interaction:**
+
 ```
 🦋  Which packages would you like to include?
 ◉ @zebric/runtime-core
@@ -49,6 +52,7 @@ Added file upload support with local storage
 ### 2. Merge Changes Into `main`
 
 Once a PR with a changeset is merged, the release workflow on `main` will:
+
 1. Detect all pending changesets
 2. Open or update a `Release packages` PR
 3. Apply version bumps to all linked published packages
@@ -57,11 +61,13 @@ Once a PR with a changeset is merged, the release workflow on `main` will:
 ### 3. Review And Merge The Release PR
 
 The `Release packages` PR is the human review point. Before merging it:
+
 1. Confirm the version bump level is correct
 2. Confirm the generated changelog text is clear and user-facing
 3. Confirm CI is green on the release PR
 
 When that PR is merged, the workflow will automatically:
+
 1. Build the workspace
 2. Publish packages to npm
 3. Create GitHub releases for the published packages
@@ -89,6 +95,7 @@ Our setup (`.changeset/config.json`) uses **linked packages**, meaning all core 
 ```
 
 This means:
+
 - ✅ All packages stay in sync (0.1.0 → 0.1.1 together)
 - ✅ No version drift between packages
 - ✅ Simpler for users to understand
@@ -167,6 +174,7 @@ git commit -am "Fix CORS bug"
 ## Best Practices
 
 ### ✅ Do:
+
 - Create a changeset for **every PR** that affects published packages
 - Write clear, user-facing summaries (they go in CHANGELOG)
 - Use semantic versioning correctly:
@@ -178,6 +186,7 @@ git commit -am "Fix CORS bug"
 - Review the generated `Release packages` PR instead of editing versions by hand
 
 ### ❌ Don't:
+
 - Don't manually edit published package versions
 - Don't create changesets for internal/dev-only changes
 - Don't bypass the generated release PR for normal releases
@@ -215,6 +224,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -222,8 +232,10 @@ jobs:
           version: 10.30.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          registry-url: 'https://registry.npmjs.org'
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@^11.5.1
       - name: Create Release Pull Request or Publish
         uses: changesets/action@v1
         with:
@@ -231,12 +243,21 @@ jobs:
           publish: pnpm release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 ```
 
 This will:
+
 1. Create a `Release packages` PR with all pending changesets
-2. When you merge that PR, it automatically publishes to npm
+2. When you merge that PR, it automatically publishes to npm using trusted publishing/OIDC
+
+For npm trusted publishing, configure each package on npmjs.com with:
+
+- Provider: GitHub Actions
+- Organization or user: `ZapCircleHQ`
+- Repository: `zebric`
+- Workflow filename: `release.yml`
+
+The release workflow must run on GitHub-hosted runners and must keep `id-token: write`. Do not set `NPM_TOKEN` or `NODE_AUTH_TOKEN` for publishing once trusted publishing is configured.
 
 ## Troubleshooting
 
