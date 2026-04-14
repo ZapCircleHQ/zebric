@@ -22,7 +22,7 @@ importers:
         version: 6.21.0(eslint@8.57.1)(typescript@5.9.3)
       '@vitest/coverage-v8':
         specifier: ^1.6.1
-        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37))
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7))
       eslint:
         specifier: ^8.57.0
         version: 8.57.1
@@ -40,7 +40,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@20.19.37)
+        version: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
 
   examples/blog:
     dependencies:
@@ -139,7 +139,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/docs:
     dependencies:
@@ -183,7 +183,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@20.19.37)
+        version: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
 
   packages/notifications:
     dependencies:
@@ -196,7 +196,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/observability:
     dependencies:
@@ -209,7 +209,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/plugin-sdk:
     dependencies:
@@ -222,7 +222,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/react-simulator:
     dependencies:
@@ -245,9 +245,15 @@ importers:
       '@types/react-dom':
         specifier: ^18.2.25
         version: 18.3.7(@types/react@18.3.28)
+      happy-dom:
+        specifier: ^15.11.7
+        version: 15.11.7
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/react-simulator-example:
     dependencies:
@@ -303,7 +309,7 @@ importers:
         version: 6.21.0(eslint@8.57.1)(typescript@5.9.3)
       '@vitest/coverage-v8':
         specifier: ^1.6.1
-        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37))
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7))
       autoprefixer:
         specifier: ^10.4.18
         version: 10.4.27(postcss@8.5.8)
@@ -321,7 +327,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@20.19.37)
+        version: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
       zod-to-json-schema:
         specifier: ^3.24.6
         version: 3.25.1(zod@3.25.76)
@@ -340,7 +346,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/runtime-node:
     dependencies:
@@ -361,7 +367,7 @@ importers:
         version: link:../runtime-hono
       better-auth:
         specifier: ^1.3.26
-        version: 1.5.5(@cloudflare/workers-types@4.20260317.1)(better-sqlite3@9.6.0)(drizzle-kit@0.20.18)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20260317.1)(@types/better-sqlite3@7.6.13)(@types/react@18.3.28)(better-sqlite3@9.6.0)(kysely@0.28.14)(postgres@3.4.8)(react@18.3.1))(mongodb@7.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@1.6.1(@types/node@20.19.37))
+        version: 1.5.5(@cloudflare/workers-types@4.20260317.1)(better-sqlite3@9.6.0)(drizzle-kit@0.20.18)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20260317.1)(@types/better-sqlite3@7.6.13)(@types/react@18.3.28)(better-sqlite3@9.6.0)(kysely@0.28.14)(postgres@3.4.8)(react@18.3.1))(mongodb@7.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7))
       better-sqlite3:
         specifier: ^9.6.0
         version: 9.6.0
@@ -404,13 +410,13 @@ importers:
         version: 8.18.1
       '@vitest/coverage-v8':
         specifier: ^1.6.1
-        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37))
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7))
       typescript:
         specifier: ^5.4.5
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@20.19.37)
+        version: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
 
   packages/runtime-simulator:
     dependencies:
@@ -423,7 +429,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
 
   packages/runtime-worker:
     dependencies:
@@ -451,7 +457,7 @@ importers:
         version: 7.6.13
       '@vitest/coverage-v8':
         specifier: ^1.6.1
-        version: 1.6.1(vitest@1.6.1(@types/node@24.12.0))
+        version: 1.6.1(vitest@1.6.1(@types/node@24.12.0)(happy-dom@15.11.7))
       better-sqlite3:
         specifier: ^9.6.0
         version: 9.6.0
@@ -463,7 +469,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^1.6.1
-        version: 1.6.1(@types/node@24.12.0)
+        version: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
       wrangler:
         specifier: ^3.78.12
         version: 3.114.17(@cloudflare/workers-types@4.20260317.1)
@@ -3654,6 +3660,10 @@ packages:
   hanji@0.0.5:
     resolution: {integrity: sha512-Abxw1Lq+TnYiL4BueXqMau222fPSPMFtya8HdpWsz/xVAhifXou71mPh/kY2+08RgFcVccjG3uZHs6K5HAe3zw==}
 
+  happy-dom@15.11.7:
+    resolution: {integrity: sha512-KyrFvnl+J9US63TEzwoiJOQzZBJY7KgBushJA8X61DMbNsH+2ONkDuLDnCnwUiPTF42tLoEmrPyoqbenVA5zrg==}
+    engines: {node: '>=18.0.0'}
+
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
@@ -5648,6 +5658,10 @@ packages:
     resolution: {integrity: sha512-VwddBukDzu71offAQR975unBIGqfKZpM+8ZX6ySk8nYhVoo5CYaZyzt3YBvYtRtO+aoGlqxPg/B87NGVZ/fu6g==}
     engines: {node: '>=12'}
 
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
+
   whatwg-url@14.2.0:
     resolution: {integrity: sha512-De72GdQZzNTUBBChsXueQUnPKDkg/5A5zp7pFDuQAj5UFoENpiACU0wlCvzpAGnTkj++ihpKwKyYewn/XNUbKw==}
     engines: {node: '>=18'}
@@ -7530,7 +7544,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@20.19.37))':
+  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -7545,11 +7559,11 @@ snapshots:
       std-env: 3.10.0
       strip-literal: 2.1.1
       test-exclude: 6.0.0
-      vitest: 1.6.1(@types/node@20.19.37)
+      vitest: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@24.12.0))':
+  '@vitest/coverage-v8@1.6.1(vitest@1.6.1(@types/node@24.12.0)(happy-dom@15.11.7))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
@@ -7564,7 +7578,7 @@ snapshots:
       std-env: 3.10.0
       strip-literal: 2.1.1
       test-exclude: 6.0.0
-      vitest: 1.6.1(@types/node@24.12.0)
+      vitest: 1.6.1(@types/node@24.12.0)(happy-dom@15.11.7)
     transitivePeerDependencies:
       - supports-color
 
@@ -7862,7 +7876,7 @@ snapshots:
       is-alphanumerical: 2.0.1
       is-decimal: 2.0.1
 
-  better-auth@1.5.5(@cloudflare/workers-types@4.20260317.1)(better-sqlite3@9.6.0)(drizzle-kit@0.20.18)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20260317.1)(@types/better-sqlite3@7.6.13)(@types/react@18.3.28)(better-sqlite3@9.6.0)(kysely@0.28.14)(postgres@3.4.8)(react@18.3.1))(mongodb@7.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@1.6.1(@types/node@20.19.37)):
+  better-auth@1.5.5(@cloudflare/workers-types@4.20260317.1)(better-sqlite3@9.6.0)(drizzle-kit@0.20.18)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20260317.1)(@types/better-sqlite3@7.6.13)(@types/react@18.3.28)(better-sqlite3@9.6.0)(kysely@0.28.14)(postgres@3.4.8)(react@18.3.1))(mongodb@7.1.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)):
     dependencies:
       '@better-auth/core': 1.5.5(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(better-call@1.3.2(zod@3.25.76))(jose@6.2.2)(kysely@0.28.14)(nanostores@1.2.0)
       '@better-auth/drizzle-adapter': 1.5.5(@better-auth/core@1.5.5(@better-auth/utils@0.3.1)(@better-fetch/fetch@1.1.21)(@cloudflare/workers-types@4.20260317.1)(better-call@1.3.2(zod@3.25.76))(jose@6.2.2)(kysely@0.28.14)(nanostores@1.2.0))(@better-auth/utils@0.3.1)(drizzle-orm@0.30.10(@cloudflare/workers-types@4.20260317.1)(@types/better-sqlite3@7.6.13)(@types/react@18.3.28)(better-sqlite3@9.6.0)(kysely@0.28.14)(postgres@3.4.8)(react@18.3.1))
@@ -7888,7 +7902,7 @@ snapshots:
       mongodb: 7.1.0
       react: 18.3.1
       react-dom: 18.3.1(react@18.3.1)
-      vitest: 1.6.1(@types/node@20.19.37)
+      vitest: 1.6.1(@types/node@20.19.37)(happy-dom@15.11.7)
     transitivePeerDependencies:
       - '@cloudflare/workers-types'
 
@@ -8859,6 +8873,12 @@ snapshots:
     dependencies:
       lodash.throttle: 4.1.1
       sisteransi: 1.0.5
+
+  happy-dom@15.11.7:
+    dependencies:
+      entities: 4.5.0
+      webidl-conversions: 7.0.0
+      whatwg-mimetype: 3.0.0
 
   has-flag@4.0.0: {}
 
@@ -11185,7 +11205,7 @@ snapshots:
     optionalDependencies:
       vite: 6.4.1(@types/node@24.12.0)(jiti@1.21.7)(tsx@4.21.0)(yaml@2.8.2)
 
-  vitest@1.6.1(@types/node@20.19.37):
+  vitest@1.6.1(@types/node@20.19.37)(happy-dom@15.11.7):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -11209,6 +11229,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 20.19.37
+      happy-dom: 15.11.7
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -11219,7 +11240,7 @@ snapshots:
       - supports-color
       - terser
 
-  vitest@1.6.1(@types/node@24.12.0):
+  vitest@1.6.1(@types/node@24.12.0)(happy-dom@15.11.7):
     dependencies:
       '@vitest/expect': 1.6.1
       '@vitest/runner': 1.6.1
@@ -11243,6 +11264,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.12.0
+      happy-dom: 15.11.7
     transitivePeerDependencies:
       - less
       - lightningcss
@@ -11353,6 +11375,8 @@ snapshots:
   web-namespaces@2.0.1: {}
 
   webidl-conversions@7.0.0: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@14.2.0:
     dependencies:

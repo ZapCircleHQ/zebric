@@ -129,12 +129,23 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     setRuntimeState(runtime.getState())
   }
 
+  function navigate(path: string) {
+    if (!path) return
+    void refresh(path)
+  }
+
+  const pageOptions = runtimeState?.blueprint.pages ?? []
+  const selectedPage = pageOptions.some((page) => page.path === runtimeState?.activePath)
+    ? runtimeState?.activePath
+    : ''
+
   return (
     <div className={['zebric-simulator', className].filter(Boolean).join(' ')}>
       <div className="zebric-simulator__toolbar">
         <label>
           Account
           <select
+            aria-label="Account"
             value={runtimeState?.activeAccount?.id ?? '__anonymous__'}
             onChange={(event) => switchAccount(event.target.value)}
           >
@@ -150,12 +161,29 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
         <label>
           Seed
           <select
+            aria-label="Seed"
             value={runtimeState?.activeSeed ?? initialSeed ?? ''}
             onChange={(event) => switchSeed(event.target.value)}
           >
             {Object.keys(seeds || { empty: {} }).map((seedName) => (
               <option key={seedName} value={seedName}>
                 {seedName}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          Page
+          <select
+            aria-label="Page"
+            value={selectedPage}
+            onChange={(event) => navigate(event.target.value)}
+          >
+            {selectedPage ? null : <option value="">Custom route</option>}
+            {pageOptions.map((page) => (
+              <option key={page.path} value={page.path}>
+                {page.title} ({page.path})
               </option>
             ))}
           </select>
@@ -376,7 +404,7 @@ function WorkflowPanel(props: {
       <div className="zebric-simulator__workflow-controls">
         <label>
           Workflow
-          <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+          <select aria-label="Workflow" value={selected} onChange={(event) => setSelected(event.target.value)}>
             {registered.map((workflow) => (
               <option key={workflow.name} value={workflow.name}>
                 {workflow.name}
