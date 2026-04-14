@@ -181,7 +181,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
       <div className="zebric-simulator__panel">
         {tab === 'preview' ? (
           <PreviewPanel
-            html={extractBody(renderResult?.html || '')}
+            html={extractPreviewHtml(renderResult?.html || '')}
             onNavigate={(path) => refresh(path)}
             onSubmit={submit}
           />
@@ -296,7 +296,7 @@ function WorkflowPanel(props: {
   )
 }
 
-function extractBody(html: string): string {
+function extractPreviewHtml(html: string): string {
   if (!html) return ''
   if (typeof DOMParser !== 'undefined') {
     const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -318,11 +318,24 @@ function extractBody(html: string): string {
         }
       }
     })
-    return doc.body.innerHTML
+
+    const styles = Array.from(doc.head.querySelectorAll('style'))
+      .map((style) => style.outerHTML)
+      .join('')
+    const bodyClass = doc.body.getAttribute('class') || ''
+    return `${styles}<div class="${escapeHtmlAttr(bodyClass)}">${doc.body.innerHTML}</div>`
   }
   return html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son[a-z]+="[^"]*"/gi, '')
 }
 
 function formatTab(tab: SimulatorTab): string {
   return tab.charAt(0).toUpperCase() + tab.slice(1)
+}
+
+function escapeHtmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }

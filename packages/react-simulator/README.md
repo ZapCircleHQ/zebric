@@ -25,3 +25,5 @@ export function Preview({ blueprintToml }: { blueprintToml: string }) {
 ```
 
 The component includes Preview, Data, Auth, Workflows, Plugins, and Debug tabs. It is designed for browser-only authoring tools and does not require a Zebric backend.
+
+The Preview tab preserves the inline Tailwind styles emitted by Zebric's `HTMLRenderer`, so host apps do not need to configure Tailwind just to display blueprint output correctly.
