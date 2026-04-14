@@ -6,7 +6,10 @@ import {
   type PluginSimulationPolicy,
   type RenderResult,
   type SimulatorAccount,
+  type SimulatorLogEntry,
   type SimulatorSeeds,
+  type WorkflowStateEntry,
+  type WorkflowSummary,
   type ZebricSimulatorState,
 } from '@zebric/runtime-simulator'
 import type { Blueprint } from '@zebric/runtime-core'
@@ -177,6 +180,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
       </div>
 
       {error ? <pre className="zebric-simulator__error">{error}</pre> : null}
+      <StatusBar state={runtimeState} renderResult={renderResult} error={error} />
 
       <div className="zebric-simulator__panel">
         {tab === 'preview' ? (
@@ -186,8 +190,8 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
             onSubmit={submit}
           />
         ) : null}
-        {tab === 'data' ? <JsonPanel value={runtimeState?.data ?? {}} /> : null}
-        {tab === 'auth' ? <JsonPanel value={runtimeState?.activeAccount ?? null} /> : null}
+        {tab === 'data' ? <DataPanel data={runtimeState?.data ?? {}} /> : null}
+        {tab === 'auth' ? <AuthPanel state={runtimeState} /> : null}
         {tab === 'workflows' ? (
           <WorkflowPanel
             registered={runtimeState?.registeredWorkflows ?? []}
@@ -196,14 +200,40 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
           />
         ) : null}
         {tab === 'plugins' ? (
-          <JsonPanel value={{
-            policy: pluginPolicy,
-            calls: (runtimeState?.logs ?? []).filter((entry) => entry.type === 'plugin'),
-          }} />
+          <PluginPanel
+            policy={pluginPolicy}
+            calls={(runtimeState?.logs ?? []).filter((entry) => entry.type === 'plugin')}
+          />
         ) : null}
-        {tab === 'debug' ? <JsonPanel value={runtimeState?.logs ?? []} /> : null}
+        {tab === 'debug' ? <DebugPanel logs={runtimeState?.logs ?? []} /> : null}
       </div>
     </div>
+  )
+}
+
+function StatusBar(props: {
+  state: ZebricSimulatorState | null
+  renderResult: RenderResult | null
+  error: string | null
+}) {
+  const { state, renderResult, error } = props
+  return (
+    <div className="zebric-simulator__statusbar">
+      <StatusPill label="Route" value={state?.activePath || renderResult?.path || 'Not rendered'} />
+      <StatusPill label="Status" value={error ? 'Error' : String(renderResult?.status ?? 'Pending')} tone={error ? 'error' : undefined} />
+      <StatusPill label="Account" value={state?.activeAccount ? `${state.activeAccount.name} (${state.activeAccount.role})` : 'Anonymous'} />
+      <StatusPill label="Seed" value={state?.activeSeed || 'none'} />
+      <StatusPill label="Logs" value={String(state?.logs.length ?? 0)} />
+    </div>
+  )
+}
+
+function StatusPill({ label, value, tone }: { label: string; value: string; tone?: 'error' }) {
+  return (
+    <span className={['zebric-simulator__pill', tone === 'error' ? 'is-error' : ''].filter(Boolean).join(' ')}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </span>
   )
 }
 
@@ -256,13 +286,80 @@ function PreviewPanel(props: {
   )
 }
 
-function JsonPanel({ value }: { value: unknown }) {
-  return <pre className="zebric-simulator__json">{JSON.stringify(value, null, 2)}</pre>
+function DataPanel({ data }: { data: SimulatorSeeds[string] }) {
+  const entities = Object.entries(data)
+  if (entities.length === 0) {
+    return <EmptyPanel title="No data loaded" detail="The active seed does not include records." />
+  }
+
+  return (
+    <div className="zebric-simulator__stack">
+      {entities.map(([entityName, rows]) => (
+        <section key={entityName} className="zebric-simulator__section">
+          <div className="zebric-simulator__section-header">
+            <h3>{entityName}</h3>
+            <span>{rows.length} row{rows.length === 1 ? '' : 's'}</span>
+          </div>
+          {rows.length > 0 ? <RecordTable rows={rows} /> : <EmptyPanel title="Empty entity" detail="No rows for this entity in the active seed." compact />}
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function RecordTable({ rows }: { rows: Array<Record<string, unknown>> }) {
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).slice(0, 8)
+  return (
+    <div className="zebric-simulator__table-wrap">
+      <table className="zebric-simulator__table">
+        <thead>
+          <tr>
+            {columns.map((column) => <th key={column}>{column}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={String(row.id ?? index)}>
+              {columns.map((column) => <td key={column}>{formatCell(row[column])}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function AuthPanel({ state }: { state: ZebricSimulatorState | null }) {
+  return (
+    <div className="zebric-simulator__stack">
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Current session</h3>
+        </div>
+        {state?.activeAccount ? (
+          <dl className="zebric-simulator__details">
+            <dt>ID</dt><dd>{state.activeAccount.id}</dd>
+            <dt>Name</dt><dd>{state.activeAccount.name}</dd>
+            <dt>Email</dt><dd>{state.activeAccount.email}</dd>
+            <dt>Role</dt><dd>{state.activeAccount.role}</dd>
+          </dl>
+        ) : <EmptyPanel title="Anonymous" detail="The simulator is rendering without an active account." compact />}
+      </section>
+
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Available accounts</h3>
+          <span>{state?.accounts.length ?? 0} account{state?.accounts.length === 1 ? '' : 's'}</span>
+        </div>
+        <RecordTable rows={state?.accounts ?? []} />
+      </section>
+    </div>
+  )
 }
 
 function WorkflowPanel(props: {
-  registered: Array<{ name: string; trigger: unknown; stepCount: number; steps: string[] }>
-  history: unknown[]
+  registered: WorkflowSummary[]
+  history: WorkflowStateEntry[]
   onTrigger: (workflowName: string) => void
 }) {
   const { registered, history, onTrigger } = props
@@ -291,9 +388,110 @@ function WorkflowPanel(props: {
           Trigger
         </button>
       </div>
-      <JsonPanel value={{ registered, history }} />
+      <div className="zebric-simulator__stack">
+        <section className="zebric-simulator__section">
+          <div className="zebric-simulator__section-header">
+            <h3>Registered workflows</h3>
+            <span>{registered.length} total</span>
+          </div>
+          {registered.length > 0 ? (
+            <div className="zebric-simulator__cards">
+              {registered.map((workflow) => (
+                <article key={workflow.name} className="zebric-simulator__card">
+                  <h4>{workflow.name}</h4>
+                  <p>{workflow.stepCount} step{workflow.stepCount === 1 ? '' : 's'}</p>
+                  <code>{workflow.steps.join(' -> ') || 'No steps'}</code>
+                </article>
+              ))}
+            </div>
+          ) : <EmptyPanel title="No workflows" detail="This blueprint does not define workflows." compact />}
+        </section>
+
+        <section className="zebric-simulator__section">
+          <div className="zebric-simulator__section-header">
+            <h3>Trigger history</h3>
+            <span>{history.length} event{history.length === 1 ? '' : 's'}</span>
+          </div>
+          {history.length > 0 ? <LogList logs={history.map(workflowToLogEntry)} /> : <EmptyPanel title="No workflow events" detail="Trigger a workflow to see simulator state here." compact />}
+        </section>
+      </div>
     </div>
   )
+}
+
+function PluginPanel({ policy, calls }: { policy: PluginSimulationPolicy; calls: SimulatorLogEntry[] }) {
+  return (
+    <div className="zebric-simulator__stack">
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Plugin policy</h3>
+          <span>Level {policy.defaultLevel}</span>
+        </div>
+        <dl className="zebric-simulator__details">
+          <dt>Default</dt><dd>Level {policy.defaultLevel}</dd>
+          <dt>Overrides</dt><dd>{Object.keys(policy.perPlugin || {}).length || 'None'}</dd>
+        </dl>
+      </section>
+
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Plugin calls</h3>
+          <span>{calls.length} call{calls.length === 1 ? '' : 's'}</span>
+        </div>
+        {calls.length > 0 ? <LogList logs={calls} /> : <EmptyPanel title="No plugin calls" detail="Level 1 plugin calls will appear here and in the Debug tab." compact />}
+      </section>
+    </div>
+  )
+}
+
+function DebugPanel({ logs }: { logs: SimulatorLogEntry[] }) {
+  return logs.length > 0 ? <LogList logs={logs} /> : <EmptyPanel title="No debug events" detail="Navigation, queries, mutations, workflows, and simulated API calls will appear here." />
+}
+
+function LogList({ logs }: { logs: SimulatorLogEntry[] }) {
+  return (
+    <ol className="zebric-simulator__logs">
+      {logs.map((log) => (
+        <li key={log.id}>
+          <div>
+            <span className="zebric-simulator__log-type">{log.type}</span>
+            <strong>{log.message}</strong>
+            <time>{new Date(log.timestamp).toLocaleTimeString()}</time>
+          </div>
+          {log.detail !== undefined ? <pre>{JSON.stringify(log.detail, null, 2)}</pre> : null}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+function EmptyPanel({ title, detail, compact }: { title: string; detail: string; compact?: boolean }) {
+  return (
+    <div className={compact ? 'zebric-simulator__empty is-compact' : 'zebric-simulator__empty'}>
+      <strong>{title}</strong>
+      <p>{detail}</p>
+    </div>
+  )
+}
+
+function workflowToLogEntry(workflow: WorkflowStateEntry): SimulatorLogEntry {
+  return {
+    id: workflow.id,
+    timestamp: workflow.timestamp,
+    type: 'workflow',
+    message: `${workflow.workflowName} ${workflow.status}`,
+    detail: {
+      payload: workflow.payload,
+      logs: workflow.logs,
+    },
+  }
+}
+
+function formatCell(value: unknown): string {
+  if (value === null) return 'null'
+  if (value === undefined) return ''
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
 }
 
 function extractPreviewHtml(html: string): string {
