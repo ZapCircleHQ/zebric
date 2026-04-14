@@ -10,6 +10,21 @@ version = "1.0.0"
 [project.runtime]
 min_version = "0.2.0"
 
+[notifications]
+default = "slack_ops"
+
+[[notifications.adapters]]
+name = "slack_ops"
+type = "slack"
+[notifications.adapters.config]
+defaultChannel = "#ops"
+
+[[notifications.adapters]]
+name = "email"
+type = "email"
+[notifications.adapters.config]
+from = "noreply@example.test"
+
 [entity.Task]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
@@ -53,6 +68,27 @@ trigger = { manual = true }
 type = "plugin"
 plugin = "tasks"
 action = "markDone"
+
+[[workflow.MarkDone.steps]]
+type = "notify"
+adapter = "slack_ops"
+channel = "#ops"
+body = "Task {{ variables.id }} done"
+
+[[workflow.MarkDone.steps]]
+type = "email"
+to = "manager@example.test"
+subject = "Task {{ variables.id }} done"
+body = "The task is done."
+
+[[workflow.MarkDone.steps]]
+type = "webhook"
+url = "https://example.test/hooks/{{ variables.id }}"
+method = "POST"
+[workflow.MarkDone.steps.headers]
+Content-Type = "application/json"
+[workflow.MarkDone.steps.payload]
+id = "{{ variables.id }}"
 `
 
 describe('ZebricSimulatorRuntime', () => {
@@ -87,6 +123,10 @@ describe('ZebricSimulatorRuntime', () => {
     await runtime.triggerWorkflow('MarkDone', { id: 'task-1' })
     expect(runtime.getState().registeredWorkflows[0]?.name).toBe('MarkDone')
     expect(runtime.getState().workflows[0]?.workflowName).toBe('MarkDone')
+    expect(runtime.getState().integrations.map((entry) => entry.kind)).toEqual(['slack', 'email', 'webhook'])
+    expect(runtime.getState().integrations.find((entry) => entry.kind === 'slack')?.body).toBe('Task task-1 done')
+    expect(runtime.getState().integrations.find((entry) => entry.kind === 'email')?.subject).toBe('Task task-1 done')
+    expect(runtime.getState().integrations.find((entry) => entry.kind === 'webhook')?.url).toBe('https://example.test/hooks/task-1')
     expect(runtime.getState().audit.some((entry) => entry.metadata?.eventType === 'workflow.trigger')).toBe(true)
 
     runtime.resetSeed()

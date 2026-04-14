@@ -36,9 +36,34 @@ export interface ApiSimulationPolicy {
 export interface SimulatorLogEntry {
   id: string
   timestamp: number
-  type: 'request' | 'query' | 'mutation' | 'plugin' | 'api' | 'workflow' | 'error'
+  type: 'request' | 'query' | 'mutation' | 'plugin' | 'api' | 'workflow' | 'integration' | 'error'
   message: string
   detail?: unknown
+}
+
+export type SimulatedIntegrationKind = 'slack' | 'email' | 'webhook' | 'notification'
+
+export interface SimulatedIntegrationEntry {
+  id: string
+  timestamp: number
+  kind: SimulatedIntegrationKind
+  workflowName: string
+  stepIndex: number
+  status: 'simulated' | 'skipped' | 'failed'
+  adapter?: string
+  adapterType?: string
+  channel?: string
+  to?: string
+  subject?: string
+  body?: string
+  template?: string
+  params?: unknown
+  metadata?: unknown
+  url?: string
+  method?: string
+  headers?: Record<string, string>
+  payload?: unknown
+  message: string
 }
 
 export interface WorkflowStateEntry {
@@ -90,6 +115,7 @@ export interface ZebricSimulatorState {
   data: SimulatorSeeds[string]
   audit: AuditEvent[]
   logs: SimulatorLogEntry[]
+  integrations: SimulatedIntegrationEntry[]
   registeredWorkflows: WorkflowSummary[]
   workflows: WorkflowStateEntry[]
 }

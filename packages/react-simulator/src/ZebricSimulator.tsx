@@ -6,6 +6,7 @@ import {
   type PluginSimulationPolicy,
   type RenderResult,
   type SimulatorAccount,
+  type SimulatedIntegrationEntry,
   type SimulatorLogEntry,
   type SimulatorSeeds,
   type WorkflowStateEntry,
@@ -28,7 +29,7 @@ export interface ZebricSimulatorProps {
   className?: string
 }
 
-type SimulatorTab = 'preview' | 'data' | 'auth' | 'workflows' | 'plugins' | 'audit' | 'debug'
+type SimulatorTab = 'preview' | 'data' | 'auth' | 'workflows' | 'plugins' | 'integrations' | 'audit' | 'debug'
 
 export function ZebricSimulator(props: ZebricSimulatorProps) {
   const {
@@ -195,7 +196,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
       </div>
 
       <div className="zebric-simulator__tabs" role="tablist" aria-label="Simulator tabs">
-        {(['preview', 'data', 'auth', 'workflows', 'plugins', 'audit', 'debug'] as SimulatorTab[]).map((item) => (
+        {(['preview', 'data', 'auth', 'workflows', 'plugins', 'integrations', 'audit', 'debug'] as SimulatorTab[]).map((item) => (
           <button
             key={item}
             type="button"
@@ -233,6 +234,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
             calls={(runtimeState?.logs ?? []).filter((entry) => entry.type === 'plugin')}
           />
         ) : null}
+        {tab === 'integrations' ? <IntegrationsPanel entries={runtimeState?.integrations ?? []} /> : null}
         {tab === 'audit' ? <AuditPanel entries={runtimeState?.audit ?? []} /> : null}
         {tab === 'debug' ? <DebugPanel logs={runtimeState?.logs ?? []} /> : null}
       </div>
@@ -252,6 +254,7 @@ function StatusBar(props: {
       <StatusPill label="Status" value={error ? 'Error' : String(renderResult?.status ?? 'Pending')} tone={error ? 'error' : undefined} />
       <StatusPill label="Account" value={state?.activeAccount ? `${state.activeAccount.name} (${state.activeAccount.role})` : 'Anonymous'} />
       <StatusPill label="Seed" value={state?.activeSeed || 'none'} />
+      <StatusPill label="Integrations" value={String(state?.integrations.length ?? 0)} />
       <StatusPill label="Audit" value={String(state?.audit.length ?? 0)} />
       <StatusPill label="Logs" value={String(state?.logs.length ?? 0)} />
     </div>
@@ -474,6 +477,50 @@ function PluginPanel({ policy, calls }: { policy: PluginSimulationPolicy; calls:
   )
 }
 
+function IntegrationsPanel({ entries }: { entries: SimulatedIntegrationEntry[] }) {
+  if (entries.length === 0) {
+    return <EmptyPanel title="No integration events" detail="Slack, email, and webhook workflow steps will appear here." />
+  }
+
+  return (
+    <div className="zebric-simulator__stack">
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Integration outbox</h3>
+          <span>{entries.length} event{entries.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="zebric-simulator__table-wrap">
+          <table className="zebric-simulator__table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Kind</th>
+                <th>Workflow</th>
+                <th>Status</th>
+                <th>Target</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td>{new Date(entry.timestamp).toLocaleTimeString()}</td>
+                  <td>{entry.kind}</td>
+                  <td>{entry.workflowName}</td>
+                  <td>{entry.status}</td>
+                  <td>{integrationTarget(entry)}</td>
+                  <td>{entry.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <LogList logs={entries.map(integrationToLogEntry)} />
+    </div>
+  )
+}
+
 function DebugPanel({ logs }: { logs: SimulatorLogEntry[] }) {
   return logs.length > 0 ? <LogList logs={logs} /> : <EmptyPanel title="No debug events" detail="Navigation, queries, mutations, workflows, and simulated API calls will appear here." />
 }
@@ -566,6 +613,23 @@ function workflowToLogEntry(workflow: WorkflowStateEntry): SimulatorLogEntry {
       logs: workflow.logs,
     },
   }
+}
+
+function integrationToLogEntry(entry: SimulatedIntegrationEntry): SimulatorLogEntry {
+  return {
+    id: entry.id,
+    timestamp: entry.timestamp,
+    type: 'integration',
+    message: entry.message,
+    detail: entry,
+  }
+}
+
+function integrationTarget(entry: SimulatedIntegrationEntry): string {
+  if (entry.kind === 'webhook') {
+    return entry.url || ''
+  }
+  return entry.channel || entry.to || entry.adapter || ''
 }
 
 function formatCell(value: unknown): string {

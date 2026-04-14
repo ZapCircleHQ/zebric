@@ -15,6 +15,15 @@ version = "1.0.0"
 [project.runtime]
 min_version = "0.2.0"
 
+[notifications]
+default = "slack_ops"
+
+[[notifications.adapters]]
+name = "slack_ops"
+type = "slack"
+[notifications.adapters.config]
+defaultChannel = "#ops"
+
 [entity.Task]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
@@ -59,6 +68,17 @@ trigger = { manual = true }
 type = "plugin"
 plugin = "tasks"
 action = "markDone"
+
+[[workflow.MarkDone.steps]]
+type = "notify"
+adapter = "slack_ops"
+channel = "#ops"
+body = "Workflow {{ variables.source }} done"
+
+[[workflow.MarkDone.steps]]
+type = "webhook"
+url = "https://example.test/hooks/{{ variables.source }}"
+method = "POST"
 `
 
 const seeds: SimulatorSeeds = {
@@ -144,6 +164,9 @@ describe('ZebricSimulator', () => {
 
     await clickButton(container, 'Trigger')
     await waitForText(container, 'MarkDone debug')
+    await clickButton(container, 'Integrations')
+    await waitForText(container, 'Slack notification simulated via slack_ops')
+    await waitForText(container, 'Webhook simulated: POST https://example.test/hooks/react-simulator')
     await clickButton(container, 'Audit')
     await waitForText(container, 'workflow.trigger')
     await waitForText(container, 'Trigger workflow: MarkDone')

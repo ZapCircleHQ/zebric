@@ -12,6 +12,7 @@ import {
 import { SimulatorApiClient } from './api-simulator.js'
 import { SimulatorAuditLogger } from './audit-logger.js'
 import { defaultSimulatorAccounts, defaultSimulatorSeeds } from './defaults.js'
+import { SimulatorIntegrationHost } from './integration-simulator.js'
 import { BrowserMemoryQueryExecutor } from './memory-query-executor.js'
 import { SimulatorLogger } from './logger.js'
 import { SimulatorPluginHost } from './plugin-simulator.js'
@@ -24,6 +25,7 @@ import type {
   SimulatorAccount,
   SimulatorSeeds,
   SubmitResult,
+  WorkflowStateEntry,
   ZebricSimulatorRuntimeConfig,
   ZebricSimulatorState,
 } from './types.js'
@@ -44,6 +46,7 @@ export class ZebricSimulatorRuntime {
   private renderer: HTMLRenderer
   private requestHandler: RequestHandler
   private workflowHost: SimulatorWorkflowHost
+  private integrationHost: SimulatorIntegrationHost
   private pluginHost: SimulatorPluginHost
   private apiClient: SimulatorApiClient
 
@@ -63,6 +66,7 @@ export class ZebricSimulatorRuntime {
     this.renderer = new HTMLRenderer(this.blueprint, this.theme)
     this.requestHandler = this.createRequestHandler()
     this.workflowHost = new SimulatorWorkflowHost(this.blueprint, this.logger)
+    this.integrationHost = new SimulatorIntegrationHost(this.blueprint, this.logger)
     this.pluginHost = new SimulatorPluginHost(config.pluginPolicy || defaultPluginPolicy(), this.logger)
     this.apiClient = new SimulatorApiClient(config.apiPolicy || defaultApiPolicy(), this.logger)
   }
@@ -73,6 +77,7 @@ export class ZebricSimulatorRuntime {
     this.queryExecutor.setBlueprint(this.blueprint)
     this.requestHandler = this.createRequestHandler()
     this.workflowHost.setBlueprint(this.blueprint)
+    this.integrationHost.setBlueprint(this.blueprint)
 
     if (options.resetData) {
       this.queryExecutor.loadSeed(this.seeds[this.activeSeed] || {})
@@ -113,7 +118,7 @@ export class ZebricSimulatorRuntime {
 
     if (normalizedPath.startsWith('/actions/')) {
       const workflowName = decodeURIComponent(normalizedPath.slice('/actions/'.length))
-      const entry = this.workflowHost.trigger(workflowName, body)
+      const entry = this.simulateWorkflowTrigger(workflowName, body)
       const redirect = typeof body.redirect === 'string' ? body.redirect : this.activePath
       const rendered = await this.render(redirect)
       return { ...rendered, response: { success: entry.status !== 'failed', workflow: entry } }
@@ -188,7 +193,7 @@ export class ZebricSimulatorRuntime {
   }
 
   async triggerWorkflow(workflowName: string, payload?: unknown): Promise<RenderResult> {
-    this.workflowHost.trigger(workflowName, payload)
+    this.simulateWorkflowTrigger(workflowName, payload)
     this.auditLogger.log({
       eventType: 'workflow.trigger',
       severity: 'INFO',
@@ -211,6 +216,7 @@ export class ZebricSimulatorRuntime {
       data: this.queryExecutor.exportData(),
       audit: this.auditLogger.getEntries(),
       logs: this.logger.getEntries(),
+      integrations: this.integrationHost.getEntries(),
       registeredWorkflows: this.workflowHost.getRegisteredWorkflows(),
       workflows: this.workflowHost.getEntries(),
     }
@@ -222,6 +228,19 @@ export class ZebricSimulatorRuntime {
 
   getApiClient(): SimulatorApiClient {
     return this.apiClient
+  }
+
+  private simulateWorkflowTrigger(workflowName: string, payload?: unknown): WorkflowStateEntry {
+    const entry = this.workflowHost.trigger(workflowName, payload)
+    const integrations = this.integrationHost.simulateWorkflow(workflowName, payload)
+
+    if (integrations.length > 0) {
+      entry.logs.push(
+        ...integrations.map((integration) => integration.message)
+      )
+    }
+
+    return entry
   }
 
   private createRequestHandler(): RequestHandler {
