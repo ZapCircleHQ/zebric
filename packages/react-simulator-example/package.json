@@ -1,0 +1,26 @@
+{
+  "name": "@zebric/react-simulator-example",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Editable blueprint example app for the Zebric React simulator",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@zebric/react-simulator": "workspace:*",
+    "@zebric/runtime-simulator": "workspace:*",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "vite": "^5.4.11",
+    "@vitejs/plugin-react": "^4.3.3"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "typescript": "^5.4.5"
+  }
+}

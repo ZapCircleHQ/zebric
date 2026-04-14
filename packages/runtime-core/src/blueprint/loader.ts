@@ -5,7 +5,7 @@
  * File I/O is handled by platform adapters.
  */
 
-import * as TOML from '@iarna/toml'
+import { parse as parseTOML } from 'smol-toml'
 import { BlueprintSchema } from './schema.js'
 import type { Blueprint } from '../types/index.js'
 import {
@@ -28,10 +28,10 @@ export class BlueprintParser {
     let data: any
     try {
       if (format === 'toml') {
-        const parsed = TOML.parse(content)
+        const parsed = parseTOML(content)
         // Transform spec-compliant TOML to Blueprint JSON structure
         data = this.transformTOML(parsed)
-        // Remove Symbol keys added by TOML parser (for Zod 4 compatibility)
+        // Normalize parser output before validation.
         data = this.stripSymbolKeys(data)
       } else {
         data = JSON.parse(content)

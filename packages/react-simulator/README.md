@@ -1,0 +1,27 @@
+# @zebric/react-simulator
+
+React wrapper for the browser-only Zebric simulator runtime.
+
+```tsx
+import { ZebricSimulator } from '@zebric/react-simulator'
+import '@zebric/react-simulator/styles.css'
+
+export function Preview({ blueprintToml }: { blueprintToml: string }) {
+  return (
+    <ZebricSimulator
+      blueprintToml={blueprintToml}
+      seeds={{
+        demo: {
+          Task: [{ id: 'task-1', title: 'Review plan' }],
+        },
+      }}
+      initialSeed="demo"
+      initialAccount="manager"
+      pluginPolicy={{ defaultLevel: 1 }}
+      apiPolicy={{ mode: 'debug' }}
+    />
+  )
+}
+```
+
+The component includes Preview, Data, Auth, Workflows, Plugins, and Debug tabs. It is designed for browser-only authoring tools and does not require a Zebric backend.
