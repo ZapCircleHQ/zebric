@@ -107,6 +107,10 @@ describe('ZebricSimulator', () => {
 
     await waitForText(container, 'user@example.test')
     expect(container.textContent).toContain('User (user)')
+
+    await clickButton(container, 'Audit')
+    await waitForText(container, 'auth.login.success')
+    await waitForText(container, 'User logged in')
   })
 
   it('submits form data and resets the active seed', async () => {
@@ -140,6 +144,9 @@ describe('ZebricSimulator', () => {
 
     await clickButton(container, 'Trigger')
     await waitForText(container, 'MarkDone debug')
+    await clickButton(container, 'Audit')
+    await waitForText(container, 'workflow.trigger')
+    await waitForText(container, 'Trigger workflow: MarkDone')
   })
 })
 

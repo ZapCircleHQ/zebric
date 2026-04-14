@@ -1,4 +1,5 @@
 export * from './api-simulator.js'
+export * from './audit-logger.js'
 export * from './defaults.js'
 export * from './memory-query-executor.js'
 export * from './plugin-simulator.js'

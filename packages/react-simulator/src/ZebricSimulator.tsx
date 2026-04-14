@@ -12,7 +12,7 @@ import {
   type WorkflowSummary,
   type ZebricSimulatorState,
 } from '@zebric/runtime-simulator'
-import type { Blueprint } from '@zebric/runtime-core'
+import type { AuditEvent, Blueprint } from '@zebric/runtime-core'
 
 export interface ZebricSimulatorProps {
   blueprint?: Blueprint
@@ -28,7 +28,7 @@ export interface ZebricSimulatorProps {
   className?: string
 }
 
-type SimulatorTab = 'preview' | 'data' | 'auth' | 'workflows' | 'plugins' | 'debug'
+type SimulatorTab = 'preview' | 'data' | 'auth' | 'workflows' | 'plugins' | 'audit' | 'debug'
 
 export function ZebricSimulator(props: ZebricSimulatorProps) {
   const {
@@ -195,7 +195,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
       </div>
 
       <div className="zebric-simulator__tabs" role="tablist" aria-label="Simulator tabs">
-        {(['preview', 'data', 'auth', 'workflows', 'plugins', 'debug'] as SimulatorTab[]).map((item) => (
+        {(['preview', 'data', 'auth', 'workflows', 'plugins', 'audit', 'debug'] as SimulatorTab[]).map((item) => (
           <button
             key={item}
             type="button"
@@ -233,6 +233,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
             calls={(runtimeState?.logs ?? []).filter((entry) => entry.type === 'plugin')}
           />
         ) : null}
+        {tab === 'audit' ? <AuditPanel entries={runtimeState?.audit ?? []} /> : null}
         {tab === 'debug' ? <DebugPanel logs={runtimeState?.logs ?? []} /> : null}
       </div>
     </div>
@@ -251,6 +252,7 @@ function StatusBar(props: {
       <StatusPill label="Status" value={error ? 'Error' : String(renderResult?.status ?? 'Pending')} tone={error ? 'error' : undefined} />
       <StatusPill label="Account" value={state?.activeAccount ? `${state.activeAccount.name} (${state.activeAccount.role})` : 'Anonymous'} />
       <StatusPill label="Seed" value={state?.activeSeed || 'none'} />
+      <StatusPill label="Audit" value={String(state?.audit.length ?? 0)} />
       <StatusPill label="Logs" value={String(state?.logs.length ?? 0)} />
     </div>
   )
@@ -474,6 +476,57 @@ function PluginPanel({ policy, calls }: { policy: PluginSimulationPolicy; calls:
 
 function DebugPanel({ logs }: { logs: SimulatorLogEntry[] }) {
   return logs.length > 0 ? <LogList logs={logs} /> : <EmptyPanel title="No debug events" detail="Navigation, queries, mutations, workflows, and simulated API calls will appear here." />
+}
+
+function AuditPanel({ entries }: { entries: AuditEvent[] }) {
+  if (entries.length === 0) {
+    return <EmptyPanel title="No audit events" detail="Page reads, data writes, denied access, and workflow triggers will appear here." />
+  }
+
+  return (
+    <div className="zebric-simulator__stack">
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
+          <h3>Audit log</h3>
+          <span>{entries.length} event{entries.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="zebric-simulator__table-wrap">
+          <table className="zebric-simulator__table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Event</th>
+                <th>Severity</th>
+                <th>Action</th>
+                <th>Resource</th>
+                <th>User</th>
+                <th>Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={entry.id}>
+                  <td>{new Date(entry.timestamp).toLocaleTimeString()}</td>
+                  <td>{auditMetadataString(entry, 'eventType')}</td>
+                  <td>{auditMetadataString(entry, 'severity')}</td>
+                  <td>{entry.action}</td>
+                  <td>{entry.entity || auditMetadataString(entry, 'resource')}</td>
+                  <td>{entry.userId || 'anonymous'}</td>
+                  <td>{auditMetadataString(entry, 'success') === 'false' ? 'denied' : 'success'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function auditMetadataString(entry: AuditEvent, key: string): string {
+  const value = entry.metadata?.[key]
+  if (value === undefined || value === null) return ''
+  return String(value)
 }
 
 function LogList({ logs }: { logs: SimulatorLogEntry[] }) {

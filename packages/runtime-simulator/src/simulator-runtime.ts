@@ -10,6 +10,7 @@ import {
   type Theme,
 } from '@zebric/runtime-core'
 import { SimulatorApiClient } from './api-simulator.js'
+import { SimulatorAuditLogger } from './audit-logger.js'
 import { defaultSimulatorAccounts, defaultSimulatorSeeds } from './defaults.js'
 import { BrowserMemoryQueryExecutor } from './memory-query-executor.js'
 import { SimulatorLogger } from './logger.js'
@@ -36,6 +37,7 @@ export class ZebricSimulatorRuntime {
   private activePath: string
   private origin: string
   private logger = new SimulatorLogger()
+  private auditLogger = new SimulatorAuditLogger()
   private routeMatcher = new RouteMatcher()
   private queryExecutor: BrowserMemoryQueryExecutor
   private sessionManager: SimulatorSessionManager
@@ -146,10 +148,31 @@ export class ZebricSimulatorRuntime {
   }
 
   switchAccount(accountId: string | null): void {
+    const previousAccount = this.activeAccount
     this.activeAccount = accountId === null
       ? null
       : this.accounts.find((account) => account.id === accountId) ?? null
     this.sessionManager.setActiveAccount(this.activeAccount)
+
+    if (previousAccount?.id === this.activeAccount?.id) {
+      return
+    }
+
+    this.auditLogger.log({
+      eventType: this.activeAccount ? 'auth.login.success' : 'auth.logout',
+      severity: 'INFO',
+      action: this.activeAccount ? 'User logged in' : 'User logged out',
+      resource: 'auth',
+      success: true,
+      userId: this.activeAccount?.id ?? previousAccount?.id,
+      metadata: {
+        source: 'simulator.account_switch',
+        previousUserId: previousAccount?.id,
+        previousRole: previousAccount?.role,
+        nextUserId: this.activeAccount?.id,
+        nextRole: this.activeAccount?.role,
+      },
+    })
   }
 
   switchSeed(seedName: string): void {
@@ -166,6 +189,15 @@ export class ZebricSimulatorRuntime {
 
   async triggerWorkflow(workflowName: string, payload?: unknown): Promise<RenderResult> {
     this.workflowHost.trigger(workflowName, payload)
+    this.auditLogger.log({
+      eventType: 'workflow.trigger',
+      severity: 'INFO',
+      action: `Trigger workflow: ${workflowName}`,
+      resource: workflowName,
+      success: true,
+      userId: this.activeAccount?.id,
+      metadata: { payload },
+    })
     return this.render(this.activePath)
   }
 
@@ -177,6 +209,7 @@ export class ZebricSimulatorRuntime {
       activeAccount: this.activeAccount,
       accounts: [...this.accounts],
       data: this.queryExecutor.exportData(),
+      audit: this.auditLogger.getEntries(),
       logs: this.logger.getEntries(),
       registeredWorkflows: this.workflowHost.getRegisteredWorkflows(),
       workflows: this.workflowHost.getEntries(),
@@ -199,6 +232,7 @@ export class ZebricSimulatorRuntime {
       renderer: {
         renderPage: (context) => this.renderer.renderPage(context),
       },
+      auditLogger: this.auditLogger,
       defaultOrigin: this.origin,
     })
   }

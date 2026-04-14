@@ -33,6 +33,7 @@ const page = await runtime.render('/')
 - Core `RequestHandler` and `HTMLRenderer` integration
 - Client-style form submission through `submit(...)`
 - Workflow debug history and manual workflow triggering
+- Audit log capture for page reads, mutations, denied access, and workflow triggers
 - Plugin level 0 and level 1 simulation
 - Simulated REST/API call logging with optional mocks
 

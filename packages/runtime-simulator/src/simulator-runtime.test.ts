@@ -71,15 +71,23 @@ describe('ZebricSimulatorRuntime', () => {
     const initial = await runtime.render('/')
     expect(initial.status).toBe(200)
     expect(initial.html).toContain('Existing task')
+    expect(runtime.getState().audit[0]?.metadata?.eventType).toBe('DATA_READ')
+
+    runtime.switchAccount('user')
+    expect(runtime.getState().audit[0]?.metadata?.eventType).toBe('auth.login.success')
+    expect(runtime.getState().audit[0]?.action).toBe('User logged in')
+    expect(runtime.getState().audit[0]?.metadata?.nextUserId).toBe('user')
 
     await runtime.submit('/tasks/new', 'POST', { title: 'Created task' })
     const state = runtime.getState()
     expect(state.data.Task).toHaveLength(2)
     expect(state.data.Task?.[1]?.title).toBe('Created task')
+    expect(runtime.getState().audit.some((entry) => entry.metadata?.eventType === 'data.create')).toBe(true)
 
     await runtime.triggerWorkflow('MarkDone', { id: 'task-1' })
     expect(runtime.getState().registeredWorkflows[0]?.name).toBe('MarkDone')
     expect(runtime.getState().workflows[0]?.workflowName).toBe('MarkDone')
+    expect(runtime.getState().audit.some((entry) => entry.metadata?.eventType === 'workflow.trigger')).toBe(true)
 
     runtime.resetSeed()
     expect(runtime.getState().data.Task).toHaveLength(1)

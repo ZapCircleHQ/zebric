@@ -1,4 +1,4 @@
-import type { Blueprint, UserSession } from '@zebric/runtime-core'
+import type { AuditEvent, Blueprint, UserSession } from '@zebric/runtime-core'
 
 export type SimulatorPluginLevel = 0 | 1 | 2 | 3
 
@@ -88,6 +88,7 @@ export interface ZebricSimulatorState {
   activeAccount: SimulatorAccount | null
   accounts: SimulatorAccount[]
   data: SimulatorSeeds[string]
+  audit: AuditEvent[]
   logs: SimulatorLogEntry[]
   registeredWorkflows: WorkflowSummary[]
   workflows: WorkflowStateEntry[]
