@@ -82,6 +82,15 @@ export interface WorkflowSummary {
   steps: string[]
 }
 
+export interface WebhookSimulationResult {
+  path: string
+  status: 200 | 404
+  matchedWorkflows: string[]
+  body?: unknown
+  headers: Record<string, string>
+  query: Record<string, string>
+}
+
 export interface RenderResult {
   path: string
   status: number

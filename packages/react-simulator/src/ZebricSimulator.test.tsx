@@ -79,6 +79,15 @@ body = "Workflow {{ variables.source }} done"
 type = "webhook"
 url = "https://example.test/hooks/{{ variables.source }}"
 method = "POST"
+
+[workflow.HandleSlackAction]
+trigger = { webhook = "/notifications/slack_ops/actions" }
+
+[[workflow.HandleSlackAction.steps]]
+type = "notify"
+adapter = "slack_ops"
+channel = "#ops"
+body = "Slack {{ variables.webhook.body.action_id }} for {{ variables.webhook.body.value }}"
 `
 
 const seeds: SimulatorSeeds = {
@@ -167,7 +176,10 @@ describe('ZebricSimulator', () => {
     await clickButton(container, 'Integrations')
     await waitForText(container, 'Slack notification simulated via slack_ops')
     await waitForText(container, 'Webhook simulated: POST https://example.test/hooks/react-simulator')
+    await clickButton(container, 'Dispatch webhook')
+    await waitForText(container, 'Slack dispatch_approve for task-1')
     await clickButton(container, 'Audit')
+    await waitForText(container, 'workflow.webhook')
     await waitForText(container, 'workflow.trigger')
     await waitForText(container, 'Trigger workflow: MarkDone')
   })

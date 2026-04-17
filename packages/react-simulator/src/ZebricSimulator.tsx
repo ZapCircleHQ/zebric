@@ -130,6 +130,17 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     setRuntimeState(runtime.getState())
   }
 
+  function triggerWebhook(path: string, body: unknown) {
+    const runtime = runtimeRef.current
+    if (!runtime) return
+    runtime.triggerWebhook(path, body, {
+      'content-type': 'application/json',
+      'x-slack-signature': 'v0=simulated',
+      'x-slack-request-timestamp': '1700000000',
+    })
+    setRuntimeState(runtime.getState())
+  }
+
   function navigate(path: string) {
     if (!path) return
     void refresh(path)
@@ -234,7 +245,13 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
             calls={(runtimeState?.logs ?? []).filter((entry) => entry.type === 'plugin')}
           />
         ) : null}
-        {tab === 'integrations' ? <IntegrationsPanel entries={runtimeState?.integrations ?? []} /> : null}
+        {tab === 'integrations' ? (
+          <IntegrationsPanel
+            entries={runtimeState?.integrations ?? []}
+            workflows={runtimeState?.registeredWorkflows ?? []}
+            onTriggerWebhook={triggerWebhook}
+          />
+        ) : null}
         {tab === 'audit' ? <AuditPanel entries={runtimeState?.audit ?? []} /> : null}
         {tab === 'debug' ? <DebugPanel logs={runtimeState?.logs ?? []} /> : null}
       </div>
@@ -477,19 +494,80 @@ function PluginPanel({ policy, calls }: { policy: PluginSimulationPolicy; calls:
   )
 }
 
-function IntegrationsPanel({ entries }: { entries: SimulatedIntegrationEntry[] }) {
-  if (entries.length === 0) {
-    return <EmptyPanel title="No integration events" detail="Slack, email, and webhook workflow steps will appear here." />
+function IntegrationsPanel(props: {
+  entries: SimulatedIntegrationEntry[]
+  workflows: WorkflowSummary[]
+  onTriggerWebhook: (path: string, body: unknown) => void
+}) {
+  const { entries, workflows, onTriggerWebhook } = props
+  const webhookWorkflows = workflows.filter((workflow) => getWebhookPath(workflow))
+  const [selectedWebhook, setSelectedWebhook] = useState('')
+  const [bodyText, setBodyText] = useState(sampleSlackInboundWebhook)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!selectedWebhook && webhookWorkflows[0]) {
+      setSelectedWebhook(getWebhookPath(webhookWorkflows[0]))
+    }
+  }, [selectedWebhook, webhookWorkflows])
+
+  function submitWebhook() {
+    try {
+      const body = bodyText.trim() ? JSON.parse(bodyText) : undefined
+      onTriggerWebhook(selectedWebhook, body)
+      setError(null)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught))
+    }
   }
 
   return (
     <div className="zebric-simulator__stack">
       <section className="zebric-simulator__section">
         <div className="zebric-simulator__section-header">
+          <h3>Inbound webhook</h3>
+          <span>{webhookWorkflows.length} route{webhookWorkflows.length === 1 ? '' : 's'}</span>
+        </div>
+        {webhookWorkflows.length > 0 ? (
+          <div className="zebric-simulator__workflow-panel">
+            <div className="zebric-simulator__workflow-controls">
+              <label>
+                Webhook
+                <select aria-label="Webhook" value={selectedWebhook} onChange={(event) => setSelectedWebhook(event.target.value)}>
+                  {webhookWorkflows.map((workflow) => {
+                    const path = getWebhookPath(workflow)
+                    return (
+                      <option key={workflow.name} value={path}>
+                        {workflow.name} ({path})
+                      </option>
+                    )
+                  })}
+                </select>
+              </label>
+              <button type="button" disabled={!selectedWebhook} onClick={submitWebhook}>
+                Dispatch webhook
+              </button>
+            </div>
+            <label className="zebric-simulator__field">
+              Sample Slack payload
+              <textarea
+                aria-label="Webhook payload"
+                value={bodyText}
+                onChange={(event) => setBodyText(event.target.value)}
+                rows={10}
+              />
+            </label>
+            {error ? <pre className="zebric-simulator__error">{error}</pre> : null}
+          </div>
+        ) : <EmptyPanel title="No inbound webhooks" detail="Workflows with trigger.webhook will appear here." compact />}
+      </section>
+
+      <section className="zebric-simulator__section">
+        <div className="zebric-simulator__section-header">
           <h3>Integration outbox</h3>
           <span>{entries.length} event{entries.length === 1 ? '' : 's'}</span>
         </div>
-        <div className="zebric-simulator__table-wrap">
+        {entries.length > 0 ? <div className="zebric-simulator__table-wrap">
           <table className="zebric-simulator__table">
             <thead>
               <tr>
@@ -514,9 +592,9 @@ function IntegrationsPanel({ entries }: { entries: SimulatedIntegrationEntry[] }
               ))}
             </tbody>
           </table>
-        </div>
+        </div> : <EmptyPanel title="No integration events" detail="Slack, email, and webhook workflow steps will appear here." compact />}
       </section>
-      <LogList logs={entries.map(integrationToLogEntry)} />
+      {entries.length > 0 ? <LogList logs={entries.map(integrationToLogEntry)} /> : null}
     </div>
   )
 }
@@ -631,6 +709,26 @@ function integrationTarget(entry: SimulatedIntegrationEntry): string {
   }
   return entry.channel || entry.to || entry.adapter || ''
 }
+
+function getWebhookPath(workflow: WorkflowSummary): string {
+  const trigger = workflow.trigger
+  if (!trigger || typeof trigger !== 'object') {
+    return ''
+  }
+  const webhook = (trigger as { webhook?: unknown }).webhook
+  return typeof webhook === 'string' ? webhook : ''
+}
+
+const sampleSlackInboundWebhook = JSON.stringify({
+  type: 'block_actions',
+  action_id: 'dispatch_approve',
+  value: 'task-1',
+  user_id: 'U123456',
+  user_name: 'simulated.manager',
+  channel_id: 'C123456',
+  team_id: 'T123456',
+  response_url: 'https://hooks.slack.com/actions/T123456/123456/simulated',
+}, null, 2)
 
 function formatCell(value: unknown): string {
   if (value === null) return 'null'

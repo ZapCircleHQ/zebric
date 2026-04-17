@@ -25,6 +25,7 @@ import type {
   SimulatorAccount,
   SimulatorSeeds,
   SubmitResult,
+  WebhookSimulationResult,
   WorkflowStateEntry,
   ZebricSimulatorRuntimeConfig,
   ZebricSimulatorState,
@@ -204,6 +205,66 @@ export class ZebricSimulatorRuntime {
       metadata: { payload },
     })
     return this.render(this.activePath)
+  }
+
+  triggerWebhook(
+    path: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+    query: Record<string, string> = {}
+  ): WebhookSimulationResult {
+    const webhookPath = normalizePath(path)
+    const matchedWorkflows = (this.blueprint.workflows || [])
+      .filter((workflow) => workflow.trigger?.webhook === webhookPath)
+      .map((workflow) => workflow.name)
+    const payload = {
+      webhook: {
+        body,
+        headers,
+        query,
+      },
+      request: {
+        path: webhookPath,
+        headers,
+        body,
+        query,
+      },
+      source: 'webhook',
+    }
+
+    for (const workflowName of matchedWorkflows) {
+      this.simulateWorkflowTrigger(workflowName, payload)
+    }
+
+    this.auditLogger.log({
+      eventType: 'workflow.webhook',
+      severity: matchedWorkflows.length > 0 ? 'INFO' : 'WARNING',
+      action: `Trigger webhook: ${webhookPath}`,
+      resource: webhookPath,
+      success: matchedWorkflows.length > 0,
+      userId: this.activeAccount?.id,
+      metadata: {
+        matchedWorkflows,
+        body,
+        headers,
+        query,
+      },
+    })
+
+    this.logger.log({
+      type: 'workflow',
+      message: `Webhook ${webhookPath} matched ${matchedWorkflows.length} workflow${matchedWorkflows.length === 1 ? '' : 's'}`,
+      detail: { path: webhookPath, matchedWorkflows, body, headers, query },
+    })
+
+    return {
+      path: webhookPath,
+      status: matchedWorkflows.length > 0 ? 200 : 404,
+      matchedWorkflows,
+      body,
+      headers,
+      query,
+    }
   }
 
   getState(): ZebricSimulatorState {

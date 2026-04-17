@@ -89,6 +89,15 @@ method = "POST"
 Content-Type = "application/json"
 [workflow.MarkDone.steps.payload]
 id = "{{ variables.id }}"
+
+[workflow.HandleSlackApproval]
+trigger = { webhook = "/notifications/slack_ops/actions" }
+
+[[workflow.HandleSlackApproval.steps]]
+type = "notify"
+adapter = "slack_ops"
+channel = "#ops"
+body = "Slack {{ variables.webhook.body.action_id }} for {{ variables.webhook.body.value }} by {{ variables.webhook.body.user_id }}"
 `
 
 describe('ZebricSimulatorRuntime', () => {
@@ -128,6 +137,18 @@ describe('ZebricSimulatorRuntime', () => {
     expect(runtime.getState().integrations.find((entry) => entry.kind === 'email')?.subject).toBe('Task task-1 done')
     expect(runtime.getState().integrations.find((entry) => entry.kind === 'webhook')?.url).toBe('https://example.test/hooks/task-1')
     expect(runtime.getState().audit.some((entry) => entry.metadata?.eventType === 'workflow.trigger')).toBe(true)
+
+    const webhookResult = runtime.triggerWebhook('/notifications/slack_ops/actions', {
+      action_id: 'dispatch_approve',
+      value: 'task-1',
+      user_id: 'U123',
+    }, {
+      'x-slack-signature': 'v0=simulated',
+    })
+    expect(webhookResult.status).toBe(200)
+    expect(webhookResult.matchedWorkflows).toEqual(['HandleSlackApproval'])
+    expect(runtime.getState().integrations[0]?.body).toBe('Slack dispatch_approve for task-1 by U123')
+    expect(runtime.getState().audit[0]?.metadata?.eventType).toBe('workflow.webhook')
 
     runtime.resetSeed()
     expect(runtime.getState().data.Task).toHaveLength(1)
