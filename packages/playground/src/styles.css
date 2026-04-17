@@ -330,7 +330,7 @@ textarea {
 .viewer-header {
   display: flex;
   gap: 20px;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   border-bottom: 1px solid #dce5dd;
   padding: 18px;
@@ -340,6 +340,128 @@ textarea {
 .viewer-header h2,
 .viewer-header .tab-buttons {
   margin-bottom: 0;
+}
+
+.viewer-subtitle {
+  max-width: 620px;
+  margin: 8px 0 0;
+  color: #516158;
+  line-height: 1.5;
+}
+
+.viewer-actions {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+}
+
+.blueprint-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.blueprint-editor-actions span,
+.blueprint-editor-actions button {
+  border: 1px solid #bfd1c4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #33443b;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.blueprint-editor-actions button {
+  cursor: pointer;
+}
+
+.blueprint-editor-actions button:hover {
+  border-color: #1f7a5c;
+  color: #1f5c49;
+}
+
+.blueprint-editor-actions .is-valid {
+  border-color: #9bc8af;
+  background: #eaf8ef;
+  color: #1f6f45;
+}
+
+.blueprint-editor-actions .is-error {
+  border-color: #e8b1aa;
+  background: #fff4f2;
+  color: #8b231c;
+}
+
+.editor-shell {
+  background: #151b1f;
+}
+
+.code-editor {
+  min-height: 680px;
+  border-top: 1px solid #2b3940;
+  background: #151b1f;
+}
+
+.code-editor.has-error {
+  border-top-color: #d94f45;
+}
+
+.code-editor .cm-editor {
+  min-height: 680px;
+  background: #151b1f;
+  color: #f8fbff;
+  font-size: 13px;
+}
+
+.code-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  line-height: 1.55;
+}
+
+.code-editor .cm-gutters {
+  border-right: 1px solid #2b3940;
+  background: #10161a;
+  color: #90a2ad;
+}
+
+.code-editor .cm-activeLine,
+.code-editor .cm-activeLineGutter {
+  background: rgba(173, 216, 230, 0.08);
+}
+
+.code-editor .cm-content {
+  caret-color: #f0c45c;
+  padding: 16px 0;
+}
+
+.code-editor .cm-line {
+  padding: 0 16px;
+}
+
+.code-editor .cm-selectionBackground,
+.code-editor .cm-focused .cm-selectionBackground {
+  background: rgba(173, 216, 230, 0.28);
+}
+
+.code-editor .cm-focused {
+  outline: none;
+}
+
+.code-editor .cm-matchingBracket {
+  background: rgba(218, 165, 32, 0.2);
+  color: #ffd980;
+}
+
+.editor-error {
+  margin: 0;
+  border-top: 1px solid #e8b1aa;
+  background: #fff4f2;
+  color: #8b231c;
+  padding: 14px 18px;
+  white-space: pre-wrap;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .code-view {
@@ -357,32 +479,6 @@ textarea {
   background: #fff4f2;
   color: #8b231c;
   white-space: pre-wrap;
-}
-
-.toml-comment {
-  color: #93a398;
-}
-
-.toml-section {
-  color: #8ee6c6;
-  font-weight: 800;
-}
-
-.toml-key {
-  color: #f0d071;
-}
-
-.toml-punctuation {
-  color: #d7dfd8;
-}
-
-.toml-string {
-  color: #f5a18e;
-}
-
-.toml-number,
-.toml-boolean {
-  color: #9fd3ff;
 }
 
 .resource-list {

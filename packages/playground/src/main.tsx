@@ -14,7 +14,7 @@ type Route =
   | { name: 'getting-started' }
   | { name: 'not-found' }
 
-type BlueprintTab = 'raw' | 'structured'
+type BlueprintTab = 'editor' | 'structured'
 
 const parser = new BlueprintParser()
 
@@ -151,10 +151,56 @@ function ExampleDetailPage({
   onNavigate: (path: string) => void
 }) {
   const example = examples.find((candidate) => candidate.slug === slug)
-  const [blueprintTab, setBlueprintTab] = React.useState<BlueprintTab>('raw')
+  const [blueprintTab, setBlueprintTab] = React.useState<BlueprintTab>('editor')
+  const [blueprintDraft, setBlueprintDraft] = React.useState(
+    () => examples.find((candidate) => candidate.slug === slug)?.blueprintToml || ''
+  )
+  const [copyStatus, setCopyStatus] = React.useState('')
+  const originalBlueprint = example?.blueprintToml || ''
+
+  React.useEffect(() => {
+    setBlueprintDraft(originalBlueprint)
+    setBlueprintTab('editor')
+    setCopyStatus('')
+  }, [originalBlueprint])
+
+  const validation = React.useMemo(() => {
+    if (!blueprintDraft) return { error: null }
+
+    try {
+      parser.parse(blueprintDraft, 'toml', `${slug}.toml`)
+      return { error: null }
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) }
+    }
+  }, [blueprintDraft, slug])
 
   if (!example) {
     return <NotFoundPage onNavigate={onNavigate} />
+  }
+
+  const hasDraftChanges = blueprintDraft !== originalBlueprint
+  const downloadSlug = example.slug
+
+  async function copyBlueprint() {
+    if (!navigator.clipboard) {
+      setCopyStatus('Clipboard unavailable')
+      return
+    }
+
+    await navigator.clipboard.writeText(blueprintDraft)
+    setCopyStatus('Copied')
+    window.setTimeout(() => setCopyStatus(''), 1600)
+  }
+
+  function downloadBlueprint() {
+    const blob = new Blob([blueprintDraft], { type: 'application/toml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${downloadSlug}.toml`
+    anchor.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -186,7 +232,7 @@ function ExampleDetailPage({
       <section className="detail-layout">
         <div className="simulator-column">
           <ZebricSimulator
-            blueprintToml={example.blueprintToml}
+            blueprintToml={blueprintDraft}
             seeds={example.seeds}
             initialSeed={example.defaultScenario}
             accounts={example.accounts}
@@ -232,110 +278,188 @@ function ExampleDetailPage({
           <div>
             <p className="eyebrow">Blueprint viewer</p>
             <h2>{example.title} blueprint</h2>
+            <p className="viewer-subtitle">Edits run locally in the simulator. Reset restores the bundled example.</p>
           </div>
-          <div className="tab-buttons" role="tablist" aria-label="Blueprint view">
-            <button
-              type="button"
-              className={blueprintTab === 'raw' ? 'is-active' : ''}
-              onClick={() => setBlueprintTab('raw')}
-            >
-              Raw
-            </button>
-            <button
-              type="button"
-              className={blueprintTab === 'structured' ? 'is-active' : ''}
-              onClick={() => setBlueprintTab('structured')}
-            >
-              Structured
-            </button>
+          <div className="viewer-actions">
+            <div className="tab-buttons" role="tablist" aria-label="Blueprint view">
+              <button
+                type="button"
+                className={blueprintTab === 'editor' ? 'is-active' : ''}
+                onClick={() => setBlueprintTab('editor')}
+              >
+                Editor
+              </button>
+              <button
+                type="button"
+                className={blueprintTab === 'structured' ? 'is-active' : ''}
+                onClick={() => setBlueprintTab('structured')}
+              >
+                Structured
+              </button>
+            </div>
+            <div className="blueprint-editor-actions">
+              <span className={validation.error ? 'is-error' : 'is-valid'}>
+                {validation.error ? 'Parse error' : 'Valid blueprint'}
+              </span>
+              {hasDraftChanges ? <span>Edited</span> : null}
+              <button type="button" onClick={() => setBlueprintDraft(originalBlueprint)}>
+                Reset
+              </button>
+              <button type="button" onClick={copyBlueprint}>
+                {copyStatus || 'Copy'}
+              </button>
+              <button type="button" onClick={downloadBlueprint}>
+                Download
+              </button>
+            </div>
           </div>
         </div>
-        {blueprintTab === 'raw' ? (
-          <pre className="code-view" aria-label="Raw blueprint TOML">
-            <code>
-              <HighlightedToml source={example.blueprintToml} />
-            </code>
-          </pre>
+        {blueprintTab === 'editor' ? (
+          <div className="editor-shell">
+            <BlueprintCodeEditor
+              value={blueprintDraft}
+              onChange={setBlueprintDraft}
+              hasError={Boolean(validation.error)}
+            />
+            {validation.error ? <pre className="editor-error">{validation.error}</pre> : null}
+          </div>
         ) : (
-          <StructuredBlueprint example={example} />
+          <StructuredBlueprint example={example} blueprintToml={blueprintDraft} />
         )}
       </section>
     </main>
   )
 }
 
-function HighlightedToml({ source }: { source: string }) {
-  const lines = source.split('\n')
+function BlueprintCodeEditor({
+  value,
+  onChange,
+  hasError,
+}: {
+  value: string
+  onChange: (value: string) => void
+  hasError: boolean
+}) {
+  const hostRef = React.useRef<HTMLDivElement | null>(null)
+  const viewRef = React.useRef<{
+    state: { doc: { toString(): string } }
+    dispatch(update: { changes: { from: number; to: number; insert: string } }): void
+    destroy(): void
+  } | null>(null)
+  const onChangeRef = React.useRef(onChange)
+
+  React.useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
+
+  React.useEffect(() => {
+    if (!hostRef.current) return
+    let isMounted = true
+    const parent = hostRef.current
+
+    async function mountEditor() {
+      const [{ HighlightStyle, StreamLanguage, syntaxHighlighting }, { tags }, { toml }, { basicSetup, EditorView }] = await Promise.all([
+        import('@codemirror/language'),
+        import('@lezer/highlight'),
+        import('@codemirror/legacy-modes/mode/toml'),
+        import('codemirror'),
+      ])
+
+      if (!isMounted) return
+
+      const blueprintHighlightStyle = HighlightStyle.define([
+        { tag: tags.heading, color: '#d6a642', fontWeight: '700' },
+        { tag: tags.propertyName, color: '#acdfff' },
+        { tag: [tags.string, tags.number, tags.bool, tags.atom], color: '#f4f7f8' },
+        { tag: tags.comment, color: '#8fa0aa', fontStyle: 'italic' },
+        { tag: tags.punctuation, color: '#c6d2d8' },
+      ])
+      const blueprintTomlMode = {
+        ...toml,
+        token(stream: any, state: any) {
+          if (stream.sol() && !state.inString && state.inArray === 0) {
+            state.lhs = true
+          }
+
+          if (
+            state.lhs &&
+            !state.inString &&
+            state.inArray === 0 &&
+            stream.peek() === '[' &&
+            stream.skipTo(']')
+          ) {
+            stream.next()
+            if (stream.peek() === ']') stream.next()
+            return 'header'
+          }
+
+          return toml.token(stream, state)
+        },
+      }
+
+      const view = new EditorView({
+        doc: value,
+        parent,
+        extensions: [
+        basicSetup,
+        StreamLanguage.define(blueprintTomlMode),
+        syntaxHighlighting(blueprintHighlightStyle),
+        EditorView.lineWrapping,
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) {
+              onChangeRef.current(update.state.doc.toString())
+            }
+          }),
+        ],
+      })
+
+      viewRef.current = view
+    }
+
+    void mountEditor()
+
+    return () => {
+      isMounted = false
+      viewRef.current?.destroy()
+      viewRef.current = null
+    }
+  }, [])
+
+  React.useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+
+    const currentValue = view.state.doc.toString()
+    if (currentValue === value) return
+
+    view.dispatch({
+      changes: { from: 0, to: currentValue.length, insert: value },
+    })
+  }, [value])
 
   return (
-    <>
-      {lines.map((line, index) => (
-        <React.Fragment key={`${index}-${line}`}>
-          {highlightTomlLine(line)}
-          {index < lines.length - 1 ? '\n' : null}
-        </React.Fragment>
-      ))}
-    </>
+    <div
+      ref={hostRef}
+      className={['code-editor', hasError ? 'has-error' : ''].filter(Boolean).join(' ')}
+      aria-label="Blueprint TOML editor"
+    />
   )
 }
 
-function highlightTomlLine(line: string) {
-  const trimmed = line.trim()
-  if (trimmed.startsWith('#')) return <span className="toml-comment">{line}</span>
-  if (trimmed.startsWith('[')) return <span className="toml-section">{line}</span>
-
-  const equalsIndex = line.indexOf('=')
-  if (equalsIndex === -1) return line
-
-  const key = line.slice(0, equalsIndex)
-  const value = line.slice(equalsIndex + 1)
-
-  return (
-    <>
-      <span className="toml-key">{key}</span>
-      <span className="toml-punctuation">=</span>
-      {highlightTomlValue(value)}
-    </>
-  )
-}
-
-function highlightTomlValue(value: string) {
-  const parts = value.split(/("[^"]*"|\btrue\b|\bfalse\b|\b\d+(?:\.\d+)?\b)/g)
-  return parts.map((part, index) => {
-    if (!part) return null
-    if (part.startsWith('"') && part.endsWith('"')) {
-      return (
-        <span key={`${part}-${index}`} className="toml-string">
-          {part}
-        </span>
-      )
-    }
-    if (part === 'true' || part === 'false') {
-      return (
-        <span key={`${part}-${index}`} className="toml-boolean">
-          {part}
-        </span>
-      )
-    }
-    if (/^\d/.test(part)) {
-      return (
-        <span key={`${part}-${index}`} className="toml-number">
-          {part}
-        </span>
-      )
-    }
-    return part
-  })
-}
-
-function StructuredBlueprint({ example }: { example: PlaygroundExample }) {
+function StructuredBlueprint({
+  example,
+  blueprintToml,
+}: {
+  example: PlaygroundExample
+  blueprintToml: string
+}) {
   const parsed = React.useMemo(() => {
     try {
-      return { blueprint: parser.parse(example.blueprintToml, 'toml', `${example.slug}.toml`) }
+      return { blueprint: parser.parse(blueprintToml, 'toml', `${example.slug}.toml`) }
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
-  }, [example])
+  }, [blueprintToml, example.slug])
 
   if (parsed.error) {
     return <pre className="code-view error">{parsed.error}</pre>
