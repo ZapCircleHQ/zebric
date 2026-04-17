@@ -233,7 +233,28 @@ export class ZebricSimulatorRuntime {
     }
 
     for (const workflowName of matchedWorkflows) {
-      this.simulateWorkflowTrigger(workflowName, payload)
+      this.simulateWorkflowTrigger(workflowName, payload, {
+        context: {
+          trigger: {
+            type: 'webhook',
+            data: body,
+          },
+          variables: {
+            webhook: {
+              body,
+              headers,
+              query,
+            },
+            request: {
+              path: webhookPath,
+              headers,
+              body,
+              query,
+            },
+            source: 'webhook',
+          },
+        },
+      })
     }
 
     this.auditLogger.log({
@@ -291,9 +312,13 @@ export class ZebricSimulatorRuntime {
     return this.apiClient
   }
 
-  private simulateWorkflowTrigger(workflowName: string, payload?: unknown): WorkflowStateEntry {
+  private simulateWorkflowTrigger(
+    workflowName: string,
+    payload?: unknown,
+    options: Parameters<SimulatorIntegrationHost['simulateWorkflow']>[2] = {}
+  ): WorkflowStateEntry {
     const entry = this.workflowHost.trigger(workflowName, payload)
-    const integrations = this.integrationHost.simulateWorkflow(workflowName, payload)
+    const integrations = this.integrationHost.simulateWorkflow(workflowName, payload, options)
 
     if (integrations.length > 0) {
       entry.logs.push(

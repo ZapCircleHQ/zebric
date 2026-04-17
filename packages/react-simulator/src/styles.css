@@ -353,3 +353,10 @@
   color: #111827;
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
+
+.zebric-simulator__hint {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: #334155;
+  font-size: 13px;
+}

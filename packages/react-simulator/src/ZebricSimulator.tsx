@@ -9,6 +9,7 @@ import {
   type SimulatedIntegrationEntry,
   type SimulatorLogEntry,
   type SimulatorSeeds,
+  type WebhookSimulationResult,
   type WorkflowStateEntry,
   type WorkflowSummary,
   type ZebricSimulatorState,
@@ -46,6 +47,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     className,
   } = props
   const runtimeRef = useRef<ZebricSimulatorRuntime | null>(null)
+  const runtimeConfigKeyRef = useRef('')
   const [tab, setTab] = useState<SimulatorTab>('preview')
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null)
   const [runtimeState, setRuntimeState] = useState<ZebricSimulatorState | null>(null)
@@ -55,12 +57,16 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     () => JSON.stringify({ blueprintHash: blueprint?.hash, blueprintToml, blueprintJson }),
     [blueprint, blueprintJson, blueprintToml]
   )
+  const runtimeConfigKey = useMemo(
+    () => JSON.stringify({ seeds, initialSeed, accounts, initialAccount, pluginPolicy, apiPolicy }),
+    [accounts, apiPolicy, initialAccount, initialSeed, pluginPolicy, seeds]
+  )
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
       try {
         const existing = runtimeRef.current
-        if (existing) {
+        if (existing && runtimeConfigKeyRef.current === runtimeConfigKey) {
           existing.setBlueprint({ blueprint, blueprintToml, blueprintJson })
         } else {
           runtimeRef.current = new ZebricSimulatorRuntime({
@@ -74,6 +80,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
             pluginPolicy,
             apiPolicy,
           })
+          runtimeConfigKeyRef.current = runtimeConfigKey
         }
         void refresh()
         setError(null)
@@ -83,7 +90,7 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     }, parseDebounceMs)
 
     return () => window.clearTimeout(timeout)
-  }, [blueprintInputKey, parseDebounceMs])
+  }, [blueprintInputKey, runtimeConfigKey, parseDebounceMs])
 
   async function refresh(path?: string) {
     const runtime = runtimeRef.current
@@ -130,15 +137,16 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
     setRuntimeState(runtime.getState())
   }
 
-  function triggerWebhook(path: string, body: unknown) {
+  function triggerWebhook(path: string, body: unknown): WebhookSimulationResult | undefined {
     const runtime = runtimeRef.current
-    if (!runtime) return
-    runtime.triggerWebhook(path, body, {
+    if (!runtime) return undefined
+    const result = runtime.triggerWebhook(path, body, {
       'content-type': 'application/json',
       'x-slack-signature': 'v0=simulated',
       'x-slack-request-timestamp': '1700000000',
     })
     setRuntimeState(runtime.getState())
+    return result
   }
 
   function navigate(path: string) {
@@ -497,16 +505,17 @@ function PluginPanel({ policy, calls }: { policy: PluginSimulationPolicy; calls:
 function IntegrationsPanel(props: {
   entries: SimulatedIntegrationEntry[]
   workflows: WorkflowSummary[]
-  onTriggerWebhook: (path: string, body: unknown) => void
+  onTriggerWebhook: (path: string, body: unknown) => WebhookSimulationResult | undefined
 }) {
   const { entries, workflows, onTriggerWebhook } = props
   const webhookWorkflows = workflows.filter((workflow) => getWebhookPath(workflow))
   const [selectedWebhook, setSelectedWebhook] = useState('')
   const [bodyText, setBodyText] = useState(sampleSlackInboundWebhook)
   const [error, setError] = useState<string | null>(null)
+  const [lastWebhookResult, setLastWebhookResult] = useState<WebhookSimulationResult | null>(null)
 
   useEffect(() => {
-    if (!selectedWebhook && webhookWorkflows[0]) {
+    if ((!selectedWebhook || !webhookWorkflows.some((workflow) => getWebhookPath(workflow) === selectedWebhook)) && webhookWorkflows[0]) {
       setSelectedWebhook(getWebhookPath(webhookWorkflows[0]))
     }
   }, [selectedWebhook, webhookWorkflows])
@@ -514,7 +523,7 @@ function IntegrationsPanel(props: {
   function submitWebhook() {
     try {
       const body = bodyText.trim() ? JSON.parse(bodyText) : undefined
-      onTriggerWebhook(selectedWebhook, body)
+      setLastWebhookResult(onTriggerWebhook(selectedWebhook, body) ?? null)
       setError(null)
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught))
@@ -558,6 +567,13 @@ function IntegrationsPanel(props: {
               />
             </label>
             {error ? <pre className="zebric-simulator__error">{error}</pre> : null}
+            {lastWebhookResult ? (
+              <p className="zebric-simulator__hint">
+                {lastWebhookResult.status === 200
+                  ? `Matched ${lastWebhookResult.matchedWorkflows.join(', ')}`
+                  : `No workflow matched ${lastWebhookResult.path}`}
+              </p>
+            ) : null}
           </div>
         ) : <EmptyPanel title="No inbound webhooks" detail="Workflows with trigger.webhook will appear here." compact />}
       </section>

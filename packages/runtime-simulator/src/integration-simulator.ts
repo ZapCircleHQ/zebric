@@ -8,6 +8,10 @@ interface WorkflowSimulationContext {
   variables: Record<string, unknown>
 }
 
+interface WorkflowSimulationOptions {
+  context?: WorkflowSimulationContext
+}
+
 export class SimulatorIntegrationHost {
   private entries: SimulatedIntegrationEntry[] = []
 
@@ -20,13 +24,13 @@ export class SimulatorIntegrationHost {
     this.blueprint = blueprint
   }
 
-  simulateWorkflow(workflowName: string, payload?: unknown): SimulatedIntegrationEntry[] {
+  simulateWorkflow(workflowName: string, payload?: unknown, options: WorkflowSimulationOptions = {}): SimulatedIntegrationEntry[] {
     const workflow = this.blueprint.workflows?.find((candidate) => candidate.name === workflowName)
     if (!workflow) {
       return []
     }
 
-    const context = this.createContext(payload)
+    const context = options.context || this.createContext(payload)
     const simulated = workflow.steps
       .map((step, index) => this.simulateStep(workflowName, index, step, context))
       .filter((entry): entry is SimulatedIntegrationEntry => Boolean(entry))

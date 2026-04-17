@@ -97,7 +97,7 @@ trigger = { webhook = "/notifications/slack_ops/actions" }
 type = "notify"
 adapter = "slack_ops"
 channel = "#ops"
-body = "Slack {{ variables.webhook.body.action_id }} for {{ variables.webhook.body.value }} by {{ variables.webhook.body.user_id }}"
+body = "Slack {{ variables.webhook.body.action_id }} for {{ trigger.data.value }} by {{ variables.webhook.body.user_id }}"
 `
 
 describe('ZebricSimulatorRuntime', () => {
@@ -149,6 +149,12 @@ describe('ZebricSimulatorRuntime', () => {
     expect(webhookResult.matchedWorkflows).toEqual(['HandleSlackApproval'])
     expect(runtime.getState().integrations[0]?.body).toBe('Slack dispatch_approve for task-1 by U123')
     expect(runtime.getState().audit[0]?.metadata?.eventType).toBe('workflow.webhook')
+
+    const missingWebhookResult = runtime.triggerWebhook('/notifications/missing/actions', {})
+    expect(missingWebhookResult.status).toBe(404)
+    expect(missingWebhookResult.matchedWorkflows).toEqual([])
+    expect(runtime.getState().audit[0]?.metadata?.eventType).toBe('workflow.webhook')
+    expect(runtime.getState().audit[0]?.metadata?.success).toBe(false)
 
     runtime.resetSeed()
     expect(runtime.getState().data.Task).toHaveLength(1)
