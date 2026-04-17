@@ -1,0 +1,362 @@
+.zebric-simulator {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  border: 1px solid #d1d5db;
+  background: #f8fafc;
+  color: #111827;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.zebric-simulator__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #d1d5db;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.zebric-simulator__toolbar label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.zebric-simulator__toolbar select,
+.zebric-simulator__toolbar button,
+.zebric-simulator__tabs button,
+.zebric-simulator__workflow-controls button,
+.zebric-simulator__workflow-controls select {
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font: inherit;
+}
+
+.zebric-simulator__toolbar select {
+  padding: 5px 8px;
+}
+
+.zebric-simulator__toolbar button,
+.zebric-simulator__workflow-controls button,
+.zebric-simulator__workflow-controls select {
+  padding: 5px 8px;
+}
+
+.zebric-simulator__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid #d1d5db;
+  background: #eef2f7;
+  padding: 8px 12px;
+}
+
+.zebric-simulator__tabs button {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.zebric-simulator__tabs button.is-active {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.zebric-simulator__panel {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  background: #ffffff;
+}
+
+.zebric-simulator__preview {
+  min-height: 520px;
+}
+
+.zebric-simulator__json,
+.zebric-simulator__error {
+  margin: 0;
+  overflow: auto;
+  padding: 16px;
+  white-space: pre-wrap;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.zebric-simulator__error {
+  border-bottom: 1px solid #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.zebric-simulator__statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid #d1d5db;
+  background: #f8fafc;
+  padding: 8px 12px;
+}
+
+.zebric-simulator__pill {
+  display: inline-flex;
+  max-width: 100%;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 4px 8px;
+  color: #374151;
+  font-size: 12px;
+}
+
+.zebric-simulator__pill span {
+  color: #6b7280;
+}
+
+.zebric-simulator__pill strong {
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-weight: 700;
+}
+
+.zebric-simulator__pill.is-error {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.zebric-simulator__stack {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+}
+
+.zebric-simulator__section {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.zebric-simulator__section-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 10px 12px;
+}
+
+.zebric-simulator__section-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.zebric-simulator__section-header span {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.zebric-simulator__table-wrap {
+  overflow: auto;
+}
+
+.zebric-simulator__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.zebric-simulator__table th,
+.zebric-simulator__table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.zebric-simulator__table th {
+  background: #ffffff;
+  color: #4b5563;
+  font-weight: 700;
+}
+
+.zebric-simulator__table td {
+  max-width: 260px;
+  overflow-wrap: anywhere;
+}
+
+.zebric-simulator__details {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+}
+
+.zebric-simulator__details dt {
+  color: #6b7280;
+  font-weight: 700;
+}
+
+.zebric-simulator__details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.zebric-simulator__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.zebric-simulator__card {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.zebric-simulator__card h4,
+.zebric-simulator__card p {
+  margin: 0;
+}
+
+.zebric-simulator__card p {
+  margin-top: 6px;
+  color: #4b5563;
+  font-size: 13px;
+}
+
+.zebric-simulator__card code {
+  display: block;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+  color: #111827;
+  font-size: 12px;
+}
+
+.zebric-simulator__empty {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.zebric-simulator__empty.is-compact {
+  padding: 14px;
+  text-align: left;
+}
+
+.zebric-simulator__empty strong {
+  display: block;
+  font-size: 14px;
+}
+
+.zebric-simulator__empty p {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.zebric-simulator__logs {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 16px;
+  list-style: none;
+}
+
+.zebric-simulator__logs li {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.zebric-simulator__logs li > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.zebric-simulator__logs strong {
+  flex: 1;
+  min-width: 160px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.zebric-simulator__logs time {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.zebric-simulator__logs pre {
+  margin: 0;
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 10px 12px;
+  overflow: auto;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.zebric-simulator__log-type {
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #075985;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.zebric-simulator__workflow-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  border-bottom: 1px solid #d1d5db;
+  padding: 12px 16px;
+}
+
+.zebric-simulator__workflow-controls label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.zebric-simulator__field {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.zebric-simulator__field textarea {
+  min-height: 180px;
+  resize: vertical;
+  border: 1px solid #9ca3af;
+  border-radius: 6px;
+  padding: 10px;
+  color: #111827;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+
+.zebric-simulator__hint {
+  margin: 0;
+  padding: 0 16px 16px;
+  color: #334155;
+  font-size: 13px;
+}
