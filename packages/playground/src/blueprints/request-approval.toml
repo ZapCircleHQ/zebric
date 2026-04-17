@@ -1,0 +1,192 @@
+version = "0.2.0"
+
+[project]
+name = "Request Approval"
+version = "1.0.0"
+description = "Purchasing request approvals with audit and notification simulation."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[[entities]]
+name = "TeamMember"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "role", type = "Enum", values = ["requester", "manager", "admin"], required = true },
+  { name = "department", type = "Text" }
+]
+
+[[entities]]
+name = "ApprovalRequest"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "amount", type = "Integer", required = true },
+  { name = "status", type = "Enum", values = ["draft", "submitted", "pending_manager", "approved", "rejected"], default = "draft" },
+  { name = "category", type = "Enum", values = ["software", "hardware", "services", "training"], default = "software" },
+  { name = "requesterId", type = "Ref", ref = "TeamMember.id" },
+  { name = "managerId", type = "Ref", ref = "TeamMember.id" },
+  { name = "justification", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[[entities]]
+name = "ApprovalAudit"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "ApprovalRequest.id", required = true },
+  { name = "actorId", type = "Ref", ref = "TeamMember.id" },
+  { name = "action", type = "Text", required = true },
+  { name = "note", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[[pages]]
+path = "/"
+title = "Approvals Dashboard"
+auth = "optional"
+layout = "dashboard"
+
+[pages.queries.pending]
+entity = "ApprovalRequest"
+where = { status = "pending_manager" }
+orderBy = { createdAt = "desc" }
+
+[pages.queries.approved]
+entity = "ApprovalRequest"
+where = { status = "approved" }
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/requests"
+title = "Requests"
+auth = "optional"
+layout = "list"
+
+[pages.queries.requests]
+entity = "ApprovalRequest"
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/requests/new"
+title = "New Request"
+auth = "optional"
+layout = "form"
+
+[pages.form]
+entity = "ApprovalRequest"
+method = "create"
+onSuccess = { redirect = "/requests/{id}", message = "Request created" }
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "amount"
+type = "number"
+label = "Amount"
+required = true
+
+[[pages.form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+options = ["software", "hardware", "services", "training"]
+
+[[pages.form.fields]]
+name = "justification"
+type = "textarea"
+label = "Justification"
+rows = 5
+required = true
+
+[[pages]]
+path = "/requests/:id"
+title = "Request Detail"
+auth = "optional"
+layout = "detail"
+
+[pages.queries.request]
+entity = "ApprovalRequest"
+where = { id = "{id}" }
+
+[pages.queries.audit]
+entity = "ApprovalAudit"
+where = { requestId = "{id}" }
+orderBy = { createdAt = "desc" }
+
+[pages.actionBar]
+title = "Approval actions"
+description = "Submit, approve, reject, or notify stakeholders."
+statusField = "status"
+showStatus = true
+
+[[pages.actionBar.actions]]
+label = "Submit for approval"
+workflow = "SubmitRequest"
+style = "primary"
+payload = { status = "pending_manager" }
+successMessage = "Request submitted."
+
+[[pages.actionBar.actions]]
+label = "Approve request"
+workflow = "ApproveRequest"
+style = "primary"
+payload = { status = "approved" }
+successMessage = "Request approved."
+
+[[pages.actionBar.actions]]
+label = "Reject request"
+workflow = "RejectRequest"
+style = "danger"
+payload = { status = "rejected" }
+successMessage = "Request rejected."
+
+[[workflows]]
+name = "SubmitRequest"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "approval", action = "setStatus" },
+  { type = "notify", adapter = "slack", body = "Approval requested" },
+  { type = "plugin", plugin = "audit", action = "appendAuditEvent" }
+]
+
+[[workflows]]
+name = "ApproveRequest"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "approval", action = "approve" },
+  { type = "notify", adapter = "slack", body = "Request approved" },
+  { type = "plugin", plugin = "audit", action = "appendAuditEvent" }
+]
+
+[[workflows]]
+name = "RejectRequest"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "approval", action = "reject" },
+  { type = "notify", adapter = "slack", body = "Request rejected" },
+  { type = "plugin", plugin = "audit", action = "appendAuditEvent" }
+]
+
+[[plugins]]
+name = "approval"
+enabled = true
+trust_level = "limited"
+
+[[plugins]]
+name = "audit"
+enabled = true
+trust_level = "limited"
+
+[notifications]
+default = "console"
+adapters = [
+  { name = "console", type = "console" },
+  { name = "slack", type = "slack", config = { defaultChannel = "#approvals" } }
+]

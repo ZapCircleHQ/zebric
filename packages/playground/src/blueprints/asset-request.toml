@@ -1,0 +1,164 @@
+version = "0.2.0"
+
+[project]
+name = "Asset and Inventory Request"
+version = "1.0.0"
+description = "Inventory catalog, asset requests, approval, and fulfillment simulation."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[[entities]]
+name = "Asset"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "category", type = "Enum", values = ["laptop", "peripheral", "security", "software"], required = true },
+  { name = "stock", type = "Integer", default = 0 },
+  { name = "ownerTeam", type = "Text" }
+]
+
+[[entities]]
+name = "AssetRequest"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "assetName", type = "Text", required = true },
+  { name = "requesterId", type = "Text" },
+  { name = "status", type = "Enum", values = ["submitted", "pending_approval", "approved", "fulfilled", "rejected"], default = "submitted" },
+  { name = "quantity", type = "Integer", default = 1 },
+  { name = "businessReason", type = "LongText", required = true }
+]
+
+[[pages]]
+path = "/"
+title = "Inventory Dashboard"
+auth = "optional"
+layout = "dashboard"
+
+[pages.queries.assets]
+entity = "Asset"
+orderBy = { name = "asc" }
+
+[pages.queries.pendingRequests]
+entity = "AssetRequest"
+where = { status = "pending_approval" }
+
+[[pages]]
+path = "/assets"
+title = "Assets"
+auth = "optional"
+layout = "list"
+
+[pages.queries.assets]
+entity = "Asset"
+orderBy = { name = "asc" }
+
+[[pages]]
+path = "/requests"
+title = "Asset Requests"
+auth = "optional"
+layout = "list"
+
+[pages.queries.requests]
+entity = "AssetRequest"
+orderBy = { status = "asc" }
+
+[[pages]]
+path = "/requests/new"
+title = "New Asset Request"
+auth = "optional"
+layout = "form"
+
+[pages.form]
+entity = "AssetRequest"
+method = "create"
+onSuccess = { redirect = "/requests/{id}", message = "Asset request created" }
+
+[[pages.form.fields]]
+name = "assetName"
+type = "text"
+label = "Asset"
+required = true
+
+[[pages.form.fields]]
+name = "quantity"
+type = "number"
+label = "Quantity"
+required = true
+
+[[pages.form.fields]]
+name = "businessReason"
+type = "textarea"
+label = "Business reason"
+rows = 5
+required = true
+
+[[pages]]
+path = "/requests/:id"
+title = "Asset Request Detail"
+auth = "optional"
+layout = "detail"
+
+[pages.queries.request]
+entity = "AssetRequest"
+where = { id = "{id}" }
+
+[pages.actionBar]
+title = "Fulfillment actions"
+description = "Approve, reject, or mark the request fulfilled."
+statusField = "status"
+showStatus = true
+
+[[pages.actionBar.actions]]
+label = "Send for approval"
+workflow = "SendForApproval"
+style = "secondary"
+payload = { status = "pending_approval" }
+successMessage = "Sent for approval."
+
+[[pages.actionBar.actions]]
+label = "Approve asset request"
+workflow = "ApproveAssetRequest"
+style = "primary"
+payload = { status = "approved" }
+successMessage = "Approved."
+
+[[pages.actionBar.actions]]
+label = "Fulfill request"
+workflow = "FulfillAssetRequest"
+style = "secondary"
+payload = { status = "fulfilled" }
+successMessage = "Fulfilled."
+
+[[workflows]]
+name = "SendForApproval"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "inventory", action = "routeApproval" },
+  { type = "notify", adapter = "console", body = "Asset request approval needed" }
+]
+
+[[workflows]]
+name = "ApproveAssetRequest"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "inventory", action = "approve" },
+  { type = "notify", adapter = "console", body = "Asset request approved" }
+]
+
+[[workflows]]
+name = "FulfillAssetRequest"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "inventory", action = "decrementStock" },
+  { type = "notify", adapter = "console", body = "Asset fulfilled" }
+]
+
+[[plugins]]
+name = "inventory"
+enabled = true
+trust_level = "limited"
+
+[notifications]
+default = "console"
+adapters = [{ name = "console", type = "console" }]

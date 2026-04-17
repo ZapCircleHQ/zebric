@@ -1,0 +1,171 @@
+version = "0.2.0"
+
+[project]
+name = "Employee Onboarding"
+version = "1.0.0"
+description = "People operations onboarding with tasks, access grants, and ramp tracking."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[[entities]]
+name = "Employee"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "fullName", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "team", type = "Text", required = true },
+  { name = "roleTitle", type = "Text", required = true },
+  { name = "startDate", type = "Date", required = true },
+  { name = "status", type = "Enum", values = ["preboarding", "day_one", "week_one", "ramping", "complete"], default = "preboarding" },
+  { name = "managerId", type = "Text" }
+]
+
+[[entities]]
+name = "OnboardingTask"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "employeeId", type = "Ref", ref = "Employee.id", required = true },
+  { name = "title", type = "Text", required = true },
+  { name = "owner", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["todo", "in_progress", "done", "blocked"], default = "todo" },
+  { name = "dueDate", type = "Date" }
+]
+
+[[entities]]
+name = "AccessGrant"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "employeeId", type = "Ref", ref = "Employee.id", required = true },
+  { name = "system", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["requested", "provisioned", "blocked", "revoked"], default = "requested" },
+  { name = "owner", type = "Text" }
+]
+
+[[pages]]
+path = "/"
+title = "Onboarding Dashboard"
+auth = "optional"
+layout = "dashboard"
+
+[pages.queries.newHires]
+entity = "Employee"
+orderBy = { startDate = "asc" }
+
+[pages.queries.openTasks]
+entity = "OnboardingTask"
+where = { status = "todo" }
+
+[[pages]]
+path = "/employees"
+title = "Employees"
+auth = "optional"
+layout = "list"
+
+[pages.queries.employees]
+entity = "Employee"
+orderBy = { startDate = "asc" }
+
+[[pages]]
+path = "/employees/new"
+title = "Add Employee"
+auth = "optional"
+layout = "form"
+
+[pages.form]
+entity = "Employee"
+method = "create"
+onSuccess = { redirect = "/employees/{id}", message = "Employee added" }
+
+[[pages.form.fields]]
+name = "fullName"
+type = "text"
+label = "Full name"
+required = true
+
+[[pages.form.fields]]
+name = "email"
+type = "email"
+label = "Email"
+required = true
+
+[[pages.form.fields]]
+name = "team"
+type = "text"
+label = "Team"
+required = true
+
+[[pages.form.fields]]
+name = "roleTitle"
+type = "text"
+label = "Role"
+required = true
+
+[[pages.form.fields]]
+name = "startDate"
+type = "date"
+label = "Start date"
+required = true
+
+[[pages]]
+path = "/employees/:id"
+title = "Employee Profile"
+auth = "optional"
+layout = "detail"
+
+[pages.queries.employee]
+entity = "Employee"
+where = { id = "{id}" }
+
+[pages.queries.tasks]
+entity = "OnboardingTask"
+where = { employeeId = "{id}" }
+
+[pages.queries.access]
+entity = "AccessGrant"
+where = { employeeId = "{id}" }
+
+[pages.actionBar]
+title = "Onboarding actions"
+description = "Move the hire through onboarding checkpoints."
+statusField = "status"
+showStatus = true
+
+[[pages.actionBar.actions]]
+label = "Start day one"
+workflow = "StartDayOne"
+style = "primary"
+payload = { status = "day_one" }
+successMessage = "Day one started."
+
+[[pages.actionBar.actions]]
+label = "Complete onboarding"
+workflow = "CompleteOnboarding"
+style = "secondary"
+payload = { status = "complete" }
+successMessage = "Onboarding complete."
+
+[[workflows]]
+name = "StartDayOne"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "peopleops", action = "advanceStatus" },
+  { type = "notify", adapter = "console", body = "Notify manager and buddy" }
+]
+
+[[workflows]]
+name = "CompleteOnboarding"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "peopleops", action = "completeChecklist" },
+  { type = "notify", adapter = "console", body = "Send completion summary" }
+]
+
+[[plugins]]
+name = "peopleops"
+enabled = true
+trust_level = "limited"
+
+[notifications]
+default = "console"
+adapters = [{ name = "console", type = "console" }]
