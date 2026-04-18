@@ -5,7 +5,7 @@ import { BlueprintParser } from '@zebric/runtime-core'
 import type { Blueprint, WorkflowStep, WorkflowTrigger } from '@zebric/runtime-core'
 import '@zebric/react-simulator/styles.css'
 import './styles.css'
-import { examples, type PlaygroundExample } from './playground-examples'
+import { examples, type PlaygroundDocLink, type PlaygroundExample } from './playground-examples'
 
 type Route =
   | { name: 'examples' }
@@ -15,6 +15,7 @@ type Route =
   | { name: 'not-found' }
 
 type BlueprintTab = 'editor' | 'structured' | 'validation' | 'diff'
+type DemoTarget = 'simulator' | 'editor' | 'structured' | 'validation'
 
 interface ParsedBlueprintDraft {
   blueprint?: Blueprint
@@ -22,6 +23,14 @@ interface ParsedBlueprintDraft {
 }
 
 const parser = new BlueprintParser()
+const docsLinks = {
+  blueprint: 'https://docs.zebric.dev/building/blueprint/',
+  workflows: 'https://docs.zebric.dev/building/workflows/',
+  runtime: 'https://docs.zebric.dev/run/runtime/',
+  quickstart: 'https://docs.zebric.dev/getting-started/quick-start/',
+  security: 'https://docs.zebric.dev/building/security/',
+  api: 'https://docs.zebric.dev/reference/api/',
+}
 
 function App() {
   const [path, setPath] = React.useState(window.location.pathname)
@@ -124,6 +133,13 @@ function ExamplesPage({ onNavigate }: { onNavigate: (path: string) => void }) {
         title="Zebric Playground"
         copy="Choose an example, switch roles, reset scenarios, and inspect the blueprint behind the app."
       />
+      <DocsStrip
+        links={[
+          { label: 'What is Zebric?', href: 'https://docs.zebric.dev/getting-started/what-is-zebric/' },
+          { label: 'Quick start', href: docsLinks.quickstart },
+          { label: 'Blueprint guide', href: docsLinks.blueprint },
+        ]}
+      />
       <div className="tag-filter" aria-label="Filter examples by tag">
         <button
           type="button"
@@ -161,12 +177,16 @@ function ExampleDetailPage({
     () => examples.find((candidate) => candidate.slug === slug)?.blueprintToml || ''
   )
   const [copyStatus, setCopyStatus] = React.useState('')
+  const [demoMode, setDemoMode] = React.useState(false)
+  const [demoStepIndex, setDemoStepIndex] = React.useState(0)
   const originalBlueprint = example?.blueprintToml || ''
 
   React.useEffect(() => {
     setBlueprintDraft(originalBlueprint)
     setBlueprintTab('editor')
     setCopyStatus('')
+    setDemoMode(false)
+    setDemoStepIndex(0)
   }, [originalBlueprint])
 
   const parsedDraft = React.useMemo<ParsedBlueprintDraft>(() => {
@@ -189,6 +209,8 @@ function ExampleDetailPage({
 
   const hasDraftChanges = blueprintDraft !== originalBlueprint
   const downloadSlug = example.slug
+  const demoSteps = example.trySteps
+  const demoTarget = demoMode ? inferDemoTarget(demoSteps[demoStepIndex] || '') : null
 
   async function copyBlueprint() {
     if (!navigator.clipboard) {
@@ -209,6 +231,29 @@ function ExampleDetailPage({
     anchor.download = `${downloadSlug}.toml`
     anchor.click()
     URL.revokeObjectURL(url)
+  }
+
+  function setDemoStep(nextIndex: number) {
+    const boundedIndex = Math.max(0, Math.min(nextIndex, demoSteps.length - 1))
+    setDemoStepIndex(boundedIndex)
+    focusDemoTarget(demoSteps[boundedIndex] || '')
+  }
+
+  function startDemo() {
+    setDemoMode(true)
+    setDemoStep(0)
+  }
+
+  function stopDemo() {
+    setDemoMode(false)
+    setDemoStepIndex(0)
+  }
+
+  function focusDemoTarget(step: string) {
+    const target = inferDemoTarget(step)
+    if (target === 'editor') setBlueprintTab('editor')
+    if (target === 'structured') setBlueprintTab('structured')
+    if (target === 'validation') setBlueprintTab('validation')
   }
 
   return (
@@ -238,7 +283,7 @@ function ExampleDetailPage({
       </section>
 
       <section className="detail-layout">
-        <div className="simulator-column">
+        <div className={['simulator-column', demoTarget === 'simulator' ? 'is-demo-focus' : ''].filter(Boolean).join(' ')}>
           <ZebricSimulator
             blueprintToml={blueprintDraft}
             seeds={example.seeds}
@@ -251,6 +296,15 @@ function ExampleDetailPage({
           />
         </div>
         <aside className="example-sidebar">
+          <DemoModePanel
+            steps={example.trySteps}
+            isActive={demoMode}
+            currentIndex={demoStepIndex}
+            onStart={startDemo}
+            onStop={stopDemo}
+            onNext={() => setDemoStep(demoStepIndex + 1)}
+            onPrevious={() => setDemoStep(demoStepIndex - 1)}
+          />
           <Panel title="What this demonstrates">
             <ul className="plain-list">
               {example.features.map((feature) => (
@@ -260,8 +314,13 @@ function ExampleDetailPage({
           </Panel>
           <Panel title="Try this">
             <ol className="try-list">
-              {example.trySteps.map((step) => (
-                <li key={step}>{step}</li>
+              {example.trySteps.map((step, index) => (
+                <li
+                  key={step}
+                  className={demoMode && index === demoStepIndex ? 'is-active' : ''}
+                >
+                  {step}
+                </li>
               ))}
             </ol>
           </Panel>
@@ -287,6 +346,12 @@ function ExampleDetailPage({
             <p className="eyebrow">Blueprint viewer</p>
             <h2>{example.title} blueprint</h2>
             <p className="viewer-subtitle">Edits run locally in the simulator. Reset restores the bundled example.</p>
+            <DocsStrip
+              links={[
+                { label: 'Blueprint docs', href: docsLinks.blueprint },
+                { label: 'Runtime docs', href: docsLinks.runtime },
+              ]}
+            />
           </div>
           <div className="viewer-actions">
             <div className="tab-buttons" role="tablist" aria-label="Blueprint view">
@@ -357,6 +422,87 @@ function ExampleDetailPage({
         ) : null}
       </section>
     </main>
+  )
+}
+
+function DemoModePanel({
+  steps,
+  isActive,
+  currentIndex,
+  onStart,
+  onStop,
+  onNext,
+  onPrevious,
+}: {
+  steps: string[]
+  isActive: boolean
+  currentIndex: number
+  onStart: () => void
+  onStop: () => void
+  onNext: () => void
+  onPrevious: () => void
+}) {
+  const currentStep = steps[currentIndex]
+  const isLastStep = currentIndex >= steps.length - 1
+
+  return (
+    <section className="demo-panel">
+      <div>
+        <p className="eyebrow">Optional demo mode</p>
+        <h2>Walk through this app</h2>
+        <p>Follow the workflow without saving anything or leaving the browser.</p>
+      </div>
+      {isActive ? (
+        <>
+          <div className="demo-progress" aria-label="Demo progress">
+            <span style={{ width: `${((currentIndex + 1) / steps.length) * 100}%` }} />
+          </div>
+          <div className="demo-current-step">
+            <span>
+              Step {currentIndex + 1} of {steps.length}
+            </span>
+            <strong>{currentStep}</strong>
+          </div>
+          <div className="demo-actions">
+            <button type="button" onClick={onPrevious} disabled={currentIndex === 0}>
+              Back
+            </button>
+            <button type="button" onClick={isLastStep ? onStop : onNext}>
+              {isLastStep ? 'Finish' : 'Next'}
+            </button>
+            <button type="button" onClick={onStop}>
+              Exit
+            </button>
+          </div>
+        </>
+      ) : (
+        <button type="button" className="demo-start" onClick={onStart}>
+          Start Demo
+        </button>
+      )}
+    </section>
+  )
+}
+
+function inferDemoTarget(step: string): DemoTarget {
+  const normalized = step.toLowerCase()
+  if (normalized.includes('blueprint') || normalized.includes('edit')) return 'editor'
+  if (normalized.includes('workflow') || normalized.includes('audit') || normalized.includes('inspect')) {
+    return 'structured'
+  }
+  if (normalized.includes('valid') || normalized.includes('error')) return 'validation'
+  return 'simulator'
+}
+
+function DocsStrip({ links }: { links: PlaygroundDocLink[] }) {
+  return (
+    <div className="docs-strip">
+      {links.map((link) => (
+        <a key={link.href} href={link.href}>
+          {link.label}
+        </a>
+      ))}
+    </div>
   )
 }
 
@@ -554,6 +700,12 @@ function StructuredBlueprint({
           <p className="eyebrow">Parsed blueprint</p>
           <h3>{blueprint.project.name}</h3>
           <p>{blueprint.project.description || example.description}</p>
+          <DocsStrip
+            links={[
+              { label: 'Blueprint guide', href: docsLinks.blueprint },
+              { label: 'API reference', href: docsLinks.api },
+            ]}
+          />
         </div>
         <div className="blueprint-map__badges" aria-label="Automation signals">
           {automationSignals.length ? (
@@ -580,6 +732,7 @@ function StructuredBlueprint({
             <span>01</span>
             <h3>Data Model</h3>
           </div>
+          <DocsStrip links={[{ label: 'Model blueprints', href: docsLinks.blueprint }]} />
           <div className="entity-map">
             {blueprint.entities.map((entity) => {
               const primaryFields = entity.fields.filter((field) => field.primary_key)
@@ -633,6 +786,7 @@ function StructuredBlueprint({
           <span>03</span>
           <h3>Experience Routes</h3>
         </div>
+        <DocsStrip links={[{ label: 'Pages and forms', href: docsLinks.blueprint }]} />
         <RouteFlow blueprint={blueprint} />
         <div className="route-map">
           {blueprint.pages.map((page) => (
@@ -680,6 +834,7 @@ function StructuredBlueprint({
             <span>04</span>
             <h3>Workflow Trace</h3>
           </div>
+          <DocsStrip links={[{ label: 'Workflow docs', href: docsLinks.workflows }]} />
           {blueprint.workflows?.length ? (
             <div className="workflow-map">
               {blueprint.workflows.map((workflow) => (
@@ -709,6 +864,12 @@ function StructuredBlueprint({
             <span>05</span>
             <h3>Integrations</h3>
           </div>
+          <DocsStrip
+            links={[
+              { label: 'Runtime docs', href: docsLinks.runtime },
+              { label: 'Security docs', href: docsLinks.security },
+            ]}
+          />
           <div className="integration-list">
             {(blueprint.plugins || []).map((plugin) => (
               <section key={plugin.name}>
@@ -946,6 +1107,12 @@ function ValidationPanel({ report }: { report: ValidationReport }) {
       <div className={`validation-hero is-${report.status}`}>
         <span>{report.status === 'valid' ? 'Ready' : 'Needs work'}</span>
         <h3>{report.summary}</h3>
+        <DocsStrip
+          links={[
+            { label: 'Blueprint spec', href: docsLinks.blueprint },
+            { label: 'Workflow docs', href: docsLinks.workflows },
+          ]}
+        />
       </div>
       {report.error ? <pre className="validation-error">{report.error}</pre> : null}
       <div className="validation-grid">

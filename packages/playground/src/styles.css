@@ -241,6 +241,31 @@ textarea {
   color: #ffffff;
 }
 
+.docs-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 24px;
+}
+
+.docs-strip a {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfd1c4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1f5c49;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.docs-strip a:hover {
+  border-color: #1f7a5c;
+  background: #eaf4f0;
+}
+
 .back-link {
   display: inline-flex;
   margin-bottom: 18px;
@@ -283,6 +308,11 @@ textarea {
   background: #ffffff;
 }
 
+.simulator-column.is-demo-focus {
+  border-color: #d6a642;
+  box-shadow: 0 0 0 4px rgba(214, 166, 66, 0.18);
+}
+
 .playground-simulator {
   min-height: 780px;
 }
@@ -295,6 +325,92 @@ textarea {
 .panel h2 {
   margin-top: 0;
   font-size: 18px;
+}
+
+.demo-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #adc8b8;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(173, 216, 230, 0.18), rgba(214, 166, 66, 0.12)),
+    #ffffff;
+  padding: 20px;
+}
+
+.demo-panel h2 {
+  margin: 0 0 8px;
+  color: #101712;
+  font-size: 20px;
+}
+
+.demo-panel p {
+  margin: 0;
+  color: #516158;
+  line-height: 1.5;
+}
+
+.demo-start,
+.demo-actions button {
+  border: 1px solid #1f7a5c;
+  border-radius: 8px;
+  background: #1f7a5c;
+  color: #ffffff;
+  cursor: pointer;
+  padding: 9px 12px;
+  font-weight: 900;
+}
+
+.demo-actions button:not(:first-child) {
+  background: #ffffff;
+  color: #1f5c49;
+}
+
+.demo-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.demo-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(31, 122, 92, 0.15);
+}
+
+.demo-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #d6a642;
+  transition: width 180ms ease;
+}
+
+.demo-current-step {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(31, 122, 92, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 12px;
+}
+
+.demo-current-step span {
+  color: #8a4b1f;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.demo-current-step strong {
+  color: #18201c;
+  line-height: 1.45;
+}
+
+.demo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .plain-list li strong,
@@ -317,6 +433,13 @@ textarea {
 
 .try-list li + li {
   margin-top: 8px;
+}
+
+.try-list li.is-active {
+  border-radius: 8px;
+  background: rgba(214, 166, 66, 0.15);
+  margin-left: -8px;
+  padding: 6px 8px;
 }
 
 .blueprint-viewer {
@@ -526,6 +649,12 @@ textarea {
   color: #405349;
   font-size: 17px;
   line-height: 1.6;
+}
+
+.blueprint-map__hero .docs-strip,
+.blueprint-panel .docs-strip,
+.validation-hero .docs-strip {
+  margin: 14px 0 0;
 }
 
 .blueprint-map__badges,
