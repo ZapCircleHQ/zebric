@@ -2,7 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { ZebricSimulator } from '@zebric/react-simulator'
 import { BlueprintParser } from '@zebric/runtime-core'
-import type { WorkflowStep, WorkflowTrigger } from '@zebric/runtime-core'
+import type { Blueprint, WorkflowStep, WorkflowTrigger } from '@zebric/runtime-core'
 import '@zebric/react-simulator/styles.css'
 import './styles.css'
 import { examples, type PlaygroundExample } from './playground-examples'
@@ -14,7 +14,12 @@ type Route =
   | { name: 'getting-started' }
   | { name: 'not-found' }
 
-type BlueprintTab = 'editor' | 'structured'
+type BlueprintTab = 'editor' | 'structured' | 'validation' | 'diff'
+
+interface ParsedBlueprintDraft {
+  blueprint?: Blueprint
+  error: string | null
+}
 
 const parser = new BlueprintParser()
 
@@ -164,16 +169,19 @@ function ExampleDetailPage({
     setCopyStatus('')
   }, [originalBlueprint])
 
-  const validation = React.useMemo(() => {
+  const parsedDraft = React.useMemo<ParsedBlueprintDraft>(() => {
     if (!blueprintDraft) return { error: null }
 
     try {
-      parser.parse(blueprintDraft, 'toml', `${slug}.toml`)
-      return { error: null }
+      return { blueprint: parser.parse(blueprintDraft, 'toml', `${slug}.toml`), error: null }
     } catch (error) {
       return { error: error instanceof Error ? error.message : String(error) }
     }
   }, [blueprintDraft, slug])
+  const validationReport = React.useMemo(
+    () => createValidationReport(parsedDraft, blueprintDraft),
+    [blueprintDraft, parsedDraft]
+  )
 
   if (!example) {
     return <NotFoundPage onNavigate={onNavigate} />
@@ -296,10 +304,24 @@ function ExampleDetailPage({
               >
                 Structured
               </button>
+              <button
+                type="button"
+                className={blueprintTab === 'validation' ? 'is-active' : ''}
+                onClick={() => setBlueprintTab('validation')}
+              >
+                Validation
+              </button>
+              <button
+                type="button"
+                className={blueprintTab === 'diff' ? 'is-active' : ''}
+                onClick={() => setBlueprintTab('diff')}
+              >
+                Diff
+              </button>
             </div>
             <div className="blueprint-editor-actions">
-              <span className={validation.error ? 'is-error' : 'is-valid'}>
-                {validation.error ? 'Parse error' : 'Valid blueprint'}
+              <span className={parsedDraft.error ? 'is-error' : 'is-valid'}>
+                {parsedDraft.error ? 'Parse error' : 'Valid blueprint'}
               </span>
               {hasDraftChanges ? <span>Edited</span> : null}
               <button type="button" onClick={() => setBlueprintDraft(originalBlueprint)}>
@@ -319,13 +341,20 @@ function ExampleDetailPage({
             <BlueprintCodeEditor
               value={blueprintDraft}
               onChange={setBlueprintDraft}
-              hasError={Boolean(validation.error)}
+              hasError={Boolean(parsedDraft.error)}
             />
-            {validation.error ? <pre className="editor-error">{validation.error}</pre> : null}
+            {parsedDraft.error ? <pre className="editor-error">{parsedDraft.error}</pre> : null}
           </div>
-        ) : (
+        ) : null}
+        {blueprintTab === 'structured' ? (
           <StructuredBlueprint example={example} blueprintToml={blueprintDraft} />
-        )}
+        ) : null}
+        {blueprintTab === 'validation' ? (
+          <ValidationPanel report={validationReport} />
+        ) : null}
+        {blueprintTab === 'diff' ? (
+          <BlueprintDiff original={originalBlueprint} draft={blueprintDraft} />
+        ) : null}
       </section>
     </main>
   )
@@ -401,10 +430,10 @@ function BlueprintCodeEditor({
         doc: value,
         parent,
         extensions: [
-        basicSetup,
-        StreamLanguage.define(blueprintTomlMode),
-        syntaxHighlighting(blueprintHighlightStyle),
-        EditorView.lineWrapping,
+          basicSetup,
+          StreamLanguage.define(blueprintTomlMode),
+          syntaxHighlighting(blueprintHighlightStyle),
+          EditorView.lineWrapping,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               onChangeRef.current(update.state.doc.toString())
@@ -604,6 +633,7 @@ function StructuredBlueprint({
           <span>03</span>
           <h3>Experience Routes</h3>
         </div>
+        <RouteFlow blueprint={blueprint} />
         <div className="route-map">
           {blueprint.pages.map((page) => (
             <section key={page.path} className="route-card">
@@ -702,6 +732,333 @@ function StructuredBlueprint({
       </section>
     </div>
   )
+}
+
+function RouteFlow({ blueprint }: { blueprint: Blueprint }) {
+  const routeEdges = blueprint.pages.flatMap((page) => {
+    const formRedirect = page.form?.onSuccess?.redirect
+    const actionEdges =
+      page.actionBar?.actions
+        ?.filter((action) => action.workflow)
+        .map((action) => ({
+          from: page.path,
+          to: action.workflow || '',
+          label: action.label,
+          type: 'workflow' as const,
+        })) || []
+
+    return [
+      ...(formRedirect
+        ? [
+            {
+              from: page.path,
+              to: normalizeRouteTarget(formRedirect),
+              label: 'form success',
+              type: 'route' as const,
+            },
+          ]
+        : []),
+      ...actionEdges,
+    ]
+  })
+
+  const pagesWithActions = blueprint.pages.filter(
+    (page) => page.form || page.actionBar?.actions?.length || page.queries
+  )
+
+  return (
+    <section className="route-flow" aria-label="Route flow map">
+      <div className="route-flow__rail">
+        {pagesWithActions.map((page, index) => (
+          <React.Fragment key={page.path}>
+            <article>
+              <span>{page.path}</span>
+              <strong>{page.title}</strong>
+              <small>{page.layout}</small>
+            </article>
+            {index < pagesWithActions.length - 1 ? <div className="route-flow__connector" /> : null}
+          </React.Fragment>
+        ))}
+      </div>
+      {routeEdges.length ? (
+        <div className="route-flow__edges">
+          {routeEdges.map((edge) => (
+            <span key={`${edge.from}-${edge.to}-${edge.label}`} className={`is-${edge.type}`}>
+              <strong>{edge.from}</strong>
+              <em>{edge.label}</em>
+              <strong>{edge.to}</strong>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p>No redirects or workflow action edges are defined.</p>
+      )}
+    </section>
+  )
+}
+
+function normalizeRouteTarget(target: string) {
+  return target.replace(/\{[^}]+\}/g, ':id')
+}
+
+interface ValidationCheck {
+  title: string
+  status: 'pass' | 'warn' | 'fail'
+  detail: string
+}
+
+interface ValidationReport {
+  status: 'valid' | 'invalid'
+  summary: string
+  error?: string
+  checks: ValidationCheck[]
+}
+
+function createValidationReport(parsed: ParsedBlueprintDraft, source: string): ValidationReport {
+  const lineCount = source.split('\n').length
+
+  if (parsed.error || !parsed.blueprint) {
+    return {
+      status: 'invalid',
+      summary: 'The editor draft cannot be parsed into a runnable blueprint yet.',
+      error: parsed.error || 'Blueprint is empty.',
+      checks: [
+        {
+          title: 'Parser',
+          status: 'fail',
+          detail: extractErrorLocation(parsed.error) || 'Fix the TOML or schema error shown below.',
+        },
+        {
+          title: 'Source',
+          status: 'warn',
+          detail: `${lineCount} lines checked before parsing stopped.`,
+        },
+      ],
+    }
+  }
+
+  const blueprint = parsed.blueprint
+  const checks: ValidationCheck[] = []
+  const entityNames = new Set(blueprint.entities.map((entity) => entity.name))
+  const workflowNames = new Set((blueprint.workflows || []).map((workflow) => workflow.name))
+  const pagePaths = new Set(blueprint.pages.map((page) => page.path))
+  const pagesWithoutData = blueprint.pages.filter(
+    (page) => !page.queries && !page.form && !page.actionBar?.actions?.length
+  )
+  const formsWithoutRedirect = blueprint.pages.filter((page) => page.form && !page.form.onSuccess?.redirect)
+  const missingWorkflowActions = blueprint.pages.flatMap((page) =>
+    page.actionBar?.actions
+      ?.filter((action) => action.workflow && !workflowNames.has(action.workflow))
+      .map((action) => `${page.path}: ${action.label} -> ${action.workflow}`) || []
+  )
+  const missingQueryEntities = blueprint.pages.flatMap((page) =>
+    Object.entries(page.queries || {})
+      .filter(([, query]) => !entityNames.has(query.entity))
+      .map(([queryName, query]) => `${page.path}.${queryName} -> ${query.entity}`)
+  )
+  const missingFormEntities = blueprint.pages
+    .filter((page) => page.form && !entityNames.has(page.form.entity))
+    .map((page) => `${page.path} -> ${page.form?.entity}`)
+  const brokenRedirects = blueprint.pages
+    .filter((page) => {
+      const redirect = page.form?.onSuccess?.redirect
+      return redirect && !pagePaths.has(normalizeRouteTarget(redirect))
+    })
+    .map((page) => `${page.path} -> ${page.form?.onSuccess?.redirect}`)
+
+  checks.push({
+    title: 'Parser',
+    status: 'pass',
+    detail: `${lineCount} lines parsed successfully as TOML and validated against the blueprint schema.`,
+  })
+  checks.push({
+    title: 'Project',
+    status: blueprint.project.name && blueprint.project.runtime.min_version ? 'pass' : 'warn',
+    detail: `${blueprint.project.name} targets runtime ${blueprint.project.runtime.min_version}.`,
+  })
+  checks.push({
+    title: 'Entities',
+    status: blueprint.entities.length ? 'pass' : 'fail',
+    detail: `${blueprint.entities.length} entities and ${blueprint.entities.reduce((sum, entity) => sum + entity.fields.length, 0)} fields.`,
+  })
+  checks.push({
+    title: 'Routes',
+    status: blueprint.pages.length ? 'pass' : 'fail',
+    detail: `${blueprint.pages.length} pages, ${pagesWithoutData.length} static-only pages.`,
+  })
+  checks.push({
+    title: 'Query references',
+    status: missingQueryEntities.length ? 'fail' : 'pass',
+    detail: missingQueryEntities.length
+      ? missingQueryEntities.join(', ')
+      : 'Every route query points at a known entity.',
+  })
+  checks.push({
+    title: 'Form references',
+    status: missingFormEntities.length ? 'fail' : formsWithoutRedirect.length ? 'warn' : 'pass',
+    detail: missingFormEntities.length
+      ? missingFormEntities.join(', ')
+      : formsWithoutRedirect.length
+        ? `${formsWithoutRedirect.length} forms do not define a success redirect.`
+        : 'Every form points at a known entity and has a success redirect.',
+  })
+  checks.push({
+    title: 'Workflow references',
+    status: missingWorkflowActions.length ? 'fail' : 'pass',
+    detail: missingWorkflowActions.length
+      ? missingWorkflowActions.join(', ')
+      : 'Every action-bar workflow points at a defined workflow.',
+  })
+  checks.push({
+    title: 'Route redirects',
+    status: brokenRedirects.length ? 'warn' : 'pass',
+    detail: brokenRedirects.length
+      ? brokenRedirects.join(', ')
+      : 'Form success redirects match known route shapes.',
+  })
+
+  const hasFailures = checks.some((check) => check.status === 'fail')
+  const hasWarnings = checks.some((check) => check.status === 'warn')
+
+  return {
+    status: hasFailures ? 'invalid' : 'valid',
+    summary: hasFailures
+      ? 'The blueprint parses, but a reference check found a blocking issue.'
+      : hasWarnings
+        ? 'The blueprint is runnable, with a few things worth reviewing.'
+        : 'The blueprint is runnable and the local reference checks look clean.',
+    checks,
+  }
+}
+
+function extractErrorLocation(error?: string | null) {
+  if (!error) return null
+  const match = error.match(/line\s+(\d+).*column\s+(\d+)|(\d+):(\d+)/i)
+  if (!match) return null
+  const line = match[1] || match[3]
+  const column = match[2] || match[4]
+  return `Error near line ${line}, column ${column}.`
+}
+
+function ValidationPanel({ report }: { report: ValidationReport }) {
+  return (
+    <section className="validation-panel">
+      <div className={`validation-hero is-${report.status}`}>
+        <span>{report.status === 'valid' ? 'Ready' : 'Needs work'}</span>
+        <h3>{report.summary}</h3>
+      </div>
+      {report.error ? <pre className="validation-error">{report.error}</pre> : null}
+      <div className="validation-grid">
+        {report.checks.map((check) => (
+          <article key={check.title} className={`validation-card is-${check.status}`}>
+            <span>{check.status}</span>
+            <h4>{check.title}</h4>
+            <p>{check.detail}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+type DiffRow =
+  | { type: 'same'; originalLine: number; draftLine: number; text: string }
+  | { type: 'remove'; originalLine: number; draftLine: null; text: string }
+  | { type: 'add'; originalLine: null; draftLine: number; text: string }
+
+function BlueprintDiff({ original, draft }: { original: string; draft: string }) {
+  const rows = React.useMemo(() => createLineDiff(original, draft), [original, draft])
+  const changedRows = rows.filter((row) => row.type !== 'same').length
+
+  return (
+    <section className="diff-panel">
+      <div className="diff-summary">
+        <span>{changedRows ? `${changedRows} changed lines` : 'No changes'}</span>
+        <p>Comparing the bundled blueprint with the current editor draft.</p>
+      </div>
+      <div className="diff-table" role="table" aria-label="Blueprint diff">
+        {rows.map((row, index) => (
+          <div key={`${index}-${row.type}-${row.text}`} className={`diff-row is-${row.type}`} role="row">
+            <span role="cell">{row.originalLine ?? ''}</span>
+            <span role="cell">{row.draftLine ?? ''}</span>
+            <code role="cell">{row.text || ' '}</code>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function createLineDiff(original: string, draft: string): DiffRow[] {
+  const originalLines = original.split('\n')
+  const draftLines = draft.split('\n')
+  const table = Array.from({ length: originalLines.length + 1 }, () =>
+    Array<number>(draftLines.length + 1).fill(0)
+  )
+
+  for (let i = originalLines.length - 1; i >= 0; i--) {
+    for (let j = draftLines.length - 1; j >= 0; j--) {
+      table[i][j] =
+        originalLines[i] === draftLines[j]
+          ? table[i + 1][j + 1] + 1
+          : Math.max(table[i + 1][j], table[i][j + 1])
+    }
+  }
+
+  const rows: DiffRow[] = []
+  let originalIndex = 0
+  let draftIndex = 0
+
+  while (originalIndex < originalLines.length && draftIndex < draftLines.length) {
+    if (originalLines[originalIndex] === draftLines[draftIndex]) {
+      rows.push({
+        type: 'same',
+        originalLine: originalIndex + 1,
+        draftLine: draftIndex + 1,
+        text: originalLines[originalIndex],
+      })
+      originalIndex++
+      draftIndex++
+    } else if (table[originalIndex + 1][draftIndex] >= table[originalIndex][draftIndex + 1]) {
+      rows.push({
+        type: 'remove',
+        originalLine: originalIndex + 1,
+        draftLine: null,
+        text: originalLines[originalIndex],
+      })
+      originalIndex++
+    } else {
+      rows.push({
+        type: 'add',
+        originalLine: null,
+        draftLine: draftIndex + 1,
+        text: draftLines[draftIndex],
+      })
+      draftIndex++
+    }
+  }
+
+  while (originalIndex < originalLines.length) {
+    rows.push({
+      type: 'remove',
+      originalLine: originalIndex + 1,
+      draftLine: null,
+      text: originalLines[originalIndex],
+    })
+    originalIndex++
+  }
+
+  while (draftIndex < draftLines.length) {
+    rows.push({
+      type: 'add',
+      originalLine: null,
+      draftLine: draftIndex + 1,
+      text: draftLines[draftIndex],
+    })
+    draftIndex++
+  }
+
+  return rows
 }
 
 function formatTrigger(trigger: WorkflowTrigger) {
