@@ -4,7 +4,7 @@ import { promises as fs } from 'node:fs'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
-import { generateOpenAPISpec } from '@zebric/runtime-core'
+import { generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
@@ -530,8 +530,26 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
   })
 }
 
-export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAdapter): void {
+export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAdapter, csrfCookieName = 'csrf-token'): void {
   app.all('*', async (c) => {
-    return blueprintAdapter.handle(c.req.raw)
+    const response = await blueprintAdapter.handle(c.req.raw)
+    const injectedCsrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    const hasCsrfCookie = c.req.header('cookie')?.split(';').some((part) => part.trim().startsWith(`${csrfCookieName}=`))
+
+    if (!injectedCsrfToken || hasCsrfCookie || !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method.toUpperCase())) {
+      return response
+    }
+
+    const headers = new Headers(response.headers)
+    headers.append(
+      'Set-Cookie',
+      `${csrfCookieName}=${encodeURIComponent(injectedCsrfToken)}; Path=/; SameSite=Strict`
+    )
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    })
   })
 }
