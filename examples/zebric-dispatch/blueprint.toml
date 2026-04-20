@@ -9,6 +9,55 @@ description = "Agent-native intake + approvals + audit trail + Slack notificatio
 min_version = "0.1.0"
 
 # ==========================================
+# UX / Design
+# ==========================================
+
+[ux]
+pattern = "queue-detail@v1"
+
+[ux.interaction]
+selection = "single"
+row_click = "open-detail"
+edit_mode = "modal"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
+
+[ux.data]
+mode = "table"
+density = "compact"
+pagination = "server"
+filters = "top-bar"
+column_config = true
+
+[ux.system.feedback]
+success = "toast"
+error = "inline"
+
+[ux.system.activity]
+timeline = true
+location = "side-panel"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Dispatch", "Issues", "Board"]
+
+[ux.responsive]
+mode = "desktop-first"
+collapse_sidebar = true
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+[design_adapter.roles]
+primary-action = "buttonPrimary"
+secondary-action = "buttonSecondary"
+destructive-action = "buttonSecondary"
+surface-default = "body"
+surface-elevated = "card"
+feedback-error = "errorState"
+
+# ==========================================
 # Entities
 # ==========================================
 
@@ -107,6 +156,10 @@ title = "Dispatch"
 auth = "none"
 layout = "dashboard"
 
+[page."/".ux]
+pattern = "dashboard@v1"
+primitives = ["page", "header", "content", "card"]
+
 [page."/".query.summaryNew]
 entity = "Issue"
 where = { status = "new" }
@@ -124,6 +177,10 @@ title = "Issues"
 auth = "none"
 layout = "list"
 
+[page."/issues".ux]
+pattern = "data-table@v1"
+primitives = ["page", "header", "content", "table"]
+
 [page."/issues".query.issues]
 entity = "Issue"
 orderBy = { updatedAt = "desc" }
@@ -135,6 +192,10 @@ include = ["assignee", "requester"]
 title = "Board"
 auth = "none"
 layout = "dashboard"
+
+[page."/board".ux]
+pattern = "dashboard@v1"
+primitives = ["page", "header", "content", "card"]
 
 [page."/board".query.new]
 entity = "Issue"
@@ -165,9 +226,38 @@ title = "New Issue"
 auth = "none"
 layout = "form"
 
+[page."/issues/new".ux]
+pattern = "form-page@v1"
+primitives = ["page", "header", "content", "form", "footer-actions"]
+
 [page."/issues/new".form]
 entity = "Issue"
 method = "create"
+mode = "page"
+
+[[page."/issues/new".form.sections]]
+title = "Basic Info"
+layout = "single-column"
+
+[[page."/issues/new".form.sections.fields]]
+name = "title"
+
+[[page."/issues/new".form.sections.fields]]
+name = "description"
+
+[[page."/issues/new".form.sections]]
+title = "Routing"
+layout = "two-column"
+
+[[page."/issues/new".form.sections.fields]]
+name = "category"
+
+[[page."/issues/new".form.sections.fields]]
+name = "priority"
+
+[page."/issues/new".form.interaction]
+validation = "inline"
+save_behavior = "optimistic"
 
 [[page."/issues/new".form.fields]]
 name = "title"
@@ -215,6 +305,16 @@ message = "Issue created."
 title = "Issue"
 auth = "none"
 layout = "detail"
+
+[page."/issues/:id".ux]
+pattern = "queue-detail@v1"
+primitives = ["page", "header", "content", "detail", "activity", "footer-actions"]
+
+[page."/issues/:id".ux.interaction]
+selection = "single"
+edit_mode = "modal"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
 
 [page."/issues/:id".query.issue]
 entity = "Issue"

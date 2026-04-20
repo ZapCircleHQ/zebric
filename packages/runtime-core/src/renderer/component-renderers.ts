@@ -5,10 +5,10 @@
  * Delegates to focused modules for form, action bar, and data section rendering.
  */
 
-import type { Blueprint, Page } from '../types/blueprint.js'
+import type { Blueprint, Page, PageUXConfig } from '../types/blueprint.js'
 import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
-import { html, escapeHtml, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
+import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
 import { renderFormField as renderFormFieldFn, renderInput as renderInputFn } from './form-renderers.js'
 import { renderActionBar as renderActionBarFn } from './action-bar-renderer.js'
@@ -51,7 +51,7 @@ export class ComponentRenderers {
   /**
    * Render table of items
    */
-  renderTable(items: any[], entity?: any): SafeHtml {
+  renderTable(items: any[], entity?: any, page?: Page): SafeHtml {
     const fields = this.utils.getDisplayFields(items[0], entity)
     const detailPath = this.utils.getEntityPagePath(entity?.name, 'detail')
     const editPath = this.utils.getEntityPagePath(entity?.name, 'update')
@@ -59,6 +59,11 @@ export class ComponentRenderers {
     const tableCaption = `${entityName.charAt(0).toUpperCase()}${entityName.slice(1)} list`
     const dataColumns = fields.length > 0 ? fields.length : 1
     const rowCountDescription = `${items.length} row${items.length === 1 ? '' : 's'} of data`
+    const ux = this.resolvePageUX(page)
+    const density = ux?.data?.density || this.blueprint.ux?.data?.density || 'comfortable'
+    const densityClass = this.getTableDensityClass(density)
+    const rowClick = ux?.interaction?.row_click || this.blueprint.ux?.interaction?.row_click
+    const rowClickOpenDetail = rowClick === 'open-detail'
 
     // Helper to get a readable identifier for an item
     const getItemIdentifier = (item: any): string => {
@@ -68,7 +73,7 @@ export class ComponentRenderers {
     }
 
     return html`
-      <div class="${this.theme.card}">
+      <div class="${this.theme.card}" data-zebric-ux-pattern="${ux?.pattern || ''}" data-zebric-density="${density}">
         <p class="px-6 pt-6 text-sm text-gray-500">${rowCountDescription}</p>
         <table class="${this.theme.table}">
           <caption class="sr-only">${tableCaption}</caption>
@@ -95,11 +100,14 @@ export class ComponentRenderers {
                 const itemId = getItemIdentifier(item)
                 const detailHref = this.utils.resolveEntityLink(detailPath, entity?.name, item)
                 return html`
-                <tr class="${this.theme.tableRow}">
+                <tr
+                  class="${this.theme.tableRow} ${rowClickOpenDetail ? 'cursor-pointer' : ''}"
+                  ${rowClickOpenDetail ? safe(`data-row-click="open-detail" onclick="if (!event.target.closest('a, button, form, input, select, textarea')) window.location.href='${escapeJs(detailHref)}'"`) : ''}
+                >
                   ${safe(fields.map((f, index) => {
                     const value = this.utils.formatValue(item[f.name], f.type)
                     return html`
-                      <td class="${this.theme.tableCell}">
+                      <td class="${this.theme.tableCell} ${densityClass}">
                         ${index === 0
                           ? html`
                             <a
@@ -114,7 +122,7 @@ export class ComponentRenderers {
                       </td>
                     `.html
                   }).join(''))}
-                  <td class="${this.theme.tableCell} ${this.theme.tableActions}">
+                  <td class="${this.theme.tableCell} ${densityClass} ${this.theme.tableActions}">
                     <a
                       href="${detailHref}"
                       class="${this.theme.linkPrimary}"
@@ -193,7 +201,7 @@ export class ComponentRenderers {
    * Render action bar for detail pages
    */
   renderActionBar(page: Page, record: any, entity?: any, csrfToken?: string): SafeHtml {
-    return renderActionBarFn(page, record, this.theme, this.utils, entity, csrfToken)
+    return renderActionBarFn(page, record, this.theme, this.utils, entity, csrfToken, this.blueprint)
   }
 
   /**
@@ -264,7 +272,7 @@ export class ComponentRenderers {
       this.blueprint,
       this.theme,
       this.utils,
-      (items, entity) => this.renderTable(items, entity),
+      (items, entity) => this.renderTable(items, entity, context.page),
       _entity
     )
   }
@@ -292,5 +300,20 @@ export class ComponentRenderers {
         </div>
       </div>
     `)
+  }
+
+  private resolvePageUX(page?: Page): PageUXConfig | undefined {
+    return page?.ux
+  }
+
+  private getTableDensityClass(density: string): string {
+    switch (density) {
+      case 'compact':
+        return '!px-4 !py-2'
+      case 'spacious':
+        return '!px-8 !py-6'
+      default:
+        return ''
+    }
   }
 }

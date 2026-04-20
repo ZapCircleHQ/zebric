@@ -15,6 +15,8 @@ export interface Blueprint {
   auth?: AuthConfig
   plugins?: PluginConfig[]
   ui?: UIConfig
+  ux?: UXConfig
+  design_adapter?: DesignAdapterConfig
   notifications?: NotificationsConfig
   skills?: SkillConfig[]
 }
@@ -110,6 +112,7 @@ export interface Page {
   title: string
   auth?: 'required' | 'optional' | 'none'
   layout: 'list' | 'detail' | 'form' | string
+  ux?: PageUXConfig
   queries?: Record<string, Query>
   form?: Form
   meta?: PageMeta
@@ -207,6 +210,9 @@ export interface Form {
   entity: string
   method: 'create' | 'update' | 'delete'
   fields: FormField[]
+  mode?: FormMode
+  sections?: FormSection[]
+  interaction?: FormInteractionConfig
   onSuccess?: {
     redirect?: string
     message?: string
@@ -230,6 +236,161 @@ export interface FormField {
   min?: number
   max?: number
   error_message?: string
+}
+
+// ============================================================================
+// Zazzle UX Configuration
+// ============================================================================
+
+export type UXPattern =
+  | 'dashboard'
+  | 'queue-detail'
+  | 'data-table'
+  | 'form-page'
+  | 'approval-flow'
+
+export type UXPatternVersion =
+  | UXPattern
+  | `${UXPattern}@v${number}`
+
+export type LayoutPrimitive =
+  | 'page'
+  | 'header'
+  | 'sidebar'
+  | 'content'
+  | 'panel'
+  | 'section'
+  | 'card'
+  | 'table'
+  | 'list'
+  | 'detail'
+  | 'activity'
+  | 'form'
+  | 'footer-actions'
+
+export type SemanticUIRole =
+  | 'primary-action'
+  | 'secondary-action'
+  | 'destructive-action'
+  | 'status-positive'
+  | 'status-warning'
+  | 'status-negative'
+  | 'status-neutral'
+  | 'surface-default'
+  | 'surface-elevated'
+  | 'surface-muted'
+  | 'feedback-success'
+  | 'feedback-error'
+  | 'feedback-loading'
+
+export interface UXConfig {
+  pattern?: UXPatternVersion
+  patterns?: Record<string, UXPatternConfig>
+  interaction?: InteractionConfig
+  data?: DataPresentationConfig
+  form?: GlobalFormConfig
+  system?: SystemUXConfig
+  navigation?: NavigationConfig
+  responsive?: ResponsiveConfig
+  extensions?: ExtensionConfig[]
+}
+
+export interface PageUXConfig {
+  pattern?: UXPatternVersion
+  primitives?: LayoutPrimitive[]
+  interaction?: InteractionConfig
+  data?: DataPresentationConfig
+  form?: GlobalFormConfig
+  roles?: Record<string, SemanticUIRole>
+  extensions?: ExtensionConfig[]
+}
+
+export interface UXPatternConfig {
+  pattern: UXPatternVersion
+  primitives?: LayoutPrimitive[]
+  interaction?: InteractionConfig
+  data?: DataPresentationConfig
+  form?: GlobalFormConfig
+  roles?: Record<string, SemanticUIRole>
+}
+
+export interface InteractionConfig {
+  selection?: 'none' | 'single' | 'multi'
+  row_click?: 'none' | 'open-detail' | 'select' | 'edit'
+  edit_mode?: 'inline' | 'modal' | 'page'
+  primary_action_position?: 'header' | 'sticky-footer' | 'inline'
+  confirm_destructive?: boolean
+}
+
+export interface DataPresentationConfig {
+  mode?: 'table' | 'list' | 'cards'
+  density?: 'compact' | 'comfortable' | 'spacious'
+  pagination?: 'none' | 'client' | 'server'
+  filters?: 'none' | 'top-bar' | 'sidebar'
+  column_config?: boolean
+}
+
+export type FormMode = 'page' | 'modal' | 'inline'
+export type FormSectionLayout = 'single-column' | 'two-column' | 'inline' | 'card-group'
+
+export interface GlobalFormConfig {
+  mode?: FormMode
+  sections?: FormSection[]
+  interaction?: FormInteractionConfig
+}
+
+export interface FormSection {
+  title?: string
+  description?: string
+  layout?: FormSectionLayout
+  fields: FormSectionField[]
+}
+
+export interface FormSectionField {
+  name: string
+}
+
+export interface FormInteractionConfig {
+  validation?: 'inline' | 'summary' | 'none'
+  save_behavior?: 'standard' | 'optimistic'
+}
+
+export interface SystemUXConfig {
+  feedback?: {
+    success?: 'toast' | 'inline' | 'banner'
+    error?: 'toast' | 'inline' | 'banner'
+  }
+  activity?: {
+    timeline?: boolean
+    location?: 'side-panel' | 'main' | 'hidden'
+  }
+}
+
+export interface NavigationConfig {
+  model?: 'sidebar' | 'topbar' | 'none'
+  primary?: string[]
+}
+
+export interface ResponsiveConfig {
+  mode?: 'desktop-first' | 'mobile-first'
+  collapse_sidebar?: boolean
+}
+
+export interface ExtensionConfig {
+  custom_view?: string
+  placement?: LayoutPrimitive
+}
+
+export interface DesignAdapterConfig {
+  name?: string
+  version?: string
+  roles?: Partial<Record<SemanticUIRole, string>>
+  tokens?: {
+    colors?: Record<string, string>
+    typography?: Record<string, string>
+    spacing?: Record<string, string>
+    motion?: Record<string, string>
+  }
 }
 
 export interface PageMeta {

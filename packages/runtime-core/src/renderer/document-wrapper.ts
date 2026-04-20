@@ -6,9 +6,11 @@
 
 import type { Blueprint } from '../types/blueprint.js'
 import type { Theme } from './theme.js'
-import { escapeHtml, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
+import { escapeHtml, SafeHtml, safe } from '../security/html-escape.js'
 import { INLINE_TAILWIND_STYLE_TAG } from './tailwind-style.js'
 import type { FlashMessage } from '../routing/request-ports.js'
+import { renderNavigation } from './navigation-renderer.js'
+import { renderFlash } from './feedback-renderer.js'
 
 export class DocumentWrapper {
   private reloadScript?: string
@@ -102,10 +104,10 @@ export class DocumentWrapper {
             Skip to main content
           </a>
 
-          ${this.renderNav(session, currentPath).html}
+          ${renderNavigation(this.blueprint, this.theme, session, currentPath).html}
 
-          <main id="main-content" role="main" class="min-h-screen py-8">
-            ${this.renderFlash(flash).html}
+          <main id="main-content" role="main" aria-label="Main content" class="min-h-screen py-8">
+            ${renderFlash(this.blueprint, flash).html}
             ${content.html}
           </main>
 
@@ -115,70 +117,6 @@ export class DocumentWrapper {
         </body>
       </html>
     `
-  }
-
-  /**
-   * Render navigation bar
-   */
-  private renderNav(session?: any, currentPath: string = '/'): SafeHtml {
-    const navItems = this.blueprint.pages
-      ?.filter((p) => !p.path.includes(':') && p.path !== '/')
-      ?.slice(0, 5)
-      ?.map((p) => {
-        const isCurrent = currentPath === p.path
-        return `
-          <a
-            href="${escapeHtmlAttr(p.path)}"
-            class="${this.theme.navLink}"
-            ${isCurrent ? 'aria-current="page"' : ''}
-          >
-            ${escapeHtml(p.title)}
-          </a>
-        `
-      }) || []
-
-    const authControl = session
-      ? `
-        <div class="flex items-center gap-3">
-          <span class="text-sm text-gray-500">${escapeHtml(session.user?.name || session.user?.email || 'Signed in')}</span>
-          <a
-            href="/auth/sign-out?callbackURL=${encodeURIComponent(currentPath || '/')}"
-            class="${this.theme.linkSecondary}"
-            aria-label="Sign out"
-          >
-            Sign out
-          </a>
-        </div>
-      `
-      : `
-        <a
-          href="/auth/sign-in?callbackURL=${encodeURIComponent(currentPath || '/')}"
-          class="${this.theme.linkPrimary}"
-          aria-label="Sign in to your account"
-        >
-          Sign in
-        </a>
-      `
-
-    return safe(`
-      <nav aria-label="Primary navigation" class="${this.theme.nav}">
-        <div class="${this.theme.container}">
-          <div class="${this.theme.navContent}">
-            <a
-              href="/"
-              class="${this.theme.navBrand}"
-              aria-label="${escapeHtmlAttr(this.blueprint.project.name)} home"
-            >
-              ${escapeHtml(this.blueprint.project.name)}
-            </a>
-            <div class="${this.theme.navLinks} flex items-center gap-4">
-              ${navItems.join('')}
-              ${authControl}
-            </div>
-          </div>
-        </div>
-      </nav>
-    `)
   }
 
   /**
@@ -198,36 +136,6 @@ export class DocumentWrapper {
 
   private renderInlineStyles(): SafeHtml {
     return safe(INLINE_TAILWIND_STYLE_TAG)
-  }
-
-  private renderFlash(flash?: FlashMessage): SafeHtml {
-    if (!flash || !flash.text) {
-      return safe('')
-    }
-
-    const baseClasses = 'mx-auto mb-6 max-w-3xl rounded-lg border px-4 py-3 text-sm'
-    let variantClasses = 'border-gray-300 bg-white text-gray-800'
-
-    switch (flash.type) {
-      case 'success':
-        variantClasses = 'border-green-300 bg-green-50 text-green-800'
-        break
-      case 'error':
-        variantClasses = 'border-red-300 bg-red-50 text-red-800'
-        break
-      case 'warning':
-        variantClasses = 'border-yellow-300 bg-yellow-50 text-yellow-800'
-        break
-      default:
-        variantClasses = 'border-blue-200 bg-blue-50 text-blue-800'
-        break
-    }
-
-    return safe(`
-      <div role="status" aria-live="polite" class="${baseClasses} ${variantClasses}">
-        ${escapeHtml(flash.text)}
-      </div>
-    `)
   }
 
   /**

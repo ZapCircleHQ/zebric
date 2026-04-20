@@ -343,6 +343,41 @@ describe('LayoutRenderers', () => {
       const result = renderer.renderFormLayout(context).toString()
       expect(result).toContain('Cancel')
     })
+
+    it('renders Zazzle form sections with layout classes', () => {
+      const { renderer } = createLayoutRenderers()
+      const context = makeContext({
+        page: {
+          path: '/tasks/new',
+          title: 'New Task',
+          layout: 'form',
+          ux: { pattern: 'form-page@v1' },
+          form: {
+            entity: 'Task',
+            method: 'create',
+            fields: [
+              { name: 'title', type: 'text', label: 'Title' },
+              { name: 'status', type: 'text', label: 'Status' },
+            ],
+            sections: [
+              {
+                title: 'Basic Info',
+                layout: 'two-column',
+                fields: [{ name: 'title' }, { name: 'status' }],
+              },
+            ],
+          },
+        } as any,
+        data: {},
+      })
+      const result = renderer.renderFormLayout(context).toString()
+      expect(result).toContain('data-zebric-ux-pattern="form-page@v1"')
+      expect(result).toContain('data-zebric-primitive="section"')
+      expect(result).toContain('Basic Info')
+      expect(result).toContain('md:grid-cols-2')
+      expect(result).toContain('Title')
+      expect(result).toContain('Status')
+    })
   })
 
   describe('renderDashboardLayout', () => {
