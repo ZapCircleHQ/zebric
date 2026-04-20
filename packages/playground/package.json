@@ -1,0 +1,31 @@
+{
+  "name": "@zebric/playground",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Static Zebric Playground site for running example blueprints in the browser simulator",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@codemirror/language": "^6.11.3",
+    "@codemirror/legacy-modes": "^6.5.1",
+    "@lezer/highlight": "^1.2.3",
+    "@vitejs/plugin-react": "^4.3.3",
+    "@zebric/react-simulator": "workspace:*",
+    "@zebric/runtime-core": "workspace:*",
+    "@zebric/runtime-simulator": "workspace:*",
+    "codemirror": "^6.0.2",
+    "vite": "^5.4.11",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.79",
+    "@types/react-dom": "^18.2.25",
+    "typescript": "^5.4.5"
+  }
+}

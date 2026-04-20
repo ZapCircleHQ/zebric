@@ -1,0 +1,174 @@
+version = "0.2.0"
+
+[project]
+name = "Incident Intake"
+version = "1.0.0"
+description = "Structured incident intake, triage, and communications simulation."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[[entities]]
+name = "Incident"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "severity", type = "Enum", values = ["sev1", "sev2", "sev3", "sev4"], default = "sev3" },
+  { name = "status", type = "Enum", values = ["new", "triage", "declared", "mitigating", "monitoring", "resolved"], default = "new" },
+  { name = "service", type = "Text", required = true },
+  { name = "reporterId", type = "Text" },
+  { name = "ownerId", type = "Text" },
+  { name = "impact", type = "LongText", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[[entities]]
+name = "IncidentUpdate"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "incidentId", type = "Ref", ref = "Incident.id", required = true },
+  { name = "authorId", type = "Text" },
+  { name = "body", type = "LongText", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[[pages]]
+path = "/"
+title = "Incident Dashboard"
+auth = "optional"
+layout = "dashboard"
+
+[pages.queries.active]
+entity = "Incident"
+where = { status = "triage" }
+orderBy = { createdAt = "desc" }
+
+[pages.queries.monitoring]
+entity = "Incident"
+where = { status = "monitoring" }
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/incidents"
+title = "Incidents"
+auth = "optional"
+layout = "list"
+
+[pages.queries.incidents]
+entity = "Incident"
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/incidents/new"
+title = "New Incident"
+auth = "optional"
+layout = "form"
+
+[pages.form]
+entity = "Incident"
+method = "create"
+onSuccess = { redirect = "/incidents/{id}", message = "Incident created" }
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[pages.form.fields]]
+name = "service"
+type = "text"
+label = "Impacted service"
+required = true
+
+[[pages.form.fields]]
+name = "severity"
+type = "select"
+label = "Severity"
+options = ["sev1", "sev2", "sev3", "sev4"]
+
+[[pages.form.fields]]
+name = "impact"
+type = "textarea"
+label = "Impact"
+rows = 5
+required = true
+
+[[pages]]
+path = "/incidents/:id"
+title = "Incident Detail"
+auth = "optional"
+layout = "detail"
+
+[pages.queries.incident]
+entity = "Incident"
+where = { id = "{id}" }
+
+[pages.queries.updates]
+entity = "IncidentUpdate"
+where = { incidentId = "{id}" }
+orderBy = { createdAt = "asc" }
+
+[pages.actionBar]
+title = "Incident actions"
+description = "Declare, monitor, resolve, and notify responders."
+statusField = "status"
+showStatus = true
+
+[[pages.actionBar.actions]]
+label = "Declare incident"
+workflow = "DeclareIncident"
+style = "primary"
+payload = { status = "declared" }
+successMessage = "Incident declared."
+
+[[pages.actionBar.actions]]
+label = "Move to monitoring"
+workflow = "MoveToMonitoring"
+style = "secondary"
+payload = { status = "monitoring" }
+successMessage = "Moved to monitoring."
+
+[[pages.actionBar.actions]]
+label = "Resolve incident"
+workflow = "ResolveIncident"
+style = "secondary"
+payload = { status = "resolved" }
+successMessage = "Incident resolved."
+
+[[workflows]]
+name = "DeclareIncident"
+trigger = { manual = true }
+steps = [
+  { type = "notify", adapter = "slack", body = "Incident declared" },
+  { type = "plugin", plugin = "incident", action = "createWarRoom" },
+  { type = "plugin", plugin = "incident", action = "appendTimeline" }
+]
+
+[[workflows]]
+name = "MoveToMonitoring"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "incident", action = "setMonitoring" },
+  { type = "notify", adapter = "slack", body = "Incident monitoring" }
+]
+
+[[workflows]]
+name = "ResolveIncident"
+trigger = { manual = true }
+steps = [
+  { type = "plugin", plugin = "incident", action = "resolve" },
+  { type = "notify", adapter = "slack", body = "Incident resolved" }
+]
+
+[[plugins]]
+name = "incident"
+enabled = true
+trust_level = "limited"
+
+[notifications]
+default = "console"
+adapters = [
+  { name = "console", type = "console" },
+  { name = "slack", type = "slack", config = { defaultChannel = "#incidents" } }
+]
