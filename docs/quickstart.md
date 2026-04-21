@@ -4,7 +4,7 @@ Get from idea to a running Zebric application in minutes by pairing an LLM-gener
 
 ## Prerequisites
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - `pnpm` 8.x
 - Access to an LLM that can follow structured prompts (ChatGPT, Claude, Gemini, etc.)
 

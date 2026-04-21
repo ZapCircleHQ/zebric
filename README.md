@@ -27,16 +27,25 @@ Think of it as a web application framework that you configure, as opposed to a w
 ```
 zebric/
 ├── packages/
-│   ├── runtime/        # Core runtime engine
-│   ├── cli/           # Command-line tools
-│   ├── plugin-sdk/    # Plugin development SDK
-│   └── themes/        # Built-in themes
-├── docs/              # Docs
-├── plugins/           # Built-in plugins
-├── examples/          # Example applications
-│   └── blog/         # Simple blog example
-└── tests/            # Test suites
-
+│   ├── runtime-core/       # Platform-agnostic engine and ports
+│   ├── runtime-node/       # Node.js adapter (SQLite/PostgreSQL, Redis, filesystem)
+│   ├── runtime-worker/     # Cloudflare Workers adapter (D1, KV, R2)
+│   ├── runtime-hono/       # Hono HTTP adapter shared by runtimes
+│   ├── runtime-simulator/  # In-memory runtime used by tests and the simulator
+│   ├── cli/                # `zebric` command-line tool
+│   ├── plugin-sdk/         # Plugin development SDK
+│   ├── themes/             # Built-in themes
+│   ├── notifications/      # Notification adapters (email, Slack, console)
+│   ├── observability/      # Structured logging
+│   ├── framework-stories/  # Blueprint-based integration stories
+│   ├── react-simulator/    # React-based blueprint simulator
+│   ├── playground/         # Interactive browser playground
+│   └── docs/               # Public documentation site (Starlight)
+├── plugins/                # Built-in plugins
+├── examples/               # Example applications (blog, zebric-dispatch, …)
+├── starters/               # Starter templates
+├── internal/               # Maintainer-only architecture notes
+└── tests/                  # Cross-package integration tests
 ```
 
 ## Quick Start
@@ -87,7 +96,7 @@ npx zebric dev blueprint.toml
 
 ## Technology Stack
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 22+
 - **Language**: TypeScript
 - **HTTP Server**: Hono 4.x
 - **Database ORM**: Drizzle ORM with SQLite and PostgreSQL
@@ -105,14 +114,18 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run tests (unit tests - fast and reliable)
-pnpm --filter @zebric/runtime test:unit
+# Run all unit and integration tests across every package
+pnpm test
 
-# Run all tests (includes integration tests - may be flaky)
-pnpm --filter @zebric/runtime test
+# Run tests for a single package
+pnpm --filter @zebric/runtime-core test
+pnpm --filter @zebric/runtime-node test
 
 # Watch mode for development
-pnpm dev
+pnpm --filter @zebric/runtime-node test:watch
+
+# Run the Playwright browser suite (see TESTING.md for tag-specific commands)
+pnpm --filter @zebric/runtime-node test:browser
 ```
 
 For detailed testing information, see [TESTING.md](TESTING.md).

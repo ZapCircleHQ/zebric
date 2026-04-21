@@ -1,6 +1,6 @@
 {
   "name": "zebric",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Zebric - Runtime Engine for ZBL Blueprint JSON (ZBL Runtime Engine)",
   "private": true,
   "workspaces": [
@@ -9,7 +9,7 @@
     "examples/*"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "dev": "turbo run dev",

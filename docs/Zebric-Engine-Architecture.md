@@ -41,7 +41,7 @@ A **pure interpreter** that loads Blueprint TOML or JSON and executes applicatio
 
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
-| **Runtime** | Node.js 20+ | JavaScript runtime |
+| **Runtime** | Node.js 22+ | JavaScript runtime |
 | **Language** | TypeScript | Type safety |
 | **HTTP** | Fastify 5.x | Fast HTTP server |
 | **Renderer** | Server-side HTML | No React by default |

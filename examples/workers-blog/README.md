@@ -7,7 +7,7 @@ This example demonstrates how to run Zebric on CloudFlare Workers with:
 
 ## Prerequisites
 
-- Node.js 18+
+- Node.js 22+
 - CloudFlare account
 - Wrangler CLI installed globally (`npm install -g wrangler`)
 

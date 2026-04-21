@@ -1276,7 +1276,7 @@ No generated code files!
 ### 8.2 Dockerfile (for Railway/Fly.io)
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 
