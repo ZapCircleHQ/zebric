@@ -15,6 +15,14 @@ const HTML_ENTITIES: Record<string, string> = {
 }
 
 const HTML_ENTITIES_REGEX = /[&<>"'/]/g
+const HTML_ATTR_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#x27;',
+}
+const HTML_ATTR_ENTITIES_REGEX = /[&<>"']/g
 
 /**
  * Escape HTML entities to prevent XSS
@@ -37,9 +45,8 @@ export function escapeHtmlAttr(unsafe: string | number | boolean | null | undefi
   }
 
   const str = String(unsafe)
-  // Attributes need more aggressive escaping
   return str
-    .replace(HTML_ENTITIES_REGEX, char => HTML_ENTITIES[char] || char)
+    .replace(HTML_ATTR_ENTITIES_REGEX, char => HTML_ATTR_ENTITIES[char] || char)
     .replace(/\n/g, '&#10;')
     .replace(/\r/g, '&#13;')
     .replace(/\t/g, '&#9;')

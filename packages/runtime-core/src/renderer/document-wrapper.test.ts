@@ -34,7 +34,7 @@ describe('DocumentWrapper Zazzle rendering', () => {
 
     expect(html).toContain('data-zebric-navigation-model="sidebar"')
     expect(html).toContain('aria-current="page"')
-    expect(html).toContain('href="&#x2F;issues"')
+    expect(html).toContain('href="/issues"')
     expect(html).not.toContain('href="/board"')
     expect(html).not.toContain('href="/issues/:id"')
   })
