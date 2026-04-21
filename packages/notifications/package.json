@@ -19,13 +19,15 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest run --coverage=false"
+    "test": "vitest run --coverage=false",
+    "test:coverage": "vitest run --coverage"
   },
   "license": "MIT",
   "dependencies": {
     "@zebric/runtime-core": "workspace:*"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.1",
     "typescript": "^5.4.5",
     "vitest": "^1.6.1"
   }
