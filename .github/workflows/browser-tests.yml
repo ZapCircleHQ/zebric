@@ -3,10 +3,28 @@ name: Browser Tests
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/runtime-core/src/**'
+      - 'packages/runtime-node/src/**'
+      - 'packages/runtime-worker/src/**'
+      - 'packages/runtime-hono/src/**'
+      - 'packages/runtime-simulator/src/**'
+      - 'packages/themes/**'
+      - 'packages/runtime-node/tests/playwright/**'
+      - '.github/workflows/browser-tests.yml'
+
+concurrency:
+  group: browser-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   playwright:
-    name: Playwright (rendering, accessibility, journeys)
+    name: >-
+      ${{ github.event_name == 'pull_request'
+          && 'Playwright (rendering + journeys)'
+          || 'Playwright (full suite)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -39,7 +57,16 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm --filter @zebric/runtime-node test:browser:install
 
-      - name: Run browser tests
+      - name: Run browser tests (PR subset — rendering + journeys)
+        if: github.event_name == 'pull_request'
+        run: |
+          pnpm --filter @zebric/runtime-node test:browser:rendering
+          pnpm --filter @zebric/runtime-node test:browser:journeys
+        env:
+          CI: true
+
+      - name: Run browser tests (full suite)
+        if: github.event_name != 'pull_request'
         run: pnpm --filter @zebric/runtime-node test:browser
         env:
           CI: true
