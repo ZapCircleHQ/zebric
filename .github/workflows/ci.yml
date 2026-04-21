@@ -57,11 +57,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build packages
+      - name: Build packages (typechecks via tsc)
         run: pnpm build
-
-      - name: TypeScript compilation
-        run: pnpm -r --filter './packages/*' --filter './plugins/*' exec tsc --noEmit
 
       - name: Lint check
         run: pnpm lint
