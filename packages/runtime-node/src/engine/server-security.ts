@@ -1,7 +1,7 @@
 import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
 import { randomUUID } from 'node:crypto'
-import type { Blueprint } from '@zebric/runtime-core'
+import { injectCsrfTokenIntoRequest, type Blueprint } from '@zebric/runtime-core'
 
 export function getClientIp(c: Context): string {
   const forwarded = c.req.header('x-forwarded-for')
@@ -119,7 +119,7 @@ export async function applyCsrfProtection(
 
   if (isSafeMethod) {
     const token = existingToken || randomUUID()
-    Reflect.set(c.req.raw, '__zebricCsrfToken', token)
+    injectCsrfTokenIntoRequest(c.req.raw, token)
     if (!existingTokenRaw) {
       setCookie(c, csrfCookieName, token, {
         httpOnly: false,

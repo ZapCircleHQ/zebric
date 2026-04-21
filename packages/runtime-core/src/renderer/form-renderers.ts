@@ -66,10 +66,11 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
   const fieldName = escapeHtmlAttr(field.name)
   const fieldPattern = field.pattern ? `pattern="${escapeHtmlAttr(field.pattern)}"` : ''
   const required = field.required ? 'required' : ''
+  const ariaRequired = field.required ? 'aria-required="true"' : ''
   const ariaInvalid = errorId ? 'aria-invalid="true"' : ''
   const ariaDescribedBy = errorId ? `aria-describedby="${errorId}"` : ''
   const autocomplete = getAutocompleteAttribute(field.name, field.type)
-  const baseAttrs = `id="${fieldName}" name="${fieldName}" ${required} ${fieldPattern} ${ariaInvalid} ${ariaDescribedBy} ${autocomplete}`.trim()
+  const baseAttrs = `id="${fieldName}" name="${fieldName}" ${required} ${ariaRequired} ${fieldPattern} ${ariaInvalid} ${ariaDescribedBy} ${autocomplete}`.trim()
 
   switch (field.type) {
     case 'textarea':

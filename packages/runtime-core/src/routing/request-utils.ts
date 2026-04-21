@@ -7,6 +7,32 @@
 
 import type { HttpRequest, HttpResponse, FlashMessage } from './request-ports.js'
 
+const injectedCsrfTokens = new WeakMap<object, string>()
+
+export function injectCsrfTokenIntoRequest(request: object, token: string): void {
+  injectedCsrfTokens.set(request, token)
+
+  try {
+    Reflect.set(request, '__zebricCsrfToken', token)
+  } catch {
+    // Some runtime Request implementations are not extensible; the WeakMap is authoritative.
+  }
+}
+
+export function getInjectedCsrfTokenFromRequest(request: object): string | undefined {
+  const injectedToken = injectedCsrfTokens.get(request)
+  if (injectedToken) {
+    return injectedToken
+  }
+
+  try {
+    const reflectedToken = Reflect.get(request, '__zebricCsrfToken')
+    return typeof reflectedToken === 'string' && reflectedToken.length > 0 ? reflectedToken : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function wantsJson(request: HttpRequest): boolean {
   const accept = request.headers.accept || ''
   if (!accept) return false

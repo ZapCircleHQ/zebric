@@ -27,15 +27,23 @@ export default defineConfig({
 						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
 						{ label: 'Workflows & Notifications', slug: 'building/workflows' },
 						{ label: 'Security & Auth', slug: 'building/security' },
+						{ label: 'File Uploads', slug: 'building/file-uploads' },
 					],
 				},
 				{
 					label: 'Run',
-					items: [{ label: 'Runtime & Deployment', slug: 'run/runtime' }],
+					items: [
+						{ label: 'Runtime & Deployment', slug: 'run/runtime' },
+						{ label: 'Dev Server & Debugging', slug: 'run/dev-server' },
+					],
 				},
 				{
 					label: 'Guides',
-					items: [{ label: 'Developer Onboarding', slug: 'guides/developer-onboarding' }],
+					items: [
+						{ label: 'Developer Onboarding', slug: 'guides/developer-onboarding' },
+						{ label: 'Troubleshooting', slug: 'guides/troubleshooting' },
+						{ label: 'Migrate to Zebric', slug: 'guides/migrate-to-zebric' },
+					],
 				},
 				{
 					label: 'Courses',

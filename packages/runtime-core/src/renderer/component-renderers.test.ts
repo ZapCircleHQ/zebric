@@ -104,6 +104,45 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('Status')
       expect(result).toContain('Actions')
     })
+
+    it('applies Zazzle density and row-click semantics', () => {
+      const items = [{ id: '1', title: 'Test', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const page: Page = {
+        path: '/tasks',
+        title: 'Tasks',
+        layout: 'list',
+        ux: {
+          pattern: 'data-table@v1',
+          data: { density: 'compact' },
+          interaction: { row_click: 'open-detail' },
+        },
+      }
+      const result = renderer.renderTable(items, entity, page).toString()
+      expect(result).toContain('data-zebric-ux-pattern="data-table@v1"')
+      expect(result).toContain('data-zebric-density="compact"')
+      expect(result).toContain('data-row-click="open-detail"')
+      expect(result).toContain('cursor-pointer')
+      expect(result).toContain('!px-4 !py-2')
+    })
+
+    it('escapes HTML in table cell data', () => {
+      const items = [{ id: '1', title: '<script>alert("xss")</script>', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+
+      expect(result).not.toContain('<script>alert("xss")</script>')
+      expect(result).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;&#x2F;script&gt;')
+    })
+
+    it('preserves UTF-8 characters in rendered cell data', () => {
+      const items = [{ id: '1', title: 'Tâche française', status: '日本語 text 🚀' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+
+      expect(result).toContain('Tâche française')
+      expect(result).toContain('日本語 text 🚀')
+    })
   })
 
   describe('renderDetailFields', () => {
@@ -156,6 +195,21 @@ describe('ComponentRenderers', () => {
       const entity = { name: 'Task', fields: [{ name: 'status', type: 'Text' }] }
       const result = renderer.renderActionBar(page, { id: '1', status: 'in_progress' }, entity).toString()
       expect(result).toContain('in_progress')
+      expect(result).toContain('data-zebric-role="status-warning"')
+      expect(result).toContain('bg-yellow-50')
+    })
+
+    it('maps terminal statuses to semantic status roles', () => {
+      const page: Page = {
+        path: '/tasks/1',
+        title: 'Task',
+        layout: 'detail',
+        actionBar: { actions: [] },
+      } as any
+      const entity = { name: 'Task', fields: [{ name: 'status', type: 'Text' }] }
+      const result = renderer.renderActionBar(page, { id: '1', status: 'done' }, entity).toString()
+      expect(result).toContain('data-zebric-role="status-positive"')
+      expect(result).toContain('bg-green-50')
     })
 
     it('renders primary action buttons', () => {
@@ -170,6 +224,32 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderActionBar(page, { id: '1' }, undefined, 'csrf-token-123').toString()
       expect(result).toContain('Approve')
       expect(result).toContain('csrf-token-123')
+      expect(result).toContain('data-zebric-role="primary-action"')
+    })
+
+    it('maps action semantic roles through the design adapter', () => {
+      blueprint = makeBlueprint({
+        design_adapter: {
+          roles: {
+            'primary-action': 'buttonSecondary',
+          },
+        },
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const page: Page = {
+        path: '/tasks/1',
+        title: 'Task',
+        layout: 'detail',
+        actionBar: {
+          actions: [{ label: 'Approve', href: '/approve/{id}', method: 'POST' }],
+        },
+      } as any
+
+      const result = renderer.renderActionBar(page, { id: '1' }, undefined, 'csrf-token-123').toString()
+      expect(result).toContain('data-zebric-role="primary-action"')
+      expect(result).toContain(defaultTheme.buttonSecondary)
     })
 
     it('hides status when showStatus is false', () => {
@@ -183,6 +263,21 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderActionBar(page, { id: '1', status: 'done' }, entity).toString()
       // Without status, title, or description and no actions, the bar should be empty
       expect(result.trim()).toBe('')
+    })
+
+    it('uses sticky footer positioning from Zazzle interaction config', () => {
+      const page: Page = {
+        path: '/tasks/1',
+        title: 'Task',
+        layout: 'detail',
+        ux: { interaction: { primary_action_position: 'sticky-footer' } },
+        actionBar: {
+          actions: [{ label: 'Approve', href: '/approve/{id}', method: 'POST' }],
+        },
+      } as any
+      const result = renderer.renderActionBar(page, { id: '1' }, undefined, 'csrf-token-123').toString()
+      expect(result).toContain('data-zebric-action-position="sticky-footer"')
+      expect(result).toContain('sticky bottom-0')
     })
   })
 

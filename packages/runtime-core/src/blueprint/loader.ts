@@ -107,6 +107,8 @@ export class BlueprintParser {
       pages: [],
       auth: parsed.auth,
       ui: parsed.ui,
+      ux: parsed.ux,
+      design_adapter: parsed.design_adapter,
       notifications: parsed.notifications,
     }
 

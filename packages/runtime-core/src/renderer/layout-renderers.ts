@@ -12,6 +12,7 @@ import { html, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js
 import { ComponentRenderers } from './component-renderers.js'
 import { RendererUtils } from './renderer-utils.js'
 import { SlotRenderer } from './slot-renderer.js'
+import { renderFormFields } from './form-section-renderer.js'
 
 export class LayoutRenderers {
   private slotRenderer: SlotRenderer
@@ -104,7 +105,7 @@ export class LayoutRenderers {
       'list.body',
       context,
       { entity, items },
-      () => this.componentRenderers.renderTable(items, entity)
+      () => this.componentRenderers.renderTable(items, entity, page)
     )
 
     const emptyBody = this.renderSlot(
@@ -212,17 +213,25 @@ export class LayoutRenderers {
     const enctype = hasFileFields ? 'enctype="multipart/form-data"' : ''
 
     const defaultForm = html`
-      <h1 class="${this.theme.heading1}">${page.title}</h1>
+      <h1 id="form-title" class="${this.theme.heading1}">${page.title}</h1>
 
       <form
         method="POST"
         action="${page.path}"
         ${safe(enctype)}
         class="${this.theme.form}"
+        aria-labelledby="form-title"
         data-enhance="${this.resolveEnhancementMode()}"
+        data-zebric-ux-pattern="${page.ux?.pattern || this.blueprint.ux?.pattern || ''}"
+        data-zebric-primitive="form"
       >
         ${csrfToken ? safe(`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />`) : ''}
-        ${safe(form.fields.map((field: any) => this.componentRenderers.renderFormField(field, record)).join(''))}
+        ${renderFormFields(
+          form,
+          record,
+          this.theme,
+          (field, formRecord) => this.componentRenderers.renderFormField(field, formRecord)
+        )}
 
         <div class="${this.theme.formActions}">
           <button
@@ -423,4 +432,5 @@ export class LayoutRenderers {
     }
     return mode
   }
+
 }

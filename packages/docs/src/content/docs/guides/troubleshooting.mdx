@@ -1,0 +1,177 @@
+---
+label: Troubleshooting
+order: 2
+slug: guides/troubleshooting
+title: Troubleshooting
+description: Common errors and how to resolve them.
+---
+
+## Blueprint Validation Errors
+
+### `Blueprint validation failed: ...`
+
+This appears in the terminal or as a browser overlay during hot reload. The message includes the field path and what was wrong.
+
+**Check the field path in the error.** For example:
+```
+entity.Post.fields.2.type: Invalid enum value. Expected 'Text' | 'LongText' | ...
+```
+means the third field of the `Post` entity has an unrecognized type.
+
+Common causes:
+- Misspelled or misnamed field type (e.g. `"string"` instead of `"Text"`)
+- Missing required `primary_key = true` on the ULID/UUID field
+- Enum values not listed in `values = [...]` for an `Enum` field
+- `ref` on a `Ref` field pointing to an entity that doesn't exist in the blueprint
+- TOML syntax error (an unclosed bracket or missing quote)
+
+Run `zebric validate --blueprint blueprint.toml` to get the full error list before starting the server.
+
+### `Schema field not found` at runtime
+
+If a page queries or displays a field that isn't defined on the entity, the runtime will surface this as an error. Verify that every field referenced in `[page."/path".query]`, `form.fields`, or `detail.fields` exists in the corresponding entity.
+
+---
+
+## Dev Server & Hot Reload
+
+### Hot reload not triggering
+
+- Confirm `zebric dev` was used (not `zebric start` or a direct node invocation without dev config)
+- Check that you're editing the file referenced by `--blueprint`
+- Some editors write files via a temp-then-rename sequence; this is supported, but check editor settings if changes aren't picked up
+- On Linux, you may hit the inotify watch limit. Increase it:
+  ```bash
+  echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
+  sudo sysctl -p
+  ```
+
+### Browser doesn't reload after blueprint change
+
+- The reload WebSocket only connects when you access via `localhost` or `127.0.0.1` — it won't inject on IP addresses or hostnames
+- Open the browser console and look for `[Zebric] Connected to live reload server` — if it's not there, check that port 3000 is reachable and no proxy is stripping WebSocket upgrades
+- If the blueprint has a validation error, the error overlay appears instead of a reload. Fix the error in the file, and save again.
+
+### Admin server not responding on port 3030
+
+- The admin server only starts in dev mode. If you started with a production config (no `dev` block), it won't run.
+- Confirm nothing else is bound to port 3030. Override with `adminPort` in the engine config if needed.
+
+---
+
+## Authentication
+
+### Redirect loop on a protected page
+
+- Verify the page has `auth.required = true` and that an auth provider is configured in `[auth]`
+- The login page must be accessible without authentication. Check that `/login` (or your configured path) does not itself require auth.
+
+### `403 Forbidden` on an API request
+
+- For browser requests, check that the user is logged in (session cookie present)
+- For API key requests, verify the `Authorization: Bearer <key>` header is set and matches the `keyEnv` value in `[[auth.apiKeys]]`
+- Check entity-level access control: `[entity.Foo.access]` rules are evaluated against `$currentUser`. A missing session produces no `$currentUser`, causing all access checks to fail.
+
+### Session not persisting between requests
+
+- Session cookies require HTTPS in production. In local development, use `http://localhost` (not an IP or custom hostname) to avoid cookie rejection.
+- Verify `SESSION_SECRET` is set in your environment — if it's undefined, sessions may not serialize correctly.
+
+---
+
+## Workflows
+
+### Workflow not triggering on entity change
+
+1. Check the blueprint: the `entity` and `event` values must exactly match the entity name and event type (`create`, `update`, `delete`).
+2. For conditional triggers, both `before.*` and `after.*` conditions must be met. Use the admin server's `/traces` endpoint to see whether the workflow span appears at all.
+3. If the workflow appears in `/workflows` at `http://127.0.0.1:3030/workflows` but never fires, add a `console` notification adapter to get execution logs:
+   ```toml
+   [[notifications.adapters]]
+   name = "debug"
+   type = "console"
+   ```
+
+### `Workflow step failed: template variable not resolved`
+
+All `{{ variable.path }}` expressions are resolved at execution time. If the path doesn't exist in the workflow context, the step fails.
+
+- For manual triggers: use `variables.data.record.*` for the triggering record and `variables.data.payload.*` for action bar payload data
+- For entity event triggers: use `trigger.before.*` and `trigger.after.*`
+- For webhook triggers: use `webhook.body.*`, `webhook.headers.*`, `webhook.query.*`
+
+Check the [template variable reference](/building/workflows#template-variables).
+
+### Workflow job stuck in queue
+
+- The default `maxConcurrent` is 10. If all slots are occupied by long-running jobs, new jobs wait.
+- Jobs are in-memory only. A server restart clears all pending and running jobs.
+
+### Webhook step blocked
+
+- In production, the HTTP client blocks requests to private IPs and `localhost` (SSRF protection). Use publicly routable URLs for webhook destinations.
+- In development, private IPs are allowed. Make sure you're running in dev mode when testing local endpoints.
+
+---
+
+## File Uploads
+
+### Form not accepting files
+
+- Confirm the field has `type = "file"` in the blueprint (not `"Text"` or `"File"`)
+- The runtime sets `enctype="multipart/form-data"` automatically — if you're using a custom form outside the blueprint, you must set it manually
+
+### `File too large` error
+
+- The per-field `max` attribute is in bytes. 10 MB = `10485760`.
+- The global server limit is 50 MB regardless of the field's `max` value.
+
+### `Invalid file type` error
+
+- The `accept` array uses MIME types, not file extensions. `"pdf"` will not work; use `"application/pdf"`.
+- The browser may show the wrong MIME type for some files. Server-side validation uses the MIME type reported by the browser — if the browser gets it wrong, the check fails.
+
+### Uploaded file returns 404
+
+- Files are served from `/uploads/{stored-filename}`, not the original filename.
+- Use the value stored in the entity's `attachment` field (the URL) to build links, not the user-supplied filename.
+- Check that `./data/uploads/` exists and is writable by the process.
+
+---
+
+## Performance
+
+### Slow list pages
+
+- Large tables without pagination will load all rows. Add `limit` to your page query:
+  ```toml
+  [page."/posts".query]
+  limit = 25
+  ```
+- Check `/traces/slow` on the admin server to identify which database query is the bottleneck.
+
+### High `p95` latency in `/traces/stats`
+
+Drill into slow traces:
+```bash
+curl "http://127.0.0.1:3030/traces/slow?threshold=500" | jq '[.[] | {path: .metadata.path, ms: .duration, spans: [.spans[] | {name: .name, ms: .duration}]}]'
+```
+
+Look for spans with disproportionate duration — usually a `database.query` span indicates a missing index or a full-table scan.
+
+---
+
+## Schema Migrations
+
+### `Column not found` error after adding a field
+
+After adding a field to an entity, the database schema needs to be updated. In development, restart with `--seed`. In production, check `/schema-diff` on the admin server and run a manual migration.
+
+### `Breaking change` warning in schema-diff
+
+Removing or changing the type of an existing field is a breaking change. The admin server will flag it:
+```json
+{ "hasBreakingChanges": true, "fieldsChanged": [...] }
+```
+
+In production, plan the migration: add the new field first, backfill data, then remove the old field in a subsequent deploy. Never drop columns live without verifying no queries reference them.

@@ -1,0 +1,183 @@
+---
+label: Dev Server & Debugging
+order: 2
+slug: run/dev-server
+title: Dev Server & Debugging
+description: Hot reload, the admin server, request tracing, and workflow inspection for local development.
+---
+
+When you start Zebric in development mode - `zebric dev` - two servers open: the **app server** on port 3000 serving your application, and the **admin server** on port 3030 (localhost only) exposing debugging and inspection endpoints. 
+
+Here are the services they provide for you, the developer:
+
+## Hot Reload
+
+The dev server watches your blueprint file. Any time you save a change, it:
+
+1. Parses and validates the new blueprint
+2. Swaps the in-memory blueprint (no server restart)
+3. Broadcasts a reload signal to connected browsers
+4. Browsers reload with a smooth View Transitions animation (if supported)
+
+If the new blueprint fails validation, the server keeps the previous version running and shows an error overlay in the browser with the exact validation error. Fix the file, save again, and the error clears.
+
+Hot reload is active whenever you start with `zebric dev`. It only runs on localhost — the reload WebSocket is not injected in production.
+
+### Schema Changes
+
+Adding or removing entity fields triggers a schema diff. The hot reload still applies, but a banner in the admin server's `/schema-diff` endpoint will show which migrations are pending. Run `zebric dev --seed` to re-apply schema changes automatically in development.
+
+## Admin Server
+
+The admin server runs at `http://127.0.0.1:3030` and is **automatically disabled in production**. It binds to localhost only and requires no authentication — it's a local development tool.
+
+### Endpoint Reference
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Lists all available endpoints |
+| `GET /health` | Engine health status |
+| `GET /metrics` | Prometheus-format metrics |
+| `GET /blueprint` | Full parsed blueprint (as JSON) |
+| `GET /state` | Engine status, version, uptime, pending schema diff |
+| `GET /entities` | Summary of all entities (name, field count, relation count) |
+| `GET /pages` | All page routes with layout and auth requirements |
+| `GET /schema-diff` | Pending schema changes (fields added/removed/changed) |
+| `GET /plugins` | Loaded plugins and their hook registrations |
+| `GET /workflows` | Workflow definitions, job queue stats |
+| `GET /workflows/visualization` | HTML graph of workflow definitions |
+| `GET /traces` | Recent request traces (`?limit=N`) |
+| `GET /traces/errors` | Traces for 4xx/5xx responses |
+| `GET /traces/slow` | Slow traces (`?threshold=1000` in ms) |
+| `GET /traces/stats` | Aggregate latency stats (p50, p95, p99) |
+| `DELETE /traces` | Clear all traces from memory |
+
+Quick start — hit the root to discover everything:
+
+```bash
+curl http://127.0.0.1:3030/ | jq
+```
+
+## Request Tracing
+
+Every HTTP request the app server handles produces a trace. Traces are stored in memory (up to 1,000, capped at 5 minutes) and are accessible via the admin server.
+
+Each trace has a **Trace ID** that is also returned as the `X-Trace-ID` header on every app server response. This makes it easy to correlate a specific browser request with its trace.
+
+### Inspect a Request
+
+```bash
+# Capture the trace ID from a response header
+TRACE_ID=$(curl -sI http://localhost:3000/api/posts \
+  | grep -i x-trace-id | awk '{print $2}' | tr -d '\r')
+
+# View the full trace
+curl "http://127.0.0.1:3030/traces/$TRACE_ID" | jq
+```
+
+The trace shows a hierarchy of spans — HTTP request, route matching, auth check, database queries — each with its own start time, end time, and duration in milliseconds.
+
+### Find Slow Requests
+
+```bash
+# Requests slower than 500ms
+curl "http://127.0.0.1:3030/traces/slow?threshold=500" | jq '[.[] | {path: .metadata.path, ms: .duration}]'
+```
+
+### Find Errors
+
+```bash
+curl http://127.0.0.1:3030/traces/errors | jq '[.[] | {path: .metadata.path, status: .metadata.statusCode}]'
+```
+
+### Latency Summary
+
+```bash
+curl http://127.0.0.1:3030/traces/stats | jq '{p50: .p50Duration, p95: .p95Duration, p99: .p99Duration, errors: .errorCount}'
+```
+
+## Workflow Debugging
+
+### Inspect Workflow Definitions and Job State
+
+```bash
+curl http://127.0.0.1:3030/workflows | jq
+```
+
+This returns every workflow registered from the blueprint along with its trigger type, step count, and the current job queue state — how many jobs are pending, running, completed, or failed.
+
+### Visualize Workflow Structure
+
+Open `http://127.0.0.1:3030/workflows/visualization` in a browser to see an HTML graph of all your workflows and their step chains. Useful for verifying complex conditional logic before testing it.
+
+### Debug a Failing Workflow
+
+Workflows triggered by entity events leave traces in the request that triggered them. To see a workflow execution:
+
+1. Trigger the entity event (create/update/delete a record)
+2. Fetch recent error traces:
+   ```bash
+   curl http://127.0.0.1:3030/traces/errors | jq '.[0]'
+   ```
+3. Look for spans with `type = "workflow"` inside the trace — they show which step failed and why
+
+For manually triggered workflows (action bar buttons), the trace ID is in the HTTP response to the action POST request.
+
+### Common Workflow Issues
+
+**Workflow not triggering on entity event**
+- Check the entity name and event type in the blueprint (`entity`, `event`)
+- For conditional triggers, verify `before.*` and `after.*` match expected field values
+- Look at `/workflows` to confirm the workflow is registered
+
+**Workflow step failing silently**
+- The notify step requires a configured notification adapter — check `[notifications]` in your blueprint
+- Webhook steps to `localhost` or private IPs are blocked in production (SSRF protection); use dev mode for local targets
+- Template variables that don't resolve (typo in `{{ variable.path }}`) cause step failures — compare against the [template variable reference](/building/workflows#template-variables)
+
+**Job stuck in pending state**
+- Check `/workflows` for `maxConcurrent` — if it's saturated, jobs queue up
+- A crashed runtime loses in-memory jobs; they do not persist across restarts
+
+## Schema Diff
+
+When you modify entity fields in development, check what changed:
+
+```bash
+curl http://127.0.0.1:3030/schema-diff | jq
+```
+
+A `null` response means the schema is in sync. Otherwise you'll see:
+
+```json
+{
+  "hasChanges": true,
+  "hasBreakingChanges": false,
+  "entitiesAdded": [],
+  "fieldsAdded": [{ "entity": "Post", "field": "summary", "fieldType": "Text" }],
+  "fieldsRemoved": [],
+  "fieldsChanged": []
+}
+```
+
+`hasBreakingChanges: true` means a field was removed or its type changed — this requires a manual migration in production. In development, restart with `--seed` to reset.
+
+## Customizing Admin Server Port
+
+If port 3030 conflicts with another service, override it:
+
+```typescript
+const engine = new ZebricEngine({
+  blueprintPath: './blueprint.toml',
+  port: 3000,
+  dev: {
+    hotReload: true,
+    adminHost: '127.0.0.1',
+    adminPort: 4000,
+  },
+})
+```
+
+## Security Note - Important
+
+The admin server has no authentication and exposes your blueprint schema, request data, user IDs in traces, and performance details. It binds to `127.0.0.1` by default and will not start outside of dev mode. Never expose it publicly.

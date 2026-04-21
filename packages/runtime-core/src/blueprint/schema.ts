@@ -139,10 +139,155 @@ const FormFieldSchema = z.object({
   error_message: z.string().optional(),
 })
 
+// ============================================================================
+// Zazzle UX Config
+// ============================================================================
+
+const UXPatternSchema = z.enum([
+  'dashboard',
+  'queue-detail',
+  'data-table',
+  'form-page',
+  'approval-flow',
+])
+
+const UXPatternVersionSchema = z.string().refine(
+  value => {
+    const [pattern, version] = value.split('@')
+    const validPattern = UXPatternSchema.safeParse(pattern).success
+    return validPattern && (!version || /^v\d+$/.test(version))
+  },
+  'Expected a supported UX pattern, optionally versioned like "queue-detail@v1"'
+)
+
+const LayoutPrimitiveSchema = z.enum([
+  'page',
+  'header',
+  'sidebar',
+  'content',
+  'panel',
+  'section',
+  'card',
+  'table',
+  'list',
+  'detail',
+  'activity',
+  'form',
+  'footer-actions',
+])
+
+const SemanticUIRoleSchema = z.enum([
+  'primary-action',
+  'secondary-action',
+  'destructive-action',
+  'status-positive',
+  'status-warning',
+  'status-negative',
+  'status-neutral',
+  'surface-default',
+  'surface-elevated',
+  'surface-muted',
+  'feedback-success',
+  'feedback-error',
+  'feedback-loading',
+])
+
+const InteractionConfigSchema = z.object({
+  selection: z.enum(['none', 'single', 'multi']).optional(),
+  row_click: z.enum(['none', 'open-detail', 'select', 'edit']).optional(),
+  edit_mode: z.enum(['inline', 'modal', 'page']).optional(),
+  primary_action_position: z.enum(['header', 'sticky-footer', 'inline']).optional(),
+  confirm_destructive: z.boolean().optional(),
+})
+
+const DataPresentationConfigSchema = z.object({
+  mode: z.enum(['table', 'list', 'cards']).optional(),
+  density: z.enum(['compact', 'comfortable', 'spacious']).optional(),
+  pagination: z.enum(['none', 'client', 'server']).optional(),
+  filters: z.enum(['none', 'top-bar', 'sidebar']).optional(),
+  column_config: z.boolean().optional(),
+})
+
+const FormInteractionConfigSchema = z.object({
+  validation: z.enum(['inline', 'summary', 'none']).optional(),
+  save_behavior: z.enum(['standard', 'optimistic']).optional(),
+})
+
+const FormSectionFieldSchema = z.object({
+  name: z.string(),
+})
+
+const FormSectionSchema = z.object({
+  title: z.string().optional(),
+  description: z.string().optional(),
+  layout: z.enum(['single-column', 'two-column', 'inline', 'card-group']).optional(),
+  fields: z.array(FormSectionFieldSchema),
+})
+
+const GlobalFormConfigSchema = z.object({
+  mode: z.enum(['page', 'modal', 'inline']).optional(),
+  sections: z.array(FormSectionSchema).optional(),
+  interaction: FormInteractionConfigSchema.optional(),
+})
+
+const ExtensionConfigSchema = z.object({
+  custom_view: z.string().optional(),
+  placement: LayoutPrimitiveSchema.optional(),
+})
+
+const UXPatternConfigSchema = z.object({
+  pattern: UXPatternVersionSchema,
+  primitives: z.array(LayoutPrimitiveSchema).optional(),
+  interaction: InteractionConfigSchema.optional(),
+  data: DataPresentationConfigSchema.optional(),
+  form: GlobalFormConfigSchema.optional(),
+  roles: z.record(SemanticUIRoleSchema).optional(),
+})
+
+const PageUXConfigSchema = z.object({
+  pattern: UXPatternVersionSchema.optional(),
+  primitives: z.array(LayoutPrimitiveSchema).optional(),
+  interaction: InteractionConfigSchema.optional(),
+  data: DataPresentationConfigSchema.optional(),
+  form: GlobalFormConfigSchema.optional(),
+  roles: z.record(SemanticUIRoleSchema).optional(),
+  extensions: z.array(ExtensionConfigSchema).optional(),
+})
+
+const UXConfigSchema = z.object({
+  pattern: UXPatternVersionSchema.optional(),
+  patterns: z.record(UXPatternConfigSchema).optional(),
+  interaction: InteractionConfigSchema.optional(),
+  data: DataPresentationConfigSchema.optional(),
+  form: GlobalFormConfigSchema.optional(),
+  system: z.object({
+    feedback: z.object({
+      success: z.enum(['toast', 'inline', 'banner']).optional(),
+      error: z.enum(['toast', 'inline', 'banner']).optional(),
+    }).optional(),
+    activity: z.object({
+      timeline: z.boolean().optional(),
+      location: z.enum(['side-panel', 'main', 'hidden']).optional(),
+    }).optional(),
+  }).optional(),
+  navigation: z.object({
+    model: z.enum(['sidebar', 'topbar', 'none']).optional(),
+    primary: z.array(z.string()).optional(),
+  }).optional(),
+  responsive: z.object({
+    mode: z.enum(['desktop-first', 'mobile-first']).optional(),
+    collapse_sidebar: z.boolean().optional(),
+  }).optional(),
+  extensions: z.array(ExtensionConfigSchema).optional(),
+})
+
 const FormSchema = z.object({
   entity: z.string(),
   method: z.enum(['create', 'update', 'delete']),
   fields: z.array(FormFieldSchema),
+  mode: z.enum(['page', 'modal', 'inline']).optional(),
+  sections: z.array(FormSectionSchema).optional(),
+  interaction: FormInteractionConfigSchema.optional(),
   onSuccess: z
     .object({
       redirect: z.string().optional(),
@@ -197,6 +342,7 @@ const PageSchema = z.object({
   title: z.string(),
   auth: z.enum(['required', 'optional', 'none']).optional(),
   layout: z.string(),
+  ux: PageUXConfigSchema.optional(),
   queries: z.record(QuerySchema).optional(),
   form: FormSchema.optional(),
   meta: PageMetaSchema.optional(),
@@ -298,6 +444,18 @@ const UIConfigSchema = z.object({
   components: z.record(z.string()).optional(),
 })
 
+const DesignAdapterConfigSchema = z.object({
+  name: z.string().optional(),
+  version: z.string().optional(),
+  roles: z.record(z.string()).optional(),
+  tokens: z.object({
+    colors: z.record(z.string()).optional(),
+    typography: z.record(z.string()).optional(),
+    spacing: z.record(z.string()).optional(),
+    motion: z.record(z.string()).optional(),
+  }).optional(),
+})
+
 // ============================================================================
 // Notifications
 // ============================================================================
@@ -359,6 +517,8 @@ export const BlueprintSchema = z.object({
   auth: AuthConfigSchema.optional(),
   plugins: z.array(PluginConfigSchema).optional(),
   ui: UIConfigSchema.optional(),
+  ux: UXConfigSchema.optional(),
+  design_adapter: DesignAdapterConfigSchema.optional(),
   notifications: NotificationsConfigSchema.optional(),
   skills: z.array(SkillConfigSchema).optional(),
 })
