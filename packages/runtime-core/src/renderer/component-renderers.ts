@@ -130,13 +130,17 @@ export class ComponentRenderers {
                     >
                       View
                     </a>
-                    <a
-                      href="${this.utils.resolveEntityLink(editPath, entity?.name, item, 'edit')}"
-                      class="${this.theme.linkSecondary}"
-                      aria-label="Edit ${escapeHtmlAttr(itemId)}"
-                    >
-                      Edit
-                    </a>
+                    ${editPath
+                      ? html`
+                        <a
+                          href="${this.utils.resolveEntityLink(editPath, entity?.name, item)}"
+                          class="${this.theme.linkSecondary}"
+                          aria-label="Edit ${escapeHtmlAttr(itemId)}"
+                        >
+                          Edit
+                        </a>
+                      `
+                      : ''}
                   </td>
                 </tr>
               `.html
@@ -179,22 +183,34 @@ export class ComponentRenderers {
     const deletePath = this.utils.getEntityPagePath(entity.name, 'delete')
     const viewBase = this.utils.collectionPath(entity.name)
 
+    if (!editPath && !deletePath) {
+      return safe('')
+    }
+
     return html`
       <div class="mt-6 flex gap-3">
-        <a
-          href="${this.utils.resolveEntityLink(editPath, entity.name, record, 'edit')}"
-          class="${this.theme.buttonPrimary}"
-        >
-          Edit
-        </a>
-        <button
-          onclick="if(confirm('Are you sure?')) { fetch('${this.utils.resolveEntityLink(deletePath, entity.name, record, 'delete')}', {method:'DELETE'}).then(() => window.location.href='${viewBase}') }"
-          class="${this.theme.buttonSecondary} text-red-600"
-        >
-      Delete
-    </button>
-  </div>
-`
+        ${editPath
+          ? html`
+            <a
+              href="${this.utils.resolveEntityLink(editPath, entity.name, record)}"
+              class="${this.theme.buttonPrimary}"
+            >
+              Edit
+            </a>
+          `
+          : ''}
+        ${deletePath
+          ? html`
+            <button
+              onclick="if(confirm('Are you sure?')) { fetch('${this.utils.resolveEntityLink(deletePath, entity.name, record)}', {method:'DELETE'}).then(() => window.location.href='${viewBase}') }"
+              class="${this.theme.buttonSecondary} text-red-600"
+            >
+              Delete
+            </button>
+          `
+          : ''}
+      </div>
+    `
   }
 
   /**

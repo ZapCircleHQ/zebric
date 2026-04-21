@@ -88,12 +88,26 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('0 rows of data')
     })
 
-    it('renders View and Edit action links', () => {
+    it('renders View and Edit action links when an update page exists', () => {
       const items = [{ id: '1', title: 'Task 1', status: 'open' }]
       const entity = blueprint.entities[0]
       const result = renderer.renderTable(items, entity).toString()
       expect(result).toContain('View')
       expect(result).toContain('Edit')
+    })
+
+    it('omits Edit action links when no update page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id/edit'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const items = [{ id: '1', title: 'Task 1', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+      expect(result).toContain('View')
+      expect(result).not.toContain('Edit')
     })
 
     it('renders table headers from entity fields', () => {
@@ -170,11 +184,22 @@ describe('ComponentRenderers', () => {
       expect(result.trim()).toBe('')
     })
 
-    it('renders edit and delete buttons when entity is provided', () => {
+    it('renders edit button when an update page exists', () => {
       const entity = { name: 'Task', fields: [] }
       const result = renderer.renderDetailActions({ id: '1' }, entity).toString()
       expect(result).toContain('Edit')
-      expect(result).toContain('Delete')
+    })
+
+    it('returns empty when no update or delete page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id/edit'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const entity = { name: 'Task', fields: [] }
+      const result = renderer.renderDetailActions({ id: '1' }, entity).toString()
+      expect(result.trim()).toBe('')
     })
   })
 
