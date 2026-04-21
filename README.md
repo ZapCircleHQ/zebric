@@ -87,7 +87,7 @@ npx zebric dev blueprint.toml
 
 ## Technology Stack
 
-- **Runtime**: Node.js 20+
+- **Runtime**: Node.js 22+
 - **Language**: TypeScript
 - **HTTP Server**: Hono 4.x
 - **Database ORM**: Drizzle ORM with SQLite and PostgreSQL

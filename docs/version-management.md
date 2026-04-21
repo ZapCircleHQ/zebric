@@ -232,7 +232,7 @@ jobs:
           version: 10.30.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           registry-url: "https://registry.npmjs.org"
       - name: Ensure npm supports trusted publishing
         run: npm install -g npm@^11.5.1

@@ -4,7 +4,7 @@ Get from idea to a running Zebric application on CloudFlare's global edge networ
 
 ## Prerequisites
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - `pnpm` 8.x
 - CloudFlare account (free tier works great)
 - Wrangler CLI: `pnpm install -g wrangler`

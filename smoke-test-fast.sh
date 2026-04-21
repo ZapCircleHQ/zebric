@@ -21,10 +21,10 @@ section() { echo ""; echo "## $1"; echo "---"; }
 # 1. Environment
 section "Environment"
 NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -ge 20 ]; then
+if [ "$NODE_VERSION" -ge 22 ]; then
     pass "Node.js $(node -v)"
 else
-    fail "Node.js 20+ required"
+    fail "Node.js 22+ required"
 fi
 command -v pnpm &> /dev/null && pass "pnpm $(pnpm -v)" || fail "pnpm not found"
 
