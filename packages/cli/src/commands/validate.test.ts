@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { StructuredValidationError } from '@zebric/runtime-node'
 import { validateCommand } from './validate.js'
 
 vi.mock('node:fs/promises', () => ({
@@ -9,8 +10,8 @@ vi.mock('node:fs/promises', () => ({
 vi.mock('@zebric/runtime-node', async () => {
   class BlueprintValidationError extends Error {
     structured: any
-    constructor(message: string, structured: any) {
-      super(message)
+    constructor(structured: any) {
+      super(structured?.message ?? 'Blueprint validation failed')
       this.name = 'BlueprintValidationError'
       this.structured = structured
     }
@@ -32,9 +33,9 @@ const mockReadFile = readFile as ReturnType<typeof vi.fn>
 const MockBlueprintParser = BlueprintParser as ReturnType<typeof vi.fn>
 
 describe('validateCommand', () => {
-  let mockConsoleLog: ReturnType<typeof vi.spyOn>
-  let mockConsoleError: ReturnType<typeof vi.spyOn>
-  let mockExit: ReturnType<typeof vi.spyOn>
+  let mockConsoleLog: any
+  let mockConsoleError: any
+  let mockExit: any
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -124,7 +125,7 @@ describe('validateCommand', () => {
 
       await validateCommand({ blueprint: 'blueprint.toml' })
 
-      const projectLine = mockConsoleLog.mock.calls.find(call =>
+      const projectLine = mockConsoleLog.mock.calls.find((call: any[]) =>
         String(call[0]).includes('Project:')
       )?.[0] as string
       expect(projectLine).not.toContain('workflows')
@@ -138,11 +139,12 @@ describe('validateCommand', () => {
     })
 
     it('prints structured errors and exits', async () => {
-      const structured = {
-        type: 'ValidationError',
+      const structured: StructuredValidationError = {
+        type: 'SCHEMA_VALIDATION',
         message: 'Schema invalid',
         errors: [
           {
+            code: 'REQUIRED_FIELD',
             location: { path: ['project', 'name'] },
             message: 'Required field missing',
             expected: 'string',
@@ -153,7 +155,7 @@ describe('validateCommand', () => {
       }
       MockBlueprintParser.mockImplementation(() => ({
         parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError('Schema invalid', structured)
+          throw new BlueprintValidationError(structured)
         }),
       }))
 
@@ -166,11 +168,12 @@ describe('validateCommand', () => {
     })
 
     it('handles errors with empty location path (shows root)', async () => {
-      const structured = {
-        type: 'ValidationError',
+      const structured: StructuredValidationError = {
+        type: 'SCHEMA_VALIDATION',
         message: 'Top-level error',
         errors: [
           {
+            code: 'CUSTOM_VALIDATION_FAILED',
             location: { path: [] },
             message: 'Root level problem',
           },
@@ -178,7 +181,7 @@ describe('validateCommand', () => {
       }
       MockBlueprintParser.mockImplementation(() => ({
         parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError('Top-level error', structured)
+          throw new BlueprintValidationError(structured)
         }),
       }))
 
@@ -187,19 +190,19 @@ describe('validateCommand', () => {
     })
 
     it('handles validation error with no detail errors', async () => {
-      const structured = {
-        type: 'ParseError',
+      const structured: StructuredValidationError = {
+        type: 'PARSE_ERROR',
         message: 'Invalid TOML syntax',
         errors: [],
       }
       MockBlueprintParser.mockImplementation(() => ({
         parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError('Invalid TOML syntax', structured)
+          throw new BlueprintValidationError(structured)
         }),
       }))
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
-      expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('ParseError'))
+      expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('PARSE_ERROR'))
     })
   })
 
