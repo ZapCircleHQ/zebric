@@ -102,7 +102,7 @@ describe('accessibility rendering invariants', () => {
     expect(html).toContain('scope="col"')
     expect(html).toContain('data-row-click="open-detail"')
     expect(html).toContain('aria-label="View Ship accessibility tests details"')
-    expect(html).toContain('aria-label="Edit Ship accessibility tests"')
+    expect(html).not.toContain('aria-label="Edit Ship accessibility tests"')
   })
 
   it('associates sectioned forms with labels, required state, and error announcements', () => {

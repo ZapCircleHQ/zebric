@@ -54,6 +54,19 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('href=')
     })
 
+    it('omits create button when no create page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/new'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const page: Page = { path: '/tasks', title: 'Tasks', layout: 'list' }
+      const entity = { name: 'Task', fields: [] }
+      const result = renderer.renderPageHeader(page, entity).toString()
+      expect(result).not.toContain('New Task')
+    })
+
     it('omits create button when no entity', () => {
       const page: Page = { path: '/tasks', title: 'Tasks', layout: 'list' }
       const result = renderer.renderPageHeader(page).toString()
@@ -88,12 +101,41 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('0 rows of data')
     })
 
-    it('renders View and Edit action links', () => {
+    it('renders View and Edit action links when an update page exists', () => {
       const items = [{ id: '1', title: 'Task 1', status: 'open' }]
       const entity = blueprint.entities[0]
       const result = renderer.renderTable(items, entity).toString()
       expect(result).toContain('View')
       expect(result).toContain('Edit')
+    })
+
+    it('omits Edit action links when no update page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id/edit'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const items = [{ id: '1', title: 'Task 1', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+      expect(result).toContain('View')
+      expect(result).not.toContain('Edit')
+    })
+
+    it('omits detail links when no detail page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const items = [{ id: '1', title: 'Task 1', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+      expect(result).not.toContain('aria-label="View Task 1 details"')
+      expect(result).not.toContain('>View<')
+      expect(result).toContain('Task 1')
     })
 
     it('renders table headers from entity fields', () => {
@@ -170,11 +212,22 @@ describe('ComponentRenderers', () => {
       expect(result.trim()).toBe('')
     })
 
-    it('renders edit and delete buttons when entity is provided', () => {
+    it('renders edit button when an update page exists', () => {
       const entity = { name: 'Task', fields: [] }
       const result = renderer.renderDetailActions({ id: '1' }, entity).toString()
       expect(result).toContain('Edit')
-      expect(result).toContain('Delete')
+    })
+
+    it('returns empty when no update or delete page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id/edit'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const entity = { name: 'Task', fields: [] }
+      const result = renderer.renderDetailActions({ id: '1' }, entity).toString()
+      expect(result.trim()).toBe('')
     })
   })
 
@@ -501,6 +554,32 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderError('<script>alert("xss")</script>').toString()
       expect(result).not.toContain('<script>')
       expect(result).toContain('&lt;script&gt;')
+    })
+  })
+
+  describe('renderDashboardWidget', () => {
+    it('renders recent item links when a detail page exists', () => {
+      const entity = blueprint.entities[0]
+      const result = renderer
+        .renderDashboardWidget('tasks', [{ id: '1', title: 'Task 1' }], entity)
+        .toString()
+      expect(result).toContain('href=')
+      expect(result).toContain('Task 1')
+    })
+
+    it('renders recent item text when no detail page exists', () => {
+      blueprint = makeBlueprint({
+        pages: makeBlueprint().pages.filter((page) => page.path !== '/tasks/:id'),
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const entity = blueprint.entities[0]
+      const result = renderer
+        .renderDashboardWidget('tasks', [{ id: '1', title: 'Task 1' }], entity)
+        .toString()
+      expect(result).toContain('Task 1')
+      expect(result).not.toContain('href="&#x2F;tasks&#x2F;1"')
     })
   })
 })
