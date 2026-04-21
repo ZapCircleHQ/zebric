@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
 }))
 
-;(vi.mock as any)('@zebric/runtime-node', async () => {
+vi.mock('@zebric/runtime-node', async () => {
   class BlueprintValidationError extends Error {
     structured: any
     constructor(structured: any) {
@@ -35,7 +35,7 @@ vi.mock('node:fs/promises', () => ({
     detectFormat: vi.fn().mockReturnValue('toml'),
     BlueprintValidationError,
   }
-}, { virtual: true })
+})
 
 import { access, readFile } from 'node:fs/promises'
 import { BlueprintParser, detectFormat, BlueprintValidationError } from '@zebric/runtime-node'
