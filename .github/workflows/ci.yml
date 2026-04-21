@@ -101,19 +101,28 @@ jobs:
           pnpm --filter @zebric/runtime-core test
           pnpm --filter @zebric/runtime-node test
           pnpm --filter @zebric/runtime-worker test
+          pnpm --filter @zebric/cli test
+          pnpm --filter @zebric/notifications test
 
       - name: Generate coverage report
         run: |
           pnpm --filter @zebric/runtime-core test:coverage
           pnpm --filter @zebric/runtime-node test:coverage
           pnpm --filter @zebric/runtime-worker test:coverage
+          pnpm --filter @zebric/cli test:coverage
+          pnpm --filter @zebric/notifications test:coverage
 
       - name: Upload coverage reports
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: ./packages/runtime-core/coverage/coverage-final.json,./packages/runtime-node/coverage/coverage-final.json,./packages/runtime-worker/coverage/coverage-final.json
-          flags: runtime-core,runtime-node,runtime-worker
+          files: >-
+            ./packages/runtime-core/coverage/coverage-final.json,
+            ./packages/runtime-node/coverage/coverage-final.json,
+            ./packages/runtime-worker/coverage/coverage-final.json,
+            ./packages/cli/coverage/coverage-final.json,
+            ./packages/notifications/coverage/coverage-final.json
+          flags: runtime-core,runtime-node,runtime-worker,cli,notifications
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
