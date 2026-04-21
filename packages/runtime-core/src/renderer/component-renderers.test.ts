@@ -125,6 +125,24 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('cursor-pointer')
       expect(result).toContain('!px-4 !py-2')
     })
+
+    it('escapes HTML in table cell data', () => {
+      const items = [{ id: '1', title: '<script>alert("xss")</script>', status: 'open' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+
+      expect(result).not.toContain('<script>alert("xss")</script>')
+      expect(result).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;&#x2F;script&gt;')
+    })
+
+    it('preserves UTF-8 characters in rendered cell data', () => {
+      const items = [{ id: '1', title: 'Tâche française', status: '日本語 text 🚀' }]
+      const entity = blueprint.entities[0]
+      const result = renderer.renderTable(items, entity).toString()
+
+      expect(result).toContain('Tâche française')
+      expect(result).toContain('日本語 text 🚀')
+    })
   })
 
   describe('renderDetailFields', () => {

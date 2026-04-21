@@ -105,12 +105,17 @@ describe('Page Rendering Integration Tests', () => {
         headers: { 'Accept': 'text/html' }
       })
 
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
+
       const html = await response.text()
 
-      // Should escape the script tag
+      // Worker integration should return an HTML page.
+      expect(html).toContain('<!DOCTYPE html>')
+
+      // Renderer-level escaping is covered in runtime-core. This integration
+      // assertion ensures the worker path does not leak raw script markup.
       expect(html).not.toContain('<script>alert("xss")</script>')
-      // Should contain escaped version or not contain the dangerous content
-      // The exact escaping depends on HTMLRenderer implementation
     })
   })
 
@@ -242,10 +247,14 @@ describe('Page Rendering Integration Tests', () => {
       })
 
       expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
 
       const html = await response.text()
 
-      // Should contain UTF-8 meta tag
+      // Worker integration should return a full HTML document with UTF-8
+      // metadata, while renderer-level UTF-8 content coverage lives in
+      // runtime-core rendering tests.
+      expect(html).toContain('<!DOCTYPE html>')
       expect(html).toContain('charset="UTF-8"')
     })
 
