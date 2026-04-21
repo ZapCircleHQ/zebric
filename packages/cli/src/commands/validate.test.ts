@@ -1,13 +1,25 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { StructuredValidationError } from '@zebric/runtime-node'
 import { validateCommand } from './validate.js'
+
+type StructuredValidationError = {
+  type: 'SCHEMA_VALIDATION' | 'REFERENCE_VALIDATION' | 'PARSE_ERROR' | 'VERSION_ERROR'
+  message: string
+  errors: Array<{
+    code: string
+    location: { path: string[] }
+    message: string
+    expected?: string
+    received?: string
+    suggestion?: string
+  }>
+}
 
 vi.mock('node:fs/promises', () => ({
   access: vi.fn(),
   readFile: vi.fn(),
 }))
 
-vi.mock('@zebric/runtime-node', async () => {
+;(vi.mock as any)('@zebric/runtime-node', async () => {
   class BlueprintValidationError extends Error {
     structured: any
     constructor(structured: any) {
@@ -23,7 +35,7 @@ vi.mock('@zebric/runtime-node', async () => {
     detectFormat: vi.fn().mockReturnValue('toml'),
     BlueprintValidationError,
   }
-})
+}, { virtual: true })
 
 import { access, readFile } from 'node:fs/promises'
 import { BlueprintParser, detectFormat, BlueprintValidationError } from '@zebric/runtime-node'
