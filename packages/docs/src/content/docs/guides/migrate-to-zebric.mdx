@@ -1,0 +1,308 @@
+---
+label: Migrate to Zebric
+order: 3
+slug: guides/migrate-to-zebric
+title: Migrate to Zebric
+description: Move an existing application to a Zebric blueprint, with an LLM-assisted migration approach.
+---
+
+Migrating to Zebric means replacing application code with a blueprint that describes the same behavior. The runtime re-implements CRUD pages, authentication, access control, workflows, and API endpoints from the configuration — so you don't need to rewrite those parts, you can describe them.
+
+This guide explains how to approach the migration, including an LLM-assisted path using a `SKILL.md` prompt file.
+
+## What Migrates Well
+
+Zebric covers the standard surface area of internal tools and data-centric applications:
+
+- **Entity CRUD** — list, detail, and form pages for any data model
+- **Authentication** — email/password login and session management
+- **Access control** — row-level and field-level permissions
+- **Workflows** — triggered automation (entity events, manual actions, webhooks)
+- **REST API** — auto-generated CRUD endpoints and OpenAPI spec
+- **Notifications** — Slack, email, and console adapters
+
+What it doesn't cover (yet): highly custom UI layouts, complex multi-step forms with client-side state, or computationally intensive server logic. Those stay in code.
+
+## Migration Strategy
+
+The most effective approach is **incremental by entity**:
+
+1. Define entities and the core data model in a blueprint
+2. Validate with `zebric validate`
+3. Start the dev server and verify pages and access control
+4. Add auth, then workflows
+5. Retire the old code once the blueprint covers the same behavior
+
+Don't attempt a full migration at once. Start with the least custom entity in your existing app.
+
+---
+
+## LLM-Assisted Migration
+
+Because blueprints are compact and structured, an LLM coding agent can analyze an existing codebase and produce a first-draft blueprint. The `SKILL.md` file below is a prompt file you feed to the agent alongside your codebase.
+
+### How to Use
+
+1. Copy the `SKILL.md` below into the root of the repository you want to migrate
+2. Open a coding agent (Claude Code, Cursor, Copilot Workspace, etc.) in that repo
+3. Say: _"Read SKILL.md and follow its instructions"_
+4. The agent will introspect the codebase and emit a `blueprint.toml`
+5. Run `zebric validate --blueprint blueprint.toml` and iterate
+
+### The SKILL.md File
+
+Copy and save this as `SKILL.md` in your project root:
+
+```markdown
+# SKILL: Generate a Zebric Blueprint
+
+You are helping migrate this application to Zebric, a config-driven web runtime.
+Instead of writing code, Zebric apps are described in a `blueprint.toml` file.
+The runtime interprets the blueprint to serve pages, manage data, handle auth, and run workflows.
+
+Your task: analyze this codebase and produce a `blueprint.toml` that describes
+the equivalent application in Zebric's blueprint format.
+
+---
+
+## Step 1 — Understand the Data Model
+
+Find and read:
+- Database schema files (migrations, schema.rb, schema.prisma, models/, entities/)
+- ORM model definitions
+- Any type or interface definitions that represent database records
+
+For each model/table, record:
+- Name (use PascalCase for entity names)
+- Fields and their types
+- Primary key type (prefer ULID; use UUID if the existing app uses UUIDs)
+- Unique constraints
+- Required (NOT NULL) constraints
+- Foreign key relationships
+
+Map to Zebric field types:
+| Source type | Zebric type |
+|---|---|
+| string / varchar (short) | Text |
+| text / string (long) | LongText |
+| email | Email |
+| int / bigint | Integer |
+| float / decimal | Float |
+| bool / boolean | Boolean |
+| datetime / timestamp | DateTime |
+| date | Date |
+| json / jsonb | JSON |
+| enum | Enum (list values in `values = [...]`) |
+| foreign key / belongs_to | Ref (use `ref = "EntityName"`) |
+
+---
+
+## Step 2 — Understand the Pages
+
+Find and read:
+- Route definitions (routes.rb, router.ts, app/routes/, pages/)
+- Controller actions or route handlers
+- View templates
+
+For each user-facing route, determine:
+- URL path
+- What it displays (a list of records, a detail view, a form, a dashboard)
+- Which entity it operates on
+- Authentication requirement (public, login required, optional)
+
+Map to Zebric page layouts:
+| Pattern | Blueprint layout |
+|---|---|
+| List/index of records | `layout = "list"` |
+| Single record detail | `layout = "detail"` |
+| Create / edit form | `layout = "form"` |
+| Summary / dashboard | `layout = "dashboard"` |
+
+---
+
+## Step 3 — Understand Authentication
+
+Find and read:
+- Auth configuration (Devise, Passport, NextAuth, etc.)
+- Session management
+- Login/logout routes
+
+Map to Zebric:
+- Email/password auth → `providers = ["email"]` in `[auth]`
+- Roles or permissions → entity-level `[entity.Foo.access]` blocks
+- If user records exist in the DB, look for a User model and describe its fields
+
+---
+
+## Step 4 — Understand Access Control
+
+Find and read:
+- Authorization libraries (CanCan, Pundit, CASL, etc.)
+- Policy files or ability definitions
+- Middleware that restricts access by role or ownership
+
+Map to Zebric access control:
+```toml
+[entity.Post.access]
+create = true                              # Anyone authenticated
+read   = true                              # Anyone authenticated
+update = { authorId = "$currentUser.id" } # Only the author
+delete = { "$currentUser.role" = "admin" } # Only admins
+```
+
+Field-level restrictions:
+```toml
+{ name = "salary", type = "Integer", access = { read = { "$currentUser.role" = "admin" } } }
+```
+
+---
+
+## Step 5 — Understand Workflows / Automation
+
+Find and read:
+- Background jobs (Sidekiq, BullMQ, Celery, etc.)
+- Event handlers or hooks
+- Webhook handlers
+- Email triggers
+
+For each automated process, determine:
+- What triggers it (record create/update/delete, HTTP webhook, manual button)
+- What it does (update a record, send a notification, call an external API)
+
+Map to Zebric:
+```toml
+[workflow.NotifyOnClose]
+description = "Notify Slack when an issue is closed."
+
+[workflow.NotifyOnClose.trigger]
+entity = "Issue"
+event  = "update"
+
+[workflow.NotifyOnClose.trigger.condition]
+"after.status"  = "closed"
+"before.status" = { "$ne" = "closed" }
+
+[[workflow.NotifyOnClose.steps]]
+type    = "notify"
+adapter = "slack_ops"
+body    = "Issue closed: {{ trigger.after.title }}"
+```
+
+---
+
+## Output Format
+
+Emit a single `blueprint.toml` file with the following structure:
+
+```toml
+version = "0.2.0"
+
+[project]
+name    = "App Name"
+version = "1.0.0"
+description = "Brief description"
+
+[project.runtime]
+min_version = "0.2.0"
+
+# --- Entities ---
+[entity.EntityName]
+fields = [
+  { name = "id",    type = "ULID", primary_key = true },
+  { name = "field", type = "Text", required = true },
+]
+
+# --- Auth ---
+[auth]
+providers = ["email"]
+
+# --- Pages ---
+[page."/path"]
+title  = "Page Title"
+layout = "list"
+entity = "EntityName"
+auth   = { required = true }
+
+# --- Workflows ---
+[workflow.WorkflowName]
+...
+```
+
+Rules:
+1. Every entity needs exactly one `primary_key = true` field
+2. Use ULID as the default primary key type
+3. Enum fields must include a `values` array
+4. Ref fields must name the referenced entity with `ref = "EntityName"`
+5. Pages must reference a valid entity (if they have one)
+6. Add `auth = { required = true }` on pages that require login
+7. Don't invent features that don't exist in the source app
+8. Add a `# NOTE:` comment above any section you're uncertain about
+
+---
+
+## What to Ignore
+
+Skip anything that doesn't map to Zebric's model:
+- Custom middleware that does complex request manipulation
+- Non-CRUD server logic (calculations, data transformations)
+- Highly custom UI pages (dashboards with charts, drag-and-drop, etc.)
+- File processing beyond simple uploads
+- Real-time features (WebSockets, SSE) beyond what Zebric provides
+
+Add a `## Not Migrated` section at the bottom of the blueprint file listing what was skipped and why.
+
+---
+
+## Validate
+
+After generating the file, run:
+```bash
+npx zebric validate --blueprint blueprint.toml
+```
+
+Fix any validation errors before presenting the result.
+```
+
+---
+
+## Manual Migration Patterns
+
+### Rails → Zebric
+
+| Rails | Blueprint |
+|-------|-----------|
+| `ActiveRecord` model | `[entity.ModelName]` |
+| `belongs_to :user` | `{ name = "userId", type = "Ref", ref = "User" }` |
+| `validates :email, presence: true` | `{ name = "email", type = "Email", required = true }` |
+| `enum status: { open: 0, closed: 1 }` | `{ name = "status", type = "Enum", values = ["open", "closed"] }` |
+| `index` action | `layout = "list"` |
+| `show` action | `layout = "detail"` |
+| `new` / `create` action | `layout = "form"` |
+| `before_action :authenticate_user!` | `auth = { required = true }` |
+| Pundit policy `update?` | `[entity.Post.access] update = { userId = "$currentUser.id" }` |
+| ActiveJob / Sidekiq job | `[workflow.JobName]` |
+
+### Next.js → Zebric
+
+| Next.js | Blueprint |
+|---------|-----------|
+| Prisma model | `[entity.ModelName]` |
+| `pages/api/posts/index.ts` (GET list, POST create) | Auto-generated from `[entity.Post]` |
+| `pages/api/posts/[id].ts` (GET, PUT, DELETE) | Auto-generated from `[entity.Post]` |
+| `getServerSideProps` with auth check | `auth = { required = true }` on the page |
+| `pages/posts/index.tsx` (list view) | `[page."/posts"] layout = "list"` |
+| `pages/posts/[id].tsx` (detail view) | `[page."/posts/:id"] layout = "detail"` |
+| `pages/posts/new.tsx` (create form) | `[page."/posts/new"] layout = "form"` |
+| NextAuth role check | `[entity.Post.access]` |
+
+## After the First Blueprint
+
+Once `zebric validate` passes:
+
+1. Run `zebric dev --blueprint blueprint.toml` and walk through every page
+2. Compare the page output against your existing app
+3. Adjust field order, add `description` to improve form labels, tune access control
+4. Run the [framework stories](/reference/cli#story-runner) to test CRUD and auth flows automatically
+5. When confident, deploy and cut over traffic
+
+The generated blueprint is a starting point, not a final output. Expect to iterate.

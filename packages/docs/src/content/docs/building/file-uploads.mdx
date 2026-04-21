@@ -1,0 +1,252 @@
+---
+label: File Uploads
+order: 4
+slug: building/file-uploads
+title: File Uploads
+description: Accept file uploads in forms, validate by type and size, and serve files securely.
+---
+
+Zebric supports file uploads through the `file` field type. Add it to any form and the runtime handles multipart encoding, validation, storage, and serving automatically — no additional code required.
+
+## Defining a File Field
+
+Add a field with `type = "file"` to a form:
+
+```toml
+[[page."/documents/new".form.fields]]
+name = "attachment"
+type = "file"
+label = "Upload Document"
+required = true
+```
+
+The runtime automatically:
+- Sets `enctype="multipart/form-data"` on the form
+- Validates file size and MIME type server-side
+- Stores the file with a ULID-based filename
+- Serves it at `/uploads/{filename}`
+
+## Validation
+
+### Restrict Allowed Types
+
+Use the `accept` array with MIME types:
+
+```toml
+[[page."/documents/new".form.fields]]
+name = "attachment"
+type = "file"
+label = "Upload Document"
+accept = ["application/pdf", "image/jpeg", "image/png"]
+```
+
+Common MIME types:
+
+| Type | MIME |
+|------|------|
+| PDF | `application/pdf` |
+| JPEG | `image/jpeg` |
+| PNG | `image/png` |
+| Word (.docx) | `application/vnd.openxmlformats-officedocument.wordprocessingml.document` |
+| Plain text | `text/plain` |
+| CSV | `text/csv` |
+
+### Set a Size Limit
+
+Use `max` to set the maximum file size in bytes:
+
+```toml
+[[page."/documents/new".form.fields]]
+name = "attachment"
+type = "file"
+label = "Upload Document"
+accept = ["application/pdf"]
+max = 10485760   # 10 MB
+```
+
+The global server limit is 50 MB. Per-field `max` values are enforced below that ceiling.
+
+## Storing File Metadata
+
+When a file is uploaded via a field named `fieldname`, the runtime automatically populates five related fields:
+
+| Field | Content |
+|-------|---------|
+| `fieldname` | Public URL (`/uploads/01ABC123.pdf`) |
+| `fieldname_id` | ULID of the stored file |
+| `fieldname_filename` | Original filename from the user's machine |
+| `fieldname_size` | File size in bytes |
+| `fieldname_mimetype` | Detected MIME type |
+
+To persist this metadata, declare the corresponding fields on your entity:
+
+```toml
+[entity.Document]
+fields = [
+  { name = "id",                 type = "ULID", primary_key = true },
+  { name = "title",              type = "Text", required = true },
+  { name = "attachment",         type = "Text", required = true },
+  { name = "attachment_id",      type = "Text" },
+  { name = "attachment_filename",type = "Text" },
+  { name = "attachment_size",    type = "Integer" },
+  { name = "attachment_mimetype",type = "Text" },
+  { name = "uploadedBy",         type = "Ref", ref = "User" },
+]
+```
+
+Only `attachment` (the URL) is required to display or link to the file. The rest are optional but useful for displaying file info, enforcing quotas, or building download UIs.
+
+## Complete Example
+
+A document manager with authentication and access control:
+
+```toml
+version = "0.1.0"
+
+[project]
+name = "Document Manager"
+version = "1.0.0"
+
+[auth]
+providers = ["email"]
+
+[entity.Document]
+fields = [
+  { name = "id",                  type = "ULID", primary_key = true },
+  { name = "title",               type = "Text", required = true },
+  { name = "category",            type = "Enum", values = ["contract", "invoice", "report"] },
+  { name = "attachment",          type = "Text", required = true },
+  { name = "attachment_filename", type = "Text" },
+  { name = "attachment_size",     type = "Integer" },
+  { name = "attachment_mimetype", type = "Text" },
+  { name = "ownerId",             type = "Ref", ref = "User" },
+]
+
+[entity.Document.access]
+create = { userId = "$currentUser.id" }
+read   = { ownerId = "$currentUser.id" }
+update = { ownerId = "$currentUser.id" }
+delete = { ownerId = "$currentUser.id" }
+
+[page."/documents"]
+title = "My Documents"
+layout = "list"
+entity = "Document"
+
+[page."/documents/new"]
+title = "Upload Document"
+layout = "form"
+entity = "Document"
+
+[[page."/documents/new".form.fields]]
+name = "title"
+type = "text"
+label = "Document Title"
+required = true
+
+[[page."/documents/new".form.fields]]
+name = "category"
+type = "select"
+label = "Category"
+
+[[page."/documents/new".form.fields]]
+name = "attachment"
+type = "file"
+label = "File"
+required = true
+accept = ["application/pdf", "image/jpeg", "image/png"]
+max = 10485760
+```
+
+## File Storage
+
+### Local Storage (Default)
+
+By default, files are stored in `./data/uploads/` and served at `/uploads/{filename}`. No configuration required — this works out of the box for development and simple deployments.
+
+Filenames use the pattern `{ULID}{extension}`, which prevents collisions, path traversal, and guessable URLs.
+
+### Cloud Storage
+
+For production deployments, Zebric supports storing files in AWS S3, Cloudflare R2, or any S3-compatible provider. Configure a `[storage]` block in your blueprint:
+
+**AWS S3:**
+```toml
+[storage]
+type        = "s3"
+s3_bucket   = "my-app-uploads"
+s3_region   = "us-east-1"
+s3_acl      = "private"
+s3_public_url = "https://d1234567890.cloudfront.net"  # optional CDN
+```
+
+Set credentials via environment variables:
+```bash
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-east-1
+S3_BUCKET=my-app-uploads
+```
+
+**Cloudflare R2:**
+```toml
+[storage]
+type          = "r2"
+s3_bucket     = "my-app-uploads"
+s3_public_url = "https://pub-abc123.r2.dev"  # R2 public bucket URL
+```
+
+```bash
+R2_ACCOUNT_ID=your-account-id
+R2_ACCESS_KEY_ID=your-r2-access-key
+R2_SECRET_ACCESS_KEY=your-r2-secret-key
+```
+
+Any S3-compatible provider (Backblaze B2, DigitalOcean Spaces, Wasabi, MinIO) works by setting `s3_endpoint` to the provider's endpoint URL alongside S3 credentials.
+
+When cloud storage is configured, the `/uploads/` static route is removed and file URLs point directly to the cloud provider or your CDN instead.
+
+### Dev vs. Production Pattern
+
+Use local storage in development and cloud storage in production by managing your blueprint with environment-specific overrides, or simply by pointing the same blueprint at different storage config via environment variables:
+
+```toml
+[storage]
+type      = "s3"
+s3_bucket = "${env.S3_BUCKET}"
+s3_region = "${env.AWS_REGION}"
+```
+
+Leave `S3_BUCKET` unset in your dev environment and let the runtime fall back to local storage.
+
+## Security
+
+### Access Control for Files
+
+The `/uploads/` path serves files directly without checking entity-level access control. To restrict who can access uploaded files, pair them with entity access control and avoid linking to files from pages the user shouldn't reach:
+
+```toml
+[entity.Document.access]
+read = { ownerId = "$currentUser.id" }
+```
+
+This prevents users from listing documents they don't own, but the raw `/uploads/` URL remains publicly accessible if known. For sensitive documents, consider using opaque ULIDs (already the default) and avoid exposing the URL in publicly accessible contexts.
+
+### Size and Type Enforcement
+
+Validation happens server-side regardless of browser behavior. The `accept` MIME types and `max` byte limit are enforced before the file is written to disk.
+
+## Troubleshooting
+
+**File not uploading**
+- Check that the field is marked `type = "file"` in the blueprint
+- Verify the file size is within both the field's `max` and the 50 MB server limit
+- If specifying `accept`, confirm the file's MIME type is in the list
+
+**Uploaded file not accessible**
+- Files are served at `/uploads/{filename}`, not the original filename
+- Use the `attachment` field value (the URL) to construct links in list or detail pages
+
+**Metadata fields missing from the list page**
+- Ensure the entity defines `attachment_filename`, `attachment_size`, etc. as explicit fields
+- They are only populated if the entity schema includes them
