@@ -1,0 +1,71 @@
+# Codecov configuration — enforces coverage gates on PRs and main.
+# Docs: https://docs.codecov.com/docs/codecov-yaml
+
+coverage:
+  precision: 2
+  round: down
+  range: "70...90"
+
+  status:
+    project:
+      default:
+        # Baseline is "the coverage on the target branch".
+        # Fail the check if total project coverage drops by more than `threshold`.
+        target: auto
+        threshold: 1%
+        informational: false
+        if_ci_failed: error
+        only_pulls: false
+      runtime-core:
+        target: auto
+        threshold: 1%
+        flags: [runtime-core]
+      runtime-node:
+        target: auto
+        threshold: 1%
+        flags: [runtime-node]
+      runtime-worker:
+        target: auto
+        threshold: 1%
+        flags: [runtime-worker]
+      cli:
+        target: auto
+        threshold: 1%
+        flags: [cli]
+      notifications:
+        target: auto
+        threshold: 1%
+        flags: [notifications]
+
+    patch:
+      default:
+        # New/changed lines in the PR must hit this coverage %.
+        target: 70%
+        threshold: 5%
+        informational: false
+        if_ci_failed: error
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true
+
+flag_management:
+  default_rules:
+    carryforward: true
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1%
+
+ignore:
+  - "**/*.test.ts"
+  - "**/*.bench.ts"
+  - "**/dist/**"
+  - "**/coverage/**"
+  - "**/tests/**"
+  - "packages/docs/**"
+  - "packages/playground/**"
+  - "packages/react-simulator-example/**"
+  - "packages/runtime-core/src/renderer/generated/**"
+  - "packages/runtime-core/src/renderer/styles/tailwind.generated.ts"
