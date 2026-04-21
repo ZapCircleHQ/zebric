@@ -435,7 +435,6 @@ describe('LayoutRenderers', () => {
         query: { callbackURL: '/tasks' },
       })
       const result = renderer.renderAuthLayout(context).toString()
-      // escapeHtmlAttr encodes / as &#x2F;, then html tag re-escapes & as &amp;
       expect(result).toContain('callbackURL')
       expect(result).toContain('tasks')
     })
@@ -448,7 +447,6 @@ describe('LayoutRenderers', () => {
         query: {},
       })
       const result = renderer.renderAuthLayout(context).toString()
-      // The / gets double-escaped through escapeHtmlAttr + html tag
       expect(result).toContain('name="callbackURL"')
     })
   })
