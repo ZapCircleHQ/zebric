@@ -63,7 +63,6 @@ export class ComponentRenderers {
     const densityClass = this.getTableDensityClass(density)
     const rowClick = ux?.interaction?.row_click || this.blueprint.ux?.interaction?.row_click
     const canViewDetails = Boolean(detailPath)
-    const canEdit = Boolean(editPath)
     const rowClickOpenDetail = rowClick === 'open-detail' && canViewDetails
 
     // Helper to get a readable identifier for an item
