@@ -962,6 +962,63 @@ function normalizeRouteTarget(target: string) {
   return target.replace(/\{[^}]+\}/g, ':id')
 }
 
+function slugifyEntityName(value: string) {
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1-$2')
+    .replace(/\s+/g, '-')
+    .toLowerCase()
+}
+
+function pageTargetsEntity(page: Blueprint['pages'][number], entityName: string) {
+  if (page.queries && Object.values(page.queries).some((query) => query.entity === entityName)) {
+    return true
+  }
+  if (page.form?.entity === entityName) {
+    return true
+  }
+  return false
+}
+
+function getEntityPagePath(
+  blueprint: Blueprint,
+  entityName: string,
+  type: 'create' | 'detail' | 'update' | 'delete' | 'list'
+) {
+  switch (type) {
+    case 'create':
+      return (
+        blueprint.pages.find((page) => page.form?.entity === entityName && page.form.method === 'create')
+          ?.path || null
+      )
+    case 'update':
+      return (
+        blueprint.pages.find((page) => page.form?.entity === entityName && page.form.method === 'update')
+          ?.path || null
+      )
+    case 'delete':
+      return (
+        blueprint.pages.find((page) => page.form?.entity === entityName && page.form.method === 'delete')
+          ?.path || null
+      )
+    case 'detail':
+      return (
+        blueprint.pages.find((page) => page.layout === 'detail' && pageTargetsEntity(page, entityName))
+          ?.path || null
+      )
+    case 'list': {
+      const candidates = blueprint.pages.filter(
+        (page) => page.layout === 'list' && pageTargetsEntity(page, entityName)
+      )
+      if (!candidates.length) return null
+      const slug = slugifyEntityName(entityName)
+      return (candidates.find((page) => page.path !== '/' && page.path.includes(slug)) || candidates[0]!)
+        .path
+    }
+    default:
+      return null
+  }
+}
+
 interface ValidationCheck {
   title: string
   status: 'pass' | 'warn' | 'fail'
@@ -1026,6 +1083,61 @@ function createValidationReport(parsed: ParsedBlueprintDraft, source: string): V
       return redirect && !pagePaths.has(normalizeRouteTarget(redirect))
     })
     .map((page) => `${page.path} -> ${page.form?.onSuccess?.redirect}`)
+  const listPagesMissingCreate = blueprint.pages
+    .filter((page) => page.layout === 'list')
+    .flatMap((page) =>
+      Array.from(
+        new Set(
+          Object.values(page.queries || {})
+            .map((query) => query.entity)
+            .filter((entityName) => entityNames.has(entityName))
+        )
+      )
+        .filter((entityName) => !getEntityPagePath(blueprint, entityName, 'create'))
+        .map((entityName) => `${page.path} -> missing create page for ${entityName}`)
+    )
+  const listPagesMissingDetail = blueprint.pages
+    .filter((page) => page.layout === 'list')
+    .flatMap((page) =>
+      Array.from(
+        new Set(
+          Object.values(page.queries || {})
+            .map((query) => query.entity)
+            .filter((entityName) => entityNames.has(entityName))
+        )
+      )
+        .filter((entityName) => !getEntityPagePath(blueprint, entityName, 'detail'))
+        .map((entityName) => `${page.path} -> missing detail page for ${entityName}`)
+    )
+  const dashboardPagesMissingDetail = blueprint.pages
+    .filter((page) => page.layout === 'dashboard')
+    .flatMap((page) =>
+      Object.entries(page.queries || {})
+        .filter(([, query]) => entityNames.has(query.entity))
+        .filter(([, query]) => !getEntityPagePath(blueprint, query.entity, 'detail'))
+        .map(([queryName, query]) => `${page.path}.${queryName} -> missing detail page for ${query.entity}`)
+    )
+  const dashboardPagesMissingList = blueprint.pages
+    .filter((page) => page.layout === 'dashboard')
+    .flatMap((page) =>
+      Object.entries(page.queries || {})
+        .filter(([, query]) => entityNames.has(query.entity))
+        .filter(([, query]) => !getEntityPagePath(blueprint, query.entity, 'list'))
+        .map(([queryName, query]) => `${page.path}.${queryName} -> missing list page for ${query.entity}`)
+    )
+  const detailPagesMissingUpdate = blueprint.pages
+    .filter((page) => page.layout === 'detail')
+    .flatMap((page) =>
+      Array.from(
+        new Set(
+          Object.values(page.queries || {})
+            .map((query) => query.entity)
+            .filter((entityName) => entityNames.has(entityName))
+        )
+      )
+        .filter((entityName) => !getEntityPagePath(blueprint, entityName, 'update'))
+        .map((entityName) => `${page.path} -> no update form page for ${entityName}`)
+    )
 
   checks.push({
     title: 'Parser',
@@ -1076,6 +1188,26 @@ function createValidationReport(parsed: ParsedBlueprintDraft, source: string): V
     detail: brokenRedirects.length
       ? brokenRedirects.join(', ')
       : 'Form success redirects match known route shapes.',
+  })
+  checks.push({
+    title: 'UI affordances',
+    status:
+      listPagesMissingCreate.length ||
+      listPagesMissingDetail.length ||
+      dashboardPagesMissingDetail.length ||
+      dashboardPagesMissingList.length ||
+      detailPagesMissingUpdate.length
+        ? 'warn'
+        : 'pass',
+    detail:
+      [
+        ...listPagesMissingCreate,
+        ...listPagesMissingDetail,
+        ...dashboardPagesMissingDetail,
+        ...dashboardPagesMissingList,
+        ...detailPagesMissingUpdate,
+      ].join(', ') ||
+      'Route-backed create, detail, dashboard, and update affordances are explicitly defined.',
   })
 
   const hasFailures = checks.some((check) => check.status === 'fail')

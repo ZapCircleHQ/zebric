@@ -31,14 +31,13 @@ export class ComponentRenderers {
    */
   renderPageHeader(page: Page, entity?: any): SafeHtml {
     const createPath = this.utils.getEntityPagePath(entity?.name, 'create')
-    const createHref = createPath || `${this.utils.collectionPath(entity?.name || 'item')}/new`
 
     return html`
       <div class="${this.theme.pageHeader}">
         <h1 class="${this.theme.heading1}">${page.title}</h1>
-        ${entity ? html`
+        ${entity && createPath ? html`
           <a
-            href="${createHref}"
+            href="${createPath}"
             class="${this.theme.buttonPrimary}"
           >
             New ${entity.name}
@@ -63,7 +62,9 @@ export class ComponentRenderers {
     const density = ux?.data?.density || this.blueprint.ux?.data?.density || 'comfortable'
     const densityClass = this.getTableDensityClass(density)
     const rowClick = ux?.interaction?.row_click || this.blueprint.ux?.interaction?.row_click
-    const rowClickOpenDetail = rowClick === 'open-detail'
+    const canViewDetails = Boolean(detailPath)
+    const canEdit = Boolean(editPath)
+    const rowClickOpenDetail = rowClick === 'open-detail' && canViewDetails
 
     // Helper to get a readable identifier for an item
     const getItemIdentifier = (item: any): string => {
@@ -98,7 +99,9 @@ export class ComponentRenderers {
               `
               : safe(items.map(item => {
                 const itemId = getItemIdentifier(item)
-                const detailHref = this.utils.resolveEntityLink(detailPath, entity?.name, item)
+                const detailHref = canViewDetails
+                  ? this.utils.resolveEntityLink(detailPath, entity?.name, item)
+                  : ''
                 return html`
                 <tr
                   class="${this.theme.tableRow} ${rowClickOpenDetail ? 'cursor-pointer' : ''}"
@@ -108,7 +111,7 @@ export class ComponentRenderers {
                     const value = this.utils.formatValue(item[f.name], f.type)
                     return html`
                       <td class="${this.theme.tableCell} ${densityClass}">
-                        ${index === 0
+                        ${index === 0 && canViewDetails
                           ? html`
                             <a
                               href="${detailHref}"
@@ -123,13 +126,17 @@ export class ComponentRenderers {
                     `.html
                   }).join(''))}
                   <td class="${this.theme.tableCell} ${densityClass} ${this.theme.tableActions}">
-                    <a
-                      href="${detailHref}"
-                      class="${this.theme.linkPrimary}"
-                      aria-label="View ${escapeHtmlAttr(itemId)}"
-                    >
-                      View
-                    </a>
+                    ${canViewDetails
+                      ? html`
+                        <a
+                          href="${detailHref}"
+                          class="${this.theme.linkPrimary}"
+                          aria-label="View ${escapeHtmlAttr(itemId)}"
+                        >
+                          View
+                        </a>
+                      `
+                      : ''}
                     ${editPath
                       ? html`
                         <a
@@ -255,12 +262,16 @@ export class ComponentRenderers {
             <ul class="mt-4 space-y-2">
               ${safe(recent.map(item => html`
                 <li class="text-sm">
-                  <a
-                    href="${this.utils.resolveEntityLink(detailPath, entity?.name || name, item)}"
-                    class="${this.theme.linkPrimary}"
-                  >
-                    ${item.title || item.name || item.id}
-                  </a>
+                  ${detailPath
+                    ? html`
+                      <a
+                        href="${this.utils.resolveEntityLink(detailPath, entity?.name || name, item)}"
+                        class="${this.theme.linkPrimary}"
+                      >
+                        ${item.title || item.name || item.id}
+                      </a>
+                    `
+                    : item.title || item.name || item.id}
                 </li>
               `.html).join(''))}
             </ul>
