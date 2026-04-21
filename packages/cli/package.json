@@ -39,6 +39,7 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run --passWithNoTests",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -49,6 +50,7 @@
     "prompts": "^2.4.2"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^1.6.1",
     "typescript": "^5.4.5",
     "vitest": "^1.6.1"
   }

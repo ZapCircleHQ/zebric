@@ -70,7 +70,7 @@ function handleValidationError(error: unknown, path: string): never {
     console.error('')
 
     if (structured.errors.length > 0) {
-      structured.errors.forEach((detail, index) => {
+      structured.errors.forEach((detail: (typeof structured.errors)[number], index: number) => {
         const position = index + 1
         const locationPath = detail.location.path.length > 0
           ? detail.location.path.join('.')
@@ -100,4 +100,3 @@ function handleValidationError(error: unknown, path: string): never {
   )
   process.exit(1)
 }
-
