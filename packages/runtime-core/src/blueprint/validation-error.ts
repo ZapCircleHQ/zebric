@@ -98,7 +98,7 @@ export function zodErrorToStructured(
   zodError: ZodError,
   file?: string
 ): StructuredValidationError {
-  const errors: ValidationErrorDetail[] = zodError.errors.map(issue =>
+  const errors: ValidationErrorDetail[] = zodError.issues.map(issue =>
     zodIssueToDetail(issue)
   )
 
@@ -116,43 +116,34 @@ export function zodErrorToStructured(
 function zodIssueToDetail(issue: ZodIssue): ValidationErrorDetail {
   const path = issue.path.map(String)
   const location: ValidationErrorLocation = { path }
+  const pathLabel = path.length > 0 ? path.join('.') : 'root'
+  const received = getReceivedType(issue)
 
   // Map Zod error codes to our error codes and suggestions
   switch (issue.code) {
     case 'invalid_type':
       return {
         code: 'INVALID_TYPE',
-        message: `Invalid type at ${path.join('.')}: expected ${issue.expected}, got ${issue.received}`,
+        message: `Invalid type at ${pathLabel}: expected ${issue.expected}, got ${received}`,
         location,
         expected: String(issue.expected),
-        received: String(issue.received),
+        received,
         suggestion: `Change the value to a ${issue.expected}`,
       }
 
-    case 'invalid_enum_value':
+    case 'invalid_value':
       return {
-        code: 'INVALID_ENUM_VALUE',
-        message: `Invalid value at ${path.join('.')}: must be one of ${issue.options?.join(', ')}`,
+        code: 'INVALID_VALUE',
+        message: issue.message ?? `Invalid value at ${pathLabel}`,
         location,
-        expected: `One of: ${issue.options?.join(', ')}`,
-        received: String(issue.received),
-        suggestion: `Use one of the allowed values: ${issue.options?.join(', ')}`,
-      }
-
-    case 'invalid_literal':
-      return {
-        code: 'INVALID_LITERAL',
-        message: `Invalid value at ${path.join('.')}: expected ${JSON.stringify(issue.expected)}`,
-        location,
-        expected: String(issue.expected),
-        received: String(issue.received),
-        suggestion: `Change the value to exactly ${JSON.stringify(issue.expected)}`,
+        received,
+        suggestion: `Use one of the allowed values for ${pathLabel}`,
       }
 
     case 'unrecognized_keys':
       return {
         code: 'UNRECOGNIZED_KEYS',
-        message: `Unrecognized keys at ${path.join('.')}: ${issue.keys?.join(', ')}`,
+        message: `Unrecognized keys at ${pathLabel}: ${issue.keys?.join(', ')}`,
         location,
         received: issue.keys?.join(', '),
         suggestion: `Remove the unrecognized keys or check for typos`,
@@ -161,60 +152,60 @@ function zodIssueToDetail(issue: ZodIssue): ValidationErrorDetail {
     case 'invalid_union':
       return {
         code: 'INVALID_UNION',
-        message: `Invalid value at ${path.join('.')}: doesn't match any of the allowed types`,
+        message: `Invalid value at ${pathLabel}: doesn't match any of the allowed types`,
         location,
         suggestion: `Check the Blueprint schema documentation for allowed values at this location`,
       }
 
     case 'too_small':
-      if (issue.type === 'array') {
+      if (issue.origin === 'array') {
         return {
           code: 'ARRAY_TOO_SMALL',
-          message: `Array at ${path.join('.')} must have at least ${issue.minimum} items`,
+          message: `Array at ${pathLabel} must have at least ${issue.minimum} items`,
           location,
           expected: `At least ${issue.minimum} items`,
-          suggestion: `Add ${Number(issue.minimum) - 1} more item(s) to the array`,
+          suggestion: `Add more item(s) to the array`,
         }
       }
       return {
         code: 'VALUE_TOO_SMALL',
-        message: `Value at ${path.join('.')} is too small: minimum is ${issue.minimum}`,
+        message: `Value at ${pathLabel} is too small: minimum is ${issue.minimum}`,
         location,
         expected: `>= ${issue.minimum}`,
         suggestion: `Increase the value to at least ${issue.minimum}`,
       }
 
     case 'too_big':
-      if (issue.type === 'array') {
+      if (issue.origin === 'array') {
         return {
           code: 'ARRAY_TOO_BIG',
-          message: `Array at ${path.join('.')} must have at most ${issue.maximum} items`,
+          message: `Array at ${pathLabel} must have at most ${issue.maximum} items`,
           location,
           expected: `At most ${issue.maximum} items`,
-          suggestion: `Remove ${1 - Number(issue.maximum)} item(s) from the array`,
+          suggestion: `Remove item(s) from the array`,
         }
       }
       return {
         code: 'VALUE_TOO_BIG',
-        message: `Value at ${path.join('.')} is too large: maximum is ${issue.maximum}`,
+        message: `Value at ${pathLabel} is too large: maximum is ${issue.maximum}`,
         location,
         expected: `<= ${issue.maximum}`,
         suggestion: `Decrease the value to at most ${issue.maximum}`,
       }
 
-    case 'invalid_string':
+    case 'invalid_format':
       return {
         code: 'INVALID_STRING_FORMAT',
-        message: `Invalid string format at ${path.join('.')}: ${issue.validation}`,
+        message: issue.message ?? `Invalid string format at ${pathLabel}`,
         location,
-        expected: `String matching ${issue.validation} format`,
-        suggestion: getStringFormatSuggestion(String(issue.validation)),
+        expected: `String matching ${issue.format} format`,
+        suggestion: getStringFormatSuggestion(String(issue.format)),
       }
 
     case 'custom':
       return {
         code: 'CUSTOM_VALIDATION_FAILED',
-        message: issue.message ?? `Custom validation failed at ${path.join('.')}`,
+        message: issue.message ?? `Custom validation failed at ${pathLabel}`,
         location,
         suggestion: `Check the specific validation requirements for this field`,
       }
@@ -226,6 +217,16 @@ function zodIssueToDetail(issue: ZodIssue): ValidationErrorDetail {
         location,
       }
   }
+}
+
+function getReceivedType(issue: ZodIssue): string {
+  if ('input' in issue) {
+    const input = issue.input
+    if (input === null) return 'null'
+    if (Array.isArray(input)) return 'array'
+    return typeof input
+  }
+  return 'unknown'
 }
 
 /**

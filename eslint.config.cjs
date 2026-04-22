@@ -45,6 +45,15 @@ module.exports = [
   },
   js.configs.recommended,
   {
+    // ESLint 10 enables additional core rules that are unrelated to this
+    // tooling phase. Keep the existing repo baseline until we address them
+    // deliberately in a dedicated cleanup pass.
+    rules: {
+      "no-useless-assignment": "off",
+      "preserve-caught-error": "off"
+    }
+  },
+  {
     files: tsFiles,
     languageOptions: {
       parser: tsParser,

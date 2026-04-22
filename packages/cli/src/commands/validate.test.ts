@@ -94,9 +94,11 @@ describe('validateCommand', () => {
         entities: [{ name: 'User' }, { name: 'Post' }],
         pages: [{ path: '/' }],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockReturnValue(fakeBp),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockReturnValue(fakeBp),
+        }
+      })
 
       await validateCommand({ blueprint: 'blueprint.toml' })
 
@@ -115,9 +117,11 @@ describe('validateCommand', () => {
         pages: [],
         workflows: [{ name: 'wf1' }, { name: 'wf2' }],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockReturnValue(fakeBp),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockReturnValue(fakeBp),
+        }
+      })
 
       await validateCommand({ blueprint: 'blueprint.toml' })
 
@@ -131,9 +135,11 @@ describe('validateCommand', () => {
         entities: [],
         pages: [],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockReturnValue(fakeBp),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockReturnValue(fakeBp),
+        }
+      })
 
       await validateCommand({ blueprint: 'blueprint.toml' })
 
@@ -165,11 +171,13 @@ describe('validateCommand', () => {
           },
         ],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError(structured)
-        }),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockImplementation(() => {
+            throw new BlueprintValidationError(structured)
+          }),
+        }
+      })
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
       expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('validation failed'))
@@ -191,11 +199,13 @@ describe('validateCommand', () => {
           },
         ],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError(structured)
-        }),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockImplementation(() => {
+            throw new BlueprintValidationError(structured)
+          }),
+        }
+      })
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
       expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('root'))
@@ -207,11 +217,13 @@ describe('validateCommand', () => {
         message: 'Invalid TOML syntax',
         errors: [],
       }
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockImplementation(() => {
-          throw new BlueprintValidationError(structured)
-        }),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockImplementation(() => {
+            throw new BlueprintValidationError(structured)
+          }),
+        }
+      })
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
       expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('PARSE_ERROR'))
@@ -225,11 +237,13 @@ describe('validateCommand', () => {
     })
 
     it('prints Error.message and exits for unknown errors', async () => {
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockImplementation(() => {
-          throw new Error('Unexpected parse failure')
-        }),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockImplementation(() => {
+            throw new Error('Unexpected parse failure')
+          }),
+        }
+      })
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
       expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Failed to validate'))
@@ -237,11 +251,13 @@ describe('validateCommand', () => {
     })
 
     it('handles non-Error throws', async () => {
-      MockBlueprintParser.mockImplementation(() => ({
-        parse: vi.fn().mockImplementation(() => {
-          throw 'string error'
-        }),
-      }))
+      MockBlueprintParser.mockImplementation(function () {
+        return {
+          parse: vi.fn().mockImplementation(() => {
+            throw 'string error'
+          }),
+        }
+      })
 
       await expect(validateCommand({ blueprint: 'blueprint.toml' })).rejects.toThrow('EXIT:1')
       expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('string error'))

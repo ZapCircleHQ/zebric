@@ -27,7 +27,7 @@
     "@zebric/runtime-core": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
-    "vitest": "^1.6.1"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   }
 }
