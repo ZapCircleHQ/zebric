@@ -73,7 +73,7 @@ export class BlueprintWatcher {
     this.watcher.on('error', (error) => {
       this.options.logger?.error('Blueprint watcher error', { error })
       if (this.options.onError) {
-        this.options.onError(error)
+        this.options.onError(error instanceof Error ? error : new Error(String(error)))
       }
     })
   }

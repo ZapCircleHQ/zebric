@@ -16,7 +16,7 @@
     "@zebric/cli": "workspace:*",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-node": "workspace:*",
-    "undici": "^6.13.0"
+    "undici": "^8.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
