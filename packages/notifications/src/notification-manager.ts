@@ -14,13 +14,15 @@ export function registerNotificationAdapterFactory(type: string, factory: Adapte
   adapterFactories.set(type, factory)
 }
 
-function renderTemplate(template: string, params?: Record<string, any>): string {
+function renderTemplate(template: string, params?: Record<string, unknown>): string {
   if (!template) return ''
   if (!params) return template
   return template.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_, key: string) => {
     const value = key
       .split('.')
-      .reduce((acc: any, part: string) => (acc ? acc[part] : undefined), params as any)
+      .reduce((acc: unknown, part: string) =>
+        acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[part] : undefined,
+      params)
     return value !== undefined && value !== null ? String(value) : ''
   })
 }
