@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
 
 vi.mock('better-sqlite3', () => ({
-  default: vi.fn().mockReturnValue({ close: vi.fn() }),
+  default: vi.fn(class {
+    close = vi.fn()
+  }),
 }))
 
 vi.mock('better-auth', () => ({
@@ -9,12 +11,16 @@ vi.mock('better-auth', () => ({
 }))
 
 vi.mock('./better-auth-provider.js', () => ({
-  BetterAuthProvider: vi.fn().mockImplementation((config: any) => ({
-    _config: config,
-    getAuthInstance: vi.fn(),
-    getSession: vi.fn(),
-    cleanup: vi.fn(),
-  })),
+  BetterAuthProvider: vi.fn(class {
+    _config: any
+    getAuthInstance = vi.fn()
+    getSession = vi.fn()
+    cleanup = vi.fn()
+
+    constructor(config: any) {
+      this._config = config
+    }
+  }),
 }))
 
 import { betterAuth } from 'better-auth'

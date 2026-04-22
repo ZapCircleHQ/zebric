@@ -28,17 +28,17 @@ const {
 
 vi.mock('ioredis', () => {
   return {
-    default: redisCtor.mockImplementation(() => ({
-      get: mockGet,
-      set: mockSet,
-      setex: mockSetex,
-      del: mockDel,
-      incr: mockIncr,
-      exists: mockExists,
-      keys: mockKeys,
-      quit: mockQuit,
-      on: mockOn,
-    })),
+    default: redisCtor.mockImplementation(class {
+      get = mockGet
+      set = mockSet
+      setex = mockSetex
+      del = mockDel
+      incr = mockIncr
+      exists = mockExists
+      keys = mockKeys
+      quit = mockQuit
+      on = mockOn
+    }),
   }
 })
 

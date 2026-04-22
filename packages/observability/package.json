@@ -30,8 +30,8 @@
     "hono": "^4.12.14"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
-    "vitest": "^1.6.1"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
   },
   "peerDependencies": {
     "hono": ">=4.0.0"
