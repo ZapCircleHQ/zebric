@@ -52,8 +52,8 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "liquidjs": "^10.10.0",
-    "smol-toml": "^1.6.0",
+    "liquidjs": "^10.25.6",
+    "smol-toml": "^1.6.1",
     "zod": "^3.23.5"
   },
   "devDependencies": {
@@ -61,13 +61,13 @@
     "@typescript-eslint/eslint-plugin": "^8.59.0",
     "@typescript-eslint/parser": "^8.59.0",
     "@vitest/coverage-v8": "^1.6.1",
-    "autoprefixer": "^10.4.18",
+    "autoprefixer": "^10.5.0",
     "eslint": "^9.39.4",
-    "postcss": "^8.4.38",
+    "postcss": "^8.5.10",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.4.5",
     "vitest": "^1.6.1",
-    "zod-to-json-schema": "^3.24.6"
+    "zod-to-json-schema": "^3.25.2"
   },
   "engines": {
     "node": ">=22.0.0"

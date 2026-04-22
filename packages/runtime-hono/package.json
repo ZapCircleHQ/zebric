@@ -24,7 +24,7 @@
   "license": "MIT",
   "dependencies": {
     "@zebric/runtime-core": "workspace:*",
-    "hono": "^4.9.9"
+    "hono": "^4.12.14"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
