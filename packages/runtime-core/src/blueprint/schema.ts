@@ -6,6 +6,9 @@
 
 import { z } from 'zod'
 
+const StringKeySchema = z.string()
+const AnyRecordSchema = z.record(StringKeySchema, z.any())
+
 // ============================================================================
 // Field Types
 // ============================================================================
@@ -58,7 +61,7 @@ const RelationSchema = z.object({
 const AccessConditionSchema: z.ZodType<any> = z.lazy(() =>
   z.union([
     z.boolean(),
-    z.record(z.any()),
+    AnyRecordSchema,
     z.object({
       or: z.array(AccessConditionSchema),
     }),
@@ -93,7 +96,7 @@ const IndexSchema = z.object({
 const EntitySchema = z.object({
   name: z.string(),
   fields: z.array(FieldSchema),
-  relations: z.record(RelationSchema).optional(),
+  relations: z.record(StringKeySchema, RelationSchema).optional(),
   access: AccessRulesSchema.optional(),
   indexes: z.array(IndexSchema).optional(),
 })
@@ -104,8 +107,8 @@ const EntitySchema = z.object({
 
 const QuerySchema = z.object({
   entity: z.string(),
-  where: z.record(z.any()).optional(),
-  orderBy: z.record(z.enum(['asc', 'desc'])).optional(),
+  where: AnyRecordSchema.optional(),
+  orderBy: z.record(StringKeySchema, z.enum(['asc', 'desc'])).optional(),
   limit: z.number().optional(),
   offset: z.number().optional(),
   include: z.array(z.string()).optional(),
@@ -241,7 +244,7 @@ const UXPatternConfigSchema = z.object({
   interaction: InteractionConfigSchema.optional(),
   data: DataPresentationConfigSchema.optional(),
   form: GlobalFormConfigSchema.optional(),
-  roles: z.record(SemanticUIRoleSchema).optional(),
+  roles: z.record(StringKeySchema, SemanticUIRoleSchema).optional(),
 })
 
 const PageUXConfigSchema = z.object({
@@ -250,13 +253,13 @@ const PageUXConfigSchema = z.object({
   interaction: InteractionConfigSchema.optional(),
   data: DataPresentationConfigSchema.optional(),
   form: GlobalFormConfigSchema.optional(),
-  roles: z.record(SemanticUIRoleSchema).optional(),
+  roles: z.record(StringKeySchema, SemanticUIRoleSchema).optional(),
   extensions: z.array(ExtensionConfigSchema).optional(),
 })
 
 const UXConfigSchema = z.object({
   pattern: UXPatternVersionSchema.optional(),
-  patterns: z.record(UXPatternConfigSchema).optional(),
+  patterns: z.record(StringKeySchema, UXPatternConfigSchema).optional(),
   interaction: InteractionConfigSchema.optional(),
   data: DataPresentationConfigSchema.optional(),
   form: GlobalFormConfigSchema.optional(),
@@ -321,7 +324,7 @@ const ActionBarActionSchema = z.object({
   target: z.enum(['_self', '_blank']).optional(),
   icon: z.string().optional(),
   workflow: z.string().optional(),
-  payload: z.record(z.any()).optional(),
+  payload: AnyRecordSchema.optional(),
   redirect: z.string().optional(),
   successMessage: z.string().optional(),
   errorMessage: z.string().optional(),
@@ -343,7 +346,7 @@ const PageSchema = z.object({
   auth: z.enum(['required', 'optional', 'none']).optional(),
   layout: z.string(),
   ux: PageUXConfigSchema.optional(),
-  queries: z.record(QuerySchema).optional(),
+  queries: z.record(StringKeySchema, QuerySchema).optional(),
   form: FormSchema.optional(),
   meta: PageMetaSchema.optional(),
   behavior: PageBehaviorSchema.optional(),
@@ -357,7 +360,7 @@ const PageSchema = z.object({
 const WorkflowTriggerSchema = z.object({
   entity: z.string().optional(),
   event: z.enum(['create', 'update', 'delete']).optional(),
-  condition: z.record(z.any()).optional(),
+  condition: AnyRecordSchema.optional(),
   webhook: z.string().optional(),
   schedule: z.string().optional(),
   manual: z.boolean().optional(),
@@ -402,7 +405,7 @@ const AuthConfigSchema = z.object({
       idle_timeout: z.number().optional(),
     })
     .optional(),
-  permissions: z.record(PermissionRuleSchema).optional(),
+  permissions: z.record(StringKeySchema, PermissionRuleSchema).optional(),
   apiKeys: z.array(ApiKeyConfigSchema).optional(),
 })
 
@@ -416,7 +419,7 @@ const PluginConfigSchema = z.object({
   enabled: z.boolean(),
   trust_level: z.enum(['limited', 'full']).optional(),
   capabilities: z.array(z.enum(['database', 'network', 'storage', 'filesystem'])).optional(),
-  config: z.record(z.any()).optional(),
+  config: AnyRecordSchema.optional(),
 })
 
 // ============================================================================
@@ -440,19 +443,19 @@ const UIConfigSchema = z.object({
       file: z.string().optional(),
     })
     .optional(),
-  layouts: z.record(z.string()).optional(),
-  components: z.record(z.string()).optional(),
+  layouts: z.record(StringKeySchema, z.string()).optional(),
+  components: z.record(StringKeySchema, z.string()).optional(),
 })
 
 const DesignAdapterConfigSchema = z.object({
   name: z.string().optional(),
   version: z.string().optional(),
-  roles: z.record(z.string()).optional(),
+  roles: z.record(StringKeySchema, z.string()).optional(),
   tokens: z.object({
-    colors: z.record(z.string()).optional(),
-    typography: z.record(z.string()).optional(),
-    spacing: z.record(z.string()).optional(),
-    motion: z.record(z.string()).optional(),
+    colors: z.record(StringKeySchema, z.string()).optional(),
+    typography: z.record(StringKeySchema, z.string()).optional(),
+    spacing: z.record(StringKeySchema, z.string()).optional(),
+    motion: z.record(StringKeySchema, z.string()).optional(),
   }).optional(),
 })
 
@@ -463,7 +466,7 @@ const DesignAdapterConfigSchema = z.object({
 const NotificationAdapterConfigSchema = z.object({
   name: z.string(),
   type: z.string(),
-  config: z.record(z.any()).optional(),
+  config: AnyRecordSchema.optional(),
 })
 
 const NotificationsConfigSchema = z.object({
@@ -480,10 +483,10 @@ const SkillActionSchema = z.object({
   description: z.string().optional(),
   method: z.enum(['GET', 'POST', 'PUT', 'DELETE']),
   path: z.string(),
-  body: z.record(z.string()).optional(),
+  body: z.record(StringKeySchema, z.string()).optional(),
   entity: z.string().optional(),
   action: z.enum(['create', 'list', 'get', 'update', 'delete']).optional(),
-  mapParams: z.record(z.string()).optional(),
+  mapParams: z.record(StringKeySchema, z.string()).optional(),
   workflow: z.string().optional(),
 })
 
