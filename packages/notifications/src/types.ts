@@ -1,7 +1,7 @@
 export interface NotificationAdapterConfig {
   name: string
   type: string
-  config?: Record<string, any>
+  config?: Record<string, unknown>
 }
 
 export interface NotificationsConfig {
@@ -16,8 +16,8 @@ export interface NotificationMessage {
   subject?: string
   body?: string
   template?: string
-  params?: Record<string, any>
-  metadata?: Record<string, any>
+  params?: Record<string, unknown>
+  metadata?: Record<string, unknown>
 }
 
 export interface NotificationPayload {
@@ -25,7 +25,7 @@ export interface NotificationPayload {
   to?: string
   subject?: string
   body?: string
-  metadata?: Record<string, any>
+  metadata?: Record<string, unknown>
 }
 
 export interface NotificationAdapter {

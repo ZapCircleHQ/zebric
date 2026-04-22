@@ -52,7 +52,7 @@ export class BlueprintHttpAdapter {
     } else if (config.theme) {
       const htmlRenderer = new HTMLRenderer(config.blueprint, config.theme)
       this.renderer = {
-        renderPage: (context) => htmlRenderer.renderPage(context as any)
+        renderPage: (context) => htmlRenderer.renderPage(context)
       }
     }
 
@@ -133,7 +133,7 @@ export class BlueprintHttpAdapter {
    * Convert Request to HttpRequest expected by RequestHandler.
    */
   private async convertRequest(request: Request): Promise<HttpRequest> {
-    let body: any
+    let body: unknown
     const contentType = request.headers.get('content-type') || ''
 
     if (request.method !== 'GET' && request.method !== 'HEAD') {
@@ -145,10 +145,10 @@ export class BlueprintHttpAdapter {
         }
       } else if (contentType.includes('application/x-www-form-urlencoded')) {
         const formData = await request.formData()
-        body = Object.fromEntries(formData as any)
+        body = Object.fromEntries(formData)
       } else if (contentType.includes('multipart/form-data')) {
         const formData = await request.formData()
-        body = Object.fromEntries(formData as any)
+        body = Object.fromEntries(formData)
       } else {
         body = await request.text()
       }

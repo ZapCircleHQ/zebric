@@ -10,7 +10,7 @@ export interface SlackAdapterConfig {
 interface SlackMessageMetadata {
   threadTs?: string
   thread_ts?: string
-  blocks?: any[]
+  blocks?: unknown[]
   mrkdwn?: boolean
   unfurlLinks?: boolean
   unfurl_links?: boolean
@@ -37,7 +37,7 @@ export class SlackAdapter implements NotificationAdapter {
     const metadata = (message.metadata || {}) as SlackMessageMetadata
     const threadTs = metadata.threadTs || metadata.thread_ts
     const text = message.body || message.subject || 'Notification'
-    const payload: Record<string, any> = {
+    const payload: Record<string, unknown> = {
       channel,
       text,
     }
@@ -77,7 +77,7 @@ export class SlackAdapter implements NotificationAdapter {
       throw new Error(`Slack API error: ${errorText}`)
     }
 
-    const json: any = await response.json()
+    const json = await response.json() as { ok: boolean; error?: string }
     if (!json.ok) {
       throw new Error(`Slack API error: ${json.error || 'unknown_error'}`)
     }
@@ -140,10 +140,10 @@ export class SlackAdapter implements NotificationAdapter {
     return trimmed
   }
 
-  private parseInboundPayloadFromRaw(rawBody: string, contentType: string): Record<string, any> {
+  private parseInboundPayloadFromRaw(rawBody: string, contentType: string): Record<string, unknown> {
     try {
       if (contentType.includes('application/json')) {
-        return rawBody ? JSON.parse(rawBody) as Record<string, any> : {}
+        return rawBody ? JSON.parse(rawBody) as Record<string, unknown> : {}
       }
 
       if (
@@ -154,7 +154,7 @@ export class SlackAdapter implements NotificationAdapter {
         const payloadParam = params.get('payload')
         if (payloadParam) {
           try {
-            return JSON.parse(payloadParam) as Record<string, any>
+            return JSON.parse(payloadParam) as Record<string, unknown>
           } catch {
             // fall through to parsed params object
           }
@@ -167,7 +167,7 @@ export class SlackAdapter implements NotificationAdapter {
       }
 
       try {
-        return JSON.parse(rawBody) as Record<string, any>
+        return JSON.parse(rawBody) as Record<string, unknown>
       } catch {
         return { text: rawBody }
       }

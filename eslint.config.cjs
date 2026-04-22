@@ -82,9 +82,7 @@ module.exports = [
   },
   {
     files: [
-      "packages/notifications/src/**/*.ts",
       "packages/plugin-sdk/src/**/*.ts",
-      "packages/runtime-hono/src/**/*.ts",
       "packages/runtime-node/src/**/*.ts",
       "packages/runtime-simulator/src/**/*.ts",
       "packages/runtime-worker/src/**/*.ts",
