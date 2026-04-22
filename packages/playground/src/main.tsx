@@ -1444,7 +1444,7 @@ function GettingStartedPage({ onNavigate }: { onNavigate: (path: string) => void
         <a href="/" onClick={(event) => handleLink(event, '/', onNavigate)}>
           Browse playground examples
         </a>
-        <a href="https://github.com/zebric/zebric">GitHub repository</a>
+        <a href="https://github.com/zapcirclehq/zebric">GitHub repository</a>
         <a href="https://docs.zebric.dev/getting-started/quick-start/">Quickstart docs</a>
         <a href="https://docs.zebric.dev/building/blueprint/">Blueprint guide</a>
       </section>
@@ -1494,7 +1494,7 @@ function Footer({ onNavigate }: { onNavigate: (path: string) => void }) {
         Playground
       </a>
       <a href="https://docs.zebric.dev/">Docs</a>
-      <a href="https://github.com/zebric/zebric">GitHub</a>
+      <a href="https://github.com/zapcirclehq/zebric">GitHub</a>
     </footer>
   )
 }
