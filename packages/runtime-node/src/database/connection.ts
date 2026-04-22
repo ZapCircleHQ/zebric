@@ -137,7 +137,11 @@ export class DatabaseConnection {
       if (!this.db) {
         return false
       }
-      this.getSession().run(sql`SELECT 1`)
+      if (this.config.type === 'postgres') {
+        await this.getSession().execute(sql`SELECT 1`)
+      } else {
+        this.getSession().run(sql`SELECT 1`)
+      }
       return true
     } catch (error) {
       console.error('Database health check failed:', error)
@@ -286,10 +290,10 @@ export class DatabaseConnection {
       return
     }
 
-    this.ensureMigrationsTable()
+    await this.ensureMigrationsTable()
 
     const hash = createHash('sha256').update(tag).update(statements.join('\n')).digest('hex')
-    if (this.migrationAlreadyApplied(hash)) {
+    if (await this.migrationAlreadyApplied(hash)) {
       return
     }
 
@@ -303,16 +307,16 @@ export class DatabaseConnection {
       },
     ]
 
-    this.getDialect().migrate(migrations, this.getSession(), { migrationsTable: this.migrationsTable })
+    await this.getDialect().migrate(migrations, this.getSession(), { migrationsTable: this.migrationsTable })
   }
 
-  private ensureMigrationsTable(): void {
+  private async ensureMigrationsTable(): Promise<void> {
     if (this.migrationsInitialized) {
       return
     }
 
     if (this.config.type === 'postgres') {
-      this.getSession().execute(sql`
+      await this.getSession().execute(sql`
         CREATE TABLE IF NOT EXISTS ${sql.raw(this.migrationsTable)} (
           id SERIAL PRIMARY KEY,
           hash TEXT NOT NULL UNIQUE,
@@ -332,7 +336,15 @@ export class DatabaseConnection {
     this.migrationsInitialized = true
   }
 
-  private migrationAlreadyApplied(hash: string): boolean {
+  private async migrationAlreadyApplied(hash: string): Promise<boolean> {
+    if (this.config.type === 'postgres') {
+      const existing = await this.getSession().execute(
+        sql`SELECT 1 FROM ${sql.raw(this.migrationsTable)} WHERE hash = ${hash} LIMIT 1`
+      )
+      const rows = Array.isArray(existing) ? existing : existing?.rows
+      return Array.isArray(rows) && rows.length > 0
+    }
+
     const existing = this.getSession().values(
       sql`SELECT 1 FROM ${sql.raw(this.migrationsTable)} WHERE hash = ${hash} LIMIT 1`
     )

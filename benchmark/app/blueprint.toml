@@ -1,0 +1,528 @@
+version = "0.1.0"
+
+[project]
+name = "The Big Zebra"
+version = "0.1.0"
+description = "Internal benchmark application for Zebric."
+
+[project.runtime]
+min_version = "0.1.0"
+
+[entity.Team]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.User]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "teamId", type = "Ref", ref = "Team.id", required = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", unique = true, required = true },
+  { name = "role", type = "Enum", values = ["operator", "reviewer", "manager", "analyst"], default = "operator" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.User.relations]
+team = { type = "belongsTo", entity = "Team", foreign_key = "teamId" }
+
+[entity.Request]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "teamId", type = "Ref", ref = "Team.id", required = true },
+  { name = "createdByUserId", type = "Ref", ref = "User.id", required = true },
+  { name = "assignedToUserId", type = "Ref", ref = "User.id" },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["new", "triage", "in_progress", "awaiting_approval", "approved", "rejected", "done"], default = "new" },
+  { name = "priority", type = "Enum", values = ["low", "normal", "high", "critical"], default = "normal" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Request.relations]
+team = { type = "belongsTo", entity = "Team", foreign_key = "teamId" }
+createdBy = { type = "belongsTo", entity = "User", foreign_key = "createdByUserId" }
+assignedTo = { type = "belongsTo", entity = "User", foreign_key = "assignedToUserId" }
+
+[entity.RequestComment]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "authorUserId", type = "Ref", ref = "User.id", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.RequestComment.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+author = { type = "belongsTo", entity = "User", foreign_key = "authorUserId" }
+
+[entity.ApprovalStep]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "approverUserId", type = "Ref", ref = "User.id", required = true },
+  { name = "stepOrder", type = "Integer", required = true },
+  { name = "status", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending" },
+  { name = "completedAt", type = "DateTime" }
+]
+
+[entity.ApprovalStep.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+approver = { type = "belongsTo", entity = "User", foreign_key = "approverUserId" }
+
+[entity.WorkflowRun]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "workflowType", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["pending", "running", "completed", "failed"], default = "pending" },
+  { name = "startedAt", type = "DateTime", default = "now" },
+  { name = "completedAt", type = "DateTime" },
+  { name = "claimedBy", type = "Text" },
+  { name = "claimedAt", type = "DateTime" },
+  { name = "attempts", type = "Integer", default = 0 },
+  { name = "payload", type = "JSON" }
+]
+
+[entity.WorkflowRun.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+
+[entity.WebhookEvent]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id" },
+  { name = "source", type = "Text", required = true },
+  { name = "eventType", type = "Text", required = true },
+  { name = "payload", type = "JSON" },
+  { name = "deliveryKey", type = "Text", required = true },
+  { name = "receivedAt", type = "DateTime", default = "now" },
+  { name = "processedAt", type = "DateTime" },
+  { name = "processingStatus", type = "Enum", values = ["pending", "processed", "duplicate", "failed"], default = "pending" }
+]
+
+[entity.Notification]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "recipientUserId", type = "Ref", ref = "User.id", required = true },
+  { name = "channel", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["pending", "delivered", "failed", "acknowledged"], default = "pending" },
+  { name = "payload", type = "JSON" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "deliveredAt", type = "DateTime" },
+  { name = "attempts", type = "Integer", default = 0 }
+]
+
+[entity.Notification.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+recipient = { type = "belongsTo", entity = "User", foreign_key = "recipientUserId" }
+
+[entity.AuditEvent]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "actorUserId", type = "Ref", ref = "User.id" },
+  { name = "eventType", type = "Text", required = true },
+  { name = "payload", type = "JSON" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.AuditEvent.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+actor = { type = "belongsTo", entity = "User", foreign_key = "actorUserId" }
+
+[entity.Tag]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "name", type = "Text", required = true }
+]
+
+[entity.RequestTag]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "tagId", type = "Ref", ref = "Tag.id", required = true }
+]
+
+[entity.RequestTag.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+tag = { type = "belongsTo", entity = "Tag", foreign_key = "tagId" }
+
+[entity.ExternalReference]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "Request.id", required = true },
+  { name = "provider", type = "Text", required = true },
+  { name = "externalId", type = "Text", required = true },
+  { name = "url", type = "Text", required = true }
+]
+
+[entity.ExternalReference.relations]
+request = { type = "belongsTo", entity = "Request", foreign_key = "requestId" }
+
+[page."/"]
+title = "Big Zebra"
+auth = "none"
+layout = "dashboard"
+
+[page."/".query.recentRequests]
+entity = "Request"
+orderBy = { updatedAt = "desc" }
+limit = 25
+include = ["team", "assignedTo"]
+
+[page."/".query.pendingApprovals]
+entity = "ApprovalStep"
+where = { status = "pending" }
+limit = 25
+include = ["request", "approver"]
+
+[page."/requests"]
+title = "Requests"
+auth = "none"
+layout = "list"
+
+[page."/requests".query.requests]
+entity = "Request"
+orderBy = { updatedAt = "desc" }
+limit = 200
+include = ["team", "assignedTo", "createdBy"]
+
+[page."/requests/open"]
+title = "Open Requests"
+auth = "none"
+layout = "list"
+
+[page."/requests/open".query.requests]
+entity = "Request"
+where = { status = "in_progress" }
+orderBy = { updatedAt = "desc" }
+limit = 200
+include = ["team", "assignedTo", "createdBy"]
+
+[page."/requests/high-priority"]
+title = "High Priority Requests"
+auth = "none"
+layout = "list"
+
+[page."/requests/high-priority".query.requests]
+entity = "Request"
+where = { priority = "high" }
+orderBy = { updatedAt = "desc" }
+limit = 200
+include = ["team", "assignedTo"]
+
+[page."/teams/:id/requests"]
+title = "Team Requests"
+auth = "none"
+layout = "list"
+
+[page."/teams/:id/requests".query.requests]
+entity = "Request"
+where = { teamId = "$params.id" }
+orderBy = { updatedAt = "desc" }
+limit = 200
+include = ["assignedTo", "createdBy"]
+
+[page."/requests/:id"]
+title = "Request Detail"
+auth = "none"
+layout = "detail"
+
+[page."/requests/:id".query.request]
+entity = "Request"
+where = { id = "$params.id" }
+include = ["team", "assignedTo", "createdBy"]
+
+[page."/requests/:id".query.comments]
+entity = "RequestComment"
+where = { requestId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+include = ["author"]
+
+[page."/requests/:id".query.approvals]
+entity = "ApprovalStep"
+where = { requestId = "$params.id" }
+orderBy = { stepOrder = "asc" }
+limit = 20
+include = ["approver"]
+
+[page."/requests/:id".query.audit]
+entity = "AuditEvent"
+where = { requestId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+include = ["actor"]
+
+[page."/notifications/inbox"]
+title = "Inbox"
+auth = "none"
+layout = "list"
+
+[page."/notifications/inbox".query.notifications]
+entity = "Notification"
+orderBy = { createdAt = "desc" }
+limit = 200
+include = ["request", "recipient"]
+
+[workflow.CreateBenchmarkRequest]
+trigger = { manual = true }
+
+[[workflow.CreateBenchmarkRequest.steps]]
+type = "query"
+entity = "Request"
+action = "create"
+assignTo = "request"
+[workflow.CreateBenchmarkRequest.steps.data]
+teamId = "{{ variables.payload.teamId }}"
+createdByUserId = "{{ variables.payload.createdByUserId }}"
+assignedToUserId = "{{ variables.payload.assignedToUserId }}"
+title = "{{ variables.payload.title }}"
+description = "{{ variables.payload.description }}"
+priority = "{{ variables.payload.priority }}"
+status = "{{ variables.payload.status }}"
+
+[[workflow.CreateBenchmarkRequest.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.CreateBenchmarkRequest.steps.data]
+requestId = "{{ variables.request.id }}"
+actorUserId = "{{ variables.payload.createdByUserId }}"
+eventType = "request.created"
+payload = { source = "benchmark_api" }
+
+[[workflow.CreateBenchmarkRequest.steps]]
+type = "query"
+entity = "WorkflowRun"
+action = "create"
+[workflow.CreateBenchmarkRequest.steps.data]
+requestId = "{{ variables.request.id }}"
+workflowType = "request_created"
+status = "pending"
+payload = { source = "benchmark_api" }
+
+[[workflow.CreateBenchmarkRequest.steps]]
+type = "query"
+entity = "ApprovalStep"
+action = "create"
+[workflow.CreateBenchmarkRequest.steps.data]
+requestId = "{{ variables.request.id }}"
+approverUserId = "{{ variables.payload.assignedToUserId }}"
+stepOrder = 1
+status = "pending"
+
+[workflow.AddBenchmarkComment]
+trigger = { manual = true }
+
+[[workflow.AddBenchmarkComment.steps]]
+type = "query"
+entity = "RequestComment"
+action = "create"
+[workflow.AddBenchmarkComment.steps.data]
+requestId = "{{ variables.record.id }}"
+authorUserId = "{{ variables.payload.authorUserId }}"
+body = "{{ variables.payload.body }}"
+
+[[workflow.AddBenchmarkComment.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.AddBenchmarkComment.steps.data]
+requestId = "{{ variables.record.id }}"
+actorUserId = "{{ variables.payload.authorUserId }}"
+eventType = "comment.added"
+payload = { source = "benchmark_api" }
+
+[workflow.AssignBenchmarkRequest]
+trigger = { manual = true }
+
+[[workflow.AssignBenchmarkRequest.steps]]
+type = "query"
+entity = "Request"
+action = "update"
+[workflow.AssignBenchmarkRequest.steps.where]
+id = "{{ variables.record.id }}"
+[workflow.AssignBenchmarkRequest.steps.data]
+assignedToUserId = "{{ variables.payload.assignedToUserId }}"
+
+[[workflow.AssignBenchmarkRequest.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.AssignBenchmarkRequest.steps.data]
+requestId = "{{ variables.record.id }}"
+actorUserId = "{{ variables.payload.assignedToUserId }}"
+eventType = "request.assigned"
+payload = { source = "benchmark_api" }
+
+[[workflow.AssignBenchmarkRequest.steps]]
+type = "query"
+entity = "Notification"
+action = "create"
+[workflow.AssignBenchmarkRequest.steps.data]
+requestId = "{{ variables.record.id }}"
+recipientUserId = "{{ variables.payload.assignedToUserId }}"
+channel = "http"
+status = "pending"
+payload = { type = "assignment" }
+
+[workflow.ChangeBenchmarkStatus]
+trigger = { manual = true }
+
+[[workflow.ChangeBenchmarkStatus.steps]]
+type = "query"
+entity = "Request"
+action = "update"
+[workflow.ChangeBenchmarkStatus.steps.where]
+id = "{{ variables.record.id }}"
+[workflow.ChangeBenchmarkStatus.steps.data]
+status = "{{ variables.payload.status }}"
+
+[[workflow.ChangeBenchmarkStatus.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.ChangeBenchmarkStatus.steps.data]
+requestId = "{{ variables.record.id }}"
+actorUserId = "{{ variables.record.assignedToUserId }}"
+eventType = "request.status_changed"
+payload = { to = "{{ variables.payload.status }}" }
+
+[[workflow.ChangeBenchmarkStatus.steps]]
+type = "query"
+entity = "WorkflowRun"
+action = "create"
+[workflow.ChangeBenchmarkStatus.steps.data]
+requestId = "{{ variables.record.id }}"
+workflowType = "status_changed"
+status = "pending"
+payload = { to = "{{ variables.payload.status }}" }
+
+[workflow.CompleteBenchmarkApproval]
+trigger = { manual = true }
+
+[[workflow.CompleteBenchmarkApproval.steps]]
+type = "query"
+entity = "ApprovalStep"
+action = "update"
+[workflow.CompleteBenchmarkApproval.steps.where]
+id = "{{ variables.record.id }}"
+[workflow.CompleteBenchmarkApproval.steps.data]
+status = "{{ variables.payload.status }}"
+completedAt = "now"
+
+[[workflow.CompleteBenchmarkApproval.steps]]
+type = "query"
+entity = "AuditEvent"
+action = "create"
+[workflow.CompleteBenchmarkApproval.steps.data]
+requestId = "{{ variables.record.requestId }}"
+actorUserId = "{{ variables.record.approverUserId }}"
+eventType = "approval.completed"
+payload = { status = "{{ variables.payload.status }}" }
+
+[[workflow.CompleteBenchmarkApproval.steps]]
+type = "query"
+entity = "WorkflowRun"
+action = "create"
+[workflow.CompleteBenchmarkApproval.steps.data]
+requestId = "{{ variables.record.requestId }}"
+workflowType = "approval_completed"
+status = "pending"
+payload = { status = "{{ variables.payload.status }}" }
+
+[workflow.AcknowledgeBenchmarkNotification]
+trigger = { manual = true }
+
+[[workflow.AcknowledgeBenchmarkNotification.steps]]
+type = "query"
+entity = "Notification"
+action = "update"
+[workflow.AcknowledgeBenchmarkNotification.steps.where]
+id = "{{ variables.record.id }}"
+[workflow.AcknowledgeBenchmarkNotification.steps.data]
+status = "acknowledged"
+
+[workflow.IngestBenchmarkWebhook]
+trigger = { manual = true }
+
+[[workflow.IngestBenchmarkWebhook.steps]]
+type = "query"
+entity = "WebhookEvent"
+action = "create"
+[workflow.IngestBenchmarkWebhook.steps.data]
+requestId = "{{ variables.payload.requestId }}"
+source = "{{ variables.payload.source }}"
+eventType = "{{ variables.payload.eventType }}"
+payload = "{{ variables.payload.payload }}"
+deliveryKey = "{{ variables.payload.deliveryKey }}"
+processingStatus = "pending"
+
+[skill.big_zebra]
+description = "Big Zebra benchmark control surface."
+
+[[skill.big_zebra.actions]]
+name = "create_request"
+method = "POST"
+path = "/api/benchmark/requests"
+entity = "Request"
+workflow = "CreateBenchmarkRequest"
+body = { teamId = "Text", createdByUserId = "Text", assignedToUserId = "Text", title = "Text", description = "LongText", priority = "Enum", status = "Enum" }
+
+[[skill.big_zebra.actions]]
+name = "add_comment"
+method = "POST"
+path = "/api/benchmark/requests/{id}/comments"
+entity = "Request"
+workflow = "AddBenchmarkComment"
+body = { authorUserId = "Text", body = "LongText" }
+
+[[skill.big_zebra.actions]]
+name = "assign_request"
+method = "POST"
+path = "/api/benchmark/requests/{id}/assign"
+entity = "Request"
+workflow = "AssignBenchmarkRequest"
+body = { assignedToUserId = "Text" }
+
+[[skill.big_zebra.actions]]
+name = "change_status"
+method = "POST"
+path = "/api/benchmark/requests/{id}/status"
+entity = "Request"
+workflow = "ChangeBenchmarkStatus"
+body = { status = "Enum" }
+
+[[skill.big_zebra.actions]]
+name = "complete_approval"
+method = "POST"
+path = "/api/benchmark/approvals/{id}/complete"
+entity = "ApprovalStep"
+workflow = "CompleteBenchmarkApproval"
+body = { status = "Enum" }
+
+[[skill.big_zebra.actions]]
+name = "ack_notification"
+method = "POST"
+path = "/api/benchmark/notifications/{id}/ack"
+entity = "Notification"
+workflow = "AcknowledgeBenchmarkNotification"
+body = {}
+
+[[skill.big_zebra.actions]]
+name = "ingest_webhook"
+method = "POST"
+path = "/api/benchmark/webhooks"
+entity = "WebhookEvent"
+workflow = "IngestBenchmarkWebhook"
+body = { requestId = "Text", source = "Text", eventType = "Text", payload = "JSON", deliveryKey = "Text" }
+
+[ui]
+render_mode = "server"
+theme = "default"

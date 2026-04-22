@@ -1,0 +1,492 @@
+x-benchmark-env: &benchmark-env
+  BENCHMARK_PROFILE: ${BENCHMARK_PROFILE:-big-zebra-v1}
+  BENCHMARK_DURATION: ${BENCHMARK_DURATION:-300}
+  BENCHMARK_CONCURRENCY: ${BENCHMARK_CONCURRENCY:-50}
+  BENCHMARK_SEED_TIER: ${BENCHMARK_SEED_TIER:-smoke}
+  DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+  NOTIFICATION_SINK_URL: http://notification-sink:3210
+
+x-benchmark-image: &benchmark-image
+  image: zebric-big-zebra:local
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: zebric
+      POSTGRES_PASSWORD: zebric
+      POSTGRES_DB: big_zebra
+    ports:
+      - "5434:5432"
+    volumes:
+      - benchmark_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zebric -d big_zebra"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  notification-sink:
+    <<: *benchmark-image
+    command: ["node", "benchmark/cli.mjs", "notification-sink", "--host=0.0.0.0", "--port=3210", "--mode=${NOTIFICATION_MODE:-normal}"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3210/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  webhook-simulator:
+    <<: *benchmark-image
+    command: ["node", "benchmark/cli.mjs", "webhook-simulator", "--host=0.0.0.0", "--port=3220"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3220/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  benchmark-seed-single:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "seed", "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}", "--tier=${BENCHMARK_SEED_TIER:-smoke}", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["compose-single"]
+
+  zebric-app-single:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-single:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-single"]
+
+  zebric-worker-single:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-single:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-single"]
+
+  nginx-single:
+    image: nginx:1.27-alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.single.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      zebric-app-single:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-single"]
+
+  benchmark-runner-single:
+    <<: *benchmark-image
+    volumes:
+      - ./results:/workspace/benchmark/results
+    environment:
+      <<: *benchmark-env
+      BENCHMARK_BASE_URL: http://nginx-single:8080
+    command: [
+      "node",
+      "benchmark/cli.mjs",
+      "run",
+      "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}",
+      "--duration=${BENCHMARK_DURATION:-300}",
+      "--concurrency=${BENCHMARK_CONCURRENCY:-50}",
+      "--noSeed=true",
+      "--seedTier=${BENCHMARK_SEED_TIER:-smoke}",
+      "--topology=compose-single",
+      "--baseUrl=http://nginx-single:8080",
+      "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}",
+      "--sinkUrl=http://notification-sink:3210"
+    ]
+    depends_on:
+      benchmark-seed-single:
+        condition: service_completed_successfully
+      nginx-single:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      zebric-worker-single:
+        condition: service_healthy
+      webhook-simulator:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    profiles: ["compose-single"]
+
+  benchmark-seed-multi:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "seed", "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}", "--tier=${BENCHMARK_SEED_TIER:-smoke}", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["compose-multi"]
+
+  zebric-app-multi-1:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  zebric-app-multi-2:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  zebric-app-multi-3:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  zebric-worker-multi-1:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  zebric-worker-multi-2:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  nginx-multi:
+    image: nginx:1.27-alpine
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./nginx.multi.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      zebric-app-multi-1:
+        condition: service_healthy
+      zebric-app-multi-2:
+        condition: service_healthy
+      zebric-app-multi-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-multi"]
+
+  benchmark-runner-multi:
+    <<: *benchmark-image
+    volumes:
+      - ./results:/workspace/benchmark/results
+    environment:
+      <<: *benchmark-env
+      BENCHMARK_BASE_URL: http://nginx-multi:8080
+    command: [
+      "node",
+      "benchmark/cli.mjs",
+      "run",
+      "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}",
+      "--duration=${BENCHMARK_DURATION:-300}",
+      "--concurrency=${BENCHMARK_CONCURRENCY:-50}",
+      "--noSeed=true",
+      "--seedTier=${BENCHMARK_SEED_TIER:-smoke}",
+      "--topology=compose-multi",
+      "--baseUrl=http://nginx-multi:8080",
+      "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}",
+      "--sinkUrl=http://notification-sink:3210"
+    ]
+    depends_on:
+      benchmark-seed-multi:
+        condition: service_completed_successfully
+      nginx-multi:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      zebric-worker-multi-1:
+        condition: service_healthy
+      zebric-worker-multi-2:
+        condition: service_healthy
+      webhook-simulator:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    profiles: ["compose-multi"]
+
+  benchmark-seed-worker-heavy:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "seed", "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}", "--tier=${BENCHMARK_SEED_TIER:-smoke}", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["compose-worker-heavy"]
+
+  zebric-app-worker-heavy-1:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  zebric-app-worker-heavy-2:
+    <<: *benchmark-image
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
+    command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  zebric-worker-heavy-1:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  zebric-worker-heavy-2:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  zebric-worker-heavy-3:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  zebric-worker-heavy-4:
+    <<: *benchmark-image
+    environment:
+      <<: *benchmark-env
+    command: ["node", "benchmark/cli.mjs", "worker", "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}", "--sinkUrl=http://notification-sink:3210", "--host=0.0.0.0", "--healthPort=3300"]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3300/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  nginx-worker-heavy:
+    image: nginx:1.27-alpine
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./nginx.worker-heavy.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      zebric-app-worker-heavy-1:
+        condition: service_healthy
+      zebric-app-worker-heavy-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    profiles: ["compose-worker-heavy"]
+
+  benchmark-runner-worker-heavy:
+    <<: *benchmark-image
+    volumes:
+      - ./results:/workspace/benchmark/results
+    environment:
+      <<: *benchmark-env
+      BENCHMARK_BASE_URL: http://nginx-worker-heavy:8080
+    command: [
+      "node",
+      "benchmark/cli.mjs",
+      "run",
+      "--profile=${BENCHMARK_PROFILE:-big-zebra-v1}",
+      "--duration=${BENCHMARK_DURATION:-300}",
+      "--concurrency=${BENCHMARK_CONCURRENCY:-50}",
+      "--noSeed=true",
+      "--seedTier=${BENCHMARK_SEED_TIER:-smoke}",
+      "--topology=compose-worker-heavy",
+      "--baseUrl=http://nginx-worker-heavy:8080",
+      "--databaseUrl=${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}",
+      "--sinkUrl=http://notification-sink:3210"
+    ]
+    depends_on:
+      benchmark-seed-worker-heavy:
+        condition: service_completed_successfully
+      nginx-worker-heavy:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      zebric-worker-heavy-1:
+        condition: service_healthy
+      zebric-worker-heavy-2:
+        condition: service_healthy
+      zebric-worker-heavy-3:
+        condition: service_healthy
+      zebric-worker-heavy-4:
+        condition: service_healthy
+      webhook-simulator:
+        condition: service_healthy
+      notification-sink:
+        condition: service_healthy
+    profiles: ["compose-worker-heavy"]
+
+volumes:
+  benchmark_postgres:

@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs'
 import { Command } from 'commander'
-import { devCommand, validateCommand } from './commands/index.js'
+import { benchmarkCommand, devCommand, validateCommand } from './commands/index.js'
 
 function getCliVersion(): string {
   const packageJsonUrl = new URL('../package.json', import.meta.url)
@@ -49,6 +49,15 @@ program
     await validateCommand({
       blueprint: options.blueprint,
     })
+  })
+
+program
+  .command('benchmark')
+  .description('Run the internal Big Zebra benchmark harness')
+  .allowUnknownOption(true)
+  .argument('[args...]')
+  .action(async (args: string[] = []) => {
+    await benchmarkCommand({ args })
   })
 
 // Parse arguments
