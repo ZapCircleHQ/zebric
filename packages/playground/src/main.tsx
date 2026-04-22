@@ -1,4 +1,4 @@
-import React from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ZebricSimulator } from '@zebric/react-simulator'
 import { BlueprintParser } from '@zebric/runtime-core'
@@ -33,9 +33,9 @@ const docsLinks = {
 }
 
 function App() {
-  const [path, setPath] = React.useState(window.location.pathname)
+  const [path, setPath] = useState(window.location.pathname)
 
-  React.useEffect(() => {
+  useEffect(() => {
     const onPopState = () => setPath(window.location.pathname)
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -104,7 +104,7 @@ function NavLink({
 }: {
   href: string
   path: string
-  children: React.ReactNode
+  children: ReactNode
   onNavigate: (path: string) => void
 }) {
   return (
@@ -120,7 +120,7 @@ function NavLink({
 
 function ExamplesPage({ onNavigate }: { onNavigate: (path: string) => void }) {
   const tags = Array.from(new Set(examples.flatMap((example) => example.tags))).sort()
-  const [selectedTag, setSelectedTag] = React.useState('all')
+  const [selectedTag, setSelectedTag] = useState('all')
   const visibleExamples =
     selectedTag === 'all'
       ? examples
@@ -172,16 +172,16 @@ function ExampleDetailPage({
   onNavigate: (path: string) => void
 }) {
   const example = examples.find((candidate) => candidate.slug === slug)
-  const [blueprintTab, setBlueprintTab] = React.useState<BlueprintTab>('editor')
-  const [blueprintDraft, setBlueprintDraft] = React.useState(
+  const [blueprintTab, setBlueprintTab] = useState<BlueprintTab>('editor')
+  const [blueprintDraft, setBlueprintDraft] = useState(
     () => examples.find((candidate) => candidate.slug === slug)?.blueprintToml || ''
   )
-  const [copyStatus, setCopyStatus] = React.useState('')
-  const [demoMode, setDemoMode] = React.useState(false)
-  const [demoStepIndex, setDemoStepIndex] = React.useState(0)
+  const [copyStatus, setCopyStatus] = useState('')
+  const [demoMode, setDemoMode] = useState(false)
+  const [demoStepIndex, setDemoStepIndex] = useState(0)
   const originalBlueprint = example?.blueprintToml || ''
 
-  React.useEffect(() => {
+  useEffect(() => {
     setBlueprintDraft(originalBlueprint)
     setBlueprintTab('editor')
     setCopyStatus('')
@@ -189,7 +189,7 @@ function ExampleDetailPage({
     setDemoStepIndex(0)
   }, [originalBlueprint])
 
-  const parsedDraft = React.useMemo<ParsedBlueprintDraft>(() => {
+  const parsedDraft = useMemo<ParsedBlueprintDraft>(() => {
     if (!blueprintDraft) return { error: null }
 
     try {
@@ -198,7 +198,7 @@ function ExampleDetailPage({
       return { error: error instanceof Error ? error.message : String(error) }
     }
   }, [blueprintDraft, slug])
-  const validationReport = React.useMemo(
+  const validationReport = useMemo(
     () => createValidationReport(parsedDraft, blueprintDraft),
     [blueprintDraft, parsedDraft]
   )
@@ -515,19 +515,19 @@ function BlueprintCodeEditor({
   onChange: (value: string) => void
   hasError: boolean
 }) {
-  const hostRef = React.useRef<HTMLDivElement | null>(null)
-  const viewRef = React.useRef<{
+  const hostRef = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<{
     state: { doc: { toString(): string } }
     dispatch(update: { changes: { from: number; to: number; insert: string } }): void
     destroy(): void
   } | null>(null)
-  const onChangeRef = React.useRef(onChange)
+  const onChangeRef = useRef(onChange)
 
-  React.useEffect(() => {
+  useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!hostRef.current) return
     let isMounted = true
     const parent = hostRef.current
@@ -600,7 +600,7 @@ function BlueprintCodeEditor({
     }
   }, [])
 
-  React.useEffect(() => {
+  useEffect(() => {
     const view = viewRef.current
     if (!view) return
 
@@ -628,7 +628,7 @@ function StructuredBlueprint({
   example: PlaygroundExample
   blueprintToml: string
 }) {
-  const parsed = React.useMemo(() => {
+  const parsed = useMemo(() => {
     try {
       return { blueprint: parser.parse(blueprintToml, 'toml', `${example.slug}.toml`) }
     } catch (error) {
@@ -804,10 +804,10 @@ function StructuredBlueprint({
               {page.queries ? (
                 <dl className="query-list">
                   {Object.entries(page.queries).map(([queryName, query]) => (
-                    <React.Fragment key={queryName}>
+                    <Fragment key={queryName}>
                       <dt>{queryName}</dt>
                       <dd>{query.entity}</dd>
-                    </React.Fragment>
+                    </Fragment>
                   ))}
                 </dl>
               ) : null}
@@ -931,14 +931,14 @@ function RouteFlow({ blueprint }: { blueprint: Blueprint }) {
     <section className="route-flow" aria-label="Route flow map">
       <div className="route-flow__rail">
         {pagesWithActions.map((page, index) => (
-          <React.Fragment key={page.path}>
+          <Fragment key={page.path}>
             <article>
               <span>{page.path}</span>
               <strong>{page.title}</strong>
               <small>{page.layout}</small>
             </article>
             {index < pagesWithActions.length - 1 ? <div className="route-flow__connector" /> : null}
-          </React.Fragment>
+          </Fragment>
         ))}
       </div>
       {routeEdges.length ? (
@@ -1266,7 +1266,7 @@ type DiffRow =
   | { type: 'add'; originalLine: null; draftLine: number; text: string }
 
 function BlueprintDiff({ original, draft }: { original: string; draft: string }) {
-  const rows = React.useMemo(() => createLineDiff(original, draft), [original, draft])
+  const rows = useMemo(() => createLineDiff(original, draft), [original, draft])
   const changedRows = rows.filter((row) => row.type !== 'same').length
 
   return (
@@ -1477,7 +1477,7 @@ function PageIntro({ eyebrow, title, copy }: { eyebrow: string; title: string; c
   )
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel">
       <h2>{title}</h2>
