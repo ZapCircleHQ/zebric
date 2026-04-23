@@ -1,5 +1,15 @@
 import { nowIso, sleep } from '../lib/runtime.mjs'
 
+function parseJson(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  try {
+    return JSON.parse(value)
+  } catch {
+    return {}
+  }
+}
+
 function createSqlHelpers(connection) {
   const sqlite = connection.getSQLite()
   const postgres = connection.getPostgres()
@@ -80,7 +90,7 @@ export function createNotificationPoller({
                 id: row.id,
                 requestId: row.request_id,
                 recipientUserId: row.recipient_user_id,
-                payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+                payload: parseJson(row.payload),
               }),
             })
             if (response.ok) {

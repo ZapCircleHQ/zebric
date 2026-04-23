@@ -10,7 +10,7 @@
 
 import type { Blueprint } from '@zebric/runtime-core'
 import type { Logger } from '@zebric/observability'
-import type { EngineConfig } from '../types/index.js'
+import type { DatabaseConfig, EngineConfig } from '../types/index.js'
 import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
 import { createBetterAuthProvider, type AuthProviderConfig } from '../auth/index.js'
@@ -131,13 +131,23 @@ export class SubsystemInitializer {
    * Initialize database
    */
   async initializeDatabase(): Promise<{ database: DatabaseConnection; queryExecutor: QueryExecutor }> {
-    const dbPath = this.config.dev?.dbPath || './data/app.db'
+    const databaseUrl = this.config.database?.url
+    const isPostgresUrl =
+      databaseUrl?.startsWith('postgres://') || databaseUrl?.startsWith('postgresql://')
+    const databaseConfig: DatabaseConfig = databaseUrl
+      ? {
+          type: isPostgresUrl ? 'postgres' : 'sqlite',
+          ...(isPostgresUrl
+            ? { url: databaseUrl }
+            : { filename: databaseUrl.replace('sqlite://', '') }),
+        }
+      : {
+          type: 'sqlite' as const,
+          filename: this.config.dev?.dbPath || './data/app.db',
+        }
 
     this.database = new DatabaseConnection(
-      {
-        type: 'sqlite',
-        filename: dbPath,
-      },
+      databaseConfig,
       this.blueprint
     )
 
@@ -145,7 +155,15 @@ export class SubsystemInitializer {
 
     this.queryExecutor = new QueryExecutor(this.database, undefined, this.metrics)
 
-    this.logger.info('Connected to SQLite database', { dbPath })
+    if (databaseConfig.type === 'postgres') {
+      this.logger.info('Connected to Postgres database', {
+        databaseUrl,
+      })
+    } else {
+      this.logger.info('Connected to SQLite database', {
+        dbPath: databaseConfig.filename,
+      })
+    }
 
     return {
       database: this.database,
