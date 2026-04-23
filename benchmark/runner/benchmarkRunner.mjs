@@ -27,6 +27,240 @@ const PROFILES = {
   'webhook-storm': profileWebhookStorm,
 }
 
+const TRACKED_ROUTE_METRICS = new Set([
+  '/',
+  '/requests',
+  '/requests/open',
+  '/requests/high-priority',
+  '/api/requests',
+  '/api/requestcomments',
+  '/api/webhookevents',
+  '/api/workflowruns',
+  '/api/auditevents',
+  '/api/approvalsteps',
+  '/api/notifications',
+])
+
+function parseMetricLabels(input) {
+  const labels = {}
+  if (!input) return labels
+
+  const pattern = /(\w+)="([^"]*)"/g
+  let match
+  while ((match = pattern.exec(input))) {
+    labels[match[1]] = match[2]
+  }
+  return labels
+}
+
+function parsePrometheusMetrics(text) {
+  const metrics = []
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const match = /^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{([^}]*)\})?\s+([^\s]+)$/.exec(trimmed)
+    if (!match) continue
+    const value = Number(match[3])
+    if (!Number.isFinite(value)) continue
+    metrics.push({
+      name: match[1],
+      labels: parseMetricLabels(match[2]),
+      value,
+    })
+  }
+  return metrics
+}
+
+function metricsByKey(entries) {
+  return new Map(entries.map((entry) => [
+    `${entry.name}|${JSON.stringify(entry.labels)}`,
+    entry.value,
+  ]))
+}
+
+function metricValue(entries, name, labels = {}) {
+  return entries.find((entry) =>
+    entry.name === name
+    && JSON.stringify(entry.labels) === JSON.stringify(labels)
+  )?.value ?? 0
+}
+
+function diffMetricEntries(startEntries, endEntries, predicate) {
+  const startMap = metricsByKey(startEntries.filter(predicate))
+  const endMap = metricsByKey(endEntries.filter(predicate))
+  const keys = new Set([...startMap.keys(), ...endMap.keys()])
+  return Array.from(keys)
+    .map((key) => {
+      const [, labelsJson] = key.split('|')
+      return {
+        labels: JSON.parse(labelsJson),
+        delta: (endMap.get(key) ?? 0) - (startMap.get(key) ?? 0),
+      }
+    })
+    .filter((entry) => entry.delta !== 0)
+}
+
+function summarizeAdminMetrics(entries) {
+  const requestRoutes = diffMetricEntries(
+    [],
+    entries,
+    (entry) => entry.name === 'zbl_requests_by_route_total' && TRACKED_ROUTE_METRICS.has(entry.labels.route)
+  )
+  const requestStatus = diffMetricEntries(
+    [],
+    entries,
+    (entry) => entry.name === 'zbl_requests_by_status_total'
+  )
+  const queryEntities = diffMetricEntries(
+    [],
+    entries,
+    (entry) => entry.name === 'zbl_query_duration_ms_count'
+  ).map((entry) => ({
+    entity: entry.labels.entity,
+    count: entry.delta,
+    totalMs: metricValue(entries, 'zbl_query_duration_ms_sum', { entity: entry.labels.entity }),
+  }))
+
+  return {
+    totalRequests: metricValue(entries, 'zbl_requests_total'),
+    requestDurationMs: {
+      count: metricValue(entries, 'zbl_request_duration_ms_count'),
+      sumMs: metricValue(entries, 'zbl_request_duration_ms_sum'),
+    },
+    requestsByRoute: Object.fromEntries(
+      requestRoutes
+        .sort((a, b) => a.labels.route.localeCompare(b.labels.route))
+        .map((entry) => [entry.labels.route, entry.delta])
+    ),
+    requestsByStatus: Object.fromEntries(
+      requestStatus
+        .sort((a, b) => a.labels.status.localeCompare(b.labels.status))
+        .map((entry) => [entry.labels.status, entry.delta])
+    ),
+    queryEntities: Object.fromEntries(
+      queryEntities
+        .sort((a, b) => a.entity.localeCompare(b.entity))
+        .map((entry) => [entry.entity, {
+          count: entry.count,
+          totalMs: Number(entry.totalMs.toFixed(3)),
+        }])
+    ),
+  }
+}
+
+function diffAdminMetricSummaries(startEntries, endEntries) {
+  const routeDeltas = diffMetricEntries(
+    startEntries,
+    endEntries,
+    (entry) => entry.name === 'zbl_requests_by_route_total' && TRACKED_ROUTE_METRICS.has(entry.labels.route)
+  )
+  const statusDeltas = diffMetricEntries(
+    startEntries,
+    endEntries,
+    (entry) => entry.name === 'zbl_requests_by_status_total'
+  )
+  const queryCounts = diffMetricEntries(
+    startEntries,
+    endEntries,
+    (entry) => entry.name === 'zbl_query_duration_ms_count'
+  )
+
+  return {
+    totalRequests: metricValue(endEntries, 'zbl_requests_total') - metricValue(startEntries, 'zbl_requests_total'),
+    requestDurationMs: {
+      count: metricValue(endEntries, 'zbl_request_duration_ms_count') - metricValue(startEntries, 'zbl_request_duration_ms_count'),
+      sumMs: Number((
+        metricValue(endEntries, 'zbl_request_duration_ms_sum') - metricValue(startEntries, 'zbl_request_duration_ms_sum')
+      ).toFixed(3)),
+    },
+    requestsByRoute: Object.fromEntries(
+      routeDeltas
+        .sort((a, b) => a.labels.route.localeCompare(b.labels.route))
+        .map((entry) => [entry.labels.route, entry.delta])
+    ),
+    requestsByStatus: Object.fromEntries(
+      statusDeltas
+        .sort((a, b) => a.labels.status.localeCompare(b.labels.status))
+        .map((entry) => [entry.labels.status, entry.delta])
+    ),
+    queryEntities: Object.fromEntries(
+      queryCounts
+        .sort((a, b) => a.labels.entity.localeCompare(b.labels.entity))
+        .map((entry) => {
+          const entity = entry.labels.entity
+          return [entity, {
+            count: entry.delta,
+            totalMs: Number((
+              metricValue(endEntries, 'zbl_query_duration_ms_sum', { entity })
+              - metricValue(startEntries, 'zbl_query_duration_ms_sum', { entity })
+            ).toFixed(3)),
+          }]
+        })
+    ),
+  }
+}
+
+function defaultAdminMetricsUrls(topology, port) {
+  if (topology === 'local') {
+    return [`http://127.0.0.1:${Number(port) + 30}/metrics`]
+  }
+  if (topology === 'compose-single') {
+    return ['http://zebric-app-single:3030/metrics']
+  }
+  if (topology === 'compose-multi') {
+    return [
+      'http://zebric-app-multi-1:3030/metrics',
+      'http://zebric-app-multi-2:3030/metrics',
+      'http://zebric-app-multi-3:3030/metrics',
+    ]
+  }
+  return []
+}
+
+function resolveAdminMetricsUrls(options, topology, port) {
+  const explicit = options.adminMetricsUrls
+    ?? options.adminMetricsUrl
+    ?? process.env.BENCHMARK_ADMIN_METRICS_URLS
+    ?? process.env.BENCHMARK_ADMIN_METRICS_URL
+
+  if (explicit) {
+    return String(explicit)
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  }
+
+  return defaultAdminMetricsUrls(topology, port)
+}
+
+async function scrapeAdminMetrics(urls) {
+  const results = []
+  for (const url of urls) {
+    try {
+      const response = await fetch(url)
+      if (!response.ok) {
+        results.push({ url, ok: false, status: response.status, error: `HTTP ${response.status}` })
+        continue
+      }
+      const text = await response.text()
+      const parsed = parsePrometheusMetrics(text)
+      results.push({
+        url,
+        ok: true,
+        summary: summarizeAdminMetrics(parsed),
+        parsed,
+      })
+    } catch (error) {
+      results.push({
+        url,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+  return results
+}
+
 async function loadCatalog(connection) {
   const sqlite = connection.getSQLite()
   if (sqlite) {
@@ -117,6 +351,7 @@ export async function runBenchmark(options = {}) {
   }
 
   const topology = options.topology ?? 'local'
+  const appPort = Number(options.port ?? 3200)
   const durationSeconds = Number(options.duration ?? profile.durationSeconds)
   const concurrency = Number(options.concurrency ?? profile.concurrency)
   const databaseUrl = options.databaseUrl
@@ -147,7 +382,7 @@ export async function runBenchmark(options = {}) {
       mode: options.notificationMode ?? 'normal',
     })
     localApp = await startLocalApp({
-      port: Number(options.port ?? 3200),
+      port: appPort,
       host: '127.0.0.1',
       databaseUrl,
     })
@@ -161,6 +396,7 @@ export async function runBenchmark(options = {}) {
   const { connection } = await openBenchmarkDatabase(databaseUrl)
   const catalog = await loadCatalog(connection)
   const backlogBaseline = await sampleBacklog(connection)
+  const adminMetricsUrls = resolveAdminMetricsUrls(options, topology, appPort)
   const csrfBootstrap = await fetch(`${baseUrl}/`)
   const setCookie = csrfBootstrap.headers.get('set-cookie') ?? ''
   const csrfToken = /csrf-token=([^;]+)/.exec(setCookie)?.[1]
@@ -189,6 +425,7 @@ export async function runBenchmark(options = {}) {
   const webhookProducer = createWebhookProducer(scenarioContext)
   const workflowPoller = createWorkflowPoller({ connection, metrics })
   const notificationPoller = createNotificationPoller({ connection, metrics, sinkUrl })
+  const adminMetricsStart = await scrapeAdminMetrics(adminMetricsUrls)
 
   let lastCpu = process.cpuUsage()
   let lastTick = process.hrtime.bigint()
@@ -226,6 +463,7 @@ export async function runBenchmark(options = {}) {
   running = false
   clearInterval(systemSampler)
   await Promise.allSettled([...loops, ...background])
+  const adminMetricsEnd = await scrapeAdminMetrics(adminMetricsUrls)
 
   const summary = summarizeMetrics(metrics)
   const verdict = buildVerdict(summary, profile, durationSeconds)
@@ -253,6 +491,16 @@ export async function runBenchmark(options = {}) {
       pendingNotificationCount: Math.max(0, summary.backlog.pendingNotificationCount - backlogBaseline.pendingNotificationCount),
       webhookBacklogCount: Math.max(0, summary.backlog.webhookBacklogCount - backlogBaseline.webhookBacklogCount),
     },
+    adminMetrics: adminMetricsUrls.length === 0 ? null : adminMetricsUrls.map((url) => {
+      const start = adminMetricsStart.find((entry) => entry.url === url)
+      const end = adminMetricsEnd.find((entry) => entry.url === url)
+      return {
+        url,
+        start: start?.ok ? start.summary : { ok: false, error: start?.error ?? 'not-scraped' },
+        end: end?.ok ? end.summary : { ok: false, error: end?.error ?? 'not-scraped' },
+        delta: start?.ok && end?.ok ? diffAdminMetricSummaries(start.parsed, end.parsed) : null,
+      }
+    }),
     errorRate: summary.errorRate,
     verdict: verdict.verdict,
     bottleneckNotes: verdict.notes,
