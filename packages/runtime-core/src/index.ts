@@ -49,3 +49,6 @@ export * from './routing/route-matcher.js'
 export * from './routing/request-handler.js'
 export * from './routing/request-ports.js'
 export * from './routing/request-utils.js'
+
+// Widgets
+export * from './widgets/index.js'

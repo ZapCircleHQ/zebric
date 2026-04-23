@@ -36,6 +36,7 @@ import {
   registerAPIRoutes,
   registerOpenAPIRoute,
   registerPageRoutes,
+  registerWidgetRoutes,
 } from './server-routes.js'
 
 export interface ServerManagerDependencies {
@@ -278,6 +279,12 @@ export class ServerManager {
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,
+    })
+    registerWidgetRoutes(this.app, {
+      blueprint: this.blueprint,
+      sessionManager: this.sessionManager,
+      queryExecutor: this.queryExecutor,
+      workflowManager: this.workflowManager,
     })
     registerOpenAPIRoute(this.app, this.blueprint, this.config)
     registerPageRoutes(this.app, this.blueprintAdapter)
