@@ -12,6 +12,7 @@ import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { defaultTheme } from './theme.js'
 import { safe } from '../security/html-escape.js'
+import { renderWidget, pageHasWidget } from '../widgets/index.js'
 import {
   MemoryTemplateRegistry,
   InlineTemplateLoader,
@@ -110,6 +111,21 @@ export class HTMLRenderer {
    */
   renderPage(context: RenderContext): string {
     const { page } = context
+
+    // Widgets take precedence over layouts — if a widget is declared, render it.
+    if (pageHasWidget(page)) {
+      const content = renderWidget({
+        page,
+        widget: page.widget!,
+        data: context.data,
+        blueprint: this.blueprint,
+        theme: this.theme,
+      })
+      return this.documentWrapper.wrapInDocument(
+        page.title, content, context.session, page.path, context.flash,
+        { includeWidgetRuntime: true }
+      )
+    }
 
     // Check for custom template first
       if (page.template) {

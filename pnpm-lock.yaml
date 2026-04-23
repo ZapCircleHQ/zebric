@@ -82,6 +82,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime-node
 
+  examples/issue-board:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
   examples/task-tracker:
     dependencies:
       '@zebric/cli':

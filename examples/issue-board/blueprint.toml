@@ -1,0 +1,136 @@
+version = "0.1.0"
+
+[project]
+name = "Issue Board"
+version = "1.0.0"
+description = "Kanban-style issue tracker demonstrating the Zebric widget system"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.Column]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Issue]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "columnId", type = "Ref", ref = "Column.id", index = true, required = true },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "important", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Issue.relations]
+column = { type = "belongsTo", entity = "Column", foreign_key = "columnId" }
+
+# ==========================================
+# Board page — the widget
+# ==========================================
+
+[page."/"]
+title = "Issue Board"
+auth = "none"
+
+[page."/".query.columns]
+entity = "Column"
+orderBy = { position = "asc" }
+
+[page."/".query.issues]
+entity = "Issue"
+orderBy = { position = "asc" }
+
+[page."/".widget]
+kind = "board"
+entity = "Issue"
+group_by = "columnId"
+column_entity = "Column"
+column_label = "name"
+column_order = "position"
+rank_field = "position"
+
+[page."/".widget.card]
+title = "title"
+toggles = [
+  { field = "important", label_on = "★", label_off = "☆" }
+]
+
+[page."/".widget.on_move]
+update = { columnId = "$to.id", position = "$index" }
+
+[page."/".widget.on_column_rename]
+update = { name = "$value" }
+
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+
+# ==========================================
+# Supporting forms (add issues/columns)
+# ==========================================
+
+[page."/new"]
+title = "New Issue"
+auth = "none"
+layout = "form"
+
+[page."/new".form]
+entity = "Issue"
+method = "create"
+
+[[page."/new".form.fields]]
+name = "title"
+type = "text"
+required = true
+label = "Title"
+
+[[page."/new".form.fields]]
+name = "columnId"
+type = "text"
+required = true
+label = "Column ID"
+placeholder = "Paste an existing Column id"
+
+[[page."/new".form.fields]]
+name = "position"
+type = "number"
+default = 0
+
+[page."/new".form.onSuccess]
+redirect = "/"
+message = "Issue created"
+
+[page."/columns/new"]
+title = "New Column"
+auth = "none"
+layout = "form"
+
+[page."/columns/new".form]
+entity = "Column"
+method = "create"
+
+[[page."/columns/new".form.fields]]
+name = "name"
+type = "text"
+required = true
+label = "Name"
+
+[[page."/columns/new".form.fields]]
+name = "position"
+type = "number"
+default = 0
+label = "Position"
+
+[page."/columns/new".form.onSuccess]
+redirect = "/"
+message = "Column created"

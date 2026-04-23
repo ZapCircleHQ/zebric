@@ -116,7 +116,8 @@ export class QueryExecutor {
     const start = performance.now()
     try {
       const results = await query
-      return results
+      // Convert snake_case to camelCase for consistency with findById/create/update.
+      return Array.isArray(results) ? results.map((r) => this.toCamelCase(r)) : results
     } finally {
       this.metrics?.recordQuery(queryDef.entity, 'read', performance.now() - start)
     }

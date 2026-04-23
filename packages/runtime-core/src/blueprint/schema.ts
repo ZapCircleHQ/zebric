@@ -340,11 +340,50 @@ const ActionBarSchema = z.object({
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })
 
+// ============================================================================
+// Widgets
+// ============================================================================
+
+const WidgetActionSchema = z.object({
+  update: AnyRecordSchema.optional(),
+  workflow: z.string().optional(),
+}).passthrough()
+
+const WidgetCardToggleSchema = z.object({
+  field: z.string(),
+  label: z.string().optional(),
+  label_on: z.string().optional(),
+  label_off: z.string().optional(),
+})
+
+const WidgetCardSchema = z.object({
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  meta: z.array(z.string()).optional(),
+  toggles: z.array(WidgetCardToggleSchema).optional(),
+})
+
+const WidgetSchema = z.object({
+  kind: z.string(),
+  entity: z.string(),
+  group_by: z.string().optional(),
+  column_entity: z.string().optional(),
+  column_label: z.string().optional(),
+  column_order: z.string().optional(),
+  rank_field: z.string().optional(),
+  card: WidgetCardSchema.optional(),
+  on_move: WidgetActionSchema.optional(),
+  on_edit: WidgetActionSchema.optional(),
+  on_column_rename: WidgetActionSchema.optional(),
+  on_toggle: WidgetActionSchema.optional(),
+}).passthrough()
+
 const PageSchema = z.object({
   path: z.string(),
   title: z.string(),
   auth: z.enum(['required', 'optional', 'none']).optional(),
-  layout: z.string(),
+  layout: z.string().optional(),
+  widget: WidgetSchema.optional(),
   ux: PageUXConfigSchema.optional(),
   queries: z.record(StringKeySchema, QuerySchema).optional(),
   form: FormSchema.optional(),
