@@ -53,6 +53,8 @@ pnpm-debug.log*
 *.sqlite
 *.sqlite-*
 *.db
+benchmark/results/
+benchmark/data/
 
 # Turbo
 .turbo

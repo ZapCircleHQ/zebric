@@ -9,6 +9,15 @@
 import { resolve } from 'node:path'
 import { ZebricEngine } from '@zebric/runtime-node'
 
+function parseIntegerEnv(name: string): number | undefined {
+  const value = process.env[name]
+  if (!value) {
+    return undefined
+  }
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 function printHelp(): void {
   console.log(`Usage: zebric-engine [options]
 
@@ -61,17 +70,30 @@ const blueprintPath = options.blueprint
 const port = options.port !== undefined ? parseInt(options.port, 10) : 3000
 const host = options.host || '0.0.0.0'
 const adminPort = port === 0 ? 0 : port + 30
+const rateLimitMax = parseIntegerEnv('ZEBRIC_RATE_LIMIT_MAX')
+const rateLimitWindowMs = parseIntegerEnv('ZEBRIC_RATE_LIMIT_WINDOW_MS')
+const databaseUrl = process.env.DATABASE_URL
+
+const rateLimit =
+  rateLimitMax !== undefined || rateLimitWindowMs !== undefined
+    ? {
+        ...(rateLimitMax !== undefined ? { max: rateLimitMax } : {}),
+        ...(rateLimitWindowMs !== undefined ? { windowMs: rateLimitWindowMs } : {}),
+      }
+    : undefined
 
 // Create engine
 const engine = new ZebricEngine({
   blueprintPath,
   port,
   host,
+  ...(databaseUrl ? { database: { url: databaseUrl } } : {}),
   dev: {
     adminPort,
     hotReload: true, // Enable hot reload
     logLevel: 'debug',
     logQueries: true,
+    ...(rateLimit ? { rateLimit } : {}),
   },
 })
 

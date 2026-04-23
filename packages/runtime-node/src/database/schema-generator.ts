@@ -279,7 +279,7 @@ export class SchemaGenerator {
    * Generate SQL statements to create a single entity (table + indexes).
    */
   generateCreateStatementsForEntity(entity: Entity): string[] {
-    const tableName = this.toSnakeCase(entity.name)
+    const tableName = this.sqlIdentifier(this.toSnakeCase(entity.name))
     const columns = entity.fields.map((field) => this.getColumnDefinition(field)).join(',\n  ')
 
     const statements: string[] = [
@@ -289,9 +289,9 @@ export class SchemaGenerator {
     if (entity.indexes) {
       entity.indexes.forEach((idx, i) => {
         const indexName = idx.name || `idx_${entity.name}_${i}`
-        const columnNames = idx.fields.map((f) => this.toSnakeCase(f)).join(', ')
+        const columnNames = idx.fields.map((f) => this.sqlIdentifier(this.toSnakeCase(f))).join(', ')
         const unique = idx.unique ? 'UNIQUE ' : ''
-        statements.push(`CREATE ${unique}INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${columnNames});`)
+        statements.push(`CREATE ${unique}INDEX IF NOT EXISTS ${this.sqlIdentifier(indexName)} ON ${tableName} (${columnNames});`)
       })
     }
 
@@ -300,7 +300,7 @@ export class SchemaGenerator {
       .forEach((field) => {
         const indexName = `idx_${entity.name}_${field.name}_unique`
         statements.push(
-          `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${this.toSnakeCase(field.name)});`
+          `CREATE UNIQUE INDEX IF NOT EXISTS ${this.sqlIdentifier(indexName)} ON ${tableName} (${this.sqlIdentifier(this.toSnakeCase(field.name))});`
         )
       })
 
@@ -312,7 +312,7 @@ export class SchemaGenerator {
    * Returns the main ALTER TABLE statement plus any post-statements (e.g. indexes).
    */
   generateAddColumnStatements(entity: Entity, field: Field): { statement: string; postStatements: string[] } {
-    const tableName = this.toSnakeCase(entity.name)
+    const tableName = this.sqlIdentifier(this.toSnakeCase(entity.name))
     const columnDefinition = this.getColumnDefinition(field, { forAlter: true })
     const statement = `ALTER TABLE ${tableName} ADD COLUMN ${columnDefinition};`
 
@@ -321,7 +321,7 @@ export class SchemaGenerator {
     if (field.unique && !field.primary_key) {
       const indexName = `idx_${entity.name}_${field.name}_unique`
       postStatements.push(
-        `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${this.toSnakeCase(field.name)});`
+        `CREATE UNIQUE INDEX IF NOT EXISTS ${this.sqlIdentifier(indexName)} ON ${tableName} (${this.sqlIdentifier(this.toSnakeCase(field.name))});`
       )
     }
 
@@ -340,7 +340,7 @@ export class SchemaGenerator {
    */
   getColumnDefinition(field: Field, options: { forAlter?: boolean } = {}): string {
     const { forAlter } = options
-    const columnName = this.toSnakeCase(field.name)
+    const columnName = this.sqlIdentifier(this.toSnakeCase(field.name))
 
     const type = this.mapFieldType(field)
     const parts = [`${columnName} ${type}`]
@@ -373,6 +373,30 @@ export class SchemaGenerator {
   }
 
   private mapFieldType(field: Field): string {
+    if (this.dbType === 'postgres') {
+      switch (field.type) {
+        case 'Integer':
+          return 'INTEGER'
+        case 'Boolean':
+          return 'BOOLEAN'
+        case 'DateTime':
+          return 'TIMESTAMPTZ'
+        case 'Float':
+          return 'REAL'
+        case 'ULID':
+        case 'UUID':
+        case 'Text':
+        case 'Email':
+        case 'LongText':
+        case 'Date':
+        case 'JSON':
+        case 'Enum':
+        case 'Ref':
+        default:
+          return 'TEXT'
+      }
+    }
+
     switch (field.type) {
       case 'Integer':
       case 'Boolean':
@@ -402,6 +426,13 @@ export class SchemaGenerator {
       .replace(/[A-Z]/g, (letter, index) =>
         index === 0 ? letter.toLowerCase() : `_${letter.toLowerCase()}`
       )
+  }
+
+  private sqlIdentifier(identifier: string): string {
+    if (this.dbType !== 'postgres') {
+      return identifier
+    }
+    return `"${identifier.replace(/"/g, '""')}"`
   }
 
   /**

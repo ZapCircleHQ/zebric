@@ -48,6 +48,11 @@ export interface ZebricOptions {
   dev?: boolean
 
   /**
+   * Optional overrides for development-mode engine settings.
+   */
+  devConfig?: EngineConfig['dev']
+
+  /**
    * Custom theme
    */
   theme?: Theme
@@ -149,6 +154,7 @@ export class Zebric {
         logLevel: this.options.logLevel || 'info',
         adminHost: this.options.host || '127.0.0.1',
         adminPort: port === 0 ? 0 : port + 30, // Admin on port + 30, unless using ephemeral ports
+        ...this.options.devConfig,
       }
     }
 

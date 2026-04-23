@@ -40,6 +40,25 @@ function getRequestId(c: any): string | undefined {
     ?? undefined
 }
 
+function logRouteStageTiming(
+  route: string,
+  stageMs: Record<string, number>,
+  details: Record<string, unknown> = {}
+): void {
+  if (process.env.ZEBRIC_TIMING_DEBUG !== '1') {
+    return
+  }
+
+  console.log(JSON.stringify({
+    type: 'route_stage_timing',
+    route,
+    ...details,
+    ...Object.fromEntries(
+      Object.entries(stageMs).map(([key, value]) => [key, Number(value.toFixed(3))])
+    ),
+  }))
+}
+
 export function registerStaticUploads(app: Hono): void {
   const root = path.resolve(process.cwd(), 'data/uploads')
   app.get('/uploads/*', async (c) => {
@@ -396,11 +415,26 @@ export function registerAPIRoutes(
       try {
         const data = await c.req.json<Record<string, any>>()
         const session = await sessionManager.getSession(c.req.raw)
+        const createStartedAt = performance.now()
         const result = await queryExecutor.create(entity.name, data, { session })
+        const createMs = performance.now() - createStartedAt
+
+        const triggerStartedAt = performance.now()
         await triggerEntityWorkflows(entity.name, 'create', undefined, result, workflowManager, {
           correlationId: getCorrelationId(c),
           requestId: getRequestId(c),
         })
+        const triggerMs = performance.now() - triggerStartedAt
+
+        logRouteStageTiming(entityPath, {
+          createMs,
+          triggerMs,
+        }, {
+          entity: entity.name,
+          correlationId: getCorrelationId(c),
+          requestId: getRequestId(c),
+        })
+
         return Response.json(result, { status: 201 })
       } catch (error) {
         console.error(`Create ${entity.name} error:`, error)

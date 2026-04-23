@@ -209,10 +209,12 @@ export class QueryExecutor {
 
     const start = performance.now()
     try {
-      // Insert record
-      await (db as any).insert(table).values(dbData)
+      const inserted = await (db as any).insert(table).values(dbData).returning()
+      const record = inserted?.[0]
+      if (record) {
+        return this.toCamelCase(record)
+      }
 
-      // Return the created record
       return await this.findById(entityName, data.id)
     } finally {
       this.metrics?.recordQuery(entityName, 'create', performance.now() - start)
