@@ -51,21 +51,7 @@ export function createWebhookProducer(context) {
                 eventType: payload.eventType,
                 payload: payload.payload,
                 deliveryKey: payload.deliveryKey,
-                processingStatus: 'pending',
               })
-              if (response.ok) {
-                await postJson('/api/workflowruns', {
-                  requestId: payload.requestId,
-                  workflowType: 'webhook_received',
-                  status: 'pending',
-                  payload: {
-                    ...payload.payload,
-                    deliveryKey: payload.deliveryKey,
-                    source: payload.source,
-                    eventType: payload.eventType,
-                  },
-                }).catch(() => {})
-              }
               context.metrics.record(
                 'receiveWebhook',
                 performance.now() - startedAt,

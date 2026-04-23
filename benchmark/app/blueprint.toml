@@ -464,6 +464,29 @@ payload = "{{ variables.payload.payload }}"
 deliveryKey = "{{ variables.payload.deliveryKey }}"
 processingStatus = "pending"
 
+[[workflow.IngestBenchmarkWebhook.steps]]
+type = "query"
+entity = "WorkflowRun"
+action = "create"
+[workflow.IngestBenchmarkWebhook.steps.data]
+requestId = "{{ variables.payload.requestId }}"
+workflowType = "webhook_received"
+status = "pending"
+payload = { source = "{{ variables.payload.source }}", eventType = "{{ variables.payload.eventType }}", deliveryKey = "{{ variables.payload.deliveryKey }}", benchmarkPayload = "{{ variables.payload.payload }}" }
+
+[workflow.EnqueueWebhookProcessing]
+trigger = { entity = "WebhookEvent", event = "create" }
+
+[[workflow.EnqueueWebhookProcessing.steps]]
+type = "query"
+entity = "WorkflowRun"
+action = "create"
+[workflow.EnqueueWebhookProcessing.steps.data]
+requestId = "{{ variables.entity.requestId }}"
+workflowType = "webhook_received"
+status = "pending"
+payload = { source = "{{ variables.entity.source }}", eventType = "{{ variables.entity.eventType }}", deliveryKey = "{{ variables.entity.deliveryKey }}", webhookEventId = "{{ variables.entity.id }}" }
+
 [skill.big_zebra]
 description = "Big Zebra benchmark control surface."
 

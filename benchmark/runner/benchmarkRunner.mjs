@@ -160,6 +160,7 @@ export async function runBenchmark(options = {}) {
   const ramp = createRampController(profile, concurrency)
   const { connection } = await openBenchmarkDatabase(databaseUrl)
   const catalog = await loadCatalog(connection)
+  const backlogBaseline = await sampleBacklog(connection)
   const csrfBootstrap = await fetch(`${baseUrl}/`)
   const setCookie = csrfBootstrap.headers.get('set-cookie') ?? ''
   const csrfToken = /csrf-token=([^;]+)/.exec(setCookie)?.[1]
@@ -246,6 +247,12 @@ export async function runBenchmark(options = {}) {
     ),
     systemMetricsSummary: summary.system,
     backlogSummary: summary.backlog,
+    backlogBaseline,
+    backlogDelta: {
+      pendingWorkflowCount: Math.max(0, summary.backlog.pendingWorkflowCount - backlogBaseline.pendingWorkflowCount),
+      pendingNotificationCount: Math.max(0, summary.backlog.pendingNotificationCount - backlogBaseline.pendingNotificationCount),
+      webhookBacklogCount: Math.max(0, summary.backlog.webhookBacklogCount - backlogBaseline.webhookBacklogCount),
+    },
     errorRate: summary.errorRate,
     verdict: verdict.verdict,
     bottleneckNotes: verdict.notes,
