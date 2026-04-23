@@ -69,6 +69,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
       ZEBRIC_RATE_LIMIT_MAX: ${ZEBRIC_RATE_LIMIT_MAX:-1000000}
       ZEBRIC_RATE_LIMIT_WINDOW_MS: ${ZEBRIC_RATE_LIMIT_WINDOW_MS:-60000}
+      ZEBRIC_TIMING_DEBUG: ${ZEBRIC_TIMING_DEBUG:-0}
     command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
     depends_on:
       benchmark-seed-single:
@@ -169,6 +170,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
       ZEBRIC_RATE_LIMIT_MAX: ${ZEBRIC_RATE_LIMIT_MAX:-1000000}
       ZEBRIC_RATE_LIMIT_WINDOW_MS: ${ZEBRIC_RATE_LIMIT_WINDOW_MS:-60000}
+      ZEBRIC_TIMING_DEBUG: ${ZEBRIC_TIMING_DEBUG:-0}
     command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
     depends_on:
       benchmark-seed-multi:
@@ -188,6 +190,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
       ZEBRIC_RATE_LIMIT_MAX: ${ZEBRIC_RATE_LIMIT_MAX:-1000000}
       ZEBRIC_RATE_LIMIT_WINDOW_MS: ${ZEBRIC_RATE_LIMIT_WINDOW_MS:-60000}
+      ZEBRIC_TIMING_DEBUG: ${ZEBRIC_TIMING_DEBUG:-0}
     command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
     depends_on:
       benchmark-seed-multi:
@@ -207,6 +210,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgres://zebric:zebric@postgres:5432/big_zebra}
       ZEBRIC_RATE_LIMIT_MAX: ${ZEBRIC_RATE_LIMIT_MAX:-1000000}
       ZEBRIC_RATE_LIMIT_WINDOW_MS: ${ZEBRIC_RATE_LIMIT_WINDOW_MS:-60000}
+      ZEBRIC_TIMING_DEBUG: ${ZEBRIC_TIMING_DEBUG:-0}
     command: ["node", "packages/cli/dist/engine-runner.js", "--blueprint=benchmark/app/blueprint.toml", "--host=0.0.0.0", "--port=3000"]
     depends_on:
       benchmark-seed-multi:
