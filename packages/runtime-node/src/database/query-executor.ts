@@ -5,7 +5,7 @@
  * Translates Blueprint query syntax to SQL.
  */
 
-import { eq, and, or, gt, gte, lt, lte, like, asc, desc, sql, SQL } from 'drizzle-orm'
+import { eq, and, or, gt, gte, lt, lte, like, ilike, asc, desc, sql, SQL } from 'drizzle-orm'
 import type { Query } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
 import type { UserSession, PermissionManager } from '@zebric/runtime-core'
@@ -170,9 +170,13 @@ export class QueryExecutor {
 
     if (columns.length === 0) return []
 
+    const match = (column: any) => this.connection.getType() === 'postgres'
+      ? ilike(column, pattern)
+      : like(column, pattern)
+
     const orCondition = columns.length === 1
-      ? like(columns[0], pattern)
-      : or(...columns.map((c) => like(c, pattern)))
+      ? match(columns[0])
+      : or(...columns.map((c) => match(c)))
 
     // Apply optional equality filters and entity-level access filters.
     let where: any = orCondition
