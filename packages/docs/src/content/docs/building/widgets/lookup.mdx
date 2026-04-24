@@ -1,0 +1,116 @@
+---
+label: Lookup Widget
+order: 3
+slug: building/widgets/lookup
+title: Lookup Widget
+description: Build standalone search-and-select pages with the lookup widget.
+---
+
+The `lookup` widget turns a page into a focused search interface. It uses the same lookup control that Zebric supports in forms, but mounts it as a full page instead of an individual field.
+
+Use it for:
+
+- customer or account finders
+- internal search tools
+- jump-to-record pages
+- chooser screens that navigate after selection
+
+## Complete Example
+
+```toml
+[entity.Customer]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "firstName", type = "Text", required = true },
+  { name = "lastName", type = "Text", required = true },
+  { name = "email", type = "Email", required = true }
+]
+
+[page."/customers"]
+title = "Customer Search"
+auth = "optional"
+
+[page."/customers".widget]
+kind = "lookup"
+entity = "Customer"
+search = ["lastName", "firstName", "email"]
+display = "{lastName}, {firstName}"
+limit = 5
+placeholder = "Search customers by name or email"
+
+[page."/customers".widget.on_select]
+navigate = "/customers/$to.id"
+```
+
+## Configuration
+
+| Field | Description |
+|------|-------------|
+| `kind` | Must be `lookup` |
+| `entity` | Entity to search |
+| `search` | One or more entity fields used for substring search |
+| `display` | Optional label template for results, such as `{lastName}, {firstName}` |
+| `limit` | Max results returned per query. The runtime clamps this to a safe range |
+| `placeholder` | Placeholder text for the search input |
+| `filter` | Optional additional query filter applied to every search |
+
+If `display` is omitted, Zebric falls back to the configured search fields when building the visible label.
+
+## Search Behavior
+
+Lookup search is substring-based. As the user types, the client runtime sends requests to `/_widget/search` and the runtime returns matching records as `{ id, label }`.
+
+A few practical notes:
+
+- blank queries return no results
+- multiple search fields are combined with OR logic
+- access control still applies to the entity reads
+- the Node runtime now uses case-insensitive matching for PostgreSQL as well as SQLite
+
+## Selection Behavior
+
+Add `on_select` when choosing a result should do something immediately:
+
+```toml
+[page."/customers".widget.on_select]
+navigate = "/customers/$to.id"
+```
+
+This is useful for search pages that act like a command palette or directory.
+
+Common patterns:
+
+- navigate to a detail page
+- navigate to an edit page
+- use filtered results to narrow to a specific tenant, team, or status
+
+## Filtering Results
+
+Use `filter` when the search page should only show a subset of records:
+
+```toml
+[page."/customers".widget]
+kind = "lookup"
+entity = "Customer"
+search = ["lastName", "firstName", "email"]
+filter = { status = "active" }
+```
+
+The filter is applied server-side on every request.
+
+## Relationship to Form Lookup Fields
+
+The lookup widget and the form `lookup` field share the same underlying configuration:
+
+- same `entity`, `search`, `display`, `limit`, `placeholder`, and `filter` options
+- same search endpoint and query executor path
+- same access control model
+
+Choose the widget when the whole page is devoted to search. Choose the form field when lookup is just one part of a larger create or edit flow.
+
+## Tips
+
+- Include an email or external identifier in `search` for support and ops workflows
+- Keep result labels short and recognizable
+- Add `on_select.navigate` when the page should behave like a launcher rather than a search sandbox
+- Use `filter` to keep large datasets focused and reduce noisy matches
