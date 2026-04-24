@@ -14,6 +14,8 @@ import { renderFlash } from './feedback-renderer.js'
 import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
 
 export interface WrapInDocumentOptions {
+  includeClientRuntime?: boolean
+  /** @deprecated Use includeClientRuntime. */
   includeWidgetRuntime?: boolean
 }
 
@@ -46,7 +48,8 @@ export class DocumentWrapper {
     const viewTransitions = this.blueprint.ui?.view_transitions !== false
     const escapedTitle = escapeHtml(title)
     const escapedProjectName = escapeHtml(this.blueprint.project.name)
-    const widgetScript = options?.includeWidgetRuntime ? WIDGET_CLIENT_RUNTIME : ''
+    const includeRuntime = options?.includeClientRuntime ?? options?.includeWidgetRuntime ?? false
+    const widgetScript = includeRuntime ? WIDGET_CLIENT_RUNTIME : ''
 
     return `
       <!DOCTYPE html>

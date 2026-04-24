@@ -234,7 +234,8 @@ export class LayoutRenderers {
           this.theme,
           (field, formRecord) => this.componentRenderers.renderFormField(
             resolveFormFieldOptions(field, data),
-            formRecord
+            formRecord,
+            { pagePath: page.path }
           )
         )}
 
