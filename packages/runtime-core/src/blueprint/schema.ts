@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod'
+import { LookupConfigSchema } from '../controls/lookup/config.js'
 
 const StringKeySchema = z.string()
 const AnyRecordSchema = z.record(StringKeySchema, z.any())
@@ -128,6 +129,8 @@ const FormFieldSchema = z.object({
     'file',
     'date',
     'datetime',
+    // Controls mountable as form fields — see controls/index.ts.
+    'lookup',
   ]),
   label: z.string().optional(),
   placeholder: z.string().optional(),
@@ -140,7 +143,13 @@ const FormFieldSchema = z.object({
   min: z.number().optional(),
   max: z.number().optional(),
   error_message: z.string().optional(),
-})
+  // Nested control config blocks. Each form-field-mountable control has its
+  // config under a key matching its name — e.g., `[form.fields.<n>.lookup]`.
+  lookup: LookupConfigSchema.optional(),
+}).refine(
+  (data) => data.type !== 'lookup' || data.lookup != null,
+  { message: 'Form fields with type = "lookup" must include a [form.fields.<name>.lookup] block' }
+)
 
 // ============================================================================
 // Zazzle UX Config

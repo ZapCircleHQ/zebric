@@ -230,7 +230,7 @@ export class LayoutRenderers {
           form,
           record,
           this.theme,
-          (field, formRecord) => this.componentRenderers.renderFormField(field, formRecord)
+          (field, formRecord) => this.componentRenderers.renderFormField(field, formRecord, { pagePath: page.path })
         )}
 
         <div class="${this.theme.formActions}">

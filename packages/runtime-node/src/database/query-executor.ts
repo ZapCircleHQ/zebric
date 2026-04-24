@@ -124,6 +124,85 @@ export class QueryExecutor {
   }
 
   /**
+   * Search for records across multiple text fields using case-insensitive
+   * substring matching. Used by the lookup control's /_widget/search endpoint.
+   *
+   * `fields` are camelCase field names as declared in the blueprint. They get
+   * mapped to the table's snake_case columns via the Drizzle schema. Fields
+   * that don't exist on the table are silently dropped — the blueprint's own
+   * validation is the source of truth for what's addressable.
+   */
+  async search(
+    entityName: string,
+    fields: string[],
+    query: string,
+    options: { limit?: number; filter?: Record<string, any>; context?: QueryContext } = {}
+  ): Promise<any[]> {
+    const db = this.connection.getDb()
+    const table = this.connection.getTable(entityName)
+    const entity = this.connection.getEntity(entityName)
+
+    if (!table) {
+      throw new Error(`Entity ${entityName} not found`)
+    }
+
+    if (entity) {
+      const hasAccess = await AccessControl.checkAccess({
+        session: options.context?.session,
+        action: 'read',
+        entity,
+        permissionManager: this.permissionManager,
+      })
+      if (!hasAccess) {
+        throw new Error(`Access denied: Cannot read ${entityName}`)
+      }
+    }
+
+    const trimmed = String(query ?? '').trim()
+    if (!trimmed) return []
+
+    const pattern = `%${trimmed.replace(/[%_]/g, (c) => '\\' + c)}%`
+
+    // Resolve field names → Drizzle columns (via both camel and snake lookup).
+    const columns = fields
+      .map((f) => table[f] ?? table[this.toSnakeCaseString(f)])
+      .filter((c) => c != null)
+
+    if (columns.length === 0) return []
+
+    const orCondition = columns.length === 1
+      ? like(columns[0], pattern)
+      : or(...columns.map((c) => like(c, pattern)))
+
+    // Apply optional equality filters and entity-level access filters.
+    let where: any = orCondition
+    if (options.filter) {
+      const filterWhere = this.buildWhere(options.filter, options.context ?? {}, entityName)
+      if (filterWhere) where = and(where, filterWhere)
+    }
+    const accessFilters = entity ? AccessControl.getFilterConditions(entity, options.context?.session) : null
+    if (accessFilters) {
+      const accessWhere = this.buildWhere(accessFilters, options.context ?? {}, entityName)
+      if (accessWhere) where = and(where, accessWhere)
+    }
+
+    const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
+
+    const start = performance.now()
+    try {
+      const results = await (db as any)
+        .select()
+        .from(table)
+        .where(where)
+        .limit(limit)
+
+      return Array.isArray(results) ? results.map((r) => this.toCamelCase(r)) : []
+    } finally {
+      this.metrics?.recordQuery(entityName, 'search', performance.now() - start)
+    }
+  }
+
+  /**
    * Find a single record by ID
    */
   async findById(entityName: string, id: string): Promise<any | null> {

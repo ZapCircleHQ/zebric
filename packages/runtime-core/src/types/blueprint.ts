@@ -265,7 +265,7 @@ export interface Form {
 
 export interface FormField {
   name: string
-  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime'
+  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime' | 'lookup'
   label?: string
   placeholder?: string
   required?: boolean
@@ -277,6 +277,16 @@ export interface FormField {
   min?: number
   max?: number
   error_message?: string
+  /** Control-specific config. When type = "lookup", this block is required. */
+  lookup?: {
+    entity: string
+    search: string[]
+    display?: string
+    limit?: number
+    placeholder?: string
+    filter?: Record<string, any>
+    [key: string]: any
+  }
 }
 
 // ============================================================================

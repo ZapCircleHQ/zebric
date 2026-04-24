@@ -309,6 +309,47 @@ describe('WorkersQueryExecutor', () => {
     })
   })
 
+  describe('search', () => {
+    beforeEach(async () => {
+      await adapter.query('INSERT INTO User (id, name, email) VALUES (?, ?, ?)', ['u1', 'Sarah Chen', 'sarah@acme.com'])
+      await adapter.query('INSERT INTO User (id, name, email) VALUES (?, ?, ?)', ['u2', 'James Smith', 'j.smith@acme.com'])
+      await adapter.query('INSERT INTO User (id, name, email) VALUES (?, ?, ?)', ['u3', 'Mei Smith', 'mei@globex.com'])
+    })
+
+    it('finds records across OR-ed fields', async () => {
+      const results = await executor.search('User', ['name', 'email'], 'smi', {})
+      expect(results).toHaveLength(2)
+      expect(results.map((r: any) => r.id).sort()).toEqual(['u2', 'u3'])
+    })
+
+    it('matches by email-only field', async () => {
+      const results = await executor.search('User', ['name', 'email'], 'globex', {})
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe('u3')
+    })
+
+    it('returns empty for blank query', async () => {
+      expect(await executor.search('User', ['name'], '', {})).toEqual([])
+      expect(await executor.search('User', ['name'], '   ', {})).toEqual([])
+    })
+
+    it('silently drops fields that do not exist on the entity', async () => {
+      const results = await executor.search('User', ['nonexistent', 'name'], 'sarah', {})
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe('u1')
+    })
+
+    it('returns empty when all requested fields are invalid', async () => {
+      const results = await executor.search('User', ['not_a_field'], 'sarah', {})
+      expect(results).toEqual([])
+    })
+
+    it('respects the limit option', async () => {
+      const results = await executor.search('User', ['name', 'email'], '@', { limit: 2 })
+      expect(results.length).toBeLessThanOrEqual(2)
+    })
+  })
+
   describe('SQL injection protection', () => {
     it('should safely handle malicious input in where clause', async () => {
       await adapter.query(

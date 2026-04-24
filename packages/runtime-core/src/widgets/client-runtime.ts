@@ -1,7 +1,8 @@
 /**
- * Client-side runtime for widgets — a single inlined IIFE that initializes
- * any `[data-widget]` elements in the page.
+ * Client-side runtime for controls — a single inlined IIFE that initializes
+ * any `[data-control]` elements in the page.
  *
+ * Covers both page-level widgets (board) and form-embedded controls (lookup).
  * Exported as a string so DocumentWrapper can inject it conditionally.
  */
 
@@ -9,8 +10,22 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
 (function() {
   'use strict'
 
+  var INITS = {
+    board: initBoard,
+    lookup: initLookup
+  }
+
   function init() {
-    document.querySelectorAll('[data-widget="board"]').forEach(initBoard)
+    document.querySelectorAll('[data-control]').forEach(function(el) {
+      var kind = el.getAttribute('data-control')
+      var fn = INITS[kind]
+      if (fn) fn(el)
+    })
+  }
+
+  function readConfig(el) {
+    var raw = el.getAttribute('data-control-config') || '{}'
+    try { return JSON.parse(raw) } catch (_) { return {} }
   }
 
   function readCsrf() {
@@ -22,7 +37,7 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     try { return decodeURIComponent(parts.join('=')) } catch (_) { return null }
   }
 
-  function sendEvent(config, event, row, ctx) {
+  function sendEvent(pagePath, event, row, ctx) {
     var csrf = readCsrf()
     var headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' }
     if (csrf) headers['x-csrf-token'] = csrf
@@ -30,7 +45,7 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
       method: 'POST',
       credentials: 'same-origin',
       headers: headers,
-      body: JSON.stringify({ page: config.pagePath, event: event, row: row, ctx: ctx })
+      body: JSON.stringify({ page: pagePath, event: event, row: row, ctx: ctx })
     }).then(function(res) {
       if (!res.ok) { return res.text().then(function(t) { console.error('widget event failed', res.status, t); return null }) }
       return res.json().catch(function() { return null })
@@ -40,11 +55,12 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     })
   }
 
-  function initBoard(root) {
-    var raw = root.getAttribute('data-widget-config') || '{}'
-    var config
-    try { config = JSON.parse(raw) } catch (_) { config = { events: {} } }
+  // ==========================================
+  // Board
+  // ==========================================
 
+  function initBoard(root) {
+    var config = readConfig(root)
     var dragEl = null
 
     root.addEventListener('dragstart', function(e) {
@@ -99,11 +115,10 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
       var children = Array.prototype.slice.call(zone.children)
       var index = children.indexOf(dragEl)
 
-      sendEvent(config, 'move',
+      sendEvent(config.pagePath, 'move',
         { entity: config.entity, id: cardId },
         { to: { id: columnId }, index: index }
       ).then(function() {
-        // Refresh column counts
         root.querySelectorAll('.widget-board-column').forEach(function(col) {
           var count = col.querySelectorAll('.widget-board-card').length
           var badge = col.querySelector('.widget-board-column-count')
@@ -128,10 +143,9 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
       var labelOn = btn.getAttribute('data-label-on') || ''
       var labelOff = btn.getAttribute('data-label-off') || ''
 
-      // Optimistic swap
       applyToggleVisual(btn, newVal, labelOn, labelOff)
 
-      sendEvent(config, 'toggle',
+      sendEvent(config.pagePath, 'toggle',
         { entity: config.entity, id: card.getAttribute('data-card-id') },
         { field: field, value: newVal }
       ).then(function(result) {
@@ -181,7 +195,7 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
       var column = el.closest('[data-column-id]')
       if (!column) return
       var field = el.getAttribute('data-column-field') || 'name'
-      sendEvent(config, 'column_rename',
+      sendEvent(config.pagePath, 'column_rename',
         { entity: config.columnEntity, id: column.getAttribute('data-column-id') },
         { field: field, value: trimmed }
       ).then(function(result) {
@@ -195,6 +209,153 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     }
     el.addEventListener('blur', onBlur)
     el.addEventListener('keydown', onKey)
+  }
+
+  // ==========================================
+  // Lookup
+  // ==========================================
+
+  function initLookup(root) {
+    var config = readConfig(root)
+    var input = root.querySelector('.control-lookup-label')
+    var hidden = root.querySelector('.control-lookup-value')
+    var list = root.querySelector('.control-lookup-list')
+    if (!input || !list) return
+
+    var debounceTimer = null
+    var lastQuery = ''
+    var active = -1
+    var items = []
+
+    function close() {
+      list.hidden = true
+      list.innerHTML = ''
+      input.setAttribute('aria-expanded', 'false')
+      input.removeAttribute('aria-activedescendant')
+      active = -1
+      items = []
+    }
+
+    function render(results) {
+      items = results || []
+      if (!items.length) {
+        list.innerHTML = '<li class="control-lookup-empty">No matches</li>'
+        list.hidden = false
+        input.setAttribute('aria-expanded', 'true')
+        return
+      }
+      var html = items.map(function(r, i) {
+        var itemId = root.id + '-opt-' + i
+        return '<li class="control-lookup-item" role="option" id="' + itemId + '"' +
+               ' data-id="' + escapeAttr(r.id) + '"' +
+               ' data-label="' + escapeAttr(r.label) + '"' +
+               ' aria-selected="false">' + escapeHtml(r.label) + '</li>'
+      }).join('')
+      list.innerHTML = html
+      list.hidden = false
+      input.setAttribute('aria-expanded', 'true')
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' }[c] || c
+      })
+    }
+    function escapeAttr(s) { return escapeHtml(s).replace(/\\n/g, '&#10;') }
+
+    function highlight(index) {
+      var nodes = list.querySelectorAll('.control-lookup-item')
+      nodes.forEach(function(n) { n.setAttribute('aria-selected', 'false') })
+      if (index < 0 || index >= nodes.length) {
+        input.removeAttribute('aria-activedescendant')
+        return
+      }
+      var n = nodes[index]
+      n.setAttribute('aria-selected', 'true')
+      input.setAttribute('aria-activedescendant', n.id)
+      if (n.scrollIntoView) n.scrollIntoView({ block: 'nearest' })
+    }
+
+    function search(q) {
+      if (q === lastQuery) return
+      lastQuery = q
+      if (!q || q.length < 1) { close(); return }
+      var params = new URLSearchParams({ page: config.pagePath, q: q })
+      if (config.field) params.set('field', config.field)
+      fetch('/_widget/search?' + params.toString(), {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' }
+      }).then(function(res) { return res.ok ? res.json() : null })
+        .then(function(data) {
+          if (!data) { close(); return }
+          render(data.results || [])
+          active = -1
+        })
+        .catch(function(err) { console.error('lookup search error', err); close() })
+    }
+
+    function pick(idx) {
+      var r = items[idx]
+      if (!r) return
+      input.value = r.label
+      if (hidden) hidden.value = r.id
+      close()
+
+      if (config.mount === 'widget' && config.onSelect && config.onSelect.navigate) {
+        var target = String(config.onSelect.navigate)
+          .replace(/\\$to\\.id/g, encodeURIComponent(r.id))
+          .replace(/\\$to\\.label/g, encodeURIComponent(r.label))
+        window.location.href = target
+        return
+      }
+
+      if (hidden) {
+        try { hidden.dispatchEvent(new Event('change', { bubbles: true })) } catch (_) {}
+      }
+    }
+
+    input.addEventListener('input', function() {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      var q = input.value.trim()
+      debounceTimer = setTimeout(function() { search(q) }, 250)
+      // Clear the stored id when the visible text changes — user is re-searching.
+      if (hidden && hidden.value && input.value !== (input.getAttribute('data-picked-label') || '')) {
+        hidden.value = ''
+      }
+    })
+
+    input.addEventListener('keydown', function(e) {
+      if (list.hidden && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        search(input.value.trim())
+        return
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        active = Math.min(active + 1, items.length - 1)
+        highlight(active)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        active = Math.max(active - 1, -1)
+        highlight(active)
+      } else if (e.key === 'Enter') {
+        if (!list.hidden && active >= 0) { e.preventDefault(); pick(active) }
+      } else if (e.key === 'Escape') {
+        if (!list.hidden) { e.preventDefault(); close() }
+      }
+    })
+
+    input.addEventListener('blur', function() {
+      // Delay so a click on a list item can fire first.
+      setTimeout(close, 150)
+    })
+
+    list.addEventListener('mousedown', function(e) {
+      var el = e.target.closest && e.target.closest('.control-lookup-item')
+      if (!el) return
+      e.preventDefault()
+      var idx = Array.prototype.indexOf.call(list.children, el)
+      pick(idx)
+    })
   }
 
   if (document.readyState === 'loading') {

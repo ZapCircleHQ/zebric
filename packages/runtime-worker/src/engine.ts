@@ -10,7 +10,7 @@ import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
 import { WorkersSessionManager } from './session/session-manager.js'
-import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { BlueprintHttpAdapter, registerWidgetRoutes, registerSearchRoutes } from '@zebric/runtime-hono'
 import { WorkersQueryExecutor } from './query/workers-query-executor.js'
 
 export interface WorkersEnv {
@@ -92,6 +92,17 @@ export class ZebricWorkersEngine {
     this.app = new Hono()
 
     this.app.get('/health', async () => this.handleHealthCheck())
+
+    registerWidgetRoutes(this.app, {
+      blueprint: this.blueprint,
+      queryExecutor,
+      sessionManager,
+    })
+    registerSearchRoutes(this.app, {
+      blueprint: this.blueprint,
+      queryExecutor,
+      sessionManager,
+    })
 
     this.app.all('*', async (c) => {
       return this.adapter.handle(c.req.raw)

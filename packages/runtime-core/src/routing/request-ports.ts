@@ -12,8 +12,8 @@ import type { Query, Form } from '../types/blueprint.js'
  * Request context passed to handlers
  */
 export interface RequestContext {
-  params: Record<string, string>
-  query: Record<string, string>
+  params?: Record<string, string>
+  query?: Record<string, string>
   body?: any
   session?: UserSession | null
 }
@@ -46,13 +46,28 @@ export interface QueryExecutorPort {
   update(entity: string, id: string, data: Record<string, any>, context: RequestContext): Promise<any>
   delete(entity: string, id: string, context: RequestContext): Promise<any>
   findById(entity: string, id: string): Promise<any>
+  /**
+   * OR-across-fields substring search. Used by the lookup control's search
+   * endpoint. Respects entity read access rules. Returns camelCase records.
+   */
+  search(
+    entity: string,
+    fields: string[],
+    query: string,
+    options?: {
+      limit?: number
+      filter?: Record<string, any>
+      context?: RequestContext
+    }
+  ): Promise<any[]>
 }
 
 /**
  * Session manager port - manages user sessions
  */
 export interface SessionManagerPort {
-  getSession(request: HttpRequest): Promise<UserSession | null>
+  /** Accept any request-like object — concrete platforms may pass Fetch Request or HttpRequest. */
+  getSession(request: HttpRequest | Request): Promise<UserSession | null>
 }
 
 /**

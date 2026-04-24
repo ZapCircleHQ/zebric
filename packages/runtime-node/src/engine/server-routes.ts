@@ -4,11 +4,15 @@ import { promises as fs } from 'node:fs'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
-import { generateOpenAPISpec, getInjectedCsrfTokenFromRequest, resolveWidgetEvent } from '@zebric/runtime-core'
+import { generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import {
+  registerWidgetRoutes as registerSharedWidgetRoutes,
+  registerSearchRoutes as registerSharedSearchRoutes,
+} from '@zebric/runtime-hono'
 import {
   getMimeType,
   resolveOrigin,
@@ -574,66 +578,25 @@ export function registerWidgetRoutes(
   }
 ): void {
   const { blueprint, sessionManager, queryExecutor, workflowManager } = deps
-
-  const hasAnyWidget = (blueprint.pages || []).some((p) => p.widget && p.widget.kind)
-  if (!hasAnyWidget) return
-
-  app.post('/_widget/event', async (c) => {
-    try {
-      const body = await c.req.json<any>().catch(() => null)
-      if (!body || typeof body.page !== 'string' || typeof body.event !== 'string' ||
-          !body.row || typeof body.row.entity !== 'string' || typeof body.row.id !== 'string') {
-        return Response.json({ error: 'Invalid widget event' }, { status: 400 })
-      }
-
-      const session = await sessionManager.getSession(c.req.raw)
-
-      // Load the current record so `$row.<field>` placeholders can read it.
-      let row: Record<string, any> = {}
-      try {
-        const existing = await queryExecutor.findById(body.row.entity, body.row.id)
-        if (existing) row = existing
-      } catch (err) {
-        // Tolerate missing — we may be toggling a row that was just created elsewhere.
-        console.warn(`widget event: could not load ${body.row.entity}(${body.row.id})`, err)
-      }
-
-      const resolved = resolveWidgetEvent(blueprint, {
-        page: body.page,
-        event: body.event,
-        row: body.row,
-        ctx: body.ctx || {},
-      }, row)
-
-      if (!resolved) {
-        return Response.json({ error: `Unknown widget event: ${body.event}` }, { status: 400 })
-      }
-
-      const result = await queryExecutor.update(resolved.entity, resolved.id, resolved.update, { session })
-
-      if (resolved.workflow && workflowManager) {
-        try {
-          workflowManager.trigger(resolved.workflow, { row: result, ctx: body.ctx, session }, {
-            correlationId: getCorrelationId(c),
-            requestId: getRequestId(c),
-          })
-        } catch (err) {
-          console.warn(`widget event: workflow '${resolved.workflow}' trigger failed`, err)
-        }
-      }
-
-      return Response.json({ success: true, record: result })
-    } catch (err) {
-      console.error('widget event error:', err)
-      return Response.json(
-        {
-          error: 'Widget event failed',
-          details: err instanceof Error ? err.message : 'Unknown error'
-        },
-        { status: 500 }
-      )
-    }
+  registerSharedWidgetRoutes(app, {
+    blueprint,
+    queryExecutor,
+    sessionManager,
+    triggerWorkflow: workflowManager
+      ? (name, data) => { workflowManager.trigger(name, data, {}) }
+      : undefined,
   })
+}
+
+export function registerSearchRoutes(
+  app: Hono,
+  deps: {
+    blueprint: Blueprint
+    queryExecutor: QueryExecutor
+    sessionManager: SessionManager
+  }
+): void {
+  registerSharedSearchRoutes(app, deps)
 }
 
 export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAdapter, csrfCookieName = 'csrf-token'): void {

@@ -15,7 +15,8 @@ export function createQueryExecutorPort(queryExecutor: QueryExecutor): QueryExec
     create: (entity, data, context) => queryExecutor.create(entity, data, context),
     update: (entity, id, data, context) => queryExecutor.update(entity, id, data, context),
     delete: (entity, id, context) => queryExecutor.delete(entity, id, context),
-    findById: (entity, id) => queryExecutor.findById(entity, id)
+    findById: (entity, id) => queryExecutor.findById(entity, id),
+    search: (entity, fields, query, options) => queryExecutor.search(entity, fields, query, options)
   }
 }
 

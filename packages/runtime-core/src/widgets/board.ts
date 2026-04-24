@@ -56,7 +56,7 @@ export function renderBoardWidget(ctx: WidgetRenderContext) {
     .join('')
 
   return safe(`
-    <div class="widget-board" data-widget="board" data-widget-config="${escapeHtmlAttr(JSON.stringify(config))}">
+    <div class="widget-board" data-control="board" data-control-config="${escapeHtmlAttr(JSON.stringify(config))}">
       <header class="widget-board-title">
         <h1>${escapeHtml(page.title)}</h1>
       </header>
