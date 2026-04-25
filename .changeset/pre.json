@@ -1,0 +1,32 @@
+{
+  "mode": "pre",
+  "tag": "rc",
+  "initialVersions": {
+    "blog-example": "1.0.1",
+    "custom-theme-example": "0.1.2",
+    "customer-lookup-example": "1.0.0",
+    "document-manager": "1.0.1",
+    "issue-board-example": "1.0.0",
+    "task-tracker": "1.0.1",
+    "vibe-coding-example": "1.0.1",
+    "workers-blog-example": "0.1.0",
+    "zebric-dispatch": "0.1.0",
+    "@zebric/cli": "0.2.3",
+    "zebric-docs": "0.2.2",
+    "@zebric/framework-stories": "0.2.2",
+    "@zebric/notifications": "0.2.3",
+    "@zebric/observability": "0.2.3",
+    "@zebric/playground": "0.0.0",
+    "@zebric/plugin-sdk": "0.2.3",
+    "@zebric/react-simulator": "0.0.0",
+    "@zebric/react-simulator-example": "0.0.0",
+    "@zebric/runtime-core": "0.2.3",
+    "@zebric/runtime-hono": "0.2.3",
+    "@zebric/runtime-node": "0.2.3",
+    "@zebric/runtime-simulator": "0.0.0",
+    "@zebric/runtime-worker": "0.2.3",
+    "@zebric/themes": "0.2.3",
+    "@zebric-plugin/card-grid-layout": "1.0.0"
+  },
+  "changesets": []
+}
