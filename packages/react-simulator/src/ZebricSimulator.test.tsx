@@ -96,6 +96,83 @@ const seeds: SimulatorSeeds = {
   },
 }
 
+const widgetBlueprintToml = `version = "0.2.0"
+
+[project]
+name = "Widget Simulator Test"
+version = "1.0.0"
+
+[project.runtime]
+min_version = "0.2.0"
+
+[entity.Column]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "position", type = "Integer", default = 0 }
+]
+
+[entity.Column.access]
+read = true
+create = true
+update = true
+delete = true
+
+[entity.Issue]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "columnId", type = "Text", required = true },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "important", type = "Boolean", default = false }
+]
+
+[entity.Issue.access]
+read = true
+create = true
+update = true
+delete = true
+
+[page."/"]
+title = "Board"
+auth = "optional"
+
+[page."/".query.columns]
+entity = "Column"
+orderBy = { position = "asc" }
+
+[page."/".query.issues]
+entity = "Issue"
+orderBy = { position = "asc" }
+
+[page."/".widget]
+kind = "board"
+entity = "Issue"
+group_by = "columnId"
+column_entity = "Column"
+column_label = "name"
+column_order = "position"
+rank_field = "position"
+
+[page."/".widget.card]
+title = "title"
+toggles = [{ field = "important", label_on = "★", label_off = "☆" }]
+
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+`
+
+const widgetSeeds: SimulatorSeeds = {
+  demo: {
+    Column: [
+      { id: 'backlog', name: 'Backlog', position: 0 },
+    ],
+    Issue: [
+      { id: 'iss-1', title: 'Widget issue', columnId: 'backlog', position: 0, important: false },
+    ],
+  },
+}
+
 let roots: Root[] = []
 let containers: HTMLElement[] = []
 
@@ -184,9 +261,30 @@ describe('ZebricSimulator', () => {
     await waitForText(container, 'workflow.trigger')
     await waitForText(container, 'Trigger workflow: MarkDone')
   })
+
+  it('executes widget client runtime and persists widget events through the simulator preview', async () => {
+    const container = renderSimulator({
+      blueprintToml: widgetBlueprintToml,
+      seeds: widgetSeeds,
+      initialSeed: 'demo',
+      initialAccount: null,
+    })
+    await waitForText(container, 'Widget issue')
+    await waitForText(container, '☆')
+
+    const toggle = await waitForElement(container, '.widget-board-card-toggle')
+    await act(async () => {
+      toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await waitForText(container, '★')
+    await clickButton(container, 'Data')
+    await waitForText(container, 'true')
+  })
 })
 
-function renderSimulator(): HTMLElement {
+function renderSimulator(overrides: Partial<React.ComponentProps<typeof ZebricSimulator>> = {}): HTMLElement {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -198,6 +296,7 @@ function renderSimulator(): HTMLElement {
         initialSeed="demo"
         initialAccount="manager"
         parseDebounceMs={0}
+        {...overrides}
       />
     )
   })
@@ -210,6 +309,15 @@ async function waitForText(container: HTMLElement, text: string): Promise<void> 
   await waitFor(() => {
     expect(container.textContent).toContain(text)
   })
+}
+
+async function waitForElement(container: HTMLElement, selector: string): Promise<HTMLElement> {
+  let found: HTMLElement | null = null
+  await waitFor(() => {
+    found = container.querySelector<HTMLElement>(selector)
+    expect(found).toBeTruthy()
+  })
+  return found!
 }
 
 async function waitFor(assertion: () => void): Promise<void> {
