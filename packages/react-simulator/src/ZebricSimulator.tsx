@@ -32,6 +32,11 @@ export interface ZebricSimulatorProps {
 
 type SimulatorTab = 'preview' | 'data' | 'auth' | 'workflows' | 'plugins' | 'integrations' | 'audit' | 'debug'
 
+interface PreviewContent {
+  html: string
+  scripts: string[]
+}
+
 export function ZebricSimulator(props: ZebricSimulatorProps) {
   const {
     blueprint,
@@ -233,9 +238,22 @@ export function ZebricSimulator(props: ZebricSimulatorProps) {
       <div className="zebric-simulator__panel">
         {tab === 'preview' ? (
           <PreviewPanel
-            html={extractPreviewHtml(renderResult?.html || '')}
+            content={extractPreviewHtml(renderResult?.html || '')}
             onNavigate={(path) => refresh(path)}
             onSubmit={submit}
+            onWidgetEvent={async (body) => {
+              const runtime = runtimeRef.current
+              if (!runtime) return { error: 'Simulator not ready' }
+              const result = await runtime.submit('/_widget/event', 'POST', body)
+              setRenderResult(result)
+              setRuntimeState(runtime.getState())
+              return result.response as Record<string, any>
+            }}
+            onLookupSearch={async (params) => {
+              const runtime = runtimeRef.current
+              if (!runtime) return { error: 'Simulator not ready' }
+              return runtime.simulateLookupSearch(params)
+            }}
           />
         ) : null}
         {tab === 'data' ? <DataPanel data={runtimeState?.data ?? {}} /> : null}
@@ -296,12 +314,70 @@ function StatusPill({ label, value, tone }: { label: string; value: string; tone
 }
 
 function PreviewPanel(props: {
-  html: string
+  content: PreviewContent
   onNavigate: (path: string) => void
   onSubmit: (path: string, method: string, data: Record<string, any>) => void
+  onWidgetEvent: (body: Record<string, any>) => Promise<Record<string, any>>
+  onLookupSearch: (params: { page?: string; field?: string; q?: string }) => Promise<Record<string, any>>
 }) {
-  const { html, onNavigate, onSubmit } = props
+  const { content, onNavigate, onSubmit, onWidgetEvent, onLookupSearch } = props
   const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const root = ref.current
+    if (!root) return
+
+    root.innerHTML = content.html
+
+    const originalFetch = globalThis.fetch.bind(globalThis)
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url
+
+      if (url.startsWith('/_widget/event')) {
+        const rawBody = init?.body
+        let body: Record<string, any> = {}
+        if (typeof rawBody === 'string') {
+          try { body = JSON.parse(rawBody) } catch (_) {}
+        }
+        const result = await onWidgetEvent(body)
+        return new Response(JSON.stringify(result), {
+          status: result?.error ? 400 : 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (url.startsWith('/_widget/search')) {
+        const parsed = new URL(url, 'http://zebric-simulator.local')
+        const result = await onLookupSearch({
+          page: parsed.searchParams.get('page') || undefined,
+          field: parsed.searchParams.get('field') || undefined,
+          q: parsed.searchParams.get('q') || undefined,
+        })
+        return new Response(JSON.stringify(result), {
+          status: result?.error ? 404 : 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+
+      return originalFetch(input, init)
+    }
+
+    for (const code of content.scripts) {
+      try {
+        new Function(code)()
+      } catch (error) {
+        console.error('Failed to execute simulator preview script', error)
+      }
+    }
+
+    return () => {
+      globalThis.fetch = originalFetch
+    }
+  }, [content, onLookupSearch, onWidgetEvent])
 
   function handleClick(event: React.MouseEvent<HTMLDivElement>) {
     const button = (event.target as Element).closest('button')
@@ -339,7 +415,6 @@ function PreviewPanel(props: {
       className="zebric-simulator__preview"
       onClick={handleClick}
       onSubmit={handleSubmit}
-      dangerouslySetInnerHTML={{ __html: html }}
     />
   )
 }
@@ -753,11 +828,15 @@ function formatCell(value: unknown): string {
   return String(value)
 }
 
-function extractPreviewHtml(html: string): string {
-  if (!html) return ''
+function extractPreviewHtml(html: string): PreviewContent {
+  if (!html) return { html: '', scripts: [] }
+  const scripts = Array.from(html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi))
+    .map((match) => match[1] || '')
+    .filter((code) => code.includes('/_widget/event') || code.includes('/_widget/search'))
+    .filter(Boolean)
+  const htmlWithoutScripts = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
   if (typeof DOMParser !== 'undefined') {
-    const doc = new DOMParser().parseFromString(html, 'text/html')
-    doc.querySelectorAll('script').forEach((script) => script.remove())
+    const doc = new DOMParser().parseFromString(htmlWithoutScripts, 'text/html')
     doc.querySelectorAll('*').forEach((element) => {
       for (const attribute of Array.from(element.attributes)) {
         if (attribute.name.toLowerCase().startsWith('on')) {
@@ -780,9 +859,15 @@ function extractPreviewHtml(html: string): string {
       .map((style) => style.outerHTML)
       .join('')
     const bodyClass = doc.body.getAttribute('class') || ''
-    return `${styles}<div class="${escapeHtmlAttr(bodyClass)}">${doc.body.innerHTML}</div>`
+    return {
+      html: `${styles}<div class="${escapeHtmlAttr(bodyClass)}">${doc.body.innerHTML}</div>`,
+      scripts,
+    }
   }
-  return html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/\son[a-z]+="[^"]*"/gi, '')
+  return {
+    html: htmlWithoutScripts.replace(/\son[a-z]+="[^"]*"/gi, ''),
+    scripts,
+  }
 }
 
 function formatTab(tab: SimulatorTab): string {
