@@ -11,28 +11,31 @@ import type { Hono } from 'hono'
 import {
   handleWidgetEvent,
   handleLookupSearch,
+  pageHasWidget,
   type Blueprint,
+  type HttpRequest,
   type QueryExecutorPort,
   type SessionManagerPort,
+  type WidgetHandlerDeps,
 } from '@zebric/runtime-core'
 
 export interface WidgetRoutesDeps {
   blueprint: Blueprint
   queryExecutor: QueryExecutorPort
   sessionManager?: SessionManagerPort
-  triggerWorkflow?: (name: string, data: Record<string, any>) => void
+  triggerWorkflow?: WidgetHandlerDeps['triggerWorkflow']
 }
 
 export function registerWidgetRoutes(app: Hono, deps: WidgetRoutesDeps): void {
   const { blueprint, queryExecutor, sessionManager, triggerWorkflow } = deps
 
-  const hasAnyWidget = (blueprint.pages || []).some((p) => p.widget && (p.widget as any).kind)
+  const hasAnyWidget = (blueprint.pages || []).some(pageHasWidget)
   if (!hasAnyWidget) return
 
   app.post('/_widget/event', async (c) => {
     try {
       const body = await c.req.json().catch(() => null)
-      const result = await handleWidgetEvent(blueprint, body, c.req.raw as any, {
+      const result = await handleWidgetEvent(blueprint, body, c.req.raw as HttpRequest | Request, {
         queryExecutor,
         sessionManager,
         triggerWorkflow,
@@ -61,7 +64,7 @@ export function registerSearchRoutes(app: Hono, deps: SearchRoutesDeps): void {
   const { blueprint, queryExecutor, sessionManager } = deps
 
   const hasAnyLookup = (blueprint.pages || []).some((p) => {
-    if (p.widget && (p.widget as any).kind === 'lookup') return true
+    if (p.widget?.kind === 'lookup') return true
     return p.form?.fields?.some((f) => f.type === 'lookup') ?? false
   })
   if (!hasAnyLookup) return
@@ -74,7 +77,7 @@ export function registerSearchRoutes(app: Hono, deps: SearchRoutesDeps): void {
         field: c.req.query('field'),
         q: c.req.query('q') || '',
       },
-      c.req.raw as any,
+      c.req.raw as HttpRequest | Request,
       { queryExecutor, sessionManager }
     )
     return Response.json(result.body, { status: result.status })
