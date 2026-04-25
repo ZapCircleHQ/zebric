@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod'
+import { LookupConfigSchema } from '../controls/lookup/config.js'
 
 const StringKeySchema = z.string()
 const AnyRecordSchema = z.record(StringKeySchema, z.any())
@@ -128,6 +129,8 @@ const FormFieldSchema = z.object({
     'file',
     'date',
     'datetime',
+    // Controls mountable as form fields — see controls/index.ts.
+    'lookup',
   ]),
   label: z.string().optional(),
   placeholder: z.string().optional(),
@@ -140,7 +143,13 @@ const FormFieldSchema = z.object({
   min: z.number().optional(),
   max: z.number().optional(),
   error_message: z.string().optional(),
-})
+  // Nested control config blocks. Each form-field-mountable control has its
+  // config under a key matching its name — e.g., `[form.fields.<n>.lookup]`.
+  lookup: LookupConfigSchema.optional(),
+}).refine(
+  (data) => data.type !== 'lookup' || data.lookup != null,
+  { message: 'Form fields with type = "lookup" must include a [form.fields.<name>.lookup] block' }
+)
 
 // ============================================================================
 // Zazzle UX Config
@@ -340,11 +349,50 @@ const ActionBarSchema = z.object({
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })
 
+// ============================================================================
+// Widgets
+// ============================================================================
+
+const WidgetActionSchema = z.object({
+  update: AnyRecordSchema.optional(),
+  workflow: z.string().optional(),
+}).passthrough()
+
+const WidgetCardToggleSchema = z.object({
+  field: z.string(),
+  label: z.string().optional(),
+  label_on: z.string().optional(),
+  label_off: z.string().optional(),
+})
+
+const WidgetCardSchema = z.object({
+  title: z.string().optional(),
+  subtitle: z.string().optional(),
+  meta: z.array(z.string()).optional(),
+  toggles: z.array(WidgetCardToggleSchema).optional(),
+})
+
+const WidgetSchema = z.object({
+  kind: z.string(),
+  entity: z.string(),
+  group_by: z.string().optional(),
+  column_entity: z.string().optional(),
+  column_label: z.string().optional(),
+  column_order: z.string().optional(),
+  rank_field: z.string().optional(),
+  card: WidgetCardSchema.optional(),
+  on_move: WidgetActionSchema.optional(),
+  on_edit: WidgetActionSchema.optional(),
+  on_column_rename: WidgetActionSchema.optional(),
+  on_toggle: WidgetActionSchema.optional(),
+}).passthrough()
+
 const PageSchema = z.object({
   path: z.string(),
   title: z.string(),
   auth: z.enum(['required', 'optional', 'none']).optional(),
-  layout: z.string(),
+  layout: z.string().optional(),
+  widget: WidgetSchema.optional(),
   ux: PageUXConfigSchema.optional(),
   queries: z.record(StringKeySchema, QuerySchema).optional(),
   form: FormSchema.optional(),

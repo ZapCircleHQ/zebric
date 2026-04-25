@@ -1,0 +1,166 @@
+---
+label: Board Widget
+order: 2
+slug: building/widgets/board
+title: Board Widget
+description: Create Kanban-style pages with drag-and-drop cards, editable columns, and toggles.
+---
+
+The `board` widget renders a Kanban-style page from two page queries:
+
+- a row entity for the cards, such as `Issue`
+- a column entity for the board lanes, such as `Column`
+
+It is a good fit for ticket queues, editorial workflows, approval pipelines, and any other status-driven flow where records move between named columns.
+
+## Complete Example
+
+```toml
+[entity.Column]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "position", type = "Integer", default = 0 }
+]
+
+[entity.Issue]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "columnId", type = "Ref", ref = "Column.id", required = true },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "important", type = "Boolean", default = false }
+]
+
+[page."/issues"]
+title = "Issue Board"
+auth = "optional"
+
+[page."/issues".query.columns]
+entity = "Column"
+orderBy = { position = "asc" }
+
+[page."/issues".query.issues]
+entity = "Issue"
+orderBy = { position = "asc" }
+
+[page."/issues".widget]
+kind = "board"
+entity = "Issue"
+group_by = "columnId"
+column_entity = "Column"
+column_label = "name"
+column_order = "position"
+rank_field = "position"
+
+[page."/issues".widget.card]
+title = "title"
+toggles = [{ field = "important", label_on = "★", label_off = "☆" }]
+
+[page."/issues".widget.on_move]
+update = { columnId = "$to.id", position = "$index" }
+
+[page."/issues".widget.on_column_rename]
+update = { name = "$value" }
+
+[page."/issues".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+```
+
+## Required Queries
+
+The board widget reads its data from the page queries. You need:
+
+- one query whose `entity` matches the widget `entity` for the cards
+- one query whose `entity` matches `column_entity` for the columns
+
+The renderer matches queries by entity name, so naming the queries `issues` and `columns` is conventional but not required.
+
+## Configuration
+
+| Field | Description |
+|------|-------------|
+| `kind` | Must be `board` |
+| `entity` | Entity used for the board cards |
+| `column_entity` | Entity used for the board columns |
+| `group_by` | Field on the card entity that points to the current column. Defaults to `columnId` |
+| `column_label` | Column field used as the visible title. Defaults to `name` |
+| `column_order` | Column field used to sort columns. Defaults to `position` |
+| `rank_field` | Card field used to sort cards within a column. Defaults to `position` |
+
+## Card Configuration
+
+Customize how each card renders with `[page."/path".widget.card]`:
+
+```toml
+[page."/issues".widget.card]
+title = "title"
+toggles = [{ field = "important", label_on = "★", label_off = "☆" }]
+```
+
+Supported keys:
+
+| Field | Description |
+|------|-------------|
+| `title` | Card field to display as the primary label. Defaults to `title` |
+| `toggles` | Optional toggle buttons rendered on the card |
+
+Each toggle can specify:
+
+| Field | Description |
+|------|-------------|
+| `field` | Boolean field to toggle |
+| `label` | Shared label if you do not need separate on/off states |
+| `label_on` | Label when the toggle is on |
+| `label_off` | Label when the toggle is off |
+
+## Events
+
+The board widget becomes interactive when you define event handlers.
+
+### Move Cards
+
+```toml
+[page."/issues".widget.on_move]
+update = { columnId = "$to.id", position = "$index" }
+```
+
+This runs when a card is dropped into a column. Common uses:
+
+- update the column foreign key
+- update a sort or rank field
+- trigger a workflow after movement
+
+### Rename Columns
+
+```toml
+[page."/issues".widget.on_column_rename]
+update = { name = "$value" }
+```
+
+With this handler in place, column titles become editable in the UI.
+
+### Toggle Fields
+
+```toml
+[page."/issues".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+```
+
+This is typically used for booleans such as `important`, `blocked`, or `done`.
+
+## Access Control
+
+Board interactions still go through the normal entity read and update paths. That means:
+
+- users must be allowed to read the card and column entities to see the board
+- users must be allowed to update the target entity for `on_move`, `on_toggle`, or `on_column_rename`
+
+If access control denies the operation, the widget request fails server-side.
+
+## Tips
+
+- Keep `column_order` and `rank_field` numeric for predictable ordering
+- Use explicit page queries with `orderBy` so the initial board load is stable
+- Treat `group_by` as the source of truth for a card's current column
+- Start with one or two event handlers and add more interaction only where it improves the workflow

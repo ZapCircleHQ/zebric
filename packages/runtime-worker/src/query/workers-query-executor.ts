@@ -130,6 +130,50 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     return result.rows[0] || null
   }
 
+  /**
+   * OR-across-fields substring search via SQL LIKE. Fields not declared on
+   * the entity are silently dropped to match the blueprint's authorization
+   * posture — only declared fields are addressable.
+   */
+  async search(
+    entityName: string,
+    fields: string[],
+    query: string,
+    options: { limit?: number; filter?: Record<string, any>; context?: RequestContext } = {}
+  ): Promise<any[]> {
+    const entityDef = this.getEntity(entityName)
+    if (!entityDef) {
+      throw new Error(`Entity not found: ${entityName}`)
+    }
+
+    const trimmed = String(query ?? '').trim()
+    if (!trimmed) return []
+
+    const validFields = fields.filter((f) => entityDef.fields.some((ef) => ef.name === f))
+    if (validFields.length === 0) return []
+
+    const escaped = trimmed.replace(/[%_]/g, (c) => '\\' + c)
+    const pattern = `%${escaped}%`
+
+    const orClauses = validFields.map((f) => `${this.quoteIdentifier(f)} LIKE ? ESCAPE '\\'`).join(' OR ')
+    const params: any[] = validFields.map(() => pattern)
+
+    let whereSql = `(${orClauses})`
+    if (options.filter) {
+      const filterClause = this.buildWhereClause(options.filter, options.context ?? {})
+      if (filterClause) {
+        whereSql = `${whereSql} AND (${filterClause})`
+        params.push(...this.buildQueryParams({ entity: entityName, where: options.filter }, options.context ?? {}))
+      }
+    }
+
+    const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
+    const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql} LIMIT ${limit}`
+
+    const result = await this.adapter.query(sql, params)
+    return result.rows || []
+  }
+
   // ==========================================================================
   // Helper Methods
   // ==========================================================================
@@ -143,11 +187,28 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     for (const field of entity.fields || []) {
       if (data[field.name] !== undefined) {
-        filtered[field.name] = data[field.name]
+        filtered[field.name] = this.coerceForSqlite(data[field.name], field.type)
       }
     }
 
     return filtered
+  }
+
+  /**
+   * Coerce values into the shapes D1/SQLite can bind: numbers, strings,
+   * bigints, ArrayBuffers, or null. Booleans become 0/1, Dates become ISO
+   * strings, objects become JSON, undefined becomes null.
+   */
+  private coerceForSqlite(value: any, fieldType?: string): any {
+    if (value === undefined) return null
+    if (value === null) return null
+    if (typeof value === 'boolean') return value ? 1 : 0
+    if (value instanceof Date) return value.toISOString()
+    if (fieldType === 'JSON' && typeof value === 'object') return JSON.stringify(value)
+    if (typeof value === 'object' && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)) {
+      return JSON.stringify(value)
+    }
+    return value
   }
 
   private buildSelectQuery(entity: Entity, query: Query, context: RequestContext): string {

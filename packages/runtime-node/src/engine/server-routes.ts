@@ -10,6 +10,10 @@ import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import {
+  registerWidgetRoutes as registerSharedWidgetRoutes,
+  registerSearchRoutes as registerSharedSearchRoutes,
+} from '@zebric/runtime-hono'
+import {
   getMimeType,
   resolveOrigin,
   getCallbackPath,
@@ -562,6 +566,37 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
       },
     })
   })
+}
+
+export function registerWidgetRoutes(
+  app: Hono,
+  deps: {
+    blueprint: Blueprint
+    sessionManager: SessionManager
+    queryExecutor: QueryExecutor
+    workflowManager?: WorkflowManager
+  }
+): void {
+  const { blueprint, sessionManager, queryExecutor, workflowManager } = deps
+  registerSharedWidgetRoutes(app, {
+    blueprint,
+    queryExecutor,
+    sessionManager,
+    triggerWorkflow: workflowManager
+      ? (name, data) => { workflowManager.trigger(name, data, {}) }
+      : undefined,
+  })
+}
+
+export function registerSearchRoutes(
+  app: Hono,
+  deps: {
+    blueprint: Blueprint
+    queryExecutor: QueryExecutor
+    sessionManager: SessionManager
+  }
+): void {
+  registerSharedSearchRoutes(app, deps)
 }
 
 export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAdapter, csrfCookieName = 'csrf-token'): void {

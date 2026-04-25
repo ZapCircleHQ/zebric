@@ -7,6 +7,7 @@
 import type { Theme } from './theme.js'
 import { escapeHtml, escapeHtmlAttr } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
+import { renderLookup } from '../controls/lookup/render.js'
 
 /**
  * Get appropriate autocomplete attribute based on field name and type
@@ -62,7 +63,7 @@ function getAutocompleteAttribute(fieldName: string, _fieldType?: string): strin
 /**
  * Render form input element
  */
-export function renderInput(field: any, value: any, theme: Theme, errorId?: string): string {
+export function renderInput(field: any, value: any, theme: Theme, errorId?: string, context?: { pagePath?: string }): string {
   const fieldName = escapeHtmlAttr(field.name)
   const fieldPattern = field.pattern ? `pattern="${escapeHtmlAttr(field.pattern)}"` : ''
   const required = field.required ? 'required' : ''
@@ -73,6 +74,21 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
   const baseAttrs = `id="${fieldName}" name="${fieldName}" ${required} ${ariaRequired} ${fieldPattern} ${ariaInvalid} ${ariaDescribedBy} ${autocomplete}`.trim()
 
   switch (field.type) {
+    case 'lookup':
+      if (!field.lookup) {
+        return `<p class="control-lookup-error" role="alert">Lookup field "${escapeHtml(field.name)}" is missing its [form.fields.${escapeHtml(field.name)}.lookup] config block.</p>`
+      }
+      return renderLookup({
+        mount: 'form-field',
+        fieldName: field.name,
+        currentId: value ? String(value) : '',
+        currentLabel: value ? String(value) : '',
+        config: field.lookup,
+        pagePath: context?.pagePath ?? '',
+        field: field.name,
+        required: Boolean(field.required),
+      }).html
+
     case 'textarea':
       return `
         <textarea
@@ -168,7 +184,7 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
 /**
  * Render form field with label, input, and error message
  */
-export function renderFormField(field: any, theme: Theme, utils: RendererUtils, record?: any): string {
+export function renderFormField(field: any, theme: Theme, utils: RendererUtils, record?: any, context?: { pagePath?: string }): string {
   const value = record?.[field.name] || field.default || ''
   const fieldName = escapeHtmlAttr(field.name)
   const fieldLabel = escapeHtml(field.label || utils.formatFieldName(field.name))
@@ -183,7 +199,7 @@ export function renderFormField(field: any, theme: Theme, utils: RendererUtils, 
         ${field.required ? '<span class="text-red-500" aria-label="required">*</span>' : ''}
       </label>
 
-      ${renderInput(field, value, theme, hasError ? errorId : undefined)}
+      ${renderInput(field, value, theme, hasError ? errorId : undefined, context)}
 
       ${field.error_message ? `
         <p id="${errorId}" class="${theme.fieldError} hidden" data-error="${fieldName}" role="alert">

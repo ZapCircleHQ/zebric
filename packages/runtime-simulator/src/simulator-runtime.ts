@@ -4,6 +4,8 @@ import {
   RequestHandler,
   RouteMatcher,
   defaultTheme,
+  handleWidgetEvent,
+  handleLookupSearch,
   type Blueprint,
   type HttpRequest,
   type HttpResponse,
@@ -125,6 +127,13 @@ export class ZebricSimulatorRuntime {
       return { ...rendered, response: { success: entry.status !== 'failed', workflow: entry } }
     }
 
+    if (normalizedPath === '/_widget/event') {
+      const response = await this.simulateWidgetEvent(body)
+      // Widget events mutate records but don't navigate — re-render current page.
+      const rendered = await this.render(this.activePath)
+      return { ...rendered, response }
+    }
+
     const match = this.routeMatcher.match(normalizedPath, this.blueprint.pages)
     if (!match) {
       const rendered = await this.render(this.activePath)
@@ -151,6 +160,44 @@ export class ZebricSimulatorRuntime {
 
     const rendered = await this.render(redirect || this.activePath)
     return { ...rendered, response: parsed ?? response.body }
+  }
+
+  /**
+   * Simulate a widget event (drag, toggle, column rename, etc.). Mirrors the
+   * `/_widget/event` endpoint in the Hono runtimes for feature parity.
+   */
+  async simulateWidgetEvent(body: Record<string, any>): Promise<Record<string, any>> {
+    const fakeRequest = this.createRequest('POST', '/_widget/event', body, 'application/json') as any
+    const result = await handleWidgetEvent(this.blueprint, body, fakeRequest, {
+      queryExecutor: this.queryExecutor,
+      sessionManager: this.sessionManager,
+      triggerWorkflow: (name, data) => {
+        this.simulateWorkflowTrigger(name, data)
+      },
+    })
+    this.logger.log({
+      type: 'request',
+      message: `WIDGET ${body?.event} -> ${result.status}`,
+      detail: result.body,
+    })
+    return result.body
+  }
+
+  /**
+   * Simulate a lookup search request. Mirrors GET /_widget/search.
+   */
+  async simulateLookupSearch(params: { page?: string; field?: string; q?: string }): Promise<Record<string, any>> {
+    const fakeRequest = this.createRequest('GET', '/_widget/search', undefined, 'application/json') as any
+    const result = await handleLookupSearch(this.blueprint, params, fakeRequest, {
+      queryExecutor: this.queryExecutor,
+      sessionManager: this.sessionManager,
+    })
+    this.logger.log({
+      type: 'query',
+      message: `LOOKUP ${params.page ?? ''}${params.field ? '#' + params.field : ''} q="${params.q ?? ''}" -> ${result.status}`,
+      detail: result.body,
+    })
+    return result.body
   }
 
   switchAccount(accountId: string | null): void {

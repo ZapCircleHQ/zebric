@@ -111,7 +111,8 @@ export interface Page {
   path: string
   title: string
   auth?: 'required' | 'optional' | 'none'
-  layout: 'list' | 'detail' | 'form' | string
+  layout?: 'list' | 'detail' | 'form' | string
+  widget?: Widget
   ux?: PageUXConfig
   queries?: Record<string, Query>
   form?: Form
@@ -120,6 +121,46 @@ export interface Page {
   template?: PageTemplate
   layoutSlots?: Record<string, PageTemplate>
   actionBar?: ActionBarConfig
+}
+
+// ============================================================================
+// Widgets
+// ============================================================================
+
+export interface Widget {
+  kind: string
+  entity: string
+  group_by?: string
+  column_entity?: string
+  column_label?: string
+  column_order?: string
+  rank_field?: string
+  card?: WidgetCard
+  on_move?: WidgetAction
+  on_edit?: WidgetAction
+  on_column_rename?: WidgetAction
+  on_toggle?: WidgetAction
+  [key: string]: any
+}
+
+export interface WidgetCard {
+  title?: string
+  subtitle?: string
+  meta?: string[]
+  toggles?: WidgetCardToggle[]
+}
+
+export interface WidgetCardToggle {
+  field: string
+  label?: string
+  label_on?: string
+  label_off?: string
+}
+
+export interface WidgetAction {
+  update?: Record<string, any>
+  workflow?: string
+  [key: string]: any
 }
 
 export interface PageTemplate {
@@ -224,7 +265,7 @@ export interface Form {
 
 export interface FormField {
   name: string
-  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime'
+  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime' | 'lookup'
   label?: string
   placeholder?: string
   required?: boolean
@@ -236,6 +277,16 @@ export interface FormField {
   min?: number
   max?: number
   error_message?: string
+  /** Control-specific config. When type = "lookup", this block is required. */
+  lookup?: {
+    entity: string
+    search: string[]
+    display?: string
+    limit?: number
+    placeholder?: string
+    filter?: Record<string, any>
+    [key: string]: any
+  }
 }
 
 // ============================================================================

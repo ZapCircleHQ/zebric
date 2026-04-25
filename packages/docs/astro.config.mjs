@@ -25,6 +25,14 @@ export default defineConfig({
 					label: 'Building',
 					items: [
 						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
+						{
+							label: 'Widgets',
+							items: [
+								{ label: 'Overview', slug: 'building/widgets' },
+								{ label: 'Board Widget', slug: 'building/widgets/board' },
+								{ label: 'Lookup Widget', slug: 'building/widgets/lookup' },
+							],
+						},
 						{ label: 'Workflows & Notifications', slug: 'building/workflows' },
 						{ label: 'Security & Auth', slug: 'building/security' },
 						{ label: 'File Uploads', slug: 'building/file-uploads' },

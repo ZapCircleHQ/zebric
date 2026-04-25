@@ -2,8 +2,7 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.0/schema.json",
   "changelog": "@changesets/cli/changelog",
   "commit": false,
-  "fixed": [],
-  "linked": [
+  "fixed": [
     [
       "@zebric/runtime-core",
       "@zebric/runtime-hono",
@@ -16,6 +15,7 @@
       "@zebric/themes"
     ]
   ],
+  "linked": [],
   "access": "public",
   "baseBranch": "main",
   "privatePackages": false,

@@ -116,6 +116,8 @@ fields = [
 
 Pages bind URL paths to layouts and queries.
 
+Pages can also mount interactive widgets directly under `[page."/path".widget]`. For the current widget types and examples, see [Widgets](/building/widgets), [Board Widget](/building/widgets/board), and [Lookup Widget](/building/widgets/lookup).
+
 ### Layout Types
 
 | Layout | Description |
@@ -183,6 +185,27 @@ entity = "User"
 | `limit` | Maximum number of results |
 | `offset` | Skip N results |
 | `include` | Related entities to include |
+
+## Widgets
+
+Widgets are page-level interactive views that live alongside standard page configuration:
+
+```toml
+[page."/customers"]
+title = "Customer Search"
+
+[page."/customers".widget]
+kind = "lookup"
+entity = "Customer"
+search = ["lastName", "firstName", "email"]
+```
+
+Use widgets when a page should behave more like a tool than a traditional CRUD screen. Zebric currently supports:
+
+- `board` for Kanban-style issue and workflow pages
+- `lookup` for standalone search-and-select pages
+
+For full widget configuration and examples, see [Widgets](/building/widgets), [Board Widget](/building/widgets/board), and [Lookup Widget](/building/widgets/lookup).
 
 ## Forms
 

@@ -1,0 +1,123 @@
+version = "0.1.0"
+
+[project]
+name = "Customer Lookup"
+version = "1.0.0"
+description = "Demonstrates the shared 'lookup' control at both mount points"
+
+[project.runtime]
+min_version = "0.1.0"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.Customer]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "firstName", type = "Text", required = true, index = true },
+  { name = "lastName", type = "Text", required = true, index = true },
+  { name = "email", type = "Email", required = true, unique = true, index = true },
+  { name = "company", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.CustomerOrder]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "customerId", type = "Ref", ref = "Customer.id", required = true, index = true },
+  { name = "total", type = "Float", required = true },
+  { name = "notes", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.CustomerOrder.relations]
+customer = { type = "belongsTo", entity = "Customer", foreign_key = "customerId" }
+
+# ==========================================
+# Home — points at the two mount-point demos
+# ==========================================
+
+[page."/"]
+title = "Home"
+auth = "none"
+layout = "list"
+
+[page."/".query.orders]
+entity = "CustomerOrder"
+orderBy = { createdAt = "desc" }
+limit = 20
+
+# ==========================================
+# Mount 1 — lookup as a FORM FIELD
+# ==========================================
+
+[page."/orders/new"]
+title = "New Order"
+auth = "none"
+layout = "form"
+
+[page."/orders/new".form]
+entity = "CustomerOrder"
+method = "create"
+
+[[page."/orders/new".form.fields]]
+name  = "customerId"
+type  = "lookup"
+label = "Customer"
+required = true
+
+  [page."/orders/new".form.fields.lookup]
+  entity      = "Customer"
+  search      = ["lastName", "firstName", "email"]
+  display     = "{lastName}, {firstName} — {email}"
+  placeholder = "Search customers by name or email…"
+  limit       = 10
+
+[[page."/orders/new".form.fields]]
+name = "total"
+type = "number"
+required = true
+min  = 0
+
+[[page."/orders/new".form.fields]]
+name = "notes"
+type = "textarea"
+rows = 3
+
+[page."/orders/new".form.onSuccess]
+redirect = "/"
+message  = "Order created"
+
+# ==========================================
+# Mount 2 — lookup as a STANDALONE WIDGET
+# ==========================================
+
+[page."/search"]
+title = "Search Customers"
+auth = "none"
+
+[page."/search".widget]
+kind        = "lookup"
+entity      = "Customer"
+search      = ["lastName", "firstName", "email", "company"]
+display     = "{lastName}, {firstName} — {company}"
+placeholder = "Search everyone…"
+limit       = 10
+
+[page."/search".widget.on_select]
+navigate = "/customers/$to.id"
+
+# ==========================================
+# Customer detail (so on_select.navigate lands somewhere)
+# ==========================================
+
+[page."/customers/:id"]
+title = "Customer"
+auth = "none"
+layout = "detail"
+
+[page."/customers/:id".queries.customer]
+entity = "Customer"
+where  = { id = "$params.id" }
