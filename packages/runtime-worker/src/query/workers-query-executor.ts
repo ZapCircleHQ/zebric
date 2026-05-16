@@ -5,7 +5,7 @@
  * Translates Blueprint Query definitions into SQL and executes them via D1Adapter.
  */
 
-import type { Query, Entity, Blueprint } from '@zebric/runtime-core'
+import { AccessControl, type Query, type Entity, type Blueprint } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext } from '@zebric/runtime-core'
 import type { D1Adapter } from '../database/d1-adapter.js'
 
@@ -114,7 +114,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Find a record by ID
    */
-  async findById(entity: string, id: string): Promise<any> {
+  async findById(entity: string, id: string, context?: RequestContext): Promise<any> {
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -127,7 +127,23 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [id])
-    return result.rows[0] || null
+    const record = result.rows[0] || null
+    if (!record) return null
+
+    if (context) {
+      const hasAccess = await AccessControl.checkAccess({
+        session: context.session,
+        action: 'read',
+        entity: entityDef,
+        data: record,
+      })
+      if (!hasAccess) {
+        return null
+      }
+      return AccessControl.filterFields(entityDef, 'read', record, context.session)
+    }
+
+    return record
   }
 
   /**
@@ -144,6 +160,15 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const entityDef = this.getEntity(entityName)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entityName}`)
+    }
+
+    const hasAccess = await AccessControl.checkAccess({
+      session: options.context?.session,
+      action: 'read',
+      entity: entityDef,
+    })
+    if (!hasAccess) {
+      throw new Error(`Access denied: Cannot read ${entityName}`)
     }
 
     const trimmed = String(query ?? '').trim()
@@ -164,6 +189,15 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       if (filterClause) {
         whereSql = `${whereSql} AND (${filterClause})`
         params.push(...this.buildQueryParams({ entity: entityName, where: options.filter }, options.context ?? {}))
+      }
+    }
+
+    const accessFilters = AccessControl.getFilterConditions(entityDef, options.context?.session)
+    if (accessFilters) {
+      const accessClause = this.buildWhereClause(accessFilters, options.context ?? {})
+      if (accessClause) {
+        whereSql = `${whereSql} AND (${accessClause})`
+        params.push(...this.buildQueryParams({ entity: entityName, where: accessFilters }, options.context ?? {}))
       }
     }
 

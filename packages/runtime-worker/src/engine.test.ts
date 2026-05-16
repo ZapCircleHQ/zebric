@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { ZebricWorkersEngine, createWorkerHandler } from './engine.js'
 import { MockD1Database, MockKVNamespace, MockR2Bucket } from './test-helpers/mocks.js'
+import { WorkersSessionManager } from './session/session-manager.js'
 
 describe('ZebricWorkersEngine', () => {
   let env: any
@@ -128,6 +129,7 @@ describe('ZebricWorkersEngine', () => {
         {
           path: '/',
           title: 'Board',
+          auth: 'none',
           widget: {
             kind: 'board',
             entity: 'Issue',
@@ -140,6 +142,7 @@ describe('ZebricWorkersEngine', () => {
         {
           path: '/people',
           title: 'Search',
+          auth: 'none',
           widget: {
             kind: 'lookup',
             entity: 'Customer',
@@ -257,6 +260,127 @@ describe('ZebricWorkersEngine', () => {
       })
       const response = await widgetEngine.fetch(new Request('https://example.com/_widget/search?page=/&q=x'))
       expect(response.status).toBe(404)
+    })
+
+    it('sets a CSRF cookie on safe requests for authenticated sessions', async () => {
+      const kv = new MockKVNamespace()
+      const sessionManager = new WorkersSessionManager({ kv: kv as any })
+      const { sessionId } = await sessionManager.createSession('user-1', { id: 'user-1', email: 'test@example.com' })
+      const secureBlueprint = {
+        ...widgetBlueprint,
+        pages: [
+          {
+            path: '/people',
+            title: 'Search',
+            widget: widgetBlueprint.pages[1].widget,
+          },
+        ],
+      }
+      const widgetEngine = new ZebricWorkersEngine({
+        env: { DB: new MockD1Database(), SESSION_KV: kv as any } as any,
+        blueprint: secureBlueprint,
+      })
+      const db = widgetEngine.getDatabase()
+      await db.migrate([
+        'CREATE TABLE Customer (id TEXT PRIMARY KEY, firstName TEXT, lastName TEXT)',
+      ])
+
+      const response = await widgetEngine.fetch(new Request('https://example.com/_widget/search?page=/people&q=smi', {
+        headers: {
+          cookie: `session=${encodeURIComponent(sessionId)}`,
+        },
+      }))
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Set-Cookie')).toContain('csrf-token=')
+    })
+
+    it('rejects authenticated widget events without a valid CSRF token', async () => {
+      const kv = new MockKVNamespace()
+      const sessionManager = new WorkersSessionManager({ kv: kv as any })
+      const { sessionId } = await sessionManager.createSession('user-1', { id: 'user-1', email: 'test@example.com' })
+      const secureBlueprint = {
+        ...widgetBlueprint,
+        pages: [
+          {
+            path: '/',
+            title: 'Board',
+            widget: widgetBlueprint.pages[0].widget,
+          },
+        ],
+      }
+      const widgetEngine = new ZebricWorkersEngine({
+        env: { DB: new MockD1Database(), SESSION_KV: kv as any } as any,
+        blueprint: secureBlueprint,
+      })
+      const db = widgetEngine.getDatabase()
+      await db.migrate([
+        'CREATE TABLE Issue (id TEXT PRIMARY KEY, title TEXT, columnId TEXT, position INTEGER, important INTEGER)',
+        'CREATE TABLE "Column" (id TEXT PRIMARY KEY, name TEXT, position INTEGER)',
+      ])
+      await db.query('INSERT INTO Issue (id, title, important) VALUES (?, ?, ?)', ['iss-1', 'Wire it up', 0])
+
+      const response = await widgetEngine.fetch(new Request('https://example.com/_widget/event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `session=${encodeURIComponent(sessionId)}`,
+        },
+        body: JSON.stringify({
+          page: '/',
+          event: 'toggle',
+          row: { entity: 'Issue', id: 'iss-1' },
+          ctx: { field: 'important' },
+        }),
+      }))
+
+      expect(response.status).toBe(403)
+      expect(await response.json()).toEqual({ error: 'Invalid CSRF token' })
+    })
+
+    it('accepts authenticated widget events with a valid CSRF token', async () => {
+      const kv = new MockKVNamespace()
+      const sessionManager = new WorkersSessionManager({ kv: kv as any })
+      const { sessionId, csrfToken } = await sessionManager.createSession('user-1', { id: 'user-1', email: 'test@example.com' })
+      const secureBlueprint = {
+        ...widgetBlueprint,
+        pages: [
+          {
+            path: '/',
+            title: 'Board',
+            widget: widgetBlueprint.pages[0].widget,
+          },
+        ],
+      }
+      const widgetEngine = new ZebricWorkersEngine({
+        env: { DB: new MockD1Database(), SESSION_KV: kv as any } as any,
+        blueprint: secureBlueprint,
+      })
+      const db = widgetEngine.getDatabase()
+      await db.migrate([
+        'CREATE TABLE Issue (id TEXT PRIMARY KEY, title TEXT, columnId TEXT, position INTEGER, important INTEGER)',
+        'CREATE TABLE "Column" (id TEXT PRIMARY KEY, name TEXT, position INTEGER)',
+      ])
+      await db.query('INSERT INTO Issue (id, title, important) VALUES (?, ?, ?)', ['iss-1', 'Wire it up', 0])
+
+      const response = await widgetEngine.fetch(new Request('https://example.com/_widget/event', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          cookie: `session=${encodeURIComponent(sessionId)}; csrf-token=${encodeURIComponent(csrfToken)}`,
+          'x-csrf-token': csrfToken,
+        },
+        body: JSON.stringify({
+          page: '/',
+          event: 'toggle',
+          row: { entity: 'Issue', id: 'iss-1' },
+          ctx: { field: 'important' },
+        }),
+      }))
+
+      expect(response.status).toBe(200)
+      const result = await response.json() as any
+      expect(result.success).toBe(true)
     })
   })
 })

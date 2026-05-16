@@ -38,15 +38,25 @@ export class WorkersSessionManager implements SessionManagerPort {
   /**
    * Get session from request (implements SessionManagerPort)
    */
-  async getSession(request: HttpRequest): Promise<UserSession | null> {
-    // Extract session ID from cookie
-    // Note: request is HttpRequest, not native Request, so we need to parse headers
+  async getSession(request: HttpRequest | Request): Promise<UserSession | null> {
+    const sessionId = this.getSessionId(request)
+    if (!sessionId) {
+      return null
+    }
+
+    return this.getSessionById(sessionId)
+  }
+
+  getSessionId(request: HttpRequest | Request): string | null {
+    if (request instanceof Request) {
+      return WorkersCookieManager.get(request, this.sessionCookieName) || null
+    }
+
     const cookieHeader = request.headers['cookie'] as string | undefined
     if (!cookieHeader) {
       return null
     }
 
-    // Parse cookie header manually
     const cookies: Record<string, string> = {}
     cookieHeader.split(';').forEach(cookie => {
       const [key, value] = cookie.trim().split('=')
@@ -55,12 +65,7 @@ export class WorkersSessionManager implements SessionManagerPort {
       }
     })
 
-    const sessionId = cookies[this.sessionCookieName]
-    if (!sessionId) {
-      return null
-    }
-
-    return this.getSessionById(sessionId)
+    return cookies[this.sessionCookieName] || null
   }
 
   /**

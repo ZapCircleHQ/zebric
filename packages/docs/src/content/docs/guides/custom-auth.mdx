@@ -1,0 +1,197 @@
+---
+label: Guides
+order: 6
+slug: guides/custom-auth
+title: Guide - Custom Auth Providers
+description: Understand Zebric's auth provider contract and how to implement a new provider beyond Better Auth and Google Workspace.
+---
+
+Zebric has a pluggable authentication contract in the runtime, and the Node runtime now ships with two first-class providers:
+
+- Better Auth
+- Google Workspace
+
+This guide is for the next step beyond those built-ins: implementing a new provider such as Okta, Microsoft Entra ID, or a company-specific auth gateway.
+
+## What Works Today
+
+The current Node runtime supports all of these out of the box:
+
+- Creates a `BetterAuthProvider`
+- Creates a `GoogleWorkspaceAuthProvider`
+- Mounts Better Auth handlers at `/api/auth/*`
+- Mounts Google Workspace auth handlers at `/api/auth/*`
+- Uses provider-backed sessions for page access checks
+- Uses `auth.permissions` and entity access rules for authorization
+- Supports API-key auth for skill routes
+- Supports provider-owned auth page behavior such as built-in forms or redirect entry points
+
+For most teams, one of these should be enough:
+
+1. Use Better Auth for local email/password flows
+2. Use Google Workspace for internal SSO
+3. Define authorization in `auth.permissions` and `[entity.*.access]`
+
+## What "Bring Your Own Auth" Means In Zebric
+
+At the core runtime level, a custom provider implements the `AuthProvider` interface:
+
+```ts
+export interface AuthProvider {
+  getProviderId(): string
+  handleAuthRequest(request: Request): Promise<Response>
+  getSession(request: Request): Promise<UserSession | null>
+  hasRole(session: UserSession | null, role: string): boolean
+  ownsResource(session: UserSession | null, resourceUserId: string): boolean
+  createSession(userId: string, options?: { replaceToken?: string }): Promise<PluginAuthToken>
+  invalidateSession(token: string): Promise<void>
+  resolveUserFromToken(token: string): Promise<Record<string, any> | null>
+  getPresentationConfig(): AuthPresentationConfig
+  getSignInUrl(callbackURL: string): string
+  getSignUpUrl(callbackURL: string): string | null
+  cleanup?(): Promise<void>
+}
+```
+
+That contract is enough for:
+
+- Request authentication
+- Role checks
+- Ownership checks
+- Session-aware access control
+- Provider-owned auth routes
+- Provider-owned sign-in/sign-up entry behavior
+- Plugin/runtime-issued session management
+
+This is a real provider boundary now, not just a thin session adapter.
+
+## When To Add A New Provider
+
+Choose this path if you need:
+
+- A non-Better-Auth, non-Google-Workspace identity stack
+- Company-standard middleware that must stay authoritative
+- Custom token formats or enterprise session validation
+- Tight integration with an external identity proxy
+
+In that case, plan on adding:
+
+1. A provider class implementing `AuthProvider`
+2. A runtime selection path so Zebric can instantiate it from blueprint config
+3. Provider-owned auth route handling under `/api/auth/*`
+4. Provider-owned plugin/runtime session handling
+5. A doc page and example blueprint config
+
+## Implementation Shape
+
+A simplified provider looks like this:
+
+```ts
+import type {
+  AuthPresentationConfig,
+  AuthProvider,
+  AuthProviderConfig,
+  PluginAuthToken,
+  UserSession,
+} from '@zebric/runtime-core'
+
+export class OktaAuthProvider implements AuthProvider {
+  constructor(private config: AuthProviderConfig) {}
+
+  getProviderId(): string {
+    return 'okta'
+  }
+
+  async handleAuthRequest(request: Request): Promise<Response> {
+    return new Response('not implemented', { status: 501 })
+  }
+
+  async getSession(request: Request): Promise<UserSession | null> {
+    return null
+  }
+
+  hasRole(session: UserSession | null, role: string): boolean {
+    const roles = Array.isArray((session?.user as any)?.roles)
+      ? (session!.user as any).roles
+      : [session?.user?.role].filter(Boolean)
+    return roles.includes(role)
+  }
+
+  ownsResource(session: UserSession | null, resourceUserId: string): boolean {
+    return session?.userId === resourceUserId
+  }
+
+  async createSession(userId: string, options?: { replaceToken?: string }): Promise<PluginAuthToken> {
+    throw new Error('implement session issuance')
+  }
+
+  async invalidateSession(token: string): Promise<void> {
+    // revoke token
+  }
+
+  async resolveUserFromToken(token: string): Promise<Record<string, any> | null> {
+    return null
+  }
+
+  getPresentationConfig(): AuthPresentationConfig {
+    return {
+      signInMode: 'redirect',
+      signUpMode: 'disabled',
+    }
+  }
+
+  getSignInUrl(callbackURL: string): string {
+    return `/api/auth/sign-in/okta?callbackURL=${encodeURIComponent(callbackURL)}`
+  }
+
+  getSignUpUrl(_callbackURL: string): string | null {
+    return null
+  }
+}
+```
+
+## What To Put In The Session
+
+Your provider should return enough user data for authorization rules to stay simple and stable.
+
+At minimum:
+
+- `user.id`
+- `user.email`
+- `user.name` when available
+- `user.role` for a primary role
+- `user.roles` if your provider can map multiple roles
+- `user.groups` if group membership matters to your policies
+```
+
+If your data model keys access by department, team, or tenant, include those fields too so rules can reference them consistently.
+
+## Authorization Still Belongs In Zebric
+
+Even with external SSO, keep application authorization in your blueprint:
+
+```toml
+[auth.permissions.admin]
+allow = ["*"]
+
+[auth.permissions.user]
+allow = [
+  { entity = "Ticket", actions = ["read", "create"] },
+  { entity = "Ticket", actions = ["update"], condition = { assigneeId = "$currentUser.id" } }
+]
+```
+
+That separation keeps the system understandable:
+
+- Your identity provider proves who the user is
+- Zebric decides what that user can do in the app
+
+## Suggested Direction
+
+If you are deciding what to add next, the most natural follow-on providers are enterprise SSO systems that look like Google Workspace in deployment shape:
+
+- Okta
+- Microsoft Entra ID
+- Company-specific OIDC or proxy-backed auth
+
+Those fit Zebric's internal-app focus much better than consumer-oriented auth platforms.

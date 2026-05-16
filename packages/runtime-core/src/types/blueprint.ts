@@ -483,8 +483,36 @@ export interface ApiKeyConfig {
   keyEnv: string
 }
 
+export interface GoogleWorkspaceAuthConfig {
+  clientIdEnv?: string
+  clientSecretEnv?: string
+  hostedDomain?: string
+  scopes?: string[]
+  defaultRole?: string
+  adminEmails?: string[]
+  defaultGroups?: string[]
+  roleMappings?: GoogleWorkspaceClaimMapping[]
+  groupMappings?: GoogleWorkspaceClaimMapping[]
+}
+
+export interface GoogleWorkspaceClaimMatch {
+  claim: string
+  equals?: string
+  oneOf?: string[]
+  endsWith?: string
+  contains?: string
+  regex?: string
+}
+
+export interface GoogleWorkspaceClaimMapping {
+  value: string
+  mode?: 'all' | 'any'
+  when: GoogleWorkspaceClaimMatch[]
+}
+
 export interface AuthConfig {
-  providers: string[]
+  provider?: string
+  providers?: string[]
   trustedOrigins?: string[]
   session?: {
     duration?: number
@@ -492,6 +520,7 @@ export interface AuthConfig {
   }
   permissions?: Record<string, PermissionRule>
   apiKeys?: ApiKeyConfig[]
+  google?: GoogleWorkspaceAuthConfig
 }
 
 export interface PermissionRule {

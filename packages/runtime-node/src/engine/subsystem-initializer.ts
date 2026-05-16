@@ -3,7 +3,7 @@
  *
  * Handles initialization of all engine subsystems:
  * - Database connection and schema
- * - Authentication (Better Auth)
+ * - Authentication
  * - Workflows
  * - Cache (in-memory or Redis)
  */
@@ -13,7 +13,7 @@ import type { Logger } from '@zebric/observability'
 import type { DatabaseConfig, EngineConfig } from '../types/index.js'
 import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
-import { createBetterAuthProvider, type AuthProviderConfig } from '../auth/index.js'
+import { createAuthProvider, resolveAuthProviderId, type AuthProviderConfig } from '../auth/index.js'
 import { WorkflowManager, ProductionHttpClient } from '../workflows/index.js'
 import { CacheInterface, MemoryCache, RedisCache } from '../cache/index.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
@@ -210,8 +210,7 @@ export class SubsystemInitializer {
       trustedOrigins,
     }
 
-    // Create BetterAuth provider (default implementation)
-    this.authProvider = createBetterAuthProvider(authConfig)
+    this.authProvider = createAuthProvider(authConfig)
     this.sessionManager = new SessionManager(this.authProvider)
 
     // Update query executor with permission manager
@@ -222,6 +221,7 @@ export class SubsystemInitializer {
     const roles = this.permissionManager.getAllRoles()
     const roleInfo = roles.length > 0 ? ` with roles: ${roles.join(', ')}` : ''
     this.logger.info('Authentication initialized', {
+      provider: resolveAuthProviderId(this.blueprint.auth),
       providers: this.blueprint.auth?.providers?.join(', ') || 'email',
       roles,
       roleInfo,

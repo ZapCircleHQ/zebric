@@ -27,7 +27,26 @@ function stubDeps(overrides: Record<string, any> = {}) {
     },
     config: { port: 0, host: '127.0.0.1', ...overrides.config },
     state: { status: 'running' },
-    authProvider: { getAuthInstance: () => ({ handler: async () => new Response('ok') }) },
+    authProvider: {
+      getProviderId: () => 'better-auth',
+      getAuthInstance: () => ({ handler: async () => new Response('ok') }),
+      handleAuthRequest: async () => new Response('ok'),
+      getSession: async () => null,
+      hasRole: () => false,
+      ownsResource: () => false,
+      createSession: async () => ({
+        id: 'sess-1',
+        userId: 'user-1',
+        token: 'token-1',
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60000),
+      }),
+      invalidateSession: async () => {},
+      resolveUserFromToken: async () => null,
+      getPresentationConfig: () => ({ signInMode: 'builtin', signUpMode: 'builtin' }),
+      getSignInUrl: (callbackURL: string) => `/auth/sign-in?callbackURL=${encodeURIComponent(callbackURL)}`,
+      getSignUpUrl: (callbackURL: string) => `/auth/sign-up?callbackURL=${encodeURIComponent(callbackURL)}`,
+    },
     sessionManager: overrides.sessionManager ?? { getSession: async () => null },
     queryExecutor: {
       execute: async () => [],
@@ -214,6 +233,42 @@ describe('security: action route authentication', () => {
 
     expect(res.status).not.toBe(401)
     expect(res.status).not.toBe(403)
+  })
+})
+
+describe('auth pages: provider-driven behavior', () => {
+  it('redirects /auth/sign-in to provider-owned entry point for external auth providers', async () => {
+    const sm = new ServerManager(stubDeps({
+      authProvider: {
+        ...stubDeps().authProvider,
+        getProviderId: () => 'google-workspace',
+        getPresentationConfig: () => ({ signInMode: 'redirect', signUpMode: 'disabled' }),
+        getSignInUrl: (callbackURL: string) => `/api/auth/sign-in/google?callbackURL=${encodeURIComponent(callbackURL)}`,
+        getSignUpUrl: () => null,
+      },
+    }))
+    const app = initApp(sm)
+
+    const res = await app.request('/auth/sign-in?callbackURL=%2Fdashboard')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toContain('/api/auth/sign-in/google')
+  })
+
+  it('redirects /auth/sign-up back to sign-in when provider disables sign-up', async () => {
+    const sm = new ServerManager(stubDeps({
+      authProvider: {
+        ...stubDeps().authProvider,
+        getProviderId: () => 'google-workspace',
+        getPresentationConfig: () => ({ signInMode: 'redirect', signUpMode: 'disabled' }),
+        getSignInUrl: (callbackURL: string) => `/api/auth/sign-in/google?callbackURL=${encodeURIComponent(callbackURL)}`,
+        getSignUpUrl: () => null,
+      },
+    }))
+    const app = initApp(sm)
+
+    const res = await app.request('/auth/sign-up?callbackURL=%2Fdashboard')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('location')).toContain('/api/auth/sign-in/google')
   })
 })
 

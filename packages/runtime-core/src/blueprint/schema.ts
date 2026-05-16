@@ -444,8 +444,43 @@ const ApiKeyConfigSchema = z.object({
   keyEnv: z.string(),
 })
 
+const GoogleWorkspaceAuthConfigSchema = z.object({
+  clientIdEnv: z.string().optional(),
+  clientSecretEnv: z.string().optional(),
+  hostedDomain: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  defaultRole: z.string().optional(),
+  adminEmails: z.array(z.string()).optional(),
+  defaultGroups: z.array(z.string()).optional(),
+  roleMappings: z.array(z.object({
+    value: z.string(),
+    mode: z.enum(['all', 'any']).optional(),
+    when: z.array(z.object({
+      claim: z.string(),
+      equals: z.string().optional(),
+      oneOf: z.array(z.string()).optional(),
+      endsWith: z.string().optional(),
+      contains: z.string().optional(),
+      regex: z.string().optional(),
+    })),
+  })).optional(),
+  groupMappings: z.array(z.object({
+    value: z.string(),
+    mode: z.enum(['all', 'any']).optional(),
+    when: z.array(z.object({
+      claim: z.string(),
+      equals: z.string().optional(),
+      oneOf: z.array(z.string()).optional(),
+      endsWith: z.string().optional(),
+      contains: z.string().optional(),
+      regex: z.string().optional(),
+    })),
+  })).optional(),
+})
+
 const AuthConfigSchema = z.object({
-  providers: z.array(z.string()),
+  provider: z.string().optional(),
+  providers: z.array(z.string()).optional(),
   trustedOrigins: z.array(z.string()).optional(),
   session: z
     .object({
@@ -455,6 +490,7 @@ const AuthConfigSchema = z.object({
     .optional(),
   permissions: z.record(StringKeySchema, PermissionRuleSchema).optional(),
   apiKeys: z.array(ApiKeyConfigSchema).optional(),
+  google: GoogleWorkspaceAuthConfigSchema.optional(),
 })
 
 // ============================================================================

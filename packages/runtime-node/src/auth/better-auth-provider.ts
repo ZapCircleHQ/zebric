@@ -6,7 +6,7 @@
 
 import { betterAuth, type Auth } from 'better-auth'
 import Database from 'better-sqlite3'
-import type { AuthProvider, UserSession } from '@zebric/runtime-core'
+import type { AuthPresentationConfig, AuthProvider, PluginAuthToken, UserSession } from '@zebric/runtime-core'
 import type { AuthProviderConfig } from './config.js'
 
 /**
@@ -14,6 +14,10 @@ import type { AuthProviderConfig } from './config.js'
  */
 export class BetterAuthProvider implements AuthProvider {
   private auth: Auth<any>
+  private presentation: AuthPresentationConfig = {
+    signInMode: 'builtin',
+    signUpMode: 'builtin',
+  }
 
   constructor(config: AuthProviderConfig) {
     const { databaseUrl, blueprint, baseURL, secret, trustedOrigins } = config
@@ -57,6 +61,14 @@ export class BetterAuthProvider implements AuthProvider {
    */
   getAuthInstance(): Auth<any> {
     return this.auth
+  }
+
+  getProviderId(): string {
+    return 'better-auth'
+  }
+
+  async handleAuthRequest(request: Request): Promise<Response> {
+    return this.auth.handler(request)
   }
 
   /**
@@ -209,6 +221,67 @@ export class BetterAuthProvider implements AuthProvider {
   ownsResource(session: UserSession | null, resourceUserId: string): boolean {
     if (!session) return false
     return session.userId === resourceUserId
+  }
+
+  async createSession(userId: string, options?: { replaceToken?: string }): Promise<PluginAuthToken> {
+    if (options?.replaceToken) {
+      await this.invalidateSession(options.replaceToken)
+    }
+
+    const context = await this.auth.$context
+    const headers = typeof Headers !== 'undefined'
+      ? new Headers({ 'user-agent': 'zbl-plugin-token' })
+      : {
+          get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'zbl-plugin-token' : undefined),
+        }
+
+    const endpointContext: any = {
+      context,
+      headers,
+      method: 'POST',
+      path: '/plugins/token',
+    }
+
+    const internalAdapter = context.internalAdapter as any
+    const session = await internalAdapter.createSession(
+      userId,
+      endpointContext,
+      false,
+      {
+        userAgent: 'zbl-plugin-token',
+      }
+    )
+
+    return {
+      id: session.id,
+      userId: session.userId,
+      token: session.token,
+      createdAt: session.createdAt instanceof Date ? session.createdAt : new Date(session.createdAt),
+      expiresAt: session.expiresAt instanceof Date ? session.expiresAt : new Date(session.expiresAt),
+    }
+  }
+
+  async invalidateSession(token: string): Promise<void> {
+    const context = await this.auth.$context
+    await context.internalAdapter.deleteSession(token)
+  }
+
+  async resolveUserFromToken(token: string): Promise<Record<string, any> | null> {
+    const context = await this.auth.$context
+    const result = await context.internalAdapter.findSession(token)
+    return result?.user || null
+  }
+
+  getPresentationConfig(): AuthPresentationConfig {
+    return this.presentation
+  }
+
+  getSignInUrl(callbackURL: string): string {
+    return `/auth/sign-in?callbackURL=${encodeURIComponent(callbackURL || '/')}`
+  }
+
+  getSignUpUrl(callbackURL: string): string | null {
+    return `/auth/sign-up?callbackURL=${encodeURIComponent(callbackURL || '/')}`
   }
 
   /**

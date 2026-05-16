@@ -26,7 +26,7 @@ export interface WidgetHandlerResult {
 export async function handleWidgetEvent(
   blueprint: Blueprint,
   body: any,
-  request: HttpRequest,
+  request: HttpRequest | Request,
   deps: WidgetHandlerDeps
 ): Promise<WidgetHandlerResult> {
   if (!body || typeof body.page !== 'string' || typeof body.event !== 'string' ||
@@ -34,12 +34,25 @@ export async function handleWidgetEvent(
     return { status: 400, body: { error: 'Invalid widget event' } }
   }
 
-  const session = deps.sessionManager ? await deps.sessionManager.getSession(request as any) : null
+  const session = deps.sessionManager ? await deps.sessionManager.getSession(request) : null
+  const page = blueprint.pages.find((entry) => entry.path === body.page)
+  if (!page) {
+    return { status: 404, body: { error: 'Page not found' } }
+  }
+  if (page.auth !== 'none' && page.auth !== 'optional' && !session) {
+    return {
+      status: 401,
+      body: {
+        error: 'Authentication required',
+        message: 'You must be logged in to access this page',
+      },
+    }
+  }
 
   // Load the current record so `$row.<field>` placeholders can read it.
   let row: Record<string, any> = {}
   try {
-    const existing = await deps.queryExecutor.findById(body.row.entity, body.row.id)
+    const existing = await deps.queryExecutor.findById(body.row.entity, body.row.id, { session })
     if (existing) row = existing
   } catch {
     // Tolerate missing — the row may have been created out-of-band.

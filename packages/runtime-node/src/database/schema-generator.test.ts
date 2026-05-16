@@ -122,4 +122,23 @@ describe('SchemaGenerator', () => {
     const userTableMatches = combined.match(/CREATE TABLE IF NOT EXISTS user \(/g) || []
     expect(userTableMatches).toHaveLength(1)
   })
+
+  it('skips User but does not emit Better Auth tables for google-workspace auth', () => {
+    const generator = new SchemaGenerator()
+    const bp = blueprint(
+      [
+        entity('User', [{ name: 'id', type: 'ULID', primary_key: true }]),
+        entity('Task', [{ name: 'id', type: 'ULID', primary_key: true }]),
+      ],
+      { provider: 'google-workspace' }
+    )
+
+    const generated = generator.generate(bp)
+    expect(Object.keys(generated.tables)).toEqual(['Task'])
+
+    const statements = generator.generateInitialSchemaStatements(bp).join('\n')
+    expect(statements).toContain('CREATE TABLE IF NOT EXISTS task')
+    expect(statements).not.toContain('CREATE TABLE IF NOT EXISTS account')
+    expect(statements).not.toContain('CREATE TABLE IF NOT EXISTS verification')
+  })
 })

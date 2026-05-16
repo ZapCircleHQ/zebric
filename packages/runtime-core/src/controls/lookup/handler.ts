@@ -66,7 +66,7 @@ export function resolveLookupConfig(
 export async function handleLookupSearch(
   blueprint: Blueprint,
   params: LookupSearchParams,
-  request: HttpRequest,
+  request: HttpRequest | Request,
   deps: LookupSearchDeps
 ): Promise<LookupSearchResult> {
   const page = params.page
@@ -74,12 +74,26 @@ export async function handleLookupSearch(
     return { status: 400, body: { error: 'Missing page' } }
   }
 
+  const pageDef = (blueprint.pages || []).find((entry) => entry.path === page)
+  if (!pageDef) {
+    return { status: 404, body: { error: 'Page not found' } }
+  }
+
   const config = resolveLookupConfig(blueprint, page, params.field)
   if (!config) {
     return { status: 404, body: { error: 'No lookup configured for this page/field' } }
   }
 
-  const session = deps.sessionManager ? await deps.sessionManager.getSession(request as any) : null
+  const session = deps.sessionManager ? await deps.sessionManager.getSession(request) : null
+  if (pageDef.auth !== 'none' && pageDef.auth !== 'optional' && !session) {
+    return {
+      status: 401,
+      body: {
+        error: 'Authentication required',
+        message: 'You must be logged in to access this page',
+      },
+    }
+  }
 
   try {
     const records = await deps.queryExecutor.search(config.entity, config.search, params.q ?? '', {

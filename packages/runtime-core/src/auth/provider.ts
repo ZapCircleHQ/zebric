@@ -6,6 +6,7 @@
  */
 
 import type { Blueprint } from '../types/blueprint.js'
+import type { PluginAuthToken } from '../types/plugin.js'
 
 /**
  * User session information returned by authentication providers
@@ -34,6 +35,11 @@ export interface AuthProviderConfig {
   trustedOrigins: string[]
 }
 
+export interface AuthPresentationConfig {
+  signInMode: 'builtin' | 'redirect'
+  signUpMode: 'builtin' | 'redirect' | 'disabled'
+}
+
 /**
  * AuthProvider interface
  *
@@ -42,10 +48,20 @@ export interface AuthProviderConfig {
  */
 export interface AuthProvider {
   /**
+   * Stable provider identifier used by the runtime.
+   */
+  getProviderId(): string
+
+  /**
    * Get the underlying auth instance (provider-specific)
    * This allows access to provider-specific APIs when needed
    */
-  getAuthInstance(): any
+  getAuthInstance?(): any
+
+  /**
+   * Handle provider-owned auth routes mounted under /api/auth/*
+   */
+  handleAuthRequest(request: Request): Promise<Response>
 
   /**
    * Get session from request (Web API Request)
@@ -62,6 +78,32 @@ export interface AuthProvider {
    * Check if a user owns a resource
    */
   ownsResource(session: UserSession | null, resourceUserId: string): boolean
+
+  /**
+   * Create a session token for plugin/runtime-issued sessions.
+   */
+  createSession(userId: string, options?: { replaceToken?: string }): Promise<PluginAuthToken>
+
+  /**
+   * Invalidate an existing session token.
+   */
+  invalidateSession(token: string): Promise<void>
+
+  /**
+   * Resolve a user payload from a session token.
+   */
+  resolveUserFromToken(token: string): Promise<Record<string, any> | null>
+
+  /**
+   * Describe how the public auth pages should behave for this provider.
+   */
+  getPresentationConfig(): AuthPresentationConfig
+
+  /**
+   * Compute the provider entry points used by /auth/sign-in and /auth/sign-up.
+   */
+  getSignInUrl(callbackURL: string): string
+  getSignUpUrl(callbackURL: string): string | null
 
   /**
    * Cleanup/shutdown the auth provider

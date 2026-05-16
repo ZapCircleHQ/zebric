@@ -1,0 +1,223 @@
+---
+label: Guides
+order: 5
+slug: guides/google-workspace-auth
+title: Guide - Google Workspace Auth
+description: Configure Google Workspace SSO for Zebric, including domain restriction and claim-based role/group mapping.
+---
+
+Google Workspace is a first-class authentication provider in Zebric's Node runtime. It is designed for internal apps where employees should sign in with their company Google accounts and Zebric should still own application authorization.
+
+Use this provider when you want:
+
+- company Google sign-in instead of local email/password auth
+- domain restriction such as `example.com`
+- claim-based mapping from Google identity data into Zebric roles and groups
+- Zebric page auth, entity access rules, and RBAC to remain the authorization layer
+
+## Basic Setup
+
+Configure the auth provider in your blueprint:
+
+```toml
+[auth]
+provider = "google-workspace"
+trustedOrigins = ["http://localhost:3000", "https://ops.example.com"]
+
+[auth.google]
+hostedDomain = "example.com"
+clientIdEnv = "GOOGLE_CLIENT_ID"
+clientSecretEnv = "GOOGLE_CLIENT_SECRET"
+defaultRole = "employee"
+defaultGroups = ["workspace"]
+```
+
+Set the credentials in the environment where Zebric runs:
+
+```bash
+export GOOGLE_CLIENT_ID="your-google-client-id"
+export GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+
+`trustedOrigins` should include every browser origin that can initiate auth flows for your app.
+
+## Google OAuth Configuration
+
+In Google Cloud, create an OAuth client for your Zebric app and make sure the redirect URI matches:
+
+```text
+http://localhost:3000/api/auth/callback/google
+```
+
+For production, use your deployed app origin:
+
+```text
+https://ops.example.com/api/auth/callback/google
+```
+
+Zebric starts the Google flow from `/auth/sign-in`, which redirects to `/api/auth/sign-in/google`, and completes the flow at `/api/auth/callback/google`.
+
+## Page Behavior
+
+With `provider = "google-workspace"`:
+
+- `/auth/sign-in` redirects into Google sign-in
+- `/auth/sign-up` redirects back to sign-in because self-service sign-up is disabled
+- `/auth/sign-out` clears the Zebric session and returns to the callback URL
+
+Page-level auth still works the same:
+
+```toml
+[page."/"]
+title = "Operations Dashboard"
+layout = "dashboard"
+auth = "required"
+```
+
+## Role And Group Mapping
+
+Google Workspace auth can map claims into Zebric `role`, `roles`, and `groups`.
+
+The provider returns:
+
+- `user.role` as the primary role
+- `user.roles` as the full mapped role list
+- `user.groups` as mapped group names
+
+Zebric's permission manager already understands `user.role` and `user.roles`. `user.groups` is available on the session for downstream use and custom policies.
+
+### Default Values
+
+Use `defaultRole` and `defaultGroups` as the baseline when no more specific mapping applies:
+
+```toml
+[auth.google]
+defaultRole = "employee"
+defaultGroups = ["workspace"]
+```
+
+`defaultRole` is a fallback role. If a role mapping matches, the mapped role becomes primary.
+
+### Admin Emails
+
+The simplest way to grant admin access to specific individuals is `adminEmails`. Any user whose email appears in this list receives the `admin` role automatically, regardless of other mappings:
+
+```toml
+[auth.google]
+adminEmails = ["alice@example.com", "bob@example.com"]
+```
+
+### Email-Based Role Mapping
+
+Use `endsWith` to match a specific subdomain used for a particular team, not your primary hosted domain (which all users already share):
+
+```toml
+[[auth.google.roleMappings]]
+value = "contractor"
+when = [{ claim = "email", endsWith = "@contractors.example.com" }]
+```
+
+### Domain-Based Role Mapping
+
+The `hd` claim is the only non-email Google identity field available from the standard userinfo endpoint. It reflects the user's Google Workspace hosted domain:
+
+```toml
+[[auth.google.roleMappings]]
+value = "partner"
+when = [{ claim = "hd", equals = "partner.example.com" }]
+```
+
+Custom claims such as department or organizational unit are not returned by Google's standard userinfo endpoint. If you need those, you will need a custom auth provider that calls additional Google Workspace APIs or reads from SAML attribute mappings.
+
+### Group Mapping
+
+```toml
+[[auth.google.groupMappings]]
+value = "ops"
+when = [{ claim = "email", contains = "+ops@" }]
+```
+
+## Claim Matching Rules
+
+Each mapping rule assigns a Zebric role or group when its `when` conditions match.
+
+Supported matchers:
+
+- `equals`
+- `oneOf`
+- `endsWith`
+- `contains`
+- `regex`
+
+Supported rule modes:
+
+- `all` means every `when` condition must match
+- `any` means any one condition can match
+
+Claims can reference nested properties such as `org.units`.
+
+## Authorization In Zebric
+
+Authentication proves identity. Authorization should still live in the blueprint:
+
+```toml
+[auth.permissions.admin]
+allow = ["*"]
+
+[auth.permissions.employee]
+allow = [
+  { entity = "Ticket", actions = ["read", "create"] }
+]
+
+[auth.permissions.finance]
+allow = [
+  { entity = "Invoice", actions = ["read", "update"] }
+]
+```
+
+You can also continue using entity access rules:
+
+```toml
+[entity.Ticket.access]
+update = { assigneeId = "$currentUser.id" }
+delete = { "$currentUser.role" = "admin" }
+```
+
+## Additional Options
+
+### Scopes
+
+The provider requests `openid email profile` by default. You can extend this if your app needs additional Google API access:
+
+```toml
+[auth.google]
+scopes = ["openid", "email", "profile", "https://www.googleapis.com/auth/calendar.readonly"]
+```
+
+Adding scopes beyond the defaults does not make extra claims available on the Zebric session — those are still sourced from the standard userinfo endpoint.
+
+### Session Duration
+
+Sessions default to 7 days. Override with `auth.session.duration` (in seconds):
+
+```toml
+[auth.session]
+duration = 28800  # 8 hours
+```
+
+## Practical Constraints
+
+A few things to keep in mind:
+
+- This provider is implemented in the Node runtime today
+- Google Workspace provider sessions are managed by Zebric, not Better Auth
+- Mapping is only as good as the claims your Google identity flow makes available
+- If you need a different identity system entirely, use the custom provider path
+
+## When To Use Custom Auth Instead
+
+Use [Custom Auth Providers](/guides/custom-auth/) when:
+
+- you need Okta, Entra ID, or another provider that Zebric does not yet ship
+- you need a company-standard gateway or identity proxy to stay authoritative
+- you need a session model or token lifecycle that differs materially from the built-in providers

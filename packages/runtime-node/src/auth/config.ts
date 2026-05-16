@@ -6,17 +6,62 @@
 
 import { betterAuth, type Auth } from 'better-auth'
 import Database from 'better-sqlite3'
-import type { Blueprint, AuthProvider, AuthProviderConfig } from '@zebric/runtime-core'
+import type { Blueprint, AuthConfig, AuthProvider, AuthProviderConfig } from '@zebric/runtime-core'
 import { BetterAuthProvider } from './better-auth-provider.js'
+import { GoogleWorkspaceAuthProvider } from './google-workspace-provider.js'
 
 // Re-export for convenience
 export type { AuthProviderConfig } from '@zebric/runtime-core'
+export type AuthProviderId = 'better-auth' | 'google-workspace'
 
 /**
  * Create Better Auth provider instance
  */
 export function createBetterAuthProvider(config: AuthProviderConfig): AuthProvider {
   return new BetterAuthProvider(config)
+}
+
+export function createGoogleWorkspaceAuthProvider(config: AuthProviderConfig): AuthProvider {
+  return new GoogleWorkspaceAuthProvider(config)
+}
+
+export function resolveAuthProviderId(auth?: AuthConfig): AuthProviderId {
+  const explicit = auth?.provider?.trim()
+  if (explicit === 'google-workspace') return 'google-workspace'
+  if (explicit === 'better-auth') return 'better-auth'
+
+  const providers = auth?.providers || []
+  const normalized = providers.map(provider => provider.toLowerCase())
+  if (
+    normalized.length > 0 &&
+    normalized.every(provider => provider === 'google' || provider === 'google-workspace')
+  ) {
+    return 'google-workspace'
+  }
+
+  return 'better-auth'
+}
+
+export function isAuthEnabled(blueprint: Blueprint): boolean {
+  return Boolean(
+    blueprint.auth?.provider
+    || (blueprint.auth?.providers && blueprint.auth.providers.length > 0)
+  )
+}
+
+export function usesManagedUserEntity(blueprint: Blueprint): boolean {
+  return isAuthEnabled(blueprint)
+}
+
+export function createAuthProvider(config: AuthProviderConfig): AuthProvider {
+  const providerId = resolveAuthProviderId(config.blueprint.auth)
+  switch (providerId) {
+    case 'google-workspace':
+      return createGoogleWorkspaceAuthProvider(config)
+    case 'better-auth':
+    default:
+      return createBetterAuthProvider(config)
+  }
 }
 
 export interface BetterAuthConfig extends AuthProviderConfig {
@@ -68,6 +113,7 @@ export function createAuth(config: BetterAuthConfig): Auth<any> {
  */
 export function getAuthConfigFromBlueprint(blueprint: Blueprint) {
   return {
+    provider: resolveAuthProviderId(blueprint.auth),
     providers: blueprint.auth?.providers || ['email'],
   }
 }

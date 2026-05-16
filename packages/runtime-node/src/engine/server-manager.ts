@@ -258,7 +258,7 @@ export class ServerManager {
     })
 
     registerStaticUploads(this.app)
-    registerAuthPages(this.app, this.blueprint, this.config)
+    registerAuthPages(this.app, this.blueprint, this.config, this.authProvider)
     registerAuthRoutes(this.app, this.authProvider)
     registerWebhookRoutes(this.app, this.workflowManager)
     registerNotificationRoutes(this.app, this.notificationManager, this.workflowManager)

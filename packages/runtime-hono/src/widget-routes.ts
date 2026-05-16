@@ -13,7 +13,6 @@ import {
   handleLookupSearch,
   pageHasWidget,
   type Blueprint,
-  type HttpRequest,
   type QueryExecutorPort,
   type SessionManagerPort,
   type WidgetHandlerDeps,
@@ -35,7 +34,7 @@ export function registerWidgetRoutes(app: Hono, deps: WidgetRoutesDeps): void {
   app.post('/_widget/event', async (c) => {
     try {
       const body = await c.req.json().catch(() => null)
-      const result = await handleWidgetEvent(blueprint, body, c.req.raw as HttpRequest | Request, {
+      const result = await handleWidgetEvent(blueprint, body, c.req.raw, {
         queryExecutor,
         sessionManager,
         triggerWorkflow,
@@ -77,7 +76,7 @@ export function registerSearchRoutes(app: Hono, deps: SearchRoutesDeps): void {
         field: c.req.query('field'),
         q: c.req.query('q') || '',
       },
-      c.req.raw as HttpRequest | Request,
+      c.req.raw,
       { queryExecutor, sessionManager }
     )
     return Response.json(result.body, { status: result.status })

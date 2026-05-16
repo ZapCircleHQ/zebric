@@ -121,13 +121,10 @@ export class PluginAPIProvider {
           return null
         },
         createSession: async (userId: string, options?: { replaceToken?: string }): Promise<PluginAuthToken> => {
-          if (options?.replaceToken) {
-            await this.revokePluginSession(options.replaceToken)
-          }
-          return this.issuePluginSession(userId)
+          return this.authProvider.createSession(userId, options)
         },
         invalidateSession: async (token: string) => {
-          await this.revokePluginSession(token)
+          await this.authProvider.invalidateSession(token)
         },
       },
 
@@ -333,69 +330,14 @@ export class PluginAPIProvider {
   }
 
   /**
-   * Issue a plugin session token
-   */
-  private async issuePluginSession(userId: string): Promise<PluginAuthToken> {
-    // Get the underlying Better Auth instance
-    const betterAuthInstance = this.authProvider.getAuthInstance()
-    const context = await betterAuthInstance.$context
-    const headers = typeof Headers !== 'undefined'
-      ? new Headers({ 'user-agent': 'zbl-plugin-token' })
-      : {
-          get: (name: string) => (name.toLowerCase() === 'user-agent' ? 'zbl-plugin-token' : undefined),
-        }
-
-    const endpointContext: any = {
-      context,
-      headers,
-      method: 'POST',
-      path: '/plugins/token',
-    }
-
-    const session = await context.internalAdapter.createSession(
-      userId,
-      endpointContext,
-      false,
-      {
-        userAgent: 'zbl-plugin-token',
-      }
-    )
-
-    return {
-      id: session.id,
-      userId: session.userId,
-      token: session.token,
-      createdAt: session.createdAt instanceof Date ? session.createdAt : new Date(session.createdAt),
-      expiresAt: session.expiresAt instanceof Date ? session.expiresAt : new Date(session.expiresAt),
-    }
-  }
-
-  /**
-   * Revoke a plugin session token
-   */
-  private async revokePluginSession(token: string): Promise<void> {
-    // Get the underlying Better Auth instance
-    const betterAuthInstance = this.authProvider.getAuthInstance()
-    const context = await betterAuthInstance.$context
-    await context.internalAdapter.deleteSession(token)
-  }
-
-  /**
    * Resolve user from plugin session token
    */
   private async resolvePluginUser(token: string): Promise<any | null> {
     try {
-      // Get the underlying Better Auth instance
-      const betterAuthInstance = this.authProvider.getAuthInstance()
-      const context = await betterAuthInstance.$context
-      const result = await context.internalAdapter.findSession(token)
-      if (result && result.user) {
-        return result.user
-      }
+      return await this.authProvider.resolveUserFromToken(token)
     } catch (error) {
       this.auditLogger?.logSuspiciousActivity('plugin.auth.resolve.error', AuditSeverity.WARNING, {
         metadata: {
-          token,
           message: error instanceof Error ? error.message : String(error),
         },
       })

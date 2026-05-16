@@ -209,9 +209,10 @@ export class QueryExecutor {
   /**
    * Find a single record by ID
    */
-  async findById(entityName: string, id: string): Promise<any | null> {
+  async findById(entityName: string, id: string, context?: QueryContext): Promise<any | null> {
     const db = this.connection.getDb()
     const table = this.connection.getTable(entityName)
+    const entity = this.connection.getEntity(entityName)
 
     if (!table) {
       throw new Error(`Entity ${entityName} not found`)
@@ -226,8 +227,25 @@ export class QueryExecutor {
         .limit(1)
 
       const record = results[0] || null
+      if (!record) return null
+
+      const camelRecord = this.toCamelCase(record)
+      if (entity && context) {
+        const hasAccess = await AccessControl.checkAccess({
+          session: context.session,
+          action: 'read',
+          entity,
+          data: camelRecord,
+          permissionManager: this.permissionManager,
+        })
+        if (!hasAccess) {
+          return null
+        }
+        return AccessControl.filterFields(entity, 'read', camelRecord, context.session)
+      }
+
       // Convert snake_case to camelCase for API consistency
-      return record ? this.toCamelCase(record) : null
+      return camelRecord
     } finally {
       this.metrics?.recordQuery(entityName, 'readById', performance.now() - start)
     }

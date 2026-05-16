@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { registerPageRoutes, registerSearchRoutes, registerWidgetRoutes } from './server-routes.js'
 
 describe('registerPageRoutes', () => {
   it('sets a CSRF cookie when a safe page request generated a token', async () => {
@@ -93,6 +93,98 @@ describe('registerSearchRoutes', () => {
         context: { session },
       }
     )
+  })
+
+  it('requires authentication for secure-by-default lookup pages', async () => {
+    const app = new Hono()
+    const queryExecutor = {
+      search: vi.fn(async () => []),
+    }
+    const sessionManager = {
+      getSession: vi.fn(async () => null),
+    }
+
+    registerSearchRoutes(app, {
+      blueprint: {
+        version: '0.3.0',
+        project: { name: 'test', version: '1.0.0', runtime: { min_version: '0.2.0' } },
+        entities: [],
+        pages: [
+          {
+            path: '/customers',
+            title: 'Customer Search',
+            widget: {
+              kind: 'lookup',
+              entity: 'Customer',
+              search: ['lastName', 'firstName'],
+            },
+          },
+        ],
+      } as any,
+      queryExecutor: queryExecutor as any,
+      sessionManager: sessionManager as any,
+    })
+
+    const response = await app.request('/_widget/search?page=/customers&q=alice')
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({
+      error: 'Authentication required',
+      message: 'You must be logged in to access this page',
+    })
+    expect(queryExecutor.search).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerWidgetRoutes', () => {
+  it('requires authentication for secure-by-default widget pages', async () => {
+    const app = new Hono()
+    const queryExecutor = {
+      findById: vi.fn(async () => ({ id: 'task-1', status: 'todo' })),
+      update: vi.fn(async () => ({ id: 'task-1', status: 'done' })),
+    }
+    const sessionManager = {
+      getSession: vi.fn(async () => null),
+    }
+
+    registerWidgetRoutes(app, {
+      blueprint: {
+        version: '0.3.0',
+        project: { name: 'test', version: '1.0.0', runtime: { min_version: '0.2.0' } },
+        entities: [],
+        pages: [
+          {
+            path: '/board',
+            title: 'Board',
+            widget: {
+              kind: 'board',
+              on_toggle: {
+                update: { status: '$value' },
+              },
+            },
+          },
+        ],
+      } as any,
+      queryExecutor: queryExecutor as any,
+      sessionManager: sessionManager as any,
+    })
+
+    const response = await app.request('/_widget/event', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        page: '/board',
+        event: 'toggle',
+        row: { entity: 'Task', id: 'task-1' },
+        ctx: { value: 'done' },
+      }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({
+      error: 'Authentication required',
+      message: 'You must be logged in to access this page',
+    })
+    expect(queryExecutor.update).not.toHaveBeenCalled()
   })
 })
 

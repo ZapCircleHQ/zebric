@@ -10,7 +10,14 @@ Zebric includes built-in security features for authentication, authorization, an
 
 ## Authentication
 
-Enable email/password authentication:
+Zebric's Node runtime currently ships with two first-class authentication providers:
+
+- Better Auth for email/password and local-first app auth
+- Google Workspace for internal SSO with domain restriction and claim-based role/group mapping
+
+### Better Auth Setup
+
+Start with email/password auth:
 
 ```toml
 [auth]
@@ -18,7 +25,69 @@ providers = ["email"]
 trustedOrigins = ["http://localhost:3000"]
 ```
 
-Authentication is powered by Better Auth with server-side session management.
+Set `BETTER_AUTH_SECRET` in your environment before running in production:
+
+```bash
+export BETTER_AUTH_SECRET="replace-me-with-a-long-random-secret"
+```
+
+In development, Zebric falls back to a development secret if you do not provide one. That is convenient for local work, but it is not acceptable for production deployments.
+
+`trustedOrigins` should include every origin that can initiate browser auth flows against your Zebric app:
+
+- Your local dev URL, such as `http://localhost:3000`
+- Your production app URL, such as `https://ops.example.com`
+- Any alternate hostnames you actually serve
+
+### Google Workspace Setup
+
+Use Google Workspace when Zebric is backing an internal app and you want employees to sign in with their company Google accounts:
+
+```toml
+[auth]
+provider = "google-workspace"
+trustedOrigins = ["http://localhost:3000", "https://ops.example.com"]
+
+[auth.google]
+hostedDomain = "example.com"
+clientIdEnv = "GOOGLE_CLIENT_ID"
+clientSecretEnv = "GOOGLE_CLIENT_SECRET"
+defaultRole = "employee"
+defaultGroups = ["workspace"]
+```
+
+Set the Google OAuth credentials in your environment:
+
+```bash
+export GOOGLE_CLIENT_ID="your-google-client-id"
+export GOOGLE_CLIENT_SECRET="your-google-client-secret"
+```
+
+For full setup, claim mapping, and examples, read [Google Workspace Auth](/guides/google-workspace-auth/).
+
+### Built-In Auth Routes And Pages
+
+The runtime exposes:
+
+- `GET /auth/sign-in` for the sign-in entry point
+- `GET /auth/sign-up` for the sign-up entry point
+- `GET /auth/sign-out` for the built-in sign-out page
+- `ALL /api/auth/*` for provider-owned auth handlers
+
+You usually do not need to define custom auth routes yourself. A simple app can just link users to `/auth/sign-in`.
+
+For Better Auth, `/auth/sign-in` renders Zebric's built-in form. For Google Workspace, `/auth/sign-in` redirects into the Google sign-in flow.
+
+If you want a page in your blueprint navigation for sign-in, use the `auth` layout:
+
+```toml
+[page."/sign-in"]
+title = "Sign In"
+layout = "auth"
+auth = "none"
+```
+
+If you omit `auth`, page access defaults to authenticated in most examples, so set `auth = "none"` explicitly for public auth pages.
 
 ### Page-Level Auth
 
@@ -41,21 +110,39 @@ auth = "optional"    # Shows user info if logged in
 layout = "detail"
 ```
 
-### Auth Pages
+Use:
 
-The `auth` layout renders sign-in and sign-up forms:
+- `required` for internal pages that should redirect unauthenticated users to sign in
+- `optional` for pages that should work anonymously but can personalize when a session exists
+- `none` for public pages and auth entry points
+
+## Authorization
+
+Authentication answers "who is the user?" Authorization answers "what can that user do?"
+
+Zebric supports both entity-level access rules and role-based permissions.
+
+### Role-Based Permissions
+
+Define roles under `auth.permissions`:
 
 ```toml
-[page."/sign-in"]
-title = "Sign In"
-layout = "auth"
+[auth.permissions.admin]
+allow = ["*"]
+
+[auth.permissions.user]
+allow = [
+  { entity = "Post", actions = ["read", "create"] },
+  { entity = "Comment", actions = ["read", "create", "update"], condition = { authorId = "$currentUser.id" } }
+]
+deny = ["User.delete"]
 ```
 
-## Access Control
+The permission manager reads roles from the authenticated session. In practice that means your auth provider needs to put fields like `role` onto `session.user` if you want role checks such as `$currentUser.role = "admin"` to work.
 
 ### Entity-Level Access
 
-Define CRUD permissions on entities:
+Define CRUD rules on entities:
 
 ```toml
 [entity.Post.access]
@@ -111,6 +198,20 @@ API key requests skip CSRF validation but still go through access control. Send 
 Authorization: Bearer <api-key-value>
 ```
 
+This is useful for agents, cron jobs, internal scripts, and server-to-server integrations when a browser session is the wrong fit.
+
+## Bring Your Own Auth
+
+Zebric has a pluggable auth contract in the runtime. Better Auth and Google Workspace are built-in implementations, and custom providers are still available for advanced cases.
+
+That means:
+
+- Better Auth is the default developer-friendly path
+- Google Workspace is the first built-in enterprise SSO path
+- Custom auth still requires code-level integration, not just blueprint configuration
+
+If you want Google Workspace, read [Google Workspace Auth](/guides/google-workspace-auth/). If you want to implement a new provider such as Okta or Entra ID, read [Custom Auth Providers](/guides/custom-auth/).
+
 ## Built-In Protections
 
 Zebric applies these security measures automatically:
@@ -131,3 +232,5 @@ Zebric applies these security measures automatically:
 duration = 86400       # Session duration in seconds (default: 24 hours)
 idle_timeout = 3600    # Idle timeout in seconds
 ```
+
+These settings describe the blueprint contract, but the current Better Auth implementation in the Node runtime uses its own built-in session configuration and does not yet map every blueprint session field directly into Better Auth options.

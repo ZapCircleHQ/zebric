@@ -25,6 +25,7 @@ import {
   uuid as pgUuid,
 } from 'drizzle-orm/pg-core'
 import type { Blueprint, Entity, Field } from '@zebric/runtime-core'
+import { isAuthEnabled, resolveAuthProviderId, usesManagedUserEntity } from '../auth/config.js'
 
 export interface GeneratedSchema {
   tables: Record<string, any>
@@ -44,8 +45,7 @@ export class SchemaGenerator {
     const relations: any[] = []
 
     for (const entity of blueprint.entities) {
-      // Skip User entity if auth is enabled - let Better Auth manage it
-      if (entity.name === 'User' && blueprint.auth?.providers) {
+      if (entity.name === 'User' && usesManagedUserEntity(blueprint)) {
         continue
       }
 
@@ -441,12 +441,12 @@ export class SchemaGenerator {
   generateInitialSchemaStatements(blueprint: Blueprint): string[] {
     const statements: string[] = []
 
-    if (blueprint.auth?.providers) {
+    if (isAuthEnabled(blueprint) && resolveAuthProviderId(blueprint.auth) === 'better-auth') {
       statements.push(...this.getBetterAuthSchema())
     }
 
     for (const entity of blueprint.entities) {
-      if (entity.name === 'User' && blueprint.auth?.providers) {
+      if (entity.name === 'User' && usesManagedUserEntity(blueprint)) {
         continue
       }
       statements.push(...this.generateCreateStatementsForEntity(entity))

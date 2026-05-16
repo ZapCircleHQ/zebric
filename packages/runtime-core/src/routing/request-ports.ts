@@ -45,7 +45,7 @@ export interface QueryExecutorPort {
   create(entity: string, data: Record<string, any>, context: RequestContext): Promise<any>
   update(entity: string, id: string, data: Record<string, any>, context: RequestContext): Promise<any>
   delete(entity: string, id: string, context: RequestContext): Promise<any>
-  findById(entity: string, id: string): Promise<any>
+  findById(entity: string, id: string, context?: RequestContext): Promise<any>
   /**
    * OR-across-fields substring search. Used by the lookup control's search
    * endpoint. Respects entity read access rules. Returns camelCase records.

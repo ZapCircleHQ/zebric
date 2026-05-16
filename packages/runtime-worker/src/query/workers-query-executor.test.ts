@@ -307,6 +307,46 @@ describe('WorkersQueryExecutor', () => {
       const result = await executor.findById('Task', 'nonexistent')
       expect(result).toBeNull()
     })
+
+    it('applies read access checks when context is provided', async () => {
+      blueprint.entities = blueprint.entities?.map((entity) =>
+        entity.name === 'Task'
+          ? {
+              ...entity,
+              access: {
+                read: { userId: '$currentUser.id' },
+              },
+            }
+          : entity
+      )
+      executor = new WorkersQueryExecutor(adapter, blueprint)
+      await adapter.query(
+        'INSERT INTO Task (id, title, userId) VALUES (?, ?, ?)',
+        ['task-private', 'Private Task', 'user-123']
+      )
+
+      const hidden = await executor.findById('Task', 'task-private', {
+        session: {
+          id: 'sess-2',
+          userId: 'user-999',
+          user: { id: 'user-999' },
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      })
+      expect(hidden).toBeNull()
+
+      const visible = await executor.findById('Task', 'task-private', {
+        session: {
+          id: 'sess-1',
+          userId: 'user-123',
+          user: { id: 'user-123' },
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      })
+      expect(visible?.id).toBe('task-private')
+    })
   })
 
   describe('search', () => {
@@ -347,6 +387,35 @@ describe('WorkersQueryExecutor', () => {
     it('respects the limit option', async () => {
       const results = await executor.search('User', ['name', 'email'], '@', { limit: 2 })
       expect(results.length).toBeLessThanOrEqual(2)
+    })
+
+    it('applies entity read access filters during search', async () => {
+      blueprint.entities = blueprint.entities?.map((entity) =>
+        entity.name === 'User'
+          ? {
+              ...entity,
+              access: {
+                read: { id: '$currentUser.id' },
+              },
+            }
+          : entity
+      )
+      executor = new WorkersQueryExecutor(adapter, blueprint)
+
+      const results = await executor.search('User', ['name', 'email'], 'smith', {
+        context: {
+          session: {
+            id: 'sess-1',
+            userId: 'u3',
+            user: { id: 'u3', email: 'mei@globex.com' },
+            createdAt: new Date(),
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        },
+      })
+
+      expect(results).toHaveLength(1)
+      expect(results[0].id).toBe('u3')
     })
   })
 

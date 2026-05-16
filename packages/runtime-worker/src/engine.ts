@@ -10,6 +10,8 @@ import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
 import { WorkersSessionManager } from './session/session-manager.js'
+import { WorkersCSRFProtection } from './security/csrf-protection.js'
+import { WorkersCookieManager } from './session/cookie-manager.js'
 import { BlueprintHttpAdapter, registerWidgetRoutes, registerSearchRoutes } from '@zebric/runtime-hono'
 import { WorkersQueryExecutor } from './query/workers-query-executor.js'
 
@@ -90,6 +92,46 @@ export class ZebricWorkersEngine {
     })
 
     this.app = new Hono()
+
+    const csrfProtection = sessionManager
+      ? new WorkersCSRFProtection({ sessionManager })
+      : undefined
+
+    this.app.use('*', async (c, next) => {
+      if (!sessionManager || !csrfProtection) {
+        await next()
+        return
+      }
+
+      const sessionId = sessionManager.getSessionId(c.req.raw)
+      if (sessionId) {
+        const csrfResponse = await csrfProtection.validateOrReject(c.req.raw, sessionId)
+        if (csrfResponse) {
+          return csrfResponse
+        }
+      }
+
+      await next()
+
+      const method = c.req.method.toUpperCase()
+      const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
+      if (!isSafeMethod || !sessionId) {
+        return
+      }
+
+      const token = await csrfProtection.getToken(sessionId)
+      if (!token) {
+        return
+      }
+
+      const existingToken = WorkersCookieManager.get(c.req.raw, 'csrf-token')
+      if (existingToken === token) {
+        return
+      }
+
+      c.res = csrfProtection.addTokenToResponse(c.res, token)
+      return
+    })
 
     this.app.get('/health', async () => this.handleHealthCheck())
 

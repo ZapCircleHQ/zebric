@@ -85,9 +85,13 @@ export function registerStaticUploads(app: Hono): void {
   })
 }
 
-export function registerAuthPages(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
+export function registerAuthPages(app: Hono, blueprint: Blueprint, config: EngineConfig, authProvider: AuthProvider): void {
   app.get('/auth/sign-in', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
+    const presentation = authProvider.getPresentationConfig()
+    if (presentation.signInMode === 'redirect') {
+      return c.redirect(authProvider.getSignInUrl(callback))
+    }
     const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
     const renderer = new RendererClass(blueprint, config.theme)
     return c.html(renderer.renderSignInPage(callback))
@@ -95,6 +99,17 @@ export function registerAuthPages(app: Hono, blueprint: Blueprint, config: Engin
 
   app.get('/auth/sign-up', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
+    const presentation = authProvider.getPresentationConfig()
+    if (presentation.signUpMode === 'disabled') {
+      return c.redirect(authProvider.getSignInUrl(callback))
+    }
+    if (presentation.signUpMode === 'redirect') {
+      const signUpUrl = authProvider.getSignUpUrl(callback)
+      if (!signUpUrl) {
+        return Response.json({ error: 'Sign up is not available' }, { status: 404 })
+      }
+      return c.redirect(signUpUrl)
+    }
     const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
     const renderer = new RendererClass(blueprint, config.theme)
     return c.html(renderer.renderSignUpPage(callback))
@@ -111,8 +126,7 @@ export function registerAuthPages(app: Hono, blueprint: Blueprint, config: Engin
 export function registerAuthRoutes(app: Hono, authProvider: AuthProvider): void {
   app.all('/api/auth/*', async (c) => {
     try {
-      const betterAuthInstance = authProvider.getAuthInstance()
-      const response = await betterAuthInstance.handler(c.req.raw)
+      const response = await authProvider.handleAuthRequest(c.req.raw)
       return response
     } catch (error) {
       console.error('Auth route error:', error)
