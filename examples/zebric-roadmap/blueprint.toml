@@ -172,6 +172,10 @@ title = "Add roadmap item"
 auth = "required"
 layout = "form"
 
+[page."/items/new".query.themes]
+entity = "Theme"
+orderBy = { position = "asc" }
+
 [page."/items/new".form]
 entity = "RoadmapItem"
 method = "create"
@@ -197,9 +201,10 @@ rows = 6
 
 [[page."/items/new".form.fields]]
 name = "themeId"
-type = "text"
-label = "Theme ID"
+type = "select"
+label = "Theme"
 required = true
+optionsFrom = { query = "themes", value = "id", label = "title", emptyLabel = "Select a theme" }
 
 [[page."/items/new".form.fields]]
 name = "horizon"
@@ -296,6 +301,10 @@ layout = "form"
 entity = "RoadmapItem"
 where = { id = "$params.id" }
 
+[page."/items/:id/edit".query.themes]
+entity = "Theme"
+orderBy = { position = "asc" }
+
 [page."/items/:id/edit".form]
 entity = "RoadmapItem"
 method = "update"
@@ -318,9 +327,10 @@ rows = 6
 
 [[page."/items/:id/edit".form.fields]]
 name = "themeId"
-type = "text"
-label = "Theme ID"
+type = "select"
+label = "Theme"
 required = true
+optionsFrom = { query = "themes", value = "id", label = "title", emptyLabel = "Select a theme" }
 
 [[page."/items/:id/edit".form.fields]]
 name = "horizon"
