@@ -340,6 +340,12 @@ const ActionBarSchema = z.object({
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })
 
+const PageTemplateSchema = z.object({
+  engine: z.enum(['handlebars', 'liquid']).optional(),
+  source: z.string(),
+  type: z.enum(['file', 'inline']).optional(),
+})
+
 const PageSchema = z.object({
   path: z.string(),
   title: z.string(),
@@ -350,6 +356,8 @@ const PageSchema = z.object({
   form: FormSchema.optional(),
   meta: PageMetaSchema.optional(),
   behavior: PageBehaviorSchema.optional(),
+  template: PageTemplateSchema.optional(),
+  layoutSlots: z.record(StringKeySchema, PageTemplateSchema).optional(),
   actionBar: ActionBarSchema.optional(),
 })
 
@@ -407,6 +415,12 @@ const AuthConfigSchema = z.object({
     .optional(),
   permissions: z.record(StringKeySchema, PermissionRuleSchema).optional(),
   apiKeys: z.array(ApiKeyConfigSchema).optional(),
+  pages: z.object({
+    signIn: PageTemplateSchema.optional(),
+    signUp: PageTemplateSchema.optional(),
+    signOut: PageTemplateSchema.optional(),
+    loginRequired: PageTemplateSchema.optional(),
+  }).optional(),
 })
 
 // ============================================================================

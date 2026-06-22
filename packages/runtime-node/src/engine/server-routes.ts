@@ -84,24 +84,35 @@ export function registerStaticUploads(app: Hono): void {
 export function registerAuthPages(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
   app.get('/auth/sign-in', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
-    return c.html(renderer.renderSignInPage(callback))
+    const renderer = await createAuthRenderer(blueprint, config)
+    const csrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    return c.html(renderer.renderSignInPage(callback, undefined, csrfToken))
   })
 
   app.get('/auth/sign-up', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
-    return c.html(renderer.renderSignUpPage(callback))
+    const renderer = await createAuthRenderer(blueprint, config)
+    const csrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    return c.html(renderer.renderSignUpPage(callback, undefined, csrfToken))
   })
 
   app.get('/auth/sign-out', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
+    const renderer = await createAuthRenderer(blueprint, config)
     return c.html(renderer.renderSignOutPage(callback))
   })
+}
+
+async function createAuthRenderer(blueprint: Blueprint, config: EngineConfig) {
+  const rendererModule = await import('../renderer/index.js')
+  if (config.rendererClass) {
+    return new config.rendererClass(blueprint, config.theme)
+  }
+  const templateLoader = new rendererModule.FileTemplateLoader({
+    baseDir: path.dirname(config.blueprintPath),
+    cache: !config.dev?.hotReload,
+  })
+  return new rendererModule.HTMLRenderer(blueprint, config.theme, undefined, templateLoader)
 }
 
 export function registerAuthRoutes(app: Hono, authProvider: AuthProvider): void {

@@ -441,6 +441,12 @@ export interface AuthConfig {
   }
   permissions?: Record<string, PermissionRule>
   apiKeys?: ApiKeyConfig[]
+  pages?: {
+    signIn?: PageTemplate
+    signUp?: PageTemplate
+    signOut?: PageTemplate
+    loginRequired?: PageTemplate
+  }
 }
 
 export interface PermissionRule {

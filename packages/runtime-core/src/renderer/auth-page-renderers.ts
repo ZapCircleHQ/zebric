@@ -8,6 +8,7 @@ import type { Blueprint, Page } from '../types/blueprint.js'
 import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import type { Template } from './template-system.js'
+import type { TemplateLoader } from './template-system.js'
 import { escapeHtml, escapeHtmlAttr, escapeJs } from '../security/html-escape.js'
 import { StringTemplate } from './template-system.js'
 import { authTemplates } from './generated/auth-templates.js'
@@ -18,7 +19,8 @@ export class AuthPageRenderers {
     private blueprint: Blueprint,
     private theme: Theme,
     private authTemplateCache: Map<string, Template>,
-    private builtinTemplateEngine: any
+    private builtinTemplateEngine: any,
+    private templateLoader: TemplateLoader
   ) {}
 
   /**
@@ -37,7 +39,7 @@ export class AuthPageRenderers {
   /**
    * Render sign-in page
    */
-  renderSignInPage(callbackURL: string, message?: string): string {
+  renderSignInPage(callbackURL: string, message?: string, csrfToken?: string): string {
     const action = this.getLoginAction()
     const escapedCallbackAttr = escapeHtmlAttr(callbackURL || '/')
     const escapedCallbackJs = escapeJs(callbackURL || '/')
@@ -75,6 +77,7 @@ export class AuthPageRenderers {
               const passwordInput = form.querySelector('input[name="password"]')
               const rememberInput = form.querySelector('input[name="rememberMe"]')
               const submitButton = form.querySelector('button[type="submit"]')
+              const csrfInput = form.querySelector('input[name="_csrf"]')
 
               form.addEventListener('submit', async (event) => {
                 event.preventDefault()
@@ -101,6 +104,7 @@ export class AuthPageRenderers {
                     headers: {
                       'Content-Type': 'application/json',
                       'Accept': 'application/json',
+                      ...(csrfInput?.value ? { 'x-csrf-token': csrfInput.value } : {}),
                     },
                     credentials: 'include',
                     body: JSON.stringify(payload),
@@ -142,6 +146,7 @@ export class AuthPageRenderers {
       auth: {
         action,
         callback: escapedCallbackAttr,
+        csrfToken: escapeHtmlAttr(csrfToken || ''),
         signupPath: this.getSignupPath()
       }
     })
@@ -150,7 +155,7 @@ export class AuthPageRenderers {
   /**
    * Render sign-up page
    */
-  renderSignUpPage(callbackURL: string, message?: string): string {
+  renderSignUpPage(callbackURL: string, message?: string, csrfToken?: string): string {
     const action = '/api/auth/sign-up/email'
     const escapedCallbackAttr = escapeHtmlAttr(callbackURL || '/')
     const escapedCallbackJs = escapeJs(callbackURL || '/')
@@ -187,6 +192,7 @@ export class AuthPageRenderers {
               const emailInput = form.querySelector('input[name="email"]')
               const passwordInput = form.querySelector('input[name="password"]')
               const submitButton = form.querySelector('button[type="submit"]')
+              const csrfInput = form.querySelector('input[name="_csrf"]')
 
               form.addEventListener('submit', async (event) => {
                 event.preventDefault()
@@ -213,6 +219,7 @@ export class AuthPageRenderers {
                     headers: {
                       'Content-Type': 'application/json',
                       'Accept': 'application/json',
+                      ...(csrfInput?.value ? { 'x-csrf-token': csrfInput.value } : {}),
                     },
                     credentials: 'include',
                     body: JSON.stringify(payload),
@@ -254,6 +261,7 @@ export class AuthPageRenderers {
       auth: {
         action,
         callback: escapedCallbackAttr,
+        csrfToken: escapeHtmlAttr(csrfToken || ''),
         loginPath: this.getLoginPath()
       }
     })
@@ -273,14 +281,27 @@ export class AuthPageRenderers {
    * Render using an auth template
    */
   private renderAuthTemplate(name: string, data: Record<string, unknown>): string {
-    let template = this.authTemplateCache.get(name)
+    const override = this.getTemplateOverride(name)
+    const cacheKey = override ? `custom:${name}` : name
+    let template = this.authTemplateCache.get(cacheKey)
     if (!template) {
-      const source = authTemplates.get(name)
-      if (!source) {
-        throw new Error(`Auth template not found: ${name}`)
+      if (override) {
+        const engine = override.engine || 'liquid'
+        if (override.type === 'inline') {
+          template = new StringTemplate(`auth:${name}`, engine, this.builtinTemplateEngine.compile(override.source))
+        } else if (this.templateLoader.loadSync) {
+          template = this.templateLoader.loadSync(override.source, engine)
+        } else {
+          throw new Error(`Auth template loader does not support synchronous file loading: ${override.source}`)
+        }
+      } else {
+        const source = authTemplates.get(name)
+        if (!source) {
+          throw new Error(`Auth template not found: ${name}`)
+        }
+        template = new StringTemplate(`auth:${name}`, 'liquid', this.builtinTemplateEngine.compile(source))
       }
-      template = new StringTemplate(`auth:${name}`, 'liquid', this.builtinTemplateEngine.compile(source))
-      this.authTemplateCache.set(name, template)
+      this.authTemplateCache.set(cacheKey, template)
     }
 
     const rendererData = {
@@ -301,6 +322,19 @@ export class AuthPageRenderers {
     } as any
 
     return template.render(context)
+  }
+
+  private getTemplateOverride(name: string) {
+    const pages = this.blueprint.auth?.pages
+    if (!pages) return undefined
+    const keyByName = {
+      'sign-in': 'signIn',
+      'sign-up': 'signUp',
+      'sign-out': 'signOut',
+      'login-required': 'loginRequired',
+    } as const
+    const key = keyByName[name as keyof typeof keyByName]
+    return key ? pages[key] : undefined
   }
 
   /**

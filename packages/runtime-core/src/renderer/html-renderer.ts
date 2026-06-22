@@ -75,7 +75,8 @@ export class HTMLRenderer {
       blueprint,
       theme,
       this.authTemplateCache,
-      this.builtinTemplateEngine
+      this.builtinTemplateEngine,
+      this.templateLoader
     )
     this.errorPageRenderers = new ErrorPageRenderers(theme)
 
@@ -188,15 +189,15 @@ export class HTMLRenderer {
   /**
    * Render sign-in page
    */
-  renderSignInPage(callbackURL: string, message?: string): string {
-    return this.authPageRenderers.renderSignInPage(callbackURL, message)
+  renderSignInPage(callbackURL: string, message?: string, csrfToken?: string): string {
+    return this.authPageRenderers.renderSignInPage(callbackURL, message, csrfToken)
   }
 
   /**
    * Render sign-up page
    */
-  renderSignUpPage(callbackURL: string, message?: string): string {
-    return this.authPageRenderers.renderSignUpPage(callbackURL, message)
+  renderSignUpPage(callbackURL: string, message?: string, csrfToken?: string): string {
+    return this.authPageRenderers.renderSignUpPage(callbackURL, message, csrfToken)
   }
 
   /**

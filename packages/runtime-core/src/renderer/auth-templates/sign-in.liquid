@@ -13,6 +13,7 @@
         {{ renderer.feedback | raw }}
         <form id="sign-in-form" class="space-y-4 mt-4" method="POST" action="{{ auth.action }}">
           <input type="hidden" name="callbackURL" value="{{ auth.callback }}">
+          <input type="hidden" name="_csrf" value="{{ auth.csrfToken }}">
           {{ renderer.fields.email | raw }}
           {{ renderer.fields.password | raw }}
           {{ renderer.fields.meta | raw }}
