@@ -1,0 +1,31 @@
+<style>
+  .rm{--ink:#17151f;--muted:#686371;--line:#dedbe4;--paper:#f7f5f2;--violet:#7258d6;color:var(--ink);background:var(--paper);margin:-2rem 0;font:15px/1.55 Inter,ui-sans-serif,system-ui,sans-serif}.rm *{box-sizing:border-box}.rm-shell{max-width:1240px;margin:auto;padding:0 32px}.rm-nav{height:72px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line)}.rm-brand{font-weight:800;font-size:19px;text-decoration:none}.rm-brand i{color:var(--violet);font-style:normal}.rm-team{font-size:12px;color:var(--muted)}.rm-hero{padding:88px 0 78px;display:grid;grid-template-columns:2fr 1fr;gap:56px;align-items:end}.rm-eye{text-transform:uppercase;letter-spacing:.16em;font-size:10px;font-weight:800;color:var(--violet)}.rm h1{font-size:clamp(46px,7vw,82px);line-height:.97;letter-spacing:-.065em;margin:16px 0 0}.rm-lede{font-size:17px;color:var(--muted);margin:0}.rm-theme{border-top:1px solid var(--line);padding:52px 0 72px}.rm-theme-head{display:grid;grid-template-columns:58px minmax(0,720px);gap:16px;margin-bottom:38px}.rm-num{font:600 12px ui-monospace,monospace;color:var(--violet);padding-top:9px}.rm h2{font-size:34px;line-height:1.1;letter-spacing:-.04em;margin:0 0 10px}.rm-theme-head p{font-size:16px;color:var(--muted);margin:0}.rm-horizons{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.rm-horizon>header{padding:0 3px 12px;border-bottom:2px solid var(--ink)}.rm-horizon>header b{display:block;font-size:13px}.rm-horizon>header small{color:var(--muted);font-size:10px}.rm-stack{display:grid;gap:9px;padding-top:11px}.rm-card{background:#fff;border:1px solid var(--line);border-radius:9px;padding:17px;min-height:138px}.rm-card-meta{display:flex;justify-content:space-between;color:#756d7c;font-size:9px;text-transform:uppercase;letter-spacing:.09em;font-weight:800}.rm-card h3{font-size:16px;line-height:1.25;margin:16px 0 6px}.rm-card p{font-size:12px;color:var(--muted);margin:0}.rm-updates-wrap{background:#201d27;color:#f8f5fb;padding:68px 0}.rm-updates-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:26px}.rm-updates{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}.rm-update{border-top:1px solid #4b4652;padding:20px 0}.rm-update time{color:#a99fb6;font-size:10px}.rm-update h3{font-size:17px;margin:10px 0 7px}.rm-update p{color:#bcb5c3;margin:0;white-space:pre-line}.rm-foot{background:#201d27;color:#918998;border-top:1px solid #3b3741;padding:24px 0;font-size:11px}@media(max-width:800px){.rm-shell{padding:0 18px}.rm-hero,.rm-horizons,.rm-updates{grid-template-columns:1fr}.rm-theme-head{grid-template-columns:36px 1fr}}
+</style>
+<div class="rm">
+  <div class="rm-shell">
+    <nav class="rm-nav"><a class="rm-brand" href="/"><i>Z</i>ebric</a><a class="rm-team" href="/board">Team workspace →</a></nav>
+    <header class="rm-hero"><div><div class="rm-eye">Product direction · 2026</div><h1>Making software intent executable.</h1></div><p class="rm-lede">This is where Zebric is headed. Horizons express sequence, not fixed delivery dates.</p></header>
+    {% for theme in data.themes %}
+    <section class="rm-theme">
+      <div class="rm-theme-head"><span class="rm-num">0{{ theme.position }}</span><div><h2>{{ theme.title }}</h2><p>{{ theme.summary }}</p></div></div>
+      <div class="rm-horizons">
+        <section class="rm-horizon"><header><b>Now</b><small>Actively delivering</small></header><div class="rm-stack">
+          {% for item in data.items %}{% if item.themeId == theme.id and item.horizon == "now" %}<article class="rm-card"><div class="rm-card-meta"><span>{{ item.confidence }}</span><span>{{ item.status }}</span></div><h3>{{ item.title }}</h3><p>{{ item.summary }}</p></article>{% endif %}{% endfor %}
+        </div></section>
+        <section class="rm-horizon"><header><b>Next</b><small>Up next, subject to learning</small></header><div class="rm-stack">
+          {% for item in data.items %}{% if item.themeId == theme.id and item.horizon == "next" %}<article class="rm-card"><div class="rm-card-meta"><span>{{ item.confidence }}</span><span>{{ item.status }}</span></div><h3>{{ item.title }}</h3><p>{{ item.summary }}</p></article>{% endif %}{% endfor %}
+        </div></section>
+        <section class="rm-horizon"><header><b>Later</b><small>Direction, not a promise</small></header><div class="rm-stack">
+          {% for item in data.items %}{% if item.themeId == theme.id and item.horizon == "later" %}<article class="rm-card"><div class="rm-card-meta"><span>{{ item.confidence }}</span><span>{{ item.status }}</span></div><h3>{{ item.title }}</h3><p>{{ item.summary }}</p></article>{% endif %}{% endfor %}
+        </div></section>
+      </div>
+    </section>
+    {% else %}
+    <section class="rm-theme"><div class="rm-theme-head"><span class="rm-num">01</span><div><h2>The roadmap is taking shape.</h2><p>Strategic themes will appear here once the team publishes them.</p></div></div></section>
+    {% endfor %}
+  </div>
+  <section class="rm-updates-wrap"><div class="rm-shell"><div class="rm-updates-head"><h2>Progress notes</h2><span>Changes, learning, and releases.</span></div><div class="rm-updates">
+    {% for update in data.updates %}<article class="rm-update"><time>{{ update.publishedAt | date: "%B %d, %Y" }}</time><h3>{{ update.title }}</h3><p>{{ update.body }}</p></article>{% else %}<p>No public progress notes yet.</p>{% endfor %}
+  </div></div></section>
+  <footer class="rm-foot"><div class="rm-shell">Plans change as we learn. Public roadmap items are directional unless marked committed.</div></footer>
+</div>

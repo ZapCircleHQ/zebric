@@ -1,0 +1,15 @@
+{
+  "name": "zebric-roadmap",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Public roadmap and authenticated planning board built with Zebric",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "validate": "zebric validate --blueprint blueprint.toml",
+    "seed:user": "bash seed-dev-user.sh"
+  },
+  "dependencies": {
+    "@zebric/cli": "workspace:*",
+    "@zebric/runtime-node": "workspace:*"
+  }
+}
