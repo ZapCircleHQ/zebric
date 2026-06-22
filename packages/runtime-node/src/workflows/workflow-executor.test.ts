@@ -613,6 +613,59 @@ describe('WorkflowExecutor', () => {
       )
     })
 
+    it('should resolve manual action records and preserve session access context', async () => {
+      const session = { id: 'session-1', user: { id: 'user-1' } }
+      const workflow: Workflow = {
+        name: 'set-roadmap-status',
+        trigger: {},
+        steps: [
+          {
+            type: 'query',
+            entity: 'RoadmapItem',
+            action: 'update',
+            where: { id: '{{ variables.data.record.id }}' },
+            data: { status: '{{ variables.data.payload.status }}' },
+          },
+          {
+            type: 'query',
+            entity: 'RoadmapDecision',
+            action: 'create',
+            data: {
+              itemId: '{{ variables.data.record.id }}',
+              actorId: '{{ variables.data.session.user.id }}',
+            },
+          },
+        ],
+      }
+      const context: WorkflowContext = {
+        trigger: { type: 'manual' },
+        session,
+        variables: {
+          data: {
+            record: { id: 'item-1', status: 'candidate' },
+            payload: { status: 'planned' },
+            session,
+          },
+        },
+      }
+
+      const result = await executor.execute(workflow, context)
+
+      expect(result.success).toBe(true)
+      expect(mockDataLayer.findById).toHaveBeenCalledWith('RoadmapItem', 'item-1', { session })
+      expect(mockDataLayer.update).toHaveBeenCalledWith(
+        'RoadmapItem',
+        'item-1',
+        { status: 'planned' },
+        { session }
+      )
+      expect(mockDataLayer.create).toHaveBeenCalledWith(
+        'RoadmapDecision',
+        { itemId: 'item-1', actorId: 'user-1' },
+        { session }
+      )
+    })
+
     it('should execute delete query', async () => {
       const workflow: Workflow = {
         name: 'test-delete',

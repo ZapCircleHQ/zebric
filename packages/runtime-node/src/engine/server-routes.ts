@@ -257,7 +257,7 @@ export function registerActionRoutes(
 
       if (entity && recordId) {
         try {
-          record = await queryExecutor.findById(entity, recordId)
+          record = await queryExecutor.findById(entity, recordId, { session })
         } catch (error) {
           console.warn(`Action workflow '${workflowName}' could not load ${entity}(${recordId})`, error)
         }

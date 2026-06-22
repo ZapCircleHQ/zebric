@@ -263,6 +263,63 @@ export class BlueprintParser {
           }
         }
       }
+
+      if (page.layout === 'board' && !page.board) {
+        errors.push(`Page "${page.path}" uses the board layout without board configuration`)
+      }
+
+      if (page.board) {
+        const board = page.board
+        const query = page.queries?.[board.query]
+        if (!query) {
+          errors.push(
+            `Page "${page.path}" board references unknown query "${board.query}"`
+          )
+        } else {
+          const entity = blueprint.entities.find((candidate) => candidate.name === query.entity)
+          if (entity) {
+            const fieldNames = new Set(entity.fields.map((field) => field.name))
+            for (const fieldName of [board.groupBy, board.orderBy, board.card.title, board.card.description].filter(Boolean) as string[]) {
+              if (!fieldNames.has(fieldName)) {
+                errors.push(
+                  `Page "${page.path}" board references unknown field "${entity.name}.${fieldName}"`
+                )
+              }
+            }
+
+            for (const displayPath of board.card.fields || []) {
+              const [root = '', nested] = displayPath.split('.')
+              if (!nested) {
+                if (!fieldNames.has(root)) {
+                  errors.push(
+                    `Page "${page.path}" board references unknown field "${entity.name}.${root}"`
+                  )
+                }
+                continue
+              }
+
+              const relation = entity.relations?.[root]
+              const relatedEntity = relation
+                ? blueprint.entities.find((candidate) => candidate.name === relation.entity)
+                : undefined
+              if (!relation || !relatedEntity?.fields.some((field) => field.name === nested)) {
+                errors.push(
+                  `Page "${page.path}" board references unknown field path "${entity.name}.${displayPath}"`
+                )
+              }
+            }
+          }
+        }
+
+        if (board.move) {
+          const workflowNames = new Set((blueprint.workflows || []).map((workflow) => workflow.name))
+          if (!workflowNames.has(board.move.workflow)) {
+            errors.push(
+              `Page "${page.path}" board move references unknown workflow "${board.move.workflow}"`
+            )
+          }
+        }
+      }
     }
 
     // Check relation references

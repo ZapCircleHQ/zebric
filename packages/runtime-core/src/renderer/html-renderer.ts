@@ -144,6 +144,9 @@ export class HTMLRenderer {
       case 'dashboard':
         content = this.layoutRenderers.renderDashboardLayout(context)
         break
+      case 'board':
+        content = this.layoutRenderers.renderBoardLayout(context)
+        break
       case 'auth':
         content = this.layoutRenderers.renderAuthLayout(context)
         break

@@ -525,6 +525,102 @@ describe('LayoutRenderers', () => {
     })
   })
 
+  describe('renderBoardLayout', () => {
+    const boardPage = {
+      path: '/board',
+      title: 'Task board',
+      layout: 'board',
+      queries: { tasks: { entity: 'Task' } },
+      board: {
+        query: 'tasks',
+        groupBy: 'status',
+        orderBy: 'position',
+        columns: [
+          { value: 'todo', label: 'To do', description: 'Ready to start' },
+          { value: 'doing', label: 'Doing' },
+          { value: 'done', label: 'Done' },
+        ],
+        card: {
+          title: 'title',
+          description: 'summary',
+          href: '/tasks/{id}',
+          fields: ['owner.name', 'priority'],
+        },
+        move: {
+          workflow: 'SetTaskStatus',
+          payloadField: 'status',
+        },
+      },
+    } as any
+
+    it('groups, orders, and renders board cards', () => {
+      const blueprint = makeBlueprint({
+        workflows: [{ name: 'SetTaskStatus', trigger: { manual: true }, steps: [] }],
+      })
+      const { renderer } = createLayoutRenderers(blueprint)
+      const result = renderer.renderBoardLayout(makeContext({
+        page: boardPage,
+        csrfToken: 'board-csrf',
+        session: { user: { id: 'user-1' } } as any,
+        data: {
+          tasks: [
+            { id: '2', title: 'Second', summary: 'Later', status: 'todo', position: 2, priority: 'low', owner: { name: 'Sam' } },
+            { id: '1', title: 'First', summary: 'Soon', status: 'todo', position: 1, priority: 'high', owner: { name: 'Alex' } },
+            { id: '3', title: 'Active', status: 'doing', position: 1 },
+          ],
+        },
+      })).toString()
+
+      expect(result).toContain('data-zebric-primitive="board"')
+      expect(result).toContain('data-board-column="todo"')
+      expect(result.indexOf('First')).toBeLessThan(result.indexOf('Second'))
+      expect(result).toContain('Alex')
+      expect(result).toContain('href="&#x2F;tasks&#x2F;1"')
+      expect(result).toContain('action="/actions/SetTaskStatus"')
+      expect(result).toContain('name="_csrf" value="board-csrf"')
+      expect(result).toContain('{&quot;status&quot;:&quot;doing&quot;}')
+      expect(result).not.toContain('&amp;quot;status')
+      expect(result).toContain('Move to Doing')
+    })
+
+    it('renders empty columns and escapes card data', () => {
+      const { renderer } = createLayoutRenderers()
+      const page = {
+        ...boardPage,
+        board: { ...boardPage.board, move: undefined },
+      }
+      const result = renderer.renderBoardLayout(makeContext({
+        page,
+        data: { tasks: [{ id: '1', title: '<script>alert(1)</script>', status: 'todo' }] },
+      })).toString()
+
+      expect(result).toContain('&lt;script&gt;alert(1)&lt;&#x2F;script&gt;')
+      expect(result).not.toContain('<script>alert(1)</script>')
+      expect(result).toContain('No cards')
+    })
+
+    it('does not expose workflow move controls without a session', () => {
+      const { renderer } = createLayoutRenderers()
+      const result = renderer.renderBoardLayout(makeContext({
+        page: boardPage,
+        session: null,
+        data: { tasks: [{ id: '1', title: 'Public card', status: 'todo' }] },
+      })).toString()
+
+      expect(result).toContain('Public card')
+      expect(result).not.toContain('/actions/SetTaskStatus')
+      expect(result).not.toContain('Move card')
+    })
+
+    it('renders an error without board configuration', () => {
+      const { renderer } = createLayoutRenderers()
+      const result = renderer.renderBoardLayout(makeContext({
+        page: { path: '/board', title: 'Board', layout: 'board' } as any,
+      })).toString()
+      expect(result).toContain('No board definition found')
+    })
+  })
+
   describe('renderCustomLayout', () => {
     it('renders data as JSON', () => {
       const { renderer } = createLayoutRenderers()

@@ -347,6 +347,29 @@ const ActionBarSchema = z.object({
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })
 
+const BoardSchema = z.object({
+  query: z.string(),
+  groupBy: z.string(),
+  orderBy: z.string().optional(),
+  columns: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+    description: z.string().optional(),
+  })).min(1),
+  card: z.object({
+    title: z.string(),
+    description: z.string().optional(),
+    href: z.string().optional(),
+    fields: z.array(z.string()).optional(),
+  }),
+  move: z.object({
+    workflow: z.string(),
+    payloadField: z.string().optional(),
+    successMessage: z.string().optional(),
+    errorMessage: z.string().optional(),
+  }).optional(),
+})
+
 const PageTemplateSchema = z.object({
   engine: z.enum(['handlebars', 'liquid']).optional(),
   source: z.string(),
@@ -366,6 +389,7 @@ const PageSchema = z.object({
   template: PageTemplateSchema.optional(),
   layoutSlots: z.record(StringKeySchema, PageTemplateSchema).optional(),
   actionBar: ActionBarSchema.optional(),
+  board: BoardSchema.optional(),
 })
 
 // ============================================================================
