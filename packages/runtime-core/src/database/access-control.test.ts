@@ -138,6 +138,37 @@ describe('AccessControl', () => {
         action: 'read', entity, session: null,
       })).toBe(true)
     })
+
+    it('filters anonymous reads to public rows but allows all rows when authenticated', () => {
+      const entity = makeEntity({
+        read: { or: [{ visibility: 'public' }, 'authenticated'] }
+      })
+
+      expect(AccessControl.getFilterConditions(entity, null)).toEqual({ visibility: 'public' })
+      expect(AccessControl.getFilterConditions(entity, authenticatedSession)).toBeNull()
+    })
+
+    it('denies unauthenticated reads protected by authenticated shorthand', async () => {
+      const entity = makeEntity({ read: 'authenticated' })
+      const filter = AccessControl.getFilterConditions(entity, null)
+
+      expect(AccessControl.isImpossibleFilter(filter)).toBe(true)
+      expect(await AccessControl.checkAccess({ action: 'read', entity, session: null })).toBe(false)
+    })
+
+    it('converts owner reads into a userId row filter', () => {
+      const entity = makeEntity({ read: 'owner' })
+      expect(AccessControl.getFilterConditions(entity, authenticatedSession)).toEqual({ userId: 'user-123' })
+      expect(AccessControl.isImpossibleFilter(AccessControl.getFilterConditions(entity, null))).toBe(true)
+    })
+
+    it('evaluates current-user predicates without emitting invalid SQL columns', () => {
+      const adminSession = { user: { ...authenticatedSession.user, role: 'admin' } }
+      const entity = makeEntity({ read: { '$currentUser.role': 'admin' } })
+
+      expect(AccessControl.getFilterConditions(entity, adminSession)).toBeNull()
+      expect(AccessControl.isImpossibleFilter(AccessControl.getFilterConditions(entity, authenticatedSession))).toBe(true)
+    })
   })
 
   describe('getAccessibleFields', () => {

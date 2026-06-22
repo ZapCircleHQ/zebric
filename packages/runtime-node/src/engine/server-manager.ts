@@ -277,6 +277,7 @@ export class ServerManager {
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
+      apiKeys: this.apiKeys,
     })
     registerOpenAPIRoute(this.app, this.blueprint, this.config)
     registerPageRoutes(this.app, this.blueprintAdapter)

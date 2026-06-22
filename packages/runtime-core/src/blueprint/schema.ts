@@ -61,6 +61,7 @@ const RelationSchema = z.object({
 const AccessConditionSchema: z.ZodType<any> = z.lazy(() =>
   z.union([
     z.boolean(),
+    z.enum(['public', 'authenticated', 'owner']),
     AnyRecordSchema,
     z.object({
       or: z.array(AccessConditionSchema),
