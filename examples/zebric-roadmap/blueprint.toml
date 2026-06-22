@@ -32,6 +32,12 @@ fields = [
   { name = "updatedAt", type = "DateTime", default = "now" }
 ]
 
+[entity.Theme.access]
+read = { or = [{ active = true }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
 [entity.Theme.relations]
 items = { type = "hasMany", entity = "RoadmapItem", foreign_key = "themeId" }
 
@@ -53,6 +59,12 @@ fields = [
   { name = "updatedAt", type = "DateTime", default = "now" }
 ]
 
+[entity.RoadmapItem.access]
+read = { or = [{ visibility = "public" }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
 [entity.RoadmapItem.relations]
 theme = { type = "belongsTo", entity = "Theme", foreign_key = "themeId" }
 decisions = { type = "hasMany", entity = "RoadmapDecision", foreign_key = "itemId" }
@@ -69,6 +81,12 @@ fields = [
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
+[entity.RoadmapDecision.access]
+read = "authenticated"
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
 [entity.RoadmapDecision.relations]
 item = { type = "belongsTo", entity = "RoadmapItem", foreign_key = "itemId" }
 
@@ -81,6 +99,12 @@ fields = [
   { name = "publishedAt", type = "DateTime" },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
+
+[entity.RoadmapUpdate.access]
+read = { or = [{ published = true }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
 
 # Public, top-to-bottom roadmap. Only explicitly public items are queried.
 [page."/"]
