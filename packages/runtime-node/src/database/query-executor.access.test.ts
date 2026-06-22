@@ -21,6 +21,7 @@ const blueprint: Blueprint = {
       { name: 'id', type: 'ULID', primary_key: true },
       { name: 'title', type: 'Text', required: true },
       { name: 'visibility', type: 'Enum', values: ['public', 'internal'], required: true },
+      { name: 'publishedAt', type: 'DateTime' },
       { name: 'createdAt', type: 'DateTime', default: 'now' },
     ],
     access: {
@@ -78,5 +79,31 @@ describe('QueryExecutor row access', () => {
       title: 'Unauthorized update',
     })).rejects.toThrow('Access denied')
     await expect(executor.delete('RoadmapItem', 'public-item')).rejects.toThrow('Access denied')
+  })
+
+  it('normalizes DateTime strings and blank optional values for database writes', async () => {
+    const created = await executor.create('RoadmapItem', {
+      id: 'scheduled-item',
+      title: 'Scheduled item',
+      visibility: 'internal',
+      publishedAt: '2026-06-22T14:30',
+    }, { session: authenticatedSession })
+
+    expect(created.publishedAt).toBeInstanceOf(Date)
+    expect(created.publishedAt.getTime()).not.toBeNaN()
+
+    const updated = await executor.update('RoadmapItem', 'scheduled-item', {
+      publishedAt: '',
+    }, { session: authenticatedSession })
+    expect(updated.publishedAt).toBeNull()
+  })
+
+  it('rejects invalid DateTime values with a field-specific error', async () => {
+    await expect(executor.create('RoadmapItem', {
+      title: 'Invalid schedule',
+      visibility: 'internal',
+      publishedAt: 'not-a-date',
+    }, { session: authenticatedSession }))
+      .rejects.toThrow('Invalid DateTime value for RoadmapItem.publishedAt')
   })
 })

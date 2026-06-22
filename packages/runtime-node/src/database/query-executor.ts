@@ -194,7 +194,7 @@ export class QueryExecutor {
     }
 
     // Convert camelCase to snake_case for database
-    const dbData = this.toSnakeCase(data)
+    const dbData = this.toSnakeCase(this.normalizeEntityValues(entity, data))
 
     const start = performance.now()
     try {
@@ -257,7 +257,7 @@ export class QueryExecutor {
     }
 
     // Convert camelCase to snake_case
-    const dbData = this.toSnakeCase(data)
+    const dbData = this.toSnakeCase(this.normalizeEntityValues(entity, data))
 
     const start = performance.now()
     try {
@@ -446,6 +446,34 @@ export class QueryExecutor {
       result[snakeKey] = value
     }
     return result
+  }
+
+  private normalizeEntityValues(
+    entity: { name: string; fields: Array<{ name: string; type: string }> } | undefined,
+    data: Record<string, any>
+  ): Record<string, any> {
+    if (!entity) return data
+
+    const normalized = { ...data }
+    for (const field of entity.fields) {
+      if (field.type !== 'DateTime' || !Object.prototype.hasOwnProperty.call(normalized, field.name)) {
+        continue
+      }
+
+      const value = normalized[field.name]
+      if (value === '' || value === null || value === undefined) {
+        normalized[field.name] = null
+        continue
+      }
+
+      const date = value instanceof Date ? value : new Date(value)
+      if (Number.isNaN(date.getTime())) {
+        throw new Error(`Invalid DateTime value for ${entity.name}.${field.name}`)
+      }
+      normalized[field.name] = date
+    }
+
+    return normalized
   }
 
   /**

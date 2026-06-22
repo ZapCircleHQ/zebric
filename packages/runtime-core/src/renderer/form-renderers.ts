@@ -139,6 +139,16 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
         />
       `
 
+    case 'datetime':
+      return `
+        <input
+          type="datetime-local"
+          ${baseAttrs}
+          value="${escapeHtmlAttr(formatDateTimeLocalValue(value))}"
+          class="${theme.input}"
+        />
+      `
+
     case 'number':
       return `
         <input
@@ -163,6 +173,13 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
         />
       `
   }
+}
+
+function formatDateTimeLocalValue(value: any): string {
+  if (value === undefined || value === null || value === '') return ''
+  const text = value instanceof Date ? value.toISOString() : String(value)
+  const match = text.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})/)
+  return match?.[1] || text
 }
 
 /**

@@ -373,6 +373,15 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('Some text')
     })
 
+    it('renders datetime fields as native datetime-local pickers', () => {
+      const field = { name: 'publishedAt', type: 'datetime' }
+      const result = renderer.renderInput(field, '2026-06-22T14:30:00.000Z')
+
+      expect(result).toContain('type="datetime-local"')
+      expect(result).toContain('value="2026-06-22T14:30"')
+      expect(result).not.toContain('type="datetime"')
+    })
+
     it('renders select with options', () => {
       const field = {
         name: 'priority',
