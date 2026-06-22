@@ -231,6 +231,37 @@ export class BlueprintParser {
             `Page "${page.path}" form references unknown entity "${page.form.entity}"`
           )
         }
+
+        for (const field of page.form.fields) {
+          const source = field.optionsFrom
+          if (!source) continue
+
+          if (field.type !== 'select') {
+            errors.push(
+              `Page "${page.path}" form field "${field.name}" uses optionsFrom but is not a select`
+            )
+          }
+
+          const query = page.queries?.[source.query]
+          if (!query) {
+            errors.push(
+              `Page "${page.path}" form field "${field.name}" optionsFrom references unknown query "${source.query}"`
+            )
+            continue
+          }
+
+          const queryEntity = blueprint.entities.find((entity) => entity.name === query.entity)
+          if (!queryEntity) continue
+
+          const entityFields = new Set(queryEntity.fields.map((entityField) => entityField.name))
+          for (const optionField of [source.value || 'id', source.label]) {
+            if (!entityFields.has(optionField)) {
+              errors.push(
+                `Page "${page.path}" form field "${field.name}" optionsFrom references unknown field "${query.entity}.${optionField}"`
+              )
+            }
+          }
+        }
       }
     }
 

@@ -135,6 +135,12 @@ const FormFieldSchema = z.object({
   required: z.boolean().optional(),
   default: z.any().optional(),
   options: z.array(z.any()).optional(),
+  optionsFrom: z.object({
+    query: z.string(),
+    value: z.string().optional(),
+    label: z.string(),
+    emptyLabel: z.string().optional(),
+  }).optional(),
   rows: z.number().optional(),
   accept: z.array(z.string()).optional(),
   pattern: z.string().optional(),

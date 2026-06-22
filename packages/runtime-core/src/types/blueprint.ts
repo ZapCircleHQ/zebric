@@ -230,6 +230,12 @@ export interface FormField {
   required?: boolean
   default?: any
   options?: any[]
+  optionsFrom?: {
+    query: string
+    value?: string
+    label: string
+    emptyLabel?: string
+  }
   rows?: number // For textarea
   accept?: string[] // For file input
   pattern?: string

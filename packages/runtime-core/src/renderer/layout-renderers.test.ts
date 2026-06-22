@@ -325,6 +325,80 @@ describe('LayoutRenderers', () => {
       expect(result).toContain('multipart/form-data')
     })
 
+    it('renders select options from page query data', () => {
+      const { renderer } = createLayoutRenderers()
+      const context = makeContext({
+        page: {
+          path: '/tasks/new',
+          title: 'New Task',
+          layout: 'form',
+          queries: { projects: { entity: 'Task' } },
+          form: {
+            entity: 'Task',
+            method: 'create',
+            fields: [{
+              name: 'projectId',
+              type: 'select',
+              optionsFrom: {
+                query: 'projects',
+                value: 'id',
+                label: 'title',
+                emptyLabel: 'Select a project',
+              },
+            }],
+          },
+        } as any,
+        data: {
+          projects: [
+            { id: 'project-1', title: 'Platform' },
+            { id: 'project-2', title: 'Mobile' },
+          ],
+        },
+      })
+
+      const result = renderer.renderFormLayout(context).toString()
+      expect(result).toContain('<option value=""')
+      expect(result).toContain('Select a project')
+      expect(result).toContain('<option value="project-1"')
+      expect(result).toContain('Platform')
+      expect(result).toContain('<option value="project-2"')
+      expect(result).toContain('Mobile')
+    })
+
+    it('selects the existing relationship value on edit forms', () => {
+      const { renderer } = createLayoutRenderers()
+      const context = makeContext({
+        page: {
+          path: '/tasks/:id/edit',
+          title: 'Edit Task',
+          layout: 'form',
+          queries: {
+            task: { entity: 'Task' },
+            projects: { entity: 'Task' },
+          },
+          form: {
+            entity: 'Task',
+            method: 'update',
+            fields: [{
+              name: 'projectId',
+              type: 'select',
+              optionsFrom: { query: 'projects', value: 'id', label: 'title' },
+            }],
+          },
+        } as any,
+        data: {
+          task: [{ id: 'task-1', projectId: 'project-2' }],
+          projects: [
+            { id: 'project-1', title: 'Platform' },
+            { id: 'project-2', title: 'Mobile' },
+          ],
+        },
+      })
+
+      const result = renderer.renderFormLayout(context).toString()
+      expect(result).toMatch(/<option value="project-2" selected>/)
+    })
+
     it('includes cancel button', () => {
       const { renderer } = createLayoutRenderers()
       const context = makeContext({

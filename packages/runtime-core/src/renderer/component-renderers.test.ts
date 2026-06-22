@@ -415,6 +415,22 @@ describe('ComponentRenderers', () => {
       expect(result).not.toContain('checked')
     })
 
+    it('preserves a zero record value instead of using the default', () => {
+      const field = { name: 'estimate', type: 'number', default: 10 }
+      const result = renderer.renderFormField(field, { estimate: 0 })
+
+      expect(result).toContain('value="0"')
+      expect(result).not.toContain('value="10"')
+    })
+
+    it('preserves a false record value instead of using the default', () => {
+      const field = { name: 'done', type: 'checkbox', default: true }
+      const result = renderer.renderFormField(field, { done: false })
+
+      expect(result).toContain('type="checkbox"')
+      expect(result).not.toContain('checked')
+    })
+
     it('renders file input with accept', () => {
       const field = { name: 'document', type: 'file', accept: ['.pdf', '.docx'] }
       const result = renderer.renderInput(field, '')

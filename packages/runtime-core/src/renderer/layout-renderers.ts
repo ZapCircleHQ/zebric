@@ -13,6 +13,7 @@ import { ComponentRenderers } from './component-renderers.js'
 import { RendererUtils } from './renderer-utils.js'
 import { SlotRenderer } from './slot-renderer.js'
 import { renderFormFields } from './form-section-renderer.js'
+import { resolveFormFieldOptions } from './form-renderers.js'
 
 export class LayoutRenderers {
   private slotRenderer: SlotRenderer
@@ -230,7 +231,10 @@ export class LayoutRenderers {
           form,
           record,
           this.theme,
-          (field, formRecord) => this.componentRenderers.renderFormField(field, formRecord)
+          (field, formRecord) => this.componentRenderers.renderFormField(
+            resolveFormFieldOptions(field, data),
+            formRecord
+          )
         )}
 
         <div class="${this.theme.formActions}">

@@ -169,7 +169,7 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
  * Render form field with label, input, and error message
  */
 export function renderFormField(field: any, theme: Theme, utils: RendererUtils, record?: any): string {
-  const value = record?.[field.name] || field.default || ''
+  const value = record?.[field.name] ?? field.default ?? ''
   const fieldName = escapeHtmlAttr(field.name)
   const fieldLabel = escapeHtml(field.label || utils.formatFieldName(field.name))
   const errorMsg = escapeHtml(field.error_message || '')
@@ -192,4 +192,26 @@ export function renderFormField(field: any, theme: Theme, utils: RendererUtils, 
       ` : ''}
     </div>
   `
+}
+
+/**
+ * Resolve query-backed select options without mutating the blueprint field.
+ */
+export function resolveFormFieldOptions(field: any, data: Record<string, any>): any {
+  const source = field.optionsFrom
+  if (!source) return field
+
+  const rows = data[source.query]
+  const options = (Array.isArray(rows) ? rows : [])
+    .map((row: any) => ({
+      value: row?.[source.value || 'id'],
+      label: row?.[source.label],
+    }))
+    .filter((option: any) => option.value !== undefined && option.value !== null)
+
+  if (source.emptyLabel) {
+    options.unshift({ value: '', label: source.emptyLabel })
+  }
+
+  return { ...field, options }
 }
