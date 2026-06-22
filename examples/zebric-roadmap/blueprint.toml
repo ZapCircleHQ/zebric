@@ -147,7 +147,7 @@ source = "templates/public-roadmap.liquid"
 [page."/board"]
 title = "Planning board"
 auth = "required"
-layout = "custom"
+layout = "board"
 
 [page."/board".query.items]
 entity = "RoadmapItem"
@@ -155,17 +155,42 @@ orderBy = { position = "asc" }
 limit = 300
 include = ["theme"]
 
-[page."/board".behavior]
-intent = """
-Render roadmap items as a four-column kanban board: Candidate, Planned, In progress,
-and Shipped. Cards should surface theme, horizon, confidence, owner, target, and
-visibility, with clear links to edit the item or inspect its decision history.
-"""
+[page."/board".board]
+query = "items"
+groupBy = "status"
+orderBy = "position"
 
-[page."/board".template]
-engine = "liquid"
-type = "file"
-source = "templates/planning-board.liquid"
+[[page."/board".board.columns]]
+value = "candidate"
+label = "Candidate"
+description = "Ideas under consideration"
+
+[[page."/board".board.columns]]
+value = "planned"
+label = "Planned"
+description = "Sequenced for delivery"
+
+[[page."/board".board.columns]]
+value = "in_progress"
+label = "In progress"
+description = "Active work"
+
+[[page."/board".board.columns]]
+value = "shipped"
+label = "Shipped"
+description = "Released outcomes"
+
+[page."/board".board.card]
+title = "title"
+description = "summary"
+href = "/items/{id}"
+fields = ["theme.title", "horizon", "confidence", "owner", "target", "visibility"]
+
+[page."/board".board.move]
+workflow = "SetRoadmapStatus"
+payloadField = "status"
+successMessage = "Roadmap status change started."
+errorMessage = "Could not move the roadmap item."
 
 [page."/items/new"]
 title = "Add roadmap item"
@@ -469,7 +494,7 @@ itemId = "{{ variables.data.record.id }}"
 action = "roadmap.status_changed"
 fromStatus = "{{ variables.data.record.status }}"
 toStatus = "{{ variables.data.payload.status }}"
-actorId = "{{ variables.data.user.id }}"
+actorId = "{{ variables.data.session.user.id }}"
 
 [skill.roadmap]
 description = "Read and manage the Zebric product roadmap."
