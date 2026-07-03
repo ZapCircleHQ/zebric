@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAPIRoutes, registerPageRoutes } from './server-routes.js'
+import { registerAPIRoutes, registerActionRoutes, registerPageRoutes } from './server-routes.js'
 
 describe('registerPageRoutes', () => {
   it('sets a CSRF cookie when a safe page request generated a token', async () => {
@@ -112,6 +112,115 @@ describe('registerAPIRoutes access context', () => {
 
     const response = await app.request('/api/items')
     expect(response.status).toBe(403)
+  })
+})
+
+describe('registerActionRoutes', () => {
+  const session = { user: { id: 'user-1', email: 'user@example.com', name: 'User' } }
+  const record = { id: 'item-1', status: 'candidate', title: 'Feature X' }
+
+  function makeApp(overrides: {
+    getSession?: () => any
+    findById?: () => any
+    getWorkflow?: () => any
+    trigger?: () => any
+  } = {}) {
+    const app = new Hono()
+    registerActionRoutes(app, {
+      sessionManager: { getSession: overrides.getSession ?? (async () => session) } as any,
+      queryExecutor: { findById: overrides.findById ?? vi.fn(async () => record) } as any,
+      workflowManager: {
+        getWorkflow: overrides.getWorkflow ?? vi.fn(() => ({ name: 'SetRoadmapStatus' })),
+        trigger: overrides.trigger ?? vi.fn(() => ({ id: 'job-1', workflowName: 'SetRoadmapStatus' })),
+      } as any,
+    })
+    return app
+  }
+
+  it('requires authentication', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({ getSession: async () => null, trigger })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 when the workflow does not exist', async () => {
+    const app = makeApp({ getWorkflow: vi.fn(() => undefined) })
+
+    const response = await app.request('/actions/NoSuchWorkflow', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(404)
+    const body = await response.json()
+    expect(body.error).toContain('NoSuchWorkflow')
+  })
+
+  it('loads the record with session context and triggers the workflow on a board card move', async () => {
+    const findById = vi.fn(async () => record)
+    const trigger = vi.fn(() => ({ id: 'job-1', workflowName: 'SetRoadmapStatus' }))
+
+    const app = makeApp({ findById, trigger })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        entity: 'RoadmapItem',
+        recordId: 'item-1',
+        payload: JSON.stringify({ status: 'planned' }),
+        redirect: '/board',
+        successMessage: 'Roadmap status change started.',
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(findById).toHaveBeenCalledWith('RoadmapItem', 'item-1', { session })
+    expect(trigger).toHaveBeenCalledWith(
+      'SetRoadmapStatus',
+      expect.objectContaining({
+        record,
+        payload: { status: 'planned' },
+        entity: 'RoadmapItem',
+        recordId: 'item-1',
+        session,
+      }),
+      expect.anything()
+    )
+    const body = await response.json()
+    expect(body.success).toBe(true)
+    expect(body.message).toBe('Roadmap status change started.')
+  })
+
+  it('redirects via 303 for form submissions (not JSON accept)', async () => {
+    const app = makeApp()
+
+    const params = new URLSearchParams({
+      entity: 'RoadmapItem',
+      recordId: 'item-1',
+      payload: JSON.stringify({ status: 'in_progress' }),
+      redirect: '/board',
+      successMessage: 'Item moved.',
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: params.toString(),
+      redirect: 'manual',
+    })
+
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe('/board')
   })
 })
 
