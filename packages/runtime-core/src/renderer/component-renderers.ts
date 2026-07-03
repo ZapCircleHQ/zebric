@@ -229,15 +229,15 @@ export class ComponentRenderers {
   /**
    * Render form field
    */
-  renderFormField(field: any, record?: any): string {
-    return renderFormFieldFn(field, this.theme, this.utils, record)
+  renderFormField(field: any, record?: any, context?: { pagePath?: string }): string {
+    return renderFormFieldFn(field, this.theme, this.utils, record, context)
   }
 
   /**
    * Render form input element
    */
-  renderInput(field: any, value: any, errorId?: string): string {
-    return renderInputFn(field, value, this.theme, errorId)
+  renderInput(field: any, value: any, errorId?: string, context?: { pagePath?: string }): string {
+    return renderInputFn(field, value, this.theme, errorId, context)
   }
 
   /**

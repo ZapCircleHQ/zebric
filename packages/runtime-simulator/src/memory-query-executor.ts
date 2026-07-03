@@ -197,6 +197,48 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     return record ? { ...record } : null
   }
 
+  async search(
+    entityName: string,
+    fields: string[],
+    query: string,
+    options: { limit?: number; filter?: Record<string, any>; context?: RequestContext } = {}
+  ): Promise<any[]> {
+    const entity = this.getEntity(entityName)
+    const rows = this.getRows(entityName)
+    const context = options.context || {}
+
+    const hasAccess = await AccessControl.checkAccess({
+      session: context.session,
+      action: 'read',
+      entity,
+    })
+    if (!hasAccess) return []
+
+    const trimmed = String(query ?? '').trim()
+    if (!trimmed) return []
+
+    const needle = trimmed.toLowerCase()
+    const validFields = fields.filter((f) => entity.fields.some((ef) => ef.name === f))
+    if (validFields.length === 0) return []
+
+    let matches = rows.filter((row) =>
+      validFields.some((field) => String(row[field] ?? '').toLowerCase().includes(needle))
+    )
+
+    if (options.filter) {
+      matches = matches.filter((row) => this.matchesWhere(row, options.filter, context))
+    }
+    const accessFilter = AccessControl.getFilterConditions(entity, context.session)
+    if (accessFilter) {
+      matches = matches.filter((row) => this.matchesWhere(row, accessFilter, context))
+    }
+
+    const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
+    return matches
+      .slice(0, limit)
+      .map((row) => AccessControl.filterFields(entity, 'read', row, context.session))
+  }
+
   private getEntity(name: string): Entity {
     const entity = this.blueprint.entities.find((candidate) => candidate.name === name)
     if (!entity) {

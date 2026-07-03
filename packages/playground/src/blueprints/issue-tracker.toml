@@ -1,0 +1,266 @@
+version = "0.2.0"
+
+[project]
+name = "Issue Tracker"
+version = "1.0.0"
+description = "A board-first issue tracker with search, detail views, comments, and issue editing."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[entity.Project]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "key", type = "Text", required = true, unique = true },
+  { name = "leadName", type = "Text" }
+]
+
+[entity.Project.access]
+read = true
+create = true
+update = true
+delete = true
+
+[entity.IssueColumn]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "position", type = "Integer", default = 0 }
+]
+
+[entity.IssueColumn.access]
+read = true
+create = true
+update = true
+delete = true
+
+[entity.TeamMember]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "role", type = "Enum", values = ["pm", "engineer", "designer", "support"], required = true }
+]
+
+[entity.TeamMember.access]
+read = true
+create = true
+update = true
+delete = true
+
+[entity.Issue]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "key", type = "Text", required = true, unique = true },
+  { name = "title", type = "Text", required = true },
+  { name = "summary", type = "LongText" },
+  { name = "projectId", type = "Ref", ref = "Project.id" },
+  { name = "projectName", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["backlog", "planned", "in_progress", "review", "done"], default = "backlog" },
+  { name = "columnId", type = "Ref", ref = "IssueColumn.id", required = true, default = "backlog" },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "priority", type = "Enum", values = ["p0", "p1", "p2", "p3"], default = "p2" },
+  { name = "important", type = "Boolean", default = false },
+  { name = "assigneeId", type = "Ref", ref = "TeamMember.id" },
+  { name = "assigneeName", type = "Text" },
+  { name = "reporterId", type = "Ref", ref = "TeamMember.id" },
+  { name = "reporterName", type = "Text" },
+  { name = "estimate", type = "Integer" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Issue.access]
+read = true
+create = true
+update = true
+delete = true
+
+[entity.IssueComment]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "issueId", type = "Ref", ref = "Issue.id", required = true },
+  { name = "authorName", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.IssueComment.access]
+read = true
+create = true
+update = true
+delete = true
+
+[page."/"]
+title = "Issue Board"
+auth = "optional"
+
+[page."/".query.columns]
+entity = "IssueColumn"
+orderBy = { position = "asc" }
+
+[page."/".query.issues]
+entity = "Issue"
+orderBy = { position = "asc" }
+
+[page."/".widget]
+kind = "board"
+entity = "Issue"
+group_by = "columnId"
+column_entity = "IssueColumn"
+column_label = "name"
+column_order = "position"
+rank_field = "position"
+
+[page."/".widget.card]
+title = "title"
+toggles = [{ field = "important", label_on = "P1", label_off = "P2" }]
+
+[page."/".widget.on_move]
+update = { columnId = "$to.id", status = "$to.id", position = "$index" }
+
+[page."/".widget.on_column_rename]
+update = { name = "$value" }
+
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+
+[page."/issues/search"]
+title = "Find Issues"
+auth = "optional"
+
+[page."/issues/search".widget]
+kind = "lookup"
+entity = "Issue"
+search = ["key", "title", "projectName", "assigneeName"]
+display = "{key} - {title}"
+limit = 8
+placeholder = "Search by key, title, project, or assignee"
+
+[page."/issues/search".widget.on_select]
+navigate = "/issues/$to.id"
+
+[page."/issues"]
+title = "All Issues"
+auth = "optional"
+layout = "list"
+
+[page."/issues".query.issues]
+entity = "Issue"
+orderBy = { createdAt = "desc" }
+
+[page."/issues/new"]
+title = "New Issue"
+auth = "optional"
+layout = "form"
+
+[page."/issues/new".form]
+entity = "Issue"
+method = "create"
+onSuccess = { redirect = "/issues/{id}", message = "Issue created" }
+
+[[page."/issues/new".form.fields]]
+name = "key"
+type = "text"
+label = "Issue key"
+required = true
+
+[[page."/issues/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/issues/new".form.fields]]
+name = "projectName"
+type = "text"
+label = "Project"
+required = true
+
+[[page."/issues/new".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+options = ["p0", "p1", "p2", "p3"]
+
+[[page."/issues/new".form.fields]]
+name = "assigneeName"
+type = "text"
+label = "Assignee"
+
+[[page."/issues/new".form.fields]]
+name = "reporterName"
+type = "text"
+label = "Reporter"
+
+[[page."/issues/new".form.fields]]
+name = "summary"
+type = "textarea"
+label = "Summary"
+rows = 6
+
+[page."/issues/:id"]
+title = "Issue Detail"
+auth = "optional"
+layout = "detail"
+
+[page."/issues/:id".query.issue]
+entity = "Issue"
+where = { id = "{id}" }
+
+[page."/issues/:id".query.comments]
+entity = "IssueComment"
+where = { issueId = "{id}" }
+orderBy = { createdAt = "asc" }
+
+[page."/issues/:id/edit"]
+title = "Edit Issue"
+auth = "optional"
+layout = "form"
+
+[page."/issues/:id/edit".query.issue]
+entity = "Issue"
+where = { id = "{id}" }
+
+[page."/issues/:id/edit".form]
+entity = "Issue"
+method = "update"
+onSuccess = { message = "Issue updated" }
+
+[[page."/issues/:id/edit".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/issues/:id/edit".form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = ["backlog", "planned", "in_progress", "review", "done"]
+
+[[page."/issues/:id/edit".form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+options = ["p0", "p1", "p2", "p3"]
+
+[[page."/issues/:id/edit".form.fields]]
+name = "assigneeName"
+type = "text"
+label = "Assignee"
+
+[[page."/issues/:id/edit".form.fields]]
+name = "summary"
+type = "textarea"
+label = "Summary"
+rows = 6
+
+[page."/projects"]
+title = "Projects"
+auth = "optional"
+layout = "list"
+
+[page."/projects".query.projects]
+entity = "Project"
+orderBy = { name = "asc" }

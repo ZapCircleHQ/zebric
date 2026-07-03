@@ -1,0 +1,88 @@
+---
+label: Widgets
+order: 1
+slug: building/widgets
+title: Widgets
+description: Build interactive board and lookup experiences with declarative page widgets.
+---
+
+Widgets are interactive page-level views defined directly in your blueprint. They render server-side HTML, load the shared client runtime automatically, and send user interactions back to Zebric through typed widget events.
+
+Use a widget when a standard `list`, `detail`, `form`, or `dashboard` layout is not the right fit for the job. Today, Zebric ships two widget kinds:
+
+- `board` for Kanban-style workflows with drag-and-drop movement, toggles, and inline column editing
+- `lookup` for standalone search-and-select experiences
+
+## Defining a Widget
+
+Widgets live on a page under `[page."/path".widget]`:
+
+```toml
+[page."/customers"]
+title = "Customer Search"
+
+[page."/customers".widget]
+kind = "lookup"
+entity = "Customer"
+search = ["lastName", "firstName", "email"]
+display = "{lastName}, {firstName}"
+```
+
+The page still behaves like a normal Zebric page:
+
+- The widget is rendered by the shared HTML renderer
+- The client runtime is included automatically
+- Search and event requests are handled by the runtime
+- Access control still applies through the underlying entity reads and updates
+
+## Widget Data Model
+
+Every widget starts with a page and an entity:
+
+| Field | Description |
+|------|-------------|
+| `kind` | Widget type, such as `board` or `lookup` |
+| `entity` | Primary entity the widget reads from or updates |
+
+Each widget kind then adds its own configuration. For example:
+
+- `board` adds `column_entity`, `group_by`, `card`, and event handlers like `on_move`
+- `lookup` adds `search`, `display`, `limit`, `placeholder`, and `on_select`
+
+## Widget Events
+
+Widgets stay declarative by mapping user interactions to blueprint actions. For example:
+
+```toml
+[page."/".widget.on_move]
+update = { columnId = "$to.id", position = "$index" }
+
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field" }
+```
+
+The runtime resolves values like:
+
+- `$row.id` for the current record
+- `$to.id` for the destination column or selected row
+- `$index` for the new position in a list
+- `$field` for the toggled field name
+
+## Available Widgets
+
+- [Board Widget](/building/widgets/board): drag-and-drop columns and cards for workflow management
+- [Lookup Widget](/building/widgets/lookup): standalone search pages for finding and selecting records
+
+## When to Use Widgets
+
+Use widgets when:
+
+- The UI needs direct manipulation, such as dragging cards across columns
+- The page should act like a search tool rather than a CRUD form
+- A dashboard or list page would require too much custom client logic
+
+Stay with standard layouts when:
+
+- A plain list, detail, or form page already matches the workflow
+- You do not need interactive behavior beyond forms and links
+- You want the most conventional admin-style UI with minimal configuration

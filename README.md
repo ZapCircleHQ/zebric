@@ -1,19 +1,19 @@
-# Zebric — Declarative Web App Framework (Runtime, not code generation)
+# Zebric — Config-Driven Web Apps at Runtime
 
 [![npm version](https://img.shields.io/npm/v/@zebric/cli)](https://www.npmjs.com/package/@zebric/cli)
 [![CI](https://github.com/ZapCircleHQ/zebric/actions/workflows/ci.yml/badge.svg)](https://github.com/ZapCircleHQ/zebric/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](./LICENSE)
 
-Zebric is a **config-driven runtime** that reads **Blueprint** files (TOML/JSON) and serves a **working web app at runtime** — no code generation step. Update a blueprint, refresh the page, done. Designed to be **LLM-friendly** and **plugin-extensible**.
+Zebric is a **config-driven runtime** that reads **Blueprint** files (TOML or JSON) and serves a working web app at runtime. There is no code generation step. Update a blueprint, refresh the page, and keep moving. Zebric is designed to be **LLM-friendly** and **plugin-extensible**.
 
-> TL;DR: “Configure your app, don’t generate it.” Server Side Rendered HTML, forms, routes, database, and auth from your Blueprint.
+> TL;DR: Configure your app instead of generating it. Zebric turns a Blueprint into server-rendered pages, forms, routes, data access, and auth.
 
 
-## What is Zebric?
+## What Is Zebric?
 
-Zebric is a runtime engine that reads Blueprint configuration files (TOML or JSON) and generates working web applications. Instead of writing traditional code, you define your application's data model, pages, and forms declaratively, and Zebric interprets these at runtime to serve a complete web application.
+Zebric is a runtime engine for building web apps from Blueprint configuration files. Instead of scaffolding an app and then maintaining generated code, you describe your data model, pages, forms, and workflows declaratively, and Zebric interprets that Blueprint at runtime.
 
-Think of it as a web application framework that you configure, as opposed to a web application framework that you generate code for. You can supply custom behaviors, layouts, plugins or workflows for full extensibility.
+It is best suited to internal tools, admin surfaces, CRUD workflows, prototypes, and AI-assisted application development. When you need to go beyond the built-ins, you can extend Zebric with custom behaviors, layouts, plugins, and workflows.
 
 **Key characteristics:**
 - **Configuration-driven**: Define entities, routes, and forms in TOML/JSON instead of code
@@ -21,6 +21,12 @@ Think of it as a web application framework that you configure, as opposed to a w
 - **Server-side rendering**: Traditional HTML pages with form submissions (not a SPA framework)
 - **Database integration**: Automatic schema generation and CRUD operations from entity definitions
 - **AI-friendly**: Designed for AI code generators to create and modify applications iteratively
+
+## Start Here
+
+- Documentation: [docs.zebric.dev](https://docs.zebric.dev)
+- Playground and examples: [playground.zebric.dev](https://playground.zebric.dev)
+- npm package: [@zebric/cli](https://www.npmjs.com/package/@zebric/cli)
 
 ## Project Structure
 
@@ -50,7 +56,7 @@ zebric/
 
 ## Quick Start
 
-### Using npm (Recommended for users)
+### Using npm
 
 ```bash
 # Install Zebric CLI globally
@@ -63,8 +69,8 @@ npx @zebric/cli --version
 mkdir my-app
 cd my-app
 
-# Create a simple blueprint.toml file (or use an AI tool to generate one)
-# See docs/quickstart.md for examples
+# Create a blueprint.toml file
+# See docs.zebric.dev and playground.zebric.dev for guides and examples
 
 # Run your app
 zebric dev blueprint.toml
@@ -87,12 +93,14 @@ pnpm install
 # Build all packages
 pnpm build
 
-# Run the blog example
+# Run an example app
 cd examples/blog
 npx zebric dev blueprint.toml
 
 # Visit http://localhost:3000
 ```
+
+For the quickest path to a first app, start with the docs and examples above.
 
 ## Technology Stack
 
@@ -103,7 +111,7 @@ npx zebric dev blueprint.toml
 - **Authentication**: Better Auth (Other providers in the future)
 - **Background Jobs**: BullMQ (optional)
 - **Caching**: Redis (optional)
-- **Styling**: Tailwind CSS (loaded via CDN)
+- **Styling**: Tailwind CSS
 
 ## Development
 
@@ -166,15 +174,14 @@ For detailed testing information, see [TESTING.md](TESTING.md).
 
 ## Current Limitations
 
-Zebric is an experimental framework in active development. Some important limitations:
+Zebric is still evolving. A few practical limitations to keep in mind:
 
-- **Production readiness**: This is a development tool, not yet battle-tested for production use
-- **Database support**: Only SQLite and PostgreSQL support are available, MySQL is planned in the future, but should not be a major issue
+- **Production readiness**: Suitable for exploration and early projects, but not yet broadly battle-tested for production use
+- **Database support**: SQLite and PostgreSQL are supported today
 - **Client-side interactivity**: Limited JavaScript; primarily server-rendered HTML with form submissions
-- **Performance**: The runtime interpretation approach trades some performance for development speed - this needs to be quantified
-- **Ecosystem**: Plugin ecosystem is just getting started for common functionality
-- **Documentation**: Documentation is a work in progress
-- **Breaking changes**: The Blueprint schema and API may change as the project evolves, and improvements need to be made. To the extent possible, these will be non-breaking changes.
+- **Performance**: The runtime approach trades some raw performance for iteration speed, and performance work is ongoing
+- **Ecosystem**: The plugin ecosystem is still early
+- **Breaking changes**: Blueprint schema details and APIs may still change as the project matures
 
 ## Use Cases
 
@@ -188,29 +195,16 @@ Zebric works well for:
 Zebric may not be suitable for:
 - Applications requiring complex client-side interactivity
 - High-traffic production systems (until more testing is done)
-- Projects requiring specific integrations or APIs that aren't easy to integrate in a custom plugin or behavior
+- Projects requiring integrations that are not yet covered by existing plugins or custom behaviors
 - Applications with strict performance requirements
 
 ## Documentation
 
-### Core Documentation
-- [`docs/Zebric-Framework-Specification.md`](docs/Zebric-Framework-Specification.md) - Framework overview
-- [`docs/Zebric-Engine-Architecture.md`](docs/Zebric-Engine-Architecture.md) - Architecture details
-- [`docs/Zebric-Engine-Specification.md`](docs/Zebric-Engine-Specification.md) - Implementation specification
-
-### Feature Documentation
-- [`docs/quickstart.md`](docs/quickstart.md) - Generate a blueprint with an LLM and run it
-- [`docs/blueprint-specification.md`](docs/blueprint-specification.md) - LLM-Readable description of a Zebric Blueprint
-- [`docs/html-rendering.md`](docs/html-rendering.md) - HTML rendering guide
-- [`docs/api-stability.md`](docs/api-stability.md) - API stability guarantees and experimental features
-
-### Development Documentation
-- [`docs/version-management.md`](docs/version-management.md) - How to manage versions and releases with Changesets
-- [`TESTING.md`](TESTING.md) - Testing documentation
-
-### Implementation Summaries
-- `CHANGELOG.md` - Full changelog
+- Full documentation: [docs.zebric.dev](https://docs.zebric.dev)
+- Interactive examples and playground: [playground.zebric.dev](https://playground.zebric.dev)
+- Repository testing guide: [TESTING.md](TESTING.md)
+- Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ## License
 
-MIT License - Copyright (c) 2025 Biscotti Labs LLC
+MIT License - Copyright (c) 2026 Biscotti Labs LLC

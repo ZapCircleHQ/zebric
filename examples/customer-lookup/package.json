@@ -1,0 +1,15 @@
+{
+  "name": "customer-lookup-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demonstrates the shared 'lookup' control — mounted as a form field AND as a standalone search widget",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "seed": "bash seed.sh",
+    "build": "echo 'No build step needed - runtime engine'"
+  },
+  "dependencies": {
+    "@zebric/runtime-node": "workspace:*",
+    "@zebric/cli": "workspace:*"
+  }
+}

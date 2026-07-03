@@ -12,6 +12,7 @@ import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { defaultTheme } from './theme.js'
 import { safe } from '../security/html-escape.js'
+import { renderWidget, pageHasWidget, pageNeedsClientRuntime } from '../widgets/index.js'
 import {
   MemoryTemplateRegistry,
   InlineTemplateLoader,
@@ -111,12 +112,27 @@ export class HTMLRenderer {
    */
   renderPage(context: RenderContext): string {
     const { page } = context
+    const wrapOpts = { includeClientRuntime: pageNeedsClientRuntime(page) }
+
+    // Widgets take precedence over layouts — if a widget is declared, render it.
+    if (pageHasWidget(page)) {
+      const content = renderWidget({
+        page,
+        widget: page.widget!,
+        data: context.data,
+        blueprint: this.blueprint,
+        theme: this.theme,
+      })
+      return this.documentWrapper.wrapInDocument(
+        page.title, content, context.session, page.path, context.flash, wrapOpts
+      )
+    }
 
     // Check for custom template first
       if (page.template) {
         const content = this.layoutRenderers.renderWithCustomTemplate(context)
         if (content) {
-          return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash)
+          return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash, wrapOpts)
         }
       }
 
@@ -126,7 +142,7 @@ export class HTMLRenderer {
     const layoutTemplate = this.templateRegistry.get(layoutTemplateName)
     if (layoutTemplate) {
       const content = layoutTemplate.render(context)
-      return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash)
+      return this.documentWrapper.wrapInDocument(page.title, safe(content), context.session, page.path, context.flash, wrapOpts)
     }
 
     // Use built-in layout rendering (full HTML implementations)
@@ -155,7 +171,7 @@ export class HTMLRenderer {
     }
 
     // Wrap in document
-    return this.documentWrapper.wrapInDocument(page.title, content, context.session, page.path, context.flash)
+    return this.documentWrapper.wrapInDocument(page.title, content, context.session, page.path, context.flash, wrapOpts)
   }
 
   /**

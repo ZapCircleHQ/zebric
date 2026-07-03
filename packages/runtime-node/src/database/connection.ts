@@ -228,6 +228,13 @@ export class DatabaseConnection {
   }
 
   /**
+   * Get configured database type
+   */
+  getType(): DatabaseConfig['type'] {
+    return this.config.type
+  }
+
+  /**
    * Get schema tables
    */
   getSchema(): Record<string, any> {

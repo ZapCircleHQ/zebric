@@ -73,7 +73,25 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/customer-lookup:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
   examples/document-manager:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
+  examples/issue-board:
     dependencies:
       '@zebric/cli':
         specifier: workspace:*

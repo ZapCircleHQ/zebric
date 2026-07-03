@@ -11,6 +11,13 @@ import { INLINE_TAILWIND_STYLE_TAG } from './tailwind-style.js'
 import type { FlashMessage } from '../routing/request-ports.js'
 import { renderNavigation } from './navigation-renderer.js'
 import { renderFlash } from './feedback-renderer.js'
+import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
+
+export interface WrapInDocumentOptions {
+  includeClientRuntime?: boolean
+  /** @deprecated Use includeClientRuntime. */
+  includeWidgetRuntime?: boolean
+}
 
 export class DocumentWrapper {
   private reloadScript?: string
@@ -30,10 +37,19 @@ export class DocumentWrapper {
   /**
    * Wrap content in complete HTML document
    */
-  wrapInDocument(title: string, content: SafeHtml, session?: any, currentPath?: string, flash?: FlashMessage): string {
+  wrapInDocument(
+    title: string,
+    content: SafeHtml,
+    session?: any,
+    currentPath?: string,
+    flash?: FlashMessage,
+    options?: WrapInDocumentOptions
+  ): string {
     const viewTransitions = this.blueprint.ui?.view_transitions !== false
     const escapedTitle = escapeHtml(title)
     const escapedProjectName = escapeHtml(this.blueprint.project.name)
+    const includeRuntime = options?.includeClientRuntime ?? options?.includeWidgetRuntime ?? false
+    const widgetScript = includeRuntime ? WIDGET_CLIENT_RUNTIME : ''
 
     return `
       <!DOCTYPE html>
@@ -113,6 +129,7 @@ export class DocumentWrapper {
 
           ${this.renderFooter().html}
           ${this.renderClientScript().html}
+          ${widgetScript}
           ${this.reloadScript || ''}
         </body>
       </html>
