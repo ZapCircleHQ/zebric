@@ -134,7 +134,7 @@ export async function checkFormAuthorization(
   // For update/delete, fetch existing record to check ownership
   if ((action === 'update' || action === 'delete') && recordId && queryExecutor) {
     try {
-      const existingRecord = await queryExecutor.findById(form.entity, recordId)
+      const existingRecord = await queryExecutor.findById(form.entity, recordId, { session })
       data = { ...existingRecord, ...data }
     } catch (error) {
       return false

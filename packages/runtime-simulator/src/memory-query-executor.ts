@@ -191,7 +191,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     })
   }
 
-  async findById(entityName: string, id: string): Promise<any> {
+  async findById(entityName: string, id: string, _context?: Record<string, any>): Promise<any> {
     this.getEntity(entityName)
     const record = this.getRows(entityName).find((row) => String(row.id) === String(id))
     return record ? { ...record } : null

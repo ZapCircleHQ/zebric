@@ -55,7 +55,7 @@ export async function handleSkillEntityAction(
       }
       const body = await c.req.json<Record<string, any>>()
       const before = workflowManager
-        ? await queryExecutor.findById(entityName, id).catch(() => null)
+        ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       const result = await queryExecutor.update(entityName, id, body, { session })
       await triggerEntityWorkflows(entityName, 'update', before, result, workflowManager, {
@@ -97,7 +97,7 @@ export async function handleSkillEntityAction(
       if (!id) {
         return Response.json({ error: 'Missing id parameter' }, { status: 400 })
       }
-      const result = await queryExecutor.findById(entityName, id)
+      const result = await queryExecutor.findById(entityName, id, { session })
       if (!result) {
         return Response.json({ error: 'Not found' }, { status: 404 })
       }
@@ -110,7 +110,7 @@ export async function handleSkillEntityAction(
         return Response.json({ error: 'Missing id parameter' }, { status: 400 })
       }
       const existing = workflowManager
-        ? await queryExecutor.findById(entityName, id).catch(() => null)
+        ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       await queryExecutor.delete(entityName, id, { session })
       await triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined, workflowManager, {
@@ -174,7 +174,7 @@ export async function handleSkillWorkflow(
   // Load the record if entity is specified and we have an id
   let record = null
   if (action.entity && params.id) {
-    record = await queryExecutor.findById(action.entity, params.id).catch(() => null)
+    record = await queryExecutor.findById(action.entity, params.id, { session }).catch(() => null)
   }
 
   const data = {
