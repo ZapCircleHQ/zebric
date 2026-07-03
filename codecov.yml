@@ -36,6 +36,26 @@ coverage:
         target: auto
         threshold: 1%
         flags: [notifications]
+      observability:
+        target: auto
+        threshold: 1%
+        flags: [observability]
+      runtime-hono:
+        target: auto
+        threshold: 1%
+        flags: [runtime-hono]
+      runtime-simulator:
+        target: auto
+        threshold: 1%
+        flags: [runtime-simulator]
+      react-simulator:
+        target: auto
+        threshold: 1%
+        flags: [react-simulator]
+      framework-stories:
+        target: auto
+        threshold: 1%
+        flags: [framework-stories]
 
     patch:
       default:

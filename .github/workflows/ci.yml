@@ -108,18 +108,108 @@ jobs:
           pnpm --filter @zebric/runtime-worker test:coverage
           pnpm --filter @zebric/cli test:coverage
           pnpm --filter @zebric/notifications test:coverage
+          pnpm --filter @zebric/observability test:coverage
+          pnpm --filter @zebric/runtime-hono test:coverage
+          pnpm --filter @zebric/runtime-simulator test:coverage
+          pnpm --filter @zebric/react-simulator test:coverage
+          pnpm --filter @zebric/framework-stories test:coverage
 
-      - name: Upload coverage reports
+      - name: Upload runtime-core coverage
         uses: codecov/codecov-action@v4
         if: always()
         with:
-          files: >-
-            ./packages/runtime-core/coverage/coverage-final.json,
-            ./packages/runtime-node/coverage/coverage-final.json,
-            ./packages/runtime-worker/coverage/coverage-final.json,
-            ./packages/cli/coverage/coverage-final.json,
-            ./packages/notifications/coverage/coverage-final.json
-          flags: runtime-core,runtime-node,runtime-worker,cli,notifications
+          files: ./packages/runtime-core/coverage/coverage-final.json
+          flags: runtime-core
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload runtime-node coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/runtime-node/coverage/coverage-final.json
+          flags: runtime-node
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload runtime-worker coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/runtime-worker/coverage/coverage-final.json
+          flags: runtime-worker
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload cli coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/cli/coverage/coverage-final.json
+          flags: cli
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload notifications coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/notifications/coverage/coverage-final.json
+          flags: notifications
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload observability coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/observability/coverage/coverage-final.json
+          flags: observability
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload runtime-hono coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/runtime-hono/coverage/coverage-final.json
+          flags: runtime-hono
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload runtime-simulator coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/runtime-simulator/coverage/coverage-final.json
+          flags: runtime-simulator
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload react-simulator coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/react-simulator/coverage/coverage-final.json
+          flags: react-simulator
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload framework-stories coverage
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./packages/framework-stories/coverage/coverage-final.json
+          flags: framework-stories
           fail_ci_if_error: false
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}

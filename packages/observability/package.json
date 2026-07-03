@@ -23,7 +23,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "vitest run --coverage=false"
+    "test": "vitest run --coverage=false",
+    "test:coverage": "vitest run --coverage"
   },
   "license": "MIT",
   "dependencies": {

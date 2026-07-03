@@ -1,9 +1,11 @@
 import { defineConfig } from 'vitest/config'
+import { coverageConfig } from '../../vitest.shared'
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    coverage: coverageConfig,
     testTimeout: 30000,
     hookTimeout: 30000,
     teardownTimeout: 10000,

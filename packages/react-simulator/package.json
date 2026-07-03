@@ -21,6 +21,7 @@
     "build": "tsc && cp src/styles.css dist/styles.css",
     "dev": "tsc --watch",
     "test": "vitest run --coverage=false",
+    "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },
   "license": "MIT",

@@ -4,10 +4,5 @@ import { coverageConfig } from '../../vitest.shared'
 export default defineConfig({
   test: {
     coverage: coverageConfig,
-    exclude: [
-      '**/node_modules/**',
-      '**/dist/**',
-      'tests/playwright/**',
-    ],
   },
 })

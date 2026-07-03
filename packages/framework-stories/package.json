@@ -7,9 +7,11 @@
   "main": "./dist/index.js",
   "scripts": {
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "stories": "vitest run --runInBand",
     "pretest": "pnpm --filter @zebric/runtime-core build",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build",
     "prestories": "pnpm --filter @zebric/runtime-core build"
   },
   "dependencies": {

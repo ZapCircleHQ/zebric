@@ -15,6 +15,7 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
     "quick-test": "pnpm --filter @zebric/runtime-core test && pnpm --filter @zebric/runtime-hono test && pnpm --filter @zebric/notifications test && pnpm --filter @zebric/runtime-node test && pnpm --filter @zebric/runtime-worker test && pnpm --filter @zebric/framework-stories test && pnpm --filter @zebric/cli test && pnpm --filter @zebric/plugin-sdk test",
     "lint": "eslint \"packages/*/src/**/*.{ts,js,mjs}\" \"packages/docs/*.mjs\" \"packages/docs/src/**/*.ts\" \"plugins/*/src/**/*.{ts,js,mjs}\" \"examples/**/*.{ts,mjs}\" \"scripts/**/*.{ts,js,mjs}\" \"starters/**/*.{ts,js,mjs}\" --no-error-on-unmatched-pattern",
     "clean": "turbo run clean && rm -rf node_modules",
