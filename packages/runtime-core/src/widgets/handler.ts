@@ -26,7 +26,7 @@ export interface WidgetHandlerResult {
 export async function handleWidgetEvent(
   blueprint: Blueprint,
   body: any,
-  request: HttpRequest,
+  request: HttpRequest | Request,
   deps: WidgetHandlerDeps
 ): Promise<WidgetHandlerResult> {
   if (!body || typeof body.page !== 'string' || typeof body.event !== 'string' ||
@@ -34,7 +34,7 @@ export async function handleWidgetEvent(
     return { status: 400, body: { error: 'Invalid widget event' } }
   }
 
-  const session = deps.sessionManager ? await deps.sessionManager.getSession(request as any) : null
+  const session = deps.sessionManager ? await deps.sessionManager.getSession(request) : null
 
   // Load the current record so `$row.<field>` placeholders can read it.
   let row: Record<string, any> = {}

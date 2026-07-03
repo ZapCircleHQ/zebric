@@ -66,7 +66,7 @@ export function resolveLookupConfig(
 export async function handleLookupSearch(
   blueprint: Blueprint,
   params: LookupSearchParams,
-  request: HttpRequest,
+  request: HttpRequest | Request,
   deps: LookupSearchDeps
 ): Promise<LookupSearchResult> {
   const page = params.page
@@ -79,7 +79,7 @@ export async function handleLookupSearch(
     return { status: 404, body: { error: 'No lookup configured for this page/field' } }
   }
 
-  const session = deps.sessionManager ? await deps.sessionManager.getSession(request as any) : null
+  const session = deps.sessionManager ? await deps.sessionManager.getSession(request) : null
 
   try {
     const records = await deps.queryExecutor.search(config.entity, config.search, params.q ?? '', {
