@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-simulator",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.0",
   "description": "Browser-only Zebric simulator runtime",
   "type": "module",
   "main": "./dist/index.js",
