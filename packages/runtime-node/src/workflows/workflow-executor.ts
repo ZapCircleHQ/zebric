@@ -259,7 +259,7 @@ export class WorkflowExecutor {
           return { deleted: true }
         }
 
-      case 'find':
+      case 'find': {
         const query = {
           entity: step.entity,
           where,
@@ -267,6 +267,7 @@ export class WorkflowExecutor {
         return queryContext
           ? this.dataLayer.execute(query, queryContext)
           : this.dataLayer.execute(query)
+      }
 
       default:
         throw new Error(`Unknown query action: ${step.action}`)
