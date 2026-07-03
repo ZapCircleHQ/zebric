@@ -1,13 +1,9 @@
-# @zebric/runtime-core
+# @zebric/runtime-simulator
 
-## 0.2.4
+## 0.0.1
 
 ### Patch Changes
 
 - 746e092: Add the browser-only Zebric simulator runtime and React simulator UI polish, including in-memory seeds, simulated auth, client-side rendering, audit events, integration outbox support, and inbound webhook simulation. Runtime core now uses `smol-toml` for blueprint parsing consistency.
-
-## 0.2.3
-
-### Patch Changes
-
-- cfd46f3: Fix the Zebric engine version reported by the Node runtime so it follows the package version instead of a stale hard-coded value.
+- Updated dependencies [746e092]
+  - @zebric/runtime-core@0.2.4
