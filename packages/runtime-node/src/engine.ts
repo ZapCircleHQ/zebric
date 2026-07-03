@@ -7,6 +7,7 @@
 import type { ServerType } from '@hono/node-server'
 import { EventEmitter } from 'node:events'
 import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
@@ -22,7 +23,7 @@ import type { AuthProvider, EngineAPI } from '@zebric/runtime-core'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
 import { FileStorage } from './storage/index.js'
 import type { Blueprint } from '@zebric/runtime-core'
-import { HTMLRenderer } from './renderer/index.js'
+import { FileTemplateLoader, HTMLRenderer } from './renderer/index.js'
 import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { NotificationManager } from '@zebric/notifications'
 import { createLogger, type Logger } from '@zebric/observability'
@@ -191,8 +192,7 @@ export class ZebricEngine extends EventEmitter {
       const port = this.config.port ?? 3000
       const defaultOrigin = `http://${host}:${port}`
 
-      const RendererClass = this.config.rendererClass || HTMLRenderer
-      this.rendererInstance = new RendererClass(this.blueprint, this.config.theme)
+      this.rendererInstance = this.createRenderer(this.blueprint)
       const rendererPort: RendererPort = {
         renderPage: (context) => this.rendererInstance!.renderPage(context as any)
       }
@@ -433,8 +433,7 @@ export class ZebricEngine extends EventEmitter {
       }
 
       // Update renderer and adapter with new blueprint
-      const RendererClass = this.config.rendererClass || HTMLRenderer
-      this.rendererInstance = new RendererClass(newBlueprint, this.config.theme)
+      this.rendererInstance = this.createRenderer(newBlueprint)
       if (this.config.dev?.hotReload && this.reloadServer) {
         const reloadScript = getReloadScript()
         this.rendererInstance.setReloadScript(reloadScript)
@@ -466,6 +465,18 @@ export class ZebricEngine extends EventEmitter {
       this.state.status = 'running' // Revert to running with old blueprint
       throw error
     }
+  }
+
+  private createRenderer(blueprint: Blueprint): HTMLRenderer {
+    if (this.config.rendererClass) {
+      return new this.config.rendererClass(blueprint, this.config.theme)
+    }
+
+    const templateLoader = new FileTemplateLoader({
+      baseDir: dirname(this.config.blueprintPath),
+      cache: !this.config.dev?.hotReload,
+    })
+    return new HTMLRenderer(blueprint, this.config.theme, undefined, templateLoader)
   }
 
   /**

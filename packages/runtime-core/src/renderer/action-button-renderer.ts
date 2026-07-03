@@ -130,7 +130,7 @@ export function renderWorkflowAction(
       ${record?.id ? html`<input type="hidden" name="recordId" value="${escapeHtmlAttr(record.id)}" />` : ''}
       ${page?.path ? html`<input type="hidden" name="page" value="${escapeHtmlAttr(page.path)}" />` : ''}
       ${redirectTarget ? html`<input type="hidden" name="redirect" value="${escapeHtmlAttr(redirectTarget)}" />` : ''}
-      ${payloadJson ? html`<input type="hidden" name="payload" value='${escapeHtmlAttr(payloadJson)}' />` : ''}
+      ${payloadJson ? html`<input type="hidden" name="payload" value='${payloadJson}' />` : ''}
       ${action.successMessage ? html`<input type="hidden" name="successMessage" value="${escapeHtmlAttr(action.successMessage)}" />` : ''}
       ${action.errorMessage ? html`<input type="hidden" name="errorMessage" value="${escapeHtmlAttr(action.errorMessage)}" />` : ''}
       <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirmAttr}>

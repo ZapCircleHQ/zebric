@@ -1,0 +1,539 @@
+version = "0.1.0"
+
+[project]
+name = "Zebric Roadmap"
+version = "0.1.0"
+description = "A public product roadmap backed by an authenticated planning board."
+
+[project.runtime]
+min_version = "0.1.0"
+
+[ux]
+pattern = "dashboard@v1"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Roadmap", "Board", "Themes", "Updates"]
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+# Strategic themes give the public roadmap its top-to-bottom hierarchy.
+[entity.Theme]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "accent", type = "Enum", values = ["violet", "blue", "green", "amber"], default = "violet" },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "active", type = "Boolean", default = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Theme.access]
+read = { or = [{ active = true }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+[entity.Theme.relations]
+items = { type = "hasMany", entity = "RoadmapItem", foreign_key = "themeId" }
+
+[entity.RoadmapItem]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "description", type = "LongText" },
+  { name = "themeId", type = "Ref", ref = "Theme.id", required = true, index = true },
+  { name = "horizon", type = "Enum", values = ["now", "next", "later"], default = "next" },
+  { name = "status", type = "Enum", values = ["candidate", "planned", "in_progress", "shipped"], default = "candidate" },
+  { name = "confidence", type = "Enum", values = ["committed", "likely", "exploring"], default = "exploring" },
+  { name = "visibility", type = "Enum", values = ["public", "internal"], default = "internal" },
+  { name = "owner", type = "Text" },
+  { name = "target", type = "Text" },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.RoadmapItem.access]
+read = { or = [{ visibility = "public" }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+[entity.RoadmapItem.relations]
+theme = { type = "belongsTo", entity = "Theme", foreign_key = "themeId" }
+decisions = { type = "hasMany", entity = "RoadmapDecision", foreign_key = "itemId" }
+
+[entity.RoadmapDecision]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "itemId", type = "Ref", ref = "RoadmapItem.id", required = true, index = true },
+  { name = "action", type = "Text", required = true },
+  { name = "fromStatus", type = "Text" },
+  { name = "toStatus", type = "Text" },
+  { name = "reason", type = "LongText" },
+  { name = "actorId", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.RoadmapDecision.access]
+read = "authenticated"
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+[entity.RoadmapDecision.relations]
+item = { type = "belongsTo", entity = "RoadmapItem", foreign_key = "itemId" }
+
+[entity.RoadmapUpdate]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "published", type = "Boolean", default = false },
+  { name = "publishedAt", type = "DateTime" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.RoadmapUpdate.access]
+read = { or = [{ published = true }, "authenticated"] }
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+# Public, top-to-bottom roadmap. Only explicitly public items are queried.
+[page."/"]
+title = "Roadmap"
+auth = "none"
+layout = "custom"
+
+[page."/".query.themes]
+entity = "Theme"
+where = { active = true }
+orderBy = { position = "asc" }
+limit = 20
+
+[page."/".query.items]
+entity = "RoadmapItem"
+where = { visibility = "public" }
+orderBy = { position = "asc" }
+limit = 200
+
+[page."/".query.updates]
+entity = "RoadmapUpdate"
+where = { published = true }
+orderBy = { publishedAt = "desc" }
+limit = 3
+
+[page."/".behavior]
+intent = """
+Render a polished public roadmap that reads from top to bottom: product direction,
+strategic themes, and within each theme the Now, Next, and Later horizons. Show
+confidence without presenting target dates as promises. Include recent public updates
+and a restrained sign-in link for the internal team.
+"""
+
+[page."/".template]
+engine = "liquid"
+type = "file"
+source = "templates/public-roadmap.liquid"
+
+# Internal kanban. Authentication is enforced before its behavior executes.
+[page."/board"]
+title = "Planning board"
+auth = "required"
+layout = "board"
+
+[page."/board".query.items]
+entity = "RoadmapItem"
+orderBy = { position = "asc" }
+limit = 300
+include = ["theme"]
+
+[page."/board".board]
+query = "items"
+groupBy = "status"
+orderBy = "position"
+
+[[page."/board".board.columns]]
+value = "candidate"
+label = "Candidate"
+description = "Ideas under consideration"
+
+[[page."/board".board.columns]]
+value = "planned"
+label = "Planned"
+description = "Sequenced for delivery"
+
+[[page."/board".board.columns]]
+value = "in_progress"
+label = "In progress"
+description = "Active work"
+
+[[page."/board".board.columns]]
+value = "shipped"
+label = "Shipped"
+description = "Released outcomes"
+
+[page."/board".board.card]
+title = "title"
+description = "summary"
+href = "/items/{id}"
+fields = ["theme.title", "horizon", "confidence", "owner", "target", "visibility"]
+
+[page."/board".board.move]
+workflow = "SetRoadmapStatus"
+payloadField = "status"
+successMessage = "Roadmap status change started."
+errorMessage = "Could not move the roadmap item."
+
+[page."/items/new"]
+title = "Add roadmap item"
+auth = "required"
+layout = "form"
+
+[page."/items/new".query.themes]
+entity = "Theme"
+orderBy = { position = "asc" }
+
+[page."/items/new".form]
+entity = "RoadmapItem"
+method = "create"
+
+[[page."/items/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/items/new".form.fields]]
+name = "summary"
+type = "textarea"
+label = "Public summary"
+rows = 3
+required = true
+
+[[page."/items/new".form.fields]]
+name = "description"
+type = "textarea"
+label = "Internal context"
+rows = 6
+
+[[page."/items/new".form.fields]]
+name = "themeId"
+type = "select"
+label = "Theme"
+required = true
+optionsFrom = { query = "themes", value = "id", label = "title", emptyLabel = "Select a theme" }
+
+[[page."/items/new".form.fields]]
+name = "horizon"
+type = "select"
+label = "Horizon"
+options = [{ value = "now", label = "Now" }, { value = "next", label = "Next" }, { value = "later", label = "Later" }]
+
+[[page."/items/new".form.fields]]
+name = "status"
+type = "select"
+label = "Delivery state"
+options = [{ value = "candidate", label = "Candidate" }, { value = "planned", label = "Planned" }, { value = "in_progress", label = "In progress" }, { value = "shipped", label = "Shipped" }]
+
+[[page."/items/new".form.fields]]
+name = "confidence"
+type = "select"
+label = "Confidence"
+options = [{ value = "committed", label = "Committed" }, { value = "likely", label = "Likely" }, { value = "exploring", label = "Exploring" }]
+
+[[page."/items/new".form.fields]]
+name = "visibility"
+type = "select"
+label = "Visibility"
+options = [{ value = "internal", label = "Internal" }, { value = "public", label = "Public" }]
+
+[[page."/items/new".form.fields]]
+name = "owner"
+type = "text"
+label = "Owner"
+
+[[page."/items/new".form.fields]]
+name = "target"
+type = "text"
+label = "Target window"
+placeholder = "Q3 2026"
+
+[page."/items/new".form.onSuccess]
+redirect = "/items/{id}"
+message = "Roadmap item created."
+
+[page."/items/:id"]
+title = "Roadmap item"
+auth = "required"
+layout = "detail"
+
+[page."/items/:id".query.item]
+entity = "RoadmapItem"
+where = { id = "$params.id" }
+include = ["theme"]
+
+[page."/items/:id".query.decisions]
+entity = "RoadmapDecision"
+where = { itemId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+
+[page."/items/:id".actionBar]
+title = "Delivery state"
+description = "State changes are recorded in the decision history."
+statusField = "status"
+
+[[page."/items/:id".actionBar.secondaryActions]]
+label = "Edit item"
+href = "/items/{id}/edit"
+style = "secondary"
+
+[[page."/items/:id".actionBar.actions]]
+label = "Plan"
+workflow = "SetRoadmapStatus"
+style = "secondary"
+payload = { status = "planned" }
+successMessage = "Item moved to planned."
+
+[[page."/items/:id".actionBar.actions]]
+label = "Start work"
+workflow = "SetRoadmapStatus"
+style = "primary"
+payload = { status = "in_progress" }
+successMessage = "Item moved to in progress."
+
+[[page."/items/:id".actionBar.actions]]
+label = "Mark shipped"
+workflow = "SetRoadmapStatus"
+style = "secondary"
+payload = { status = "shipped" }
+successMessage = "Item marked shipped."
+
+[page."/items/:id/edit"]
+title = "Edit roadmap item"
+auth = "required"
+layout = "form"
+
+[page."/items/:id/edit".query.item]
+entity = "RoadmapItem"
+where = { id = "$params.id" }
+
+[page."/items/:id/edit".query.themes]
+entity = "Theme"
+orderBy = { position = "asc" }
+
+[page."/items/:id/edit".form]
+entity = "RoadmapItem"
+method = "update"
+
+[[page."/items/:id/edit".form.fields]]
+name = "title"
+type = "text"
+required = true
+
+[[page."/items/:id/edit".form.fields]]
+name = "summary"
+type = "textarea"
+rows = 3
+required = true
+
+[[page."/items/:id/edit".form.fields]]
+name = "description"
+type = "textarea"
+rows = 6
+
+[[page."/items/:id/edit".form.fields]]
+name = "themeId"
+type = "select"
+label = "Theme"
+required = true
+optionsFrom = { query = "themes", value = "id", label = "title", emptyLabel = "Select a theme" }
+
+[[page."/items/:id/edit".form.fields]]
+name = "horizon"
+type = "select"
+options = ["now", "next", "later"]
+
+[[page."/items/:id/edit".form.fields]]
+name = "confidence"
+type = "select"
+options = ["committed", "likely", "exploring"]
+
+[[page."/items/:id/edit".form.fields]]
+name = "visibility"
+type = "select"
+options = ["public", "internal"]
+
+[[page."/items/:id/edit".form.fields]]
+name = "owner"
+type = "text"
+
+[[page."/items/:id/edit".form.fields]]
+name = "target"
+type = "text"
+label = "Target window"
+
+[page."/items/:id/edit".form.onSuccess]
+redirect = "/items/{id}"
+message = "Roadmap item updated."
+
+[page."/themes"]
+title = "Strategic themes"
+auth = "required"
+layout = "list"
+
+[page."/themes".query.themes]
+entity = "Theme"
+orderBy = { position = "asc" }
+limit = 50
+
+[page."/themes/new"]
+title = "Add strategic theme"
+auth = "required"
+layout = "form"
+
+[page."/themes/new".form]
+entity = "Theme"
+method = "create"
+
+[[page."/themes/new".form.fields]]
+name = "title"
+type = "text"
+required = true
+
+[[page."/themes/new".form.fields]]
+name = "summary"
+type = "textarea"
+rows = 4
+required = true
+
+[[page."/themes/new".form.fields]]
+name = "accent"
+type = "select"
+options = ["violet", "blue", "green", "amber"]
+
+[[page."/themes/new".form.fields]]
+name = "position"
+type = "number"
+
+[page."/themes/new".form.onSuccess]
+redirect = "/themes"
+message = "Theme created."
+
+[page."/updates"]
+title = "Roadmap updates"
+auth = "required"
+layout = "list"
+
+[page."/updates".query.updates]
+entity = "RoadmapUpdate"
+orderBy = { createdAt = "desc" }
+limit = 50
+
+[page."/updates/new"]
+title = "Publish an update"
+auth = "required"
+layout = "form"
+
+[page."/updates/new".form]
+entity = "RoadmapUpdate"
+method = "create"
+
+[[page."/updates/new".form.fields]]
+name = "title"
+type = "text"
+required = true
+
+[[page."/updates/new".form.fields]]
+name = "body"
+type = "textarea"
+rows = 8
+required = true
+
+[[page."/updates/new".form.fields]]
+name = "published"
+type = "checkbox"
+label = "Show on the public roadmap"
+
+[[page."/updates/new".form.fields]]
+name = "publishedAt"
+type = "datetime"
+label = "Published at"
+
+[page."/updates/new".form.onSuccess]
+redirect = "/updates"
+message = "Update created."
+
+[workflow.SetRoadmapStatus]
+description = "Move an item to a delivery state and append a decision record."
+trigger = { manual = true }
+
+[[workflow.SetRoadmapStatus.steps]]
+type = "query"
+entity = "RoadmapItem"
+action = "update"
+[workflow.SetRoadmapStatus.steps.where]
+id = "{{ variables.data.record.id }}"
+[workflow.SetRoadmapStatus.steps.data]
+status = "{{ variables.data.payload.status }}"
+
+[[workflow.SetRoadmapStatus.steps]]
+type = "query"
+entity = "RoadmapDecision"
+action = "create"
+[workflow.SetRoadmapStatus.steps.data]
+itemId = "{{ variables.data.record.id }}"
+action = "roadmap.status_changed"
+fromStatus = "{{ variables.data.record.status }}"
+toStatus = "{{ variables.data.payload.status }}"
+actorId = "{{ variables.data.session.user.id }}"
+
+[skill.roadmap]
+description = "Read and manage the Zebric product roadmap."
+
+[[skill.roadmap.actions]]
+name = "list_items"
+description = "List roadmap items."
+method = "GET"
+path = "/api/roadmap-items"
+
+[[skill.roadmap.actions]]
+name = "create_item"
+description = "Create a roadmap item."
+method = "POST"
+path = "/api/roadmap-items"
+body = { title = "Text", summary = "LongText", themeId = "Ref", horizon = "Enum", status = "Enum", confidence = "Enum", visibility = "Enum" }
+
+[[skill.roadmap.actions]]
+name = "set_status"
+description = "Change delivery state and record the decision."
+method = "POST"
+path = "/api/roadmap-items/{id}/status"
+body = { status = "Enum" }
+entity = "RoadmapItem"
+workflow = "SetRoadmapStatus"
+
+[auth]
+providers = ["email"]
+
+[auth.pages.signIn]
+engine = "liquid"
+type = "file"
+source = "templates/sign-in.liquid"
+
+[[auth.apiKeys]]
+name = "roadmap-agent"
+keyEnv = "ROADMAP_AGENT_API_KEY"
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

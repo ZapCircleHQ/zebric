@@ -373,6 +373,15 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('Some text')
     })
 
+    it('renders datetime fields as native datetime-local pickers', () => {
+      const field = { name: 'publishedAt', type: 'datetime' }
+      const result = renderer.renderInput(field, '2026-06-22T14:30:00.000Z')
+
+      expect(result).toContain('type="datetime-local"')
+      expect(result).toContain('value="2026-06-22T14:30"')
+      expect(result).not.toContain('type="datetime"')
+    })
+
     it('renders select with options', () => {
       const field = {
         name: 'priority',
@@ -411,6 +420,22 @@ describe('ComponentRenderers', () => {
     it('renders unchecked checkbox', () => {
       const field = { name: 'done', type: 'checkbox' }
       const result = renderer.renderInput(field, false)
+      expect(result).toContain('type="checkbox"')
+      expect(result).not.toContain('checked')
+    })
+
+    it('preserves a zero record value instead of using the default', () => {
+      const field = { name: 'estimate', type: 'number', default: 10 }
+      const result = renderer.renderFormField(field, { estimate: 0 })
+
+      expect(result).toContain('value="0"')
+      expect(result).not.toContain('value="10"')
+    })
+
+    it('preserves a false record value instead of using the default', () => {
+      const field = { name: 'done', type: 'checkbox', default: true }
+      const result = renderer.renderFormField(field, { done: false })
+
       expect(result).toContain('type="checkbox"')
       expect(result).not.toContain('checked')
     })

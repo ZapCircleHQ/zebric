@@ -114,7 +114,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Find a record by ID
    */
-  async findById(entity: string, id: string): Promise<any> {
+  async findById(entity: string, id: string, _context?: Record<string, any>): Promise<any> {
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)

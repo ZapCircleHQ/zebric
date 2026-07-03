@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sign in · {{ project.name }}</title>
+  {{ renderer.styles | raw }}
+  <style>
+    :root{--ink:#17151f;--muted:#686371;--line:#dedbe4;--paper:#f7f5f2;--violet:#7258d6}*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}.auth-shell{min-height:100vh;display:grid;grid-template-columns:minmax(320px,1fr) minmax(420px,1fr)}.auth-story{padding:46px clamp(32px,6vw,90px);display:flex;flex-direction:column;justify-content:space-between;border-right:1px solid var(--line)}.brand{font-size:20px;font-weight:800;letter-spacing:-.03em;text-decoration:none}.brand i{color:var(--violet);font-style:normal}.story-copy small{text-transform:uppercase;letter-spacing:.15em;font-size:10px;color:var(--violet);font-weight:800}.story-copy h1{font-size:clamp(44px,5vw,70px);line-height:.98;letter-spacing:-.06em;margin:17px 0 20px;max-width:650px}.story-copy p{color:var(--muted);font-size:17px;max-width:490px}.auth-panel{display:flex;align-items:center;justify-content:center;padding:36px;background:#fff}.auth-card{width:100%;max-width:410px}.auth-card h2{font-size:30px;letter-spacing:-.04em;margin:0 0 8px}.auth-card>p{color:var(--muted);margin:0 0 30px}.auth-card form{display:grid;gap:18px}.auth-card label{display:block;font-size:12px;font-weight:700;margin-bottom:7px}.auth-card input[type=email],.auth-card input[type=password]{width:100%;border:1px solid var(--line);border-radius:8px;padding:12px 13px;background:#fff;outline:none}.auth-card input:focus{border-color:var(--violet);box-shadow:0 0 0 3px rgba(114,88,214,.12)}.auth-card button{width:100%;border:0;border-radius:8px;background:var(--ink);color:#fff;padding:12px 16px;font-weight:750;cursor:pointer}.auth-card button:hover{background:#302b39}.auth-meta{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--muted)}.auth-meta a,.back{color:var(--ink);text-underline-offset:3px}.feedback{min-height:22px;margin-bottom:12px;font-size:13px}.signup{margin-top:24px!important;font-size:12px!important;text-align:center}.footnote{font-size:11px;color:#8b8491}@media(max-width:800px){.auth-shell{grid-template-columns:1fr}.auth-story{display:none}.auth-panel{min-height:100vh;padding:24px}}
+  </style>
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-story"><a class="brand" href="/"><i>Z</i>ebric</a><div class="story-copy"><small>Team workspace</small><h1>Turn direction into shipped software.</h1><p>Manage roadmap bets, delivery state, and the decisions behind what Zebric builds next.</p></div><div class="footnote">Internal access · Zebric roadmap</div></section>
+    <section class="auth-panel"><div class="auth-card"><a class="back" href="/">← Public roadmap</a><h2>Welcome back</h2><p>Sign in to open the planning board.</p><div class="feedback">{{ renderer.feedback | raw }}</div>
+      <form id="sign-in-form" method="POST" action="{{ auth.action }}">
+        <input type="hidden" name="callbackURL" value="{{ auth.callback }}">
+        <input type="hidden" name="_csrf" value="{{ auth.csrfToken }}">
+        {{ renderer.fields.email | raw }}
+        {{ renderer.fields.password | raw }}
+        <div class="auth-meta">{{ renderer.fields.meta | raw }}</div>
+        <button type="submit">Sign in</button>
+      </form>
+      <p class="signup">Need an account? <a href="{{ auth.signupPath }}">Create one</a></p>
+    </div></section>
+  </main>
+  {{ renderer.script | raw }}
+</body>
+</html>

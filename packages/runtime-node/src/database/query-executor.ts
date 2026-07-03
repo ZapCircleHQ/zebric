@@ -67,6 +67,9 @@ export class QueryExecutor {
     // Build WHERE clause with access control filters
     const whereClause = this.buildWhere(queryDef.where, context, queryDef.entity)
     const accessFilters = entity ? AccessControl.getFilterConditions(entity, context.session) : null
+    if (AccessControl.isImpossibleFilter(accessFilters)) {
+      throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
+    }
 
     // Combine query filters with access control filters
     let finalWhere = whereClause
@@ -125,28 +128,14 @@ export class QueryExecutor {
   /**
    * Find a single record by ID
    */
-  async findById(entityName: string, id: string): Promise<any | null> {
-    const db = this.connection.getDb()
-    const table = this.connection.getTable(entityName)
-
-    if (!table) {
-      throw new Error(`Entity ${entityName} not found`)
-    }
-
-    const start = performance.now()
-    try {
-      const results = await (db as any)
-        .select()
-        .from(table)
-        .where(eq(table.id, id))
-        .limit(1)
-
-      const record = results[0] || null
-      // Convert snake_case to camelCase for API consistency
-      return record ? this.toCamelCase(record) : null
-    } finally {
-      this.metrics?.recordQuery(entityName, 'readById', performance.now() - start)
-    }
+  async findById(entityName: string, id: string, context: QueryContext = {}): Promise<any | null> {
+    const results = await this.execute({
+      entity: entityName,
+      where: { id },
+      limit: 1,
+    }, context)
+    const record = results[0] || null
+    return record ? this.toCamelCase(record) : null
   }
 
   /**
@@ -205,7 +194,7 @@ export class QueryExecutor {
     }
 
     // Convert camelCase to snake_case for database
-    const dbData = this.toSnakeCase(data)
+    const dbData = this.toSnakeCase(this.normalizeEntityValues(entity, data))
 
     const start = performance.now()
     try {
@@ -215,7 +204,7 @@ export class QueryExecutor {
         return this.toCamelCase(record)
       }
 
-      return await this.findById(entityName, data.id)
+      return await this.findById(entityName, data.id, context)
     } finally {
       this.metrics?.recordQuery(entityName, 'create', performance.now() - start)
     }
@@ -239,7 +228,7 @@ export class QueryExecutor {
     }
 
     // Fetch existing record first for access control check
-    const existingRecord = await this.findById(entityName, id)
+    const existingRecord = await this.findById(entityName, id, context)
     if (!existingRecord) {
       throw new Error(`${entityName} with id ${id} not found`)
     }
@@ -268,7 +257,7 @@ export class QueryExecutor {
     }
 
     // Convert camelCase to snake_case
-    const dbData = this.toSnakeCase(data)
+    const dbData = this.toSnakeCase(this.normalizeEntityValues(entity, data))
 
     const start = performance.now()
     try {
@@ -279,7 +268,7 @@ export class QueryExecutor {
         .where(eq(table.id, id))
 
       // Return updated record
-      return await this.findById(entityName, id)
+      return await this.findById(entityName, id, context)
     } finally {
       this.metrics?.recordQuery(entityName, 'update', performance.now() - start)
     }
@@ -297,12 +286,18 @@ export class QueryExecutor {
       throw new Error(`Entity ${entityName} not found`)
     }
 
+    const existingRecord = await this.findById(entityName, id, context)
+    if (!existingRecord) {
+      throw new Error(`${entityName} with id ${id} not found`)
+    }
+
     // Check delete access
     if (entity) {
       const hasAccess = await AccessControl.checkAccess({
         session: context?.session,
         action: 'delete',
         entity,
+        data: existingRecord,
         permissionManager: this.permissionManager,
       })
 
@@ -332,12 +327,31 @@ export class QueryExecutor {
       throw new Error(`Entity ${queryDef.entity} not found`)
     }
 
+    const entity = this.connection.getEntity(queryDef.entity)
+    if (entity) {
+      const hasAccess = await AccessControl.checkAccess({
+        session: context.session,
+        action: 'read',
+        entity,
+        permissionManager: this.permissionManager,
+      })
+      if (!hasAccess) {
+        throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
+      }
+    }
+
     const whereClause = this.buildWhere(queryDef.where, context, queryDef.entity)
+    const accessFilters = entity ? AccessControl.getFilterConditions(entity, context.session) : null
+    if (AccessControl.isImpossibleFilter(accessFilters)) {
+      throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
+    }
+    const accessWhere = accessFilters ? this.buildWhere(accessFilters, context, queryDef.entity) : undefined
+    const finalWhere = whereClause && accessWhere ? and(whereClause, accessWhere) : whereClause || accessWhere
 
     let query = (db as any).select({ count: sql<number>`count(*)` }).from(table)
 
-    if (whereClause) {
-      query = query.where(whereClause) as any
+    if (finalWhere) {
+      query = query.where(finalWhere) as any
     }
 
     const start = performance.now()
@@ -432,6 +446,37 @@ export class QueryExecutor {
       result[snakeKey] = value
     }
     return result
+  }
+
+  private normalizeEntityValues(
+    entity: { name: string; fields: Array<{ name: string; type: string }> } | undefined,
+    data: Record<string, any>
+  ): Record<string, any> {
+    if (!entity) return data
+
+    const normalized = { ...data }
+    for (const field of entity.fields) {
+      if (field.type !== 'DateTime' || !Object.prototype.hasOwnProperty.call(normalized, field.name)) {
+        continue
+      }
+
+      const value = normalized[field.name]
+      if (value === '' || value === null || value === undefined) {
+        normalized[field.name] = null
+        continue
+      }
+
+      const utcValue = typeof value === 'string' && value.includes('T') && !value.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(value)
+        ? `${value}Z`
+        : value
+      const date = utcValue instanceof Date ? utcValue : new Date(utcValue)
+      if (Number.isNaN(date.getTime())) {
+        throw new Error(`Invalid DateTime value for ${entity.name}.${field.name}`)
+      }
+      normalized[field.name] = date
+    }
+
+    return normalized
   }
 
   /**

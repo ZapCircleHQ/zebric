@@ -61,6 +61,7 @@ const RelationSchema = z.object({
 const AccessConditionSchema: z.ZodType<any> = z.lazy(() =>
   z.union([
     z.boolean(),
+    z.enum(['public', 'authenticated', 'owner']),
     AnyRecordSchema,
     z.object({
       or: z.array(AccessConditionSchema),
@@ -134,6 +135,12 @@ const FormFieldSchema = z.object({
   required: z.boolean().optional(),
   default: z.any().optional(),
   options: z.array(z.any()).optional(),
+  optionsFrom: z.object({
+    query: z.string(),
+    value: z.string().optional(),
+    label: z.string(),
+    emptyLabel: z.string().optional(),
+  }).optional(),
   rows: z.number().optional(),
   accept: z.array(z.string()).optional(),
   pattern: z.string().optional(),
@@ -340,6 +347,35 @@ const ActionBarSchema = z.object({
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })
 
+const BoardSchema = z.object({
+  query: z.string(),
+  groupBy: z.string(),
+  orderBy: z.string().optional(),
+  columns: z.array(z.object({
+    value: z.string(),
+    label: z.string(),
+    description: z.string().optional(),
+  })).min(1),
+  card: z.object({
+    title: z.string(),
+    description: z.string().optional(),
+    href: z.string().optional(),
+    fields: z.array(z.string()).optional(),
+  }),
+  move: z.object({
+    workflow: z.string(),
+    payloadField: z.string().optional(),
+    successMessage: z.string().optional(),
+    errorMessage: z.string().optional(),
+  }).optional(),
+})
+
+const PageTemplateSchema = z.object({
+  engine: z.enum(['handlebars', 'liquid']).optional(),
+  source: z.string(),
+  type: z.enum(['file', 'inline']).optional(),
+})
+
 const PageSchema = z.object({
   path: z.string(),
   title: z.string(),
@@ -350,7 +386,10 @@ const PageSchema = z.object({
   form: FormSchema.optional(),
   meta: PageMetaSchema.optional(),
   behavior: PageBehaviorSchema.optional(),
+  template: PageTemplateSchema.optional(),
+  layoutSlots: z.record(StringKeySchema, PageTemplateSchema).optional(),
   actionBar: ActionBarSchema.optional(),
+  board: BoardSchema.optional(),
 })
 
 // ============================================================================
@@ -407,6 +446,12 @@ const AuthConfigSchema = z.object({
     .optional(),
   permissions: z.record(StringKeySchema, PermissionRuleSchema).optional(),
   apiKeys: z.array(ApiKeyConfigSchema).optional(),
+  pages: z.object({
+    signIn: PageTemplateSchema.optional(),
+    signUp: PageTemplateSchema.optional(),
+    signOut: PageTemplateSchema.optional(),
+    loginRequired: PageTemplateSchema.optional(),
+  }).optional(),
 })
 
 // ============================================================================

@@ -122,6 +122,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime-node
 
+  examples/zebric-roadmap:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
   packages/cli:
     dependencies:
       '@zebric/runtime-node':

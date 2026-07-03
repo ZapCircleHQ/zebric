@@ -191,11 +191,15 @@ describe('security: action route authentication', () => {
 
   it('allows authenticated action requests', async () => {
     const fakeSession = { id: 'sess-1', user: { id: 'user-1', name: 'Test' } }
+    const record = { id: 'item-1', status: 'candidate', visibility: 'internal' }
+    const findById = vi.fn().mockResolvedValue(record)
+    const trigger = vi.fn().mockReturnValue({ id: 'job-1', workflowName: 'TestWf', status: 'queued' })
     const sm = new ServerManager(stubDeps({
       sessionManager: { getSession: async () => fakeSession },
+      queryExecutor: { findById },
       workflowManager: {
         getWorkflow: () => ({ name: 'TestWf', steps: [] }),
-        trigger: () => ({ id: 'job-1', workflowName: 'TestWf', status: 'queued' }),
+        trigger,
       },
     }))
     const app = initApp(sm)
@@ -209,11 +213,26 @@ describe('security: action route authentication', () => {
         'x-csrf-token': token,
         'cookie': `csrf-token=${token}`,
       },
-      body: JSON.stringify({ payload: {} }),
+      body: JSON.stringify({
+        entity: 'RoadmapItem',
+        recordId: 'item-1',
+        payload: { status: 'planned' },
+      }),
     })
 
     expect(res.status).not.toBe(401)
     expect(res.status).not.toBe(403)
+    expect(findById).toHaveBeenCalledWith('RoadmapItem', 'item-1', { session: fakeSession })
+    expect(trigger).toHaveBeenCalledWith(
+      'TestWf',
+      expect.objectContaining({
+        record,
+        recordId: 'item-1',
+        payload: { status: 'planned' },
+        session: fakeSession,
+      }),
+      expect.any(Object)
+    )
   })
 })
 

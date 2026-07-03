@@ -171,4 +171,32 @@ describe('accessibility rendering invariants', () => {
     expect(html).toContain('id="main-content"')
     expect(html).toContain('Saved.')
   })
+
+  it('routes board pages through the first-class accessible board layout', () => {
+    const blueprint = makeBlueprint()
+    const page = {
+      path: '/board',
+      title: 'Task board',
+      layout: 'board',
+      queries: { tasks: { entity: 'Task' } },
+      board: {
+        query: 'tasks',
+        groupBy: 'status',
+        columns: [
+          { value: 'todo', label: 'To do' },
+          { value: 'done', label: 'Done' },
+        ],
+        card: { title: 'title' },
+      },
+    } as Page
+
+    const html = renderPage(blueprint, page, {
+      data: { tasks: [{ id: '1', title: 'Accessible card', status: 'todo' }] },
+    })
+
+    expect(html).toContain('data-zebric-primitive="board"')
+    expect(html).toContain('aria-labelledby="board-column-0"')
+    expect(html).toContain('Accessible card')
+    expect(html).toContain('id="main-content"')
+  })
 })

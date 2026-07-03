@@ -120,6 +120,36 @@ export interface Page {
   template?: PageTemplate
   layoutSlots?: Record<string, PageTemplate>
   actionBar?: ActionBarConfig
+  board?: BoardConfig
+}
+
+export interface BoardConfig {
+  query: string
+  groupBy: string
+  orderBy?: string
+  columns: BoardColumn[]
+  card: BoardCardConfig
+  move?: BoardMoveConfig
+}
+
+export interface BoardColumn {
+  value: string
+  label: string
+  description?: string
+}
+
+export interface BoardCardConfig {
+  title: string
+  description?: string
+  href?: string
+  fields?: string[]
+}
+
+export interface BoardMoveConfig {
+  workflow: string
+  payloadField?: string
+  successMessage?: string
+  errorMessage?: string
 }
 
 export interface PageTemplate {
@@ -230,6 +260,12 @@ export interface FormField {
   required?: boolean
   default?: any
   options?: any[]
+  optionsFrom?: {
+    query: string
+    value?: string
+    label: string
+    emptyLabel?: string
+  }
   rows?: number // For textarea
   accept?: string[] // For file input
   pattern?: string
@@ -441,6 +477,12 @@ export interface AuthConfig {
   }
   permissions?: Record<string, PermissionRule>
   apiKeys?: ApiKeyConfig[]
+  pages?: {
+    signIn?: PageTemplate
+    signUp?: PageTemplate
+    signOut?: PageTemplate
+    loginRequired?: PageTemplate
+  }
 }
 
 export interface PermissionRule {

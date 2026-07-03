@@ -57,6 +57,9 @@ export class AccessControl {
       // If we can generate filter conditions, allow the query to proceed
       // The actual filtering will happen at the SQL level
       const filters = this.getFilterConditions(entity, session)
+      if (this.isImpossibleFilter(filters)) {
+        return false
+      }
       if (filters !== null) {
         return true
       }
@@ -76,65 +79,74 @@ export class AccessControl {
       return null
     }
 
-    const condition = entity.access.read
+    return this.conditionToFilter(entity.access.read, session)
+  }
 
-    // Handle simple boolean conditions
+  static isImpossibleFilter(filter: Record<string, any> | null): boolean {
+    return filter?._impossible === true
+  }
+
+  private static conditionToFilter(
+    condition: AccessCondition,
+    session?: UserSession | null
+  ): Record<string, any> | null {
     if (typeof condition === 'boolean') {
       return condition ? null : { _impossible: true }
     }
 
-    // Handle OR conditions
-    if (typeof condition === 'object' && 'or' in condition && Array.isArray(condition.or)) {
-      const orConditions = condition.or
-        .map((c: any) => {
-          if (typeof c === 'object' && !('and' in c) && !('or' in c)) {
-            const substituted = this.substituteSessionValues(c, session)
-            // Filter out conditions with undefined values (e.g., when user is not authenticated)
-            const hasUndefined = Object.values(substituted).some(v => v === undefined)
-            return hasUndefined ? null : substituted
-          }
+    if (typeof condition === 'string') {
+      switch (condition) {
+        case 'public':
           return null
-        })
-        .filter((c: any) => c !== null)
+        case 'authenticated':
+          return session?.user ? null : { _impossible: true }
+        case 'owner':
+          return session?.user?.id
+            ? { userId: session.user.id }
+            : { _impossible: true }
+        default:
+          return { _impossible: true }
+      }
+    }
 
-      if (orConditions.length === 0) {
+    if ('or' in condition && Array.isArray(condition.or)) {
+      const branches = condition.or.map(c => this.conditionToFilter(c, session))
+      if (branches.some(branch => branch === null)) {
         return null
       }
-      if (orConditions.length === 1) {
-        return orConditions[0] ?? null
-      }
-      return { or: orConditions }
+      const possible = branches.filter(branch => !this.isImpossibleFilter(branch)) as Record<string, any>[]
+      if (possible.length === 0) return { _impossible: true }
+      if (possible.length === 1) return possible[0] ?? { _impossible: true }
+      return { or: possible }
     }
 
-    // Handle AND conditions
-    if (typeof condition === 'object' && 'and' in condition && Array.isArray(condition.and)) {
-      const andConditions = condition.and
-        .map((c: any) => {
-          if (typeof c === 'object' && !('and' in c) && !('or' in c)) {
-            const substituted = this.substituteSessionValues(c, session)
-            // Filter out conditions with undefined values (e.g., when user is not authenticated)
-            const hasUndefined = Object.values(substituted).some(v => v === undefined)
-            return hasUndefined ? null : substituted
-          }
-          return null
-        })
-        .filter((c: any) => c !== null)
-
-      if (andConditions.length === 0) {
-        return null
+    if ('and' in condition && Array.isArray(condition.and)) {
+      const branches = condition.and.map(c => this.conditionToFilter(c, session))
+      if (branches.some(branch => this.isImpossibleFilter(branch))) {
+        return { _impossible: true }
       }
-      if (andConditions.length === 1) {
-        return andConditions[0] ?? null
-      }
-      return { and: andConditions }
+      const required = branches.filter(branch => branch !== null) as Record<string, any>[]
+      if (required.length === 0) return null
+      if (required.length === 1) return required[0] ?? null
+      return { and: required }
     }
 
-    // Handle object conditions with field filters
-    if (typeof condition === 'object' && !('and' in condition) && !('or' in condition)) {
-      return this.substituteSessionValues(condition, session)
+    const rowFilter: Record<string, any> = {}
+    for (const [key, value] of Object.entries(condition)) {
+      if (key.startsWith('$currentUser.')) {
+        if (!this.evaluateCondition({ [key]: value }, session)) {
+          return { _impossible: true }
+        }
+        continue
+      }
+      const resolved = this.resolveValue(value, session)
+      if (resolved === undefined) {
+        return { _impossible: true }
+      }
+      rowFilter[key] = resolved
     }
 
-    return null
+    return Object.keys(rowFilter).length > 0 ? rowFilter : null
   }
 
   /**
@@ -217,22 +229,6 @@ export class AccessControl {
       }
     }
     return value
-  }
-
-  /**
-   * Substitute session values in filter conditions
-   */
-  private static substituteSessionValues(
-    condition: Record<string, any>,
-    session?: UserSession | null
-  ): Record<string, any> {
-    const result: Record<string, any> = {}
-
-    for (const [key, value] of Object.entries(condition)) {
-      result[key] = this.resolveValue(value, session)
-    }
-
-    return result
   }
 
   /**

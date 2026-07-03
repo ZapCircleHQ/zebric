@@ -207,6 +207,7 @@ export class WorkflowExecutor {
     // Resolve variables in data and where clauses
     const data = step.data ? this.resolveVariables(step.data, context) : undefined
     const where = step.where ? this.resolveVariables(step.where, context) : undefined
+    const queryContext = context.session ? { session: context.session } : undefined
 
     switch (step.action) {
       case 'create':
@@ -214,7 +215,9 @@ export class WorkflowExecutor {
           throw new Error('Create action requires data')
         }
         {
-          const created = await this.dataLayer.create(step.entity, data)
+          const created = queryContext
+            ? await this.dataLayer.create(step.entity, data, queryContext)
+            : await this.dataLayer.create(step.entity, data)
           await this.emitEntityEvent(step.entity, 'create', undefined, created, context)
           return created
         }
@@ -228,8 +231,12 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Update action requires an id in the where clause')
           }
-          const before = await this.dataLayer.findById(step.entity, targetId)
-          const updated = await this.dataLayer.update(step.entity, targetId, data)
+          const before = queryContext
+            ? await this.dataLayer.findById(step.entity, targetId, queryContext)
+            : await this.dataLayer.findById(step.entity, targetId)
+          const updated = queryContext
+            ? await this.dataLayer.update(step.entity, targetId, data, queryContext)
+            : await this.dataLayer.update(step.entity, targetId, data)
           await this.emitEntityEvent(step.entity, 'update', before, updated, context)
           return updated
         }
@@ -240,17 +247,27 @@ export class WorkflowExecutor {
           if (!targetId) {
             throw new Error('Delete action requires an id in the where clause')
           }
-          const before = await this.dataLayer.findById(step.entity, targetId)
-          await this.dataLayer.delete(step.entity, targetId)
+          const before = queryContext
+            ? await this.dataLayer.findById(step.entity, targetId, queryContext)
+            : await this.dataLayer.findById(step.entity, targetId)
+          if (queryContext) {
+            await this.dataLayer.delete(step.entity, targetId, queryContext)
+          } else {
+            await this.dataLayer.delete(step.entity, targetId)
+          }
           await this.emitEntityEvent(step.entity, 'delete', before || { id: targetId }, undefined, context)
           return { deleted: true }
         }
 
-      case 'find':
-        return this.dataLayer.execute({
+      case 'find': {
+        const query = {
           entity: step.entity,
           where,
-        })
+        }
+        return queryContext
+          ? this.dataLayer.execute(query, queryContext)
+          : this.dataLayer.execute(query)
+      }
 
       default:
         throw new Error(`Unknown query action: ${step.action}`)

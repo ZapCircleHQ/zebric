@@ -231,6 +231,95 @@ export class BlueprintParser {
             `Page "${page.path}" form references unknown entity "${page.form.entity}"`
           )
         }
+
+        for (const field of page.form.fields) {
+          const source = field.optionsFrom
+          if (!source) continue
+
+          if (field.type !== 'select') {
+            errors.push(
+              `Page "${page.path}" form field "${field.name}" uses optionsFrom but is not a select`
+            )
+          }
+
+          const query = page.queries?.[source.query]
+          if (!query) {
+            errors.push(
+              `Page "${page.path}" form field "${field.name}" optionsFrom references unknown query "${source.query}"`
+            )
+            continue
+          }
+
+          const queryEntity = blueprint.entities.find((entity) => entity.name === query.entity)
+          if (!queryEntity) continue
+
+          const entityFields = new Set(queryEntity.fields.map((entityField) => entityField.name))
+          for (const optionField of [source.value || 'id', source.label]) {
+            if (!entityFields.has(optionField)) {
+              errors.push(
+                `Page "${page.path}" form field "${field.name}" optionsFrom references unknown field "${query.entity}.${optionField}"`
+              )
+            }
+          }
+        }
+      }
+
+      if (page.layout === 'board' && !page.board) {
+        errors.push(`Page "${page.path}" uses the board layout without board configuration`)
+      }
+
+      if (page.board) {
+        const board = page.board
+        const query = page.queries?.[board.query]
+        if (!query) {
+          errors.push(
+            `Page "${page.path}" board references unknown query "${board.query}"`
+          )
+        } else {
+          const entity = blueprint.entities.find((candidate) => candidate.name === query.entity)
+          if (entity) {
+            const fieldNames = new Set(entity.fields.map((field) => field.name))
+            for (const fieldPath of [board.groupBy, board.orderBy, board.card.title, board.card.description].filter(Boolean) as string[]) {
+              const root = fieldPath.split('.')[0] ?? fieldPath
+              if (!fieldNames.has(root)) {
+                errors.push(
+                  `Page "${page.path}" board references unknown field "${entity.name}.${root}"`
+                )
+              }
+            }
+
+            for (const displayPath of board.card.fields || []) {
+              const [root = '', nested] = displayPath.split('.')
+              if (!nested) {
+                if (!fieldNames.has(root)) {
+                  errors.push(
+                    `Page "${page.path}" board references unknown field "${entity.name}.${root}"`
+                  )
+                }
+                continue
+              }
+
+              const relation = entity.relations?.[root]
+              const relatedEntity = relation
+                ? blueprint.entities.find((candidate) => candidate.name === relation.entity)
+                : undefined
+              if (!relation || !relatedEntity?.fields.some((field) => field.name === nested)) {
+                errors.push(
+                  `Page "${page.path}" board references unknown field path "${entity.name}.${displayPath}"`
+                )
+              }
+            }
+          }
+        }
+
+        if (board.move) {
+          const workflowNames = new Set((blueprint.workflows || []).map((workflow) => workflow.name))
+          if (!workflowNames.has(board.move.workflow)) {
+            errors.push(
+              `Page "${page.path}" board move references unknown workflow "${board.move.workflow}"`
+            )
+          }
+        }
       }
     }
 

@@ -84,24 +84,35 @@ export function registerStaticUploads(app: Hono): void {
 export function registerAuthPages(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
   app.get('/auth/sign-in', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
-    return c.html(renderer.renderSignInPage(callback))
+    const renderer = await createAuthRenderer(blueprint, config)
+    const csrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    return c.html(renderer.renderSignInPage(callback, undefined, csrfToken))
   })
 
   app.get('/auth/sign-up', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
-    return c.html(renderer.renderSignUpPage(callback))
+    const renderer = await createAuthRenderer(blueprint, config)
+    const csrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    return c.html(renderer.renderSignUpPage(callback, undefined, csrfToken))
   })
 
   app.get('/auth/sign-out', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
-    const RendererClass = config.rendererClass || (await import('../renderer/index.js')).HTMLRenderer
-    const renderer = new RendererClass(blueprint, config.theme)
+    const renderer = await createAuthRenderer(blueprint, config)
     return c.html(renderer.renderSignOutPage(callback))
   })
+}
+
+async function createAuthRenderer(blueprint: Blueprint, config: EngineConfig) {
+  const rendererModule = await import('../renderer/index.js')
+  if (config.rendererClass) {
+    return new config.rendererClass(blueprint, config.theme)
+  }
+  const templateLoader = new rendererModule.FileTemplateLoader({
+    baseDir: path.dirname(config.blueprintPath),
+    cache: !config.dev?.hotReload,
+  })
+  return new rendererModule.HTMLRenderer(blueprint, config.theme, undefined, templateLoader)
 }
 
 export function registerAuthRoutes(app: Hono, authProvider: AuthProvider): void {
@@ -246,7 +257,7 @@ export function registerActionRoutes(
 
       if (entity && recordId) {
         try {
-          record = await queryExecutor.findById(entity, recordId)
+          record = await queryExecutor.findById(entity, recordId, { session })
         } catch (error) {
           console.warn(`Action workflow '${workflowName}' could not load ${entity}(${recordId})`, error)
         }
@@ -399,9 +410,10 @@ export function registerAPIRoutes(
     sessionManager: SessionManager
     queryExecutor: QueryExecutor
     workflowManager?: WorkflowManager
+    apiKeys: Map<string, { name: string }>
   }
 ): void {
-  const { blueprint, sessionManager, queryExecutor, workflowManager } = deps
+  const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys } = deps
 
   if (!blueprint.entities || blueprint.entities.length === 0) {
     return
@@ -414,7 +426,7 @@ export function registerAPIRoutes(
     app.post(entityPath, async (c) => {
       try {
         const data = await c.req.json<Record<string, any>>()
-        const session = await sessionManager.getSession(c.req.raw)
+        const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         const createStartedAt = performance.now()
         const result = await queryExecutor.create(entity.name, data, { session })
         const createMs = performance.now() - createStartedAt
@@ -443,13 +455,14 @@ export function registerAPIRoutes(
             error: 'Create failed',
             details: error instanceof Error ? error.message : 'Unknown error'
           },
-          { status: 500 }
+          { status: entityApiErrorStatus(error) }
         )
       }
     })
 
     app.get(entityPath, async (c) => {
       try {
+        const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         const limitParam = parseInt(c.req.query('limit') || '', 10)
         const offsetParam = parseInt(c.req.query('offset') || '', 10)
         const limit = Math.min(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100, 1000)
@@ -461,7 +474,7 @@ export function registerAPIRoutes(
             limit,
             offset,
           },
-          {}
+          { session }
         )
         return Response.json(results)
       } catch (error) {
@@ -471,7 +484,7 @@ export function registerAPIRoutes(
             error: 'List failed',
             details: error instanceof Error ? error.message : 'Unknown error'
           },
-          { status: 500 }
+          { status: entityApiErrorStatus(error) }
         )
       }
     })
@@ -479,7 +492,8 @@ export function registerAPIRoutes(
     app.get(entityPathWithId, async (c) => {
       try {
         const { id } = c.req.param() as { id: string }
-        const result = await queryExecutor.findById(entity.name, id)
+        const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        const result = await queryExecutor.findById(entity.name, id, { session })
         if (!result) {
           return Response.json({ error: 'Not found' }, { status: 404 })
         }
@@ -491,7 +505,7 @@ export function registerAPIRoutes(
             error: 'Find failed',
             details: error instanceof Error ? error.message : 'Unknown error'
           },
-          { status: 500 }
+          { status: entityApiErrorStatus(error) }
         )
       }
     })
@@ -500,10 +514,10 @@ export function registerAPIRoutes(
       try {
         const { id } = c.req.param() as { id: string }
         const data = await c.req.json<Record<string, any>>()
+        const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         const before = workflowManager
-          ? await queryExecutor.findById(entity.name, id).catch(() => null)
+          ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
-        const session = await sessionManager.getSession(c.req.raw)
         const result = await queryExecutor.update(entity.name, id, data, { session })
         await triggerEntityWorkflows(entity.name, 'update', before, result, workflowManager, {
           correlationId: getCorrelationId(c),
@@ -513,7 +527,7 @@ export function registerAPIRoutes(
       } catch (error) {
         console.error(`Update ${entity.name} error:`, error)
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-        const statusCode = errorMessage.includes('not found') ? 404 : 500
+        const statusCode = entityApiErrorStatus(error)
         return Response.json(
           {
             error: 'Update failed',
@@ -527,10 +541,10 @@ export function registerAPIRoutes(
     app.delete(entityPathWithId, async (c) => {
       try {
         const { id } = c.req.param() as { id: string }
+        const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         const existing = workflowManager
-          ? await queryExecutor.findById(entity.name, id).catch(() => null)
+          ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
-        const session = await sessionManager.getSession(c.req.raw)
         await queryExecutor.delete(entity.name, id, { session })
         await triggerEntityWorkflows(entity.name, 'delete', existing || { id }, undefined, workflowManager, {
           correlationId: getCorrelationId(c),
@@ -544,11 +558,31 @@ export function registerAPIRoutes(
             error: 'Delete failed',
             details: error instanceof Error ? error.message : 'Unknown error'
           },
-          { status: 500 }
+          { status: entityApiErrorStatus(error) }
         )
       }
     })
   }
+}
+
+async function resolveEntityApiSession(
+  c: any,
+  sessionManager: SessionManager,
+  apiKeys: Map<string, { name: string }>
+) {
+  const authHeader = c.req.header('authorization') || ''
+  if (authHeader.toLowerCase().startsWith('bearer ')) {
+    const apiKeySession = resolveApiKeySession(authHeader.slice(7), apiKeys)
+    if (apiKeySession) return apiKeySession
+  }
+  return sessionManager.getSession(c.req.raw)
+}
+
+function entityApiErrorStatus(error: unknown): 403 | 404 | 500 {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message.includes('Access denied')) return 403
+  if (message.toLowerCase().includes('not found')) return 404
+  return 500
 }
 
 export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
