@@ -98,6 +98,20 @@ describe('QueryExecutor row access', () => {
     expect(updated.publishedAt).toBeNull()
   })
 
+  it('treats datetime-local strings without a timezone as UTC regardless of server timezone', async () => {
+    const created = await executor.create('RoadmapItem', {
+      id: 'tz-item',
+      title: 'TZ test',
+      visibility: 'internal',
+      publishedAt: '2024-03-15T09:30',
+    }, { session: authenticatedSession })
+
+    expect(created.publishedAt).toBeInstanceOf(Date)
+    expect((created.publishedAt as Date).getUTCHours()).toBe(9)
+    expect((created.publishedAt as Date).getUTCMinutes()).toBe(30)
+    expect((created.publishedAt as Date).getUTCFullYear()).toBe(2024)
+  })
+
   it('rejects invalid DateTime values with a field-specific error', async () => {
     await expect(executor.create('RoadmapItem', {
       title: 'Invalid schedule',

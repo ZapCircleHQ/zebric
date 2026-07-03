@@ -466,7 +466,10 @@ export class QueryExecutor {
         continue
       }
 
-      const date = value instanceof Date ? value : new Date(value)
+      const utcValue = typeof value === 'string' && value.includes('T') && !value.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(value)
+        ? `${value}Z`
+        : value
+      const date = utcValue instanceof Date ? utcValue : new Date(utcValue)
       if (Number.isNaN(date.getTime())) {
         throw new Error(`Invalid DateTime value for ${entity.name}.${field.name}`)
       }
