@@ -26,7 +26,10 @@
     "@zebric/runtime-simulator": "0.0.0",
     "@zebric/runtime-worker": "0.2.3",
     "@zebric/themes": "0.2.3",
-    "@zebric-plugin/card-grid-layout": "1.0.0"
+    "@zebric-plugin/card-grid-layout": "1.0.0",
+    "zebric-roadmap": "0.1.0"
   },
-  "changesets": []
+  "changesets": [
+    "khaki-doodles-hang"
+  ]
 }
