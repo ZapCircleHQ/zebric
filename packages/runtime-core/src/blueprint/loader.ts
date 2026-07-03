@@ -279,10 +279,11 @@ export class BlueprintParser {
           const entity = blueprint.entities.find((candidate) => candidate.name === query.entity)
           if (entity) {
             const fieldNames = new Set(entity.fields.map((field) => field.name))
-            for (const fieldName of [board.groupBy, board.orderBy, board.card.title, board.card.description].filter(Boolean) as string[]) {
-              if (!fieldNames.has(fieldName)) {
+            for (const fieldPath of [board.groupBy, board.orderBy, board.card.title, board.card.description].filter(Boolean) as string[]) {
+              const root = fieldPath.split('.')[0] ?? fieldPath
+              if (!fieldNames.has(root)) {
                 errors.push(
-                  `Page "${page.path}" board references unknown field "${entity.name}.${fieldName}"`
+                  `Page "${page.path}" board references unknown field "${entity.name}.${root}"`
                 )
               }
             }

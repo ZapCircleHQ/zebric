@@ -93,6 +93,27 @@ card = { title = "title" }
 `), 'toml')).toThrow('board references unknown field "Task.missing"')
   })
 
+  it('accepts dot-notation paths in card.title, card.description, groupBy, and orderBy', () => {
+    expect(() => parser.parse(boardBlueprint(`
+[page."/board".board]
+query = "tasks"
+groupBy = "status.value"
+orderBy = "title.sort"
+columns = [{ value = "todo", label = "To do" }]
+card = { title = "title.display", description = "status.label" }
+`), 'toml')).not.toThrow()
+  })
+
+  it('rejects dot-notation paths where the root field is unknown', () => {
+    expect(() => parser.parse(boardBlueprint(`
+[page."/board".board]
+query = "tasks"
+groupBy = "status"
+columns = [{ value = "todo", label = "To do" }]
+card = { title = "missing.name" }
+`), 'toml')).toThrow('board references unknown field "Task.missing"')
+  })
+
   it('rejects unknown move workflows', () => {
     expect(() => parser.parse(boardBlueprint(`
 [page."/board".board]
