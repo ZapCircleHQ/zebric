@@ -15,16 +15,13 @@ RUN apk add --no-cache curl
 # Development stage
 FROM base AS development
 
-# Copy package files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/runtime/package.json ./packages/runtime/
-COPY packages/cli/package.json ./packages/cli/
+# Copy full source (workspace package.json files must all be present for
+# pnpm install, and packages/runtime-core's postinstall needs its own
+# source); overridden by the bind mount in docker-compose.dev.yml anyway
+COPY . .
 
 # Install all dependencies (including devDependencies)
 RUN pnpm install --frozen-lockfile
-
-# Copy source code (will be overridden by volume mount in docker-compose)
-COPY . .
 
 # Expose application and metrics ports
 EXPOSE 3000 9090
