@@ -39,7 +39,6 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
-    "postinstall": "node ./scripts/build-css.mjs",
     "prebuild": "node ./scripts/build-css.mjs",
     "build": "tsc",
     "build:css": "node ./scripts/build-css.mjs",

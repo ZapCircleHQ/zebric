@@ -343,6 +343,7 @@ jobs:
             --no-progress
             --root-dir packages/docs/dist
             --exclude ^https://docs\.zebric\.dev/
+            --exclude '^http://(localhost|127\.0\.0\.1)(:[0-9]+)?(/.*)?$'
             packages/docs/dist/**/*.html
 
   all-checks:

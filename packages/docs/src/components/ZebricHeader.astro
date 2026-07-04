@@ -1,0 +1,126 @@
+---
+import config from 'virtual:starlight/user-config';
+
+import LanguageSelect from '@astrojs/starlight/components/LanguageSelect.astro';
+import Search from '@astrojs/starlight/components/Search.astro';
+import SocialIcons from '@astrojs/starlight/components/SocialIcons.astro';
+import ThemeSelect from '@astrojs/starlight/components/ThemeSelect.astro';
+import SiteTitle from './ZebricSiteTitle.astro';
+
+const shouldRenderSearch =
+	config.pagefind || config.components.Search !== '@astrojs/starlight/components/Search.astro';
+---
+
+<div class="header">
+	<div class="title-wrapper sl-flex">
+		<SiteTitle />
+	</div>
+	<nav class="top-links" aria-label="Zebric">
+		<a href="https://zebric.dev/product">Product</a>
+		<a href="https://zebric.dev/built-for-ai">Built for AI</a>
+		<a href="/">Docs</a>
+		<a href="https://zebric.dev/services">Services</a>
+		<a href="https://zebric.dev/blog">Blog</a>
+	</nav>
+	<div class="search-wrap sl-flex print:hidden">
+		{shouldRenderSearch && <Search />}
+	</div>
+	<div class="sl-hidden md:sl-flex print:hidden right-group">
+		<a class="playground-link" href="https://playground.zebric.dev">Get Started</a>
+		<div class="sl-flex social-icons">
+			<SocialIcons />
+		</div>
+		<ThemeSelect />
+		<LanguageSelect />
+	</div>
+</div>
+
+<style>
+	@layer starlight.core {
+		.header {
+			align-items: center;
+			display: grid;
+			gap: var(--sl-nav-gap);
+			grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+			height: 100%;
+		}
+
+		.title-wrapper {
+			margin: -0.25rem;
+			min-width: 0;
+			overflow: clip;
+			padding: 0.25rem;
+		}
+
+		.top-links {
+			display: none;
+			gap: 1.45rem;
+			margin-inline-start: 0.5rem;
+			min-width: 0;
+		}
+
+		.top-links a {
+			color: var(--z-muted);
+			font-size: 0.9375rem;
+			font-weight: 500;
+			line-height: 1;
+			text-decoration: none;
+			white-space: nowrap;
+		}
+
+		.top-links a:hover,
+		.top-links a:focus-visible {
+			color: var(--z-ink);
+		}
+
+		.search-wrap {
+			justify-content: flex-end;
+			min-width: 0;
+		}
+
+		.right-group,
+		.social-icons {
+			align-items: center;
+			gap: 0.9rem;
+		}
+
+		.social-icons::after {
+			border-inline-end: 1px solid var(--z-line);
+			content: '';
+			height: 2rem;
+		}
+
+		.playground-link {
+			align-items: center;
+			background: var(--z-blue);
+			border: 1px solid var(--z-blue);
+			border-radius: 4px;
+			color: #fff;
+			display: inline-flex;
+			font-size: 0.9375rem;
+			font-weight: 600;
+			justify-content: center;
+			line-height: 1;
+			padding: 0.7rem 1rem;
+			text-decoration: none;
+			white-space: nowrap;
+		}
+
+		.playground-link:hover,
+		.playground-link:focus-visible {
+			background: var(--z-blue-dk);
+			border-color: var(--z-blue-dk);
+			color: #fff;
+		}
+
+		@media (min-width: 64rem) {
+			.header {
+				grid-template-columns: auto minmax(22rem, 1fr) minmax(12rem, 22rem) auto;
+			}
+
+			.top-links {
+				display: flex;
+			}
+		}
+	}
+</style>

@@ -1,0 +1,48 @@
+---
+const { siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex" aria-label="Zebric Docs home">
+	<svg class="zebric-mark" width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden="true">
+		<rect x="1" y="1" width="20" height="20" stroke="currentColor" stroke-width="2" />
+		<path d="M5 6h12L5 16h12" stroke="#2247CE" stroke-width="2.4" fill="none" />
+	</svg>
+	<span translate="no">Zebric</span>
+	<span class="docs-label">Docs</span>
+</a>
+
+<style>
+	@layer starlight.core {
+		.site-title {
+			align-items: center;
+			gap: 0.55rem;
+			color: var(--z-ink);
+			font-family: var(--font-display);
+			font-size: 1.3125rem;
+			font-weight: 800;
+			letter-spacing: 0;
+			min-width: 0;
+			text-decoration: none;
+			white-space: nowrap;
+		}
+
+		.zebric-mark {
+			color: var(--z-ink);
+			display: block;
+			flex: 0 0 auto;
+		}
+
+		.docs-label {
+			border-inline-start: 1px solid var(--z-line-dk);
+			color: var(--z-muted);
+			font-family: var(--font-mono);
+			font-size: 0.75rem;
+			font-weight: 500;
+			letter-spacing: 0.12em;
+			line-height: 1;
+			margin-inline-start: 0.1rem;
+			padding-inline-start: 0.65rem;
+			text-transform: uppercase;
+		}
+	}
+</style>

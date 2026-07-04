@@ -8,6 +8,26 @@ export default defineConfig({
 	integrations: [
 		starlight({
 			title: 'Zebric Docs',
+			favicon: '/favicon.svg',
+			customCss: ['./src/styles/zebric.css'],
+			head: [
+				{ tag: 'link', attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' } },
+				{
+					tag: 'link',
+					attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+				},
+				{
+					tag: 'link',
+					attrs: {
+						rel: 'stylesheet',
+						href: 'https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap',
+					},
+				},
+			],
+			components: {
+				Header: './src/components/ZebricHeader.astro',
+				SiteTitle: './src/components/ZebricSiteTitle.astro',
+			},
 			social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/ZapCircleHQ/zebric' }],
 			sidebar: [
 				{

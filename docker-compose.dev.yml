@@ -24,7 +24,7 @@ services:
       - ./pnpm-workspace.yaml:/app/pnpm-workspace.yaml:ro
       # Node modules in named volume for performance
       - node_modules:/app/node_modules
-      - runtime_node_modules:/app/packages/runtime/node_modules
+      - runtime_node_modules:/app/packages/runtime-node/node_modules
       - cli_node_modules:/app/packages/cli/node_modules
     environment:
       - NODE_ENV=development

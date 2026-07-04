@@ -97,7 +97,7 @@ fields = [
 
 ## API Keys
 
-For agents, REST API clients, or external integrations:
+For agents, REST API clients, or external integrations. API keys apply to **skill routes only** (routes registered from `[skill.*]` actions) — standard page routes and `/api/auth/*` are unaffected.
 
 ```toml
 [[auth.apiKeys]]
@@ -105,11 +105,45 @@ name = "dispatch-agent"
 keyEnv = "DISPATCH_AGENT_API_KEY"
 ```
 
+| Field    | Description |
+|----------|-------------|
+| `name`   | Human-readable identifier for the key. Used as the actor ID in sessions, audit events, and logs. |
+| `keyEnv` | Name of the environment variable holding the secret value. The key itself is never stored in the blueprint. |
+
+Set the env var before starting the server:
+
+```bash
+export DISPATCH_AGENT_API_KEY="sk-your-secret-key-here"
+```
+
+If the env var isn't set at startup, the key is skipped and a warning is logged — the server still starts normally.
+
 API key requests skip CSRF validation but still go through access control. Send the key in the `Authorization` header:
 
+```bash
+curl -X POST http://localhost:3000/api/issues/01J.../status \
+  -H "Authorization: Bearer sk-your-secret-key-here" \
+  -H "Content-Type: application/json" \
+  -d '{"status": "in_progress"}'
 ```
-Authorization: Bearer <api-key-value>
+
+### How It Works
+
+1. At startup, the runtime reads `auth.apiKeys` from the blueprint, resolves each `keyEnv` from `process.env`, and stores the resolved keys in memory.
+2. When a request hits a skill route, the runtime checks the `Authorization` header before falling back to session-based auth.
+3. If the bearer token matches a configured key, a synthetic session is created with `user.id` and `user.name` set to the key's `name` field. This session flows through to workflows, audit events, and access control like any regular user session:
+
+```json
+{
+  "id": "apikey-dispatch-agent",
+  "userId": "dispatch-agent",
+  "user": { "id": "dispatch-agent", "name": "dispatch-agent", "email": "" }
+}
 ```
+
+So `{{ variables.data.user.id }}` in workflow templates resolves to the key name (e.g. `dispatch-agent`), which becomes the `actorId` in audit events.
+
+Keys are checked via exact string match in memory — there's no hashing step, so treat the env var as a secret. Rotate keys by changing the env var and restarting the server.
 
 ## Built-In Protections
 

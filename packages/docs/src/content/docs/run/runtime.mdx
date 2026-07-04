@@ -66,15 +66,60 @@ database: {
 
 ## Workers Runtime
 
-Deploy to Cloudflare Workers using `@zebric/runtime-worker`:
+Deploy to Cloudflare Workers using `@zebric/runtime-worker` — same blueprint format, running on Cloudflare's edge network. The fastest way to start is copying `starters/cloudflare-workers`, which is a single-file entry point:
 
-```bash
-cd examples/workers-blog
-pnpm dev        # Local development
-wrangler deploy  # Deploy to Cloudflare
+```typescript
+// worker.ts
+import { ZebricWorkersEngine } from '@zebric/runtime-worker'
+import type { WorkersEnv } from '@zebric/runtime-worker'
+import blueprintToml from './blueprint.toml'
+
+export default {
+  async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
+    const engine = new ZebricWorkersEngine({
+      env,
+      blueprintContent: blueprintToml,
+      blueprintFormat: 'toml',
+    })
+    return engine.fetch(request)
+  },
+}
 ```
 
-The Workers runtime uses the same blueprint format but runs on Cloudflare's edge network.
+`WorkersEnv` bindings: `DB` (D1, required), `CACHE_KV`, `FILES_R2`, `SESSION_KV` (all optional — enabling `SESSION_KV` turns on session-backed forms with CSRF protection).
+
+```toml
+# wrangler.toml
+name = "my-zebric-app"
+main = "worker.ts"
+compatibility_date = "2025-01-10"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "my-zebric-db"
+database_id = "your-database-id"  # from: wrangler d1 create my-zebric-db
+
+# Optional
+[[kv_namespaces]]
+binding = "SESSION_KV"
+id = "your-session-kv-id"  # from: wrangler kv:namespace create SESSION_KV
+
+[[r2_buckets]]
+binding = "FILES_R2"
+bucket_name = "my-zebric-files"
+```
+
+Create the D1 database (tables are created automatically from your entities on first request), then run locally or deploy:
+
+```bash
+wrangler d1 create my-zebric-db   # copy the database_id into wrangler.toml
+
+wrangler dev      # local dev at http://localhost:8787, with D1/KV/R2 emulation
+wrangler deploy   # deploy to your-app.your-subdomain.workers.dev
+```
+
+For a working reference with all three bindings wired up, see `examples/workers-blog`.
 
 ## Deployment
 
@@ -106,10 +151,11 @@ Sensitive fields (passwords, tokens, API keys) are automatically redacted.
 
 ### Metrics
 
-The engine exposes Prometheus-format metrics with `zbl_*` prefixed counters and histograms:
+The engine exposes Prometheus-format metrics with `zbl_*` prefixed counters and histograms, registered on **both** the main app port and the admin port:
 
 ```
-GET /metrics    # on the admin port
+GET http://localhost:3000/metrics   # main app port
+GET http://localhost:3030/metrics   # admin port (127.0.0.1 only)
 ```
 
 Available metrics:
@@ -123,10 +169,30 @@ Available metrics:
 ### Health Check
 
 ```
-GET /health    # on the admin port
+GET http://localhost:3000/health   # main app port
+GET http://localhost:3030/health   # admin port
 ```
 
 Returns health status with a 200 (healthy) or 503 (unhealthy) status code.
+
+### Local Prometheus + Grafana Stack
+
+`docker-compose.dev.yml` includes Prometheus and Grafana services pre-configured to scrape your local Zebric instance.
+
+```bash
+# Prometheus only
+docker compose -f docker-compose.dev.yml up zebric-dev prometheus-dev
+
+# Prometheus + Grafana
+docker compose -f docker-compose.dev.yml up zebric-dev prometheus-dev grafana-dev
+```
+
+- Prometheus UI: **http://localhost:9091** — check **Status → Targets** to confirm `zebric-engine` shows `UP`, or query directly at `/graph?g0.expr=zbl_requests_total`
+- Grafana: **http://localhost:3001** (default credentials `admin` / `admin`). It has no Prometheus data source pre-configured — add one manually under **Connections → Data sources**, type **Prometheus**, URL `http://prometheus-dev:9090` (the Docker service name, not `localhost`)
+
+The scrape config lives at `monitoring/prometheus-dev.yml` (10s interval, targets `zebric-dev:3000`). Update the `targets` field there if you change the app port or container name.
+
+Prometheus data persists in the `prometheus_dev_data` volume between runs; `docker compose -f docker-compose.dev.yml down -v` resets it.
 
 ### Admin Server
 

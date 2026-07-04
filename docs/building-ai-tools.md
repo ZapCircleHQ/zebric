@@ -690,8 +690,8 @@ theme = "default"
 
 ## Next Steps
 
-- Explore the [Blueprint Specification](blueprint-specification.md) for complete configuration options
-- Review [Zebric Engine Architecture](Zebric-Engine-Architecture.md) for understanding the runtime
+- Explore the [Blueprint Reference](https://docs.zebric.dev/building/blueprint/) for complete configuration options
+- Review [Runtime & Deployment](https://docs.zebric.dev/run/runtime/) for understanding the runtime
 - Check out example behaviors in the `examples/` directory
 - Read about [Custom Plugins](../packages/plugin-sdk/README.md) for advanced extensibility
 

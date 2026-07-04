@@ -20,7 +20,9 @@
   "scripts": {
     "build": "tsc && cp src/styles.css dist/styles.css",
     "dev": "tsc --watch",
+    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-simulator build",
     "test": "vitest run --coverage=false",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-simulator build",
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist"
   },

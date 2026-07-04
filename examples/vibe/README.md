@@ -1,6 +1,6 @@
 # Vibe Chat Blueprint Example
 
-A chat-led Zebric example that turns natural language prompts into `blueprint.toml` files by calling OpenAI. It combines the Blueprint spec from `ZBL-Framework-Specification.md` with the hot-reload workflow described in `docs/quickstart.md`.
+A chat-led Zebric example that turns natural language prompts into `blueprint.toml` files by calling OpenAI. It combines the [Blueprint Reference](https://docs.zebric.dev/building/blueprint/) with the hot-reload dev workflow described in [Dev Server & Debugging](https://docs.zebric.dev/run/dev-server/).
 
 ## Highlights
 - **Zero-auth chat** – create a session and iterate with a friendly composer UI.
