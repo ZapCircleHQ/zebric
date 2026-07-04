@@ -307,13 +307,37 @@ Customize layout rendering with named slots:
 [ui]
 render_mode = "server"
 theme = "default"
+progressive_enhancement = "none"  # "none", "alpine", or "htmx"
 view_transitions = true
 
 [ui.tailwind]
 primary_color = "#3B82F6"
 ```
 
-Built-in themes: `default`, `minimal`, `dashboard`.
+### Theming
+
+The renderer ships two `Theme` objects — `defaultTheme` (light) and `darkTheme` — exported from `@zebric/runtime-core`. The `theme` field above is accepted by the schema but not yet wired up to select between them automatically; applying a different theme currently requires passing a `Theme` object to the renderer programmatically rather than by name in the blueprint.
+
+### Progressive Enhancement
+
+Any value other than `"none"` enables client-side form enhancement: forms render with a `data-enhance` attribute, and a small inline script intercepts submits, does an AJAX `fetch` with CSRF-token forwarding, shows a loading state on the submit button, and redirects or displays inline field errors based on the JSON response — no full page reload. The `"alpine"` and `"htmx"` values are accepted by the schema but don't currently load those libraries; they behave the same as any non-`"none"` value.
+
+### View Transitions
+
+`view_transitions = true` adds a `<meta name="view-transition">` tag and `@view-transition` CSS so supporting browsers animate page navigations.
+
+### Content Negotiation
+
+Every page responds with HTML by default, or JSON if the request's `Accept` header includes `application/json` without also including `text/html`:
+
+```bash
+curl http://localhost:3000/posts                                   # HTML
+curl -H "Accept: application/json" http://localhost:3000/posts     # JSON
+```
+
+### Accessibility
+
+Rendered pages include WCAG-oriented features: a skip-to-content link, `aria-label`/`aria-current` on navigation, table `<caption>` and `scope="col"` headers, `aria-describedby`/`aria-invalid`/`role="alert"` on form validation errors, and an `sr-only` utility class for screen-reader-only content.
 
 ## Authentication
 
