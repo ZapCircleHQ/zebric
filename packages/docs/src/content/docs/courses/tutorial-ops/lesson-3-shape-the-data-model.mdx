@@ -1,44 +1,41 @@
 ---
 slug: courses/tutorial-ops/lesson-3-shape-the-data-model
 title: Lesson 3 - Shape the Data Model
-description: Refine the starter Request entity into the real business record your team actually needs.
+description: Refine the starter ApprovalRequest entity into a business record for your team in the Playground.
 ---
 
-This lesson is where the app stops being a generic demo and starts becoming a useful internal tool.
+We will take the starter `ApprovalRequest` entity from the Playground's Request Approval example and reshape it around your business process (or HarborFlow's process). Keep editing in the same Editor tab you used in Lesson 2.
 
-Take the starter `Request` entity and reshape it around the actual business process.
-
-Keep working in the same `blueprint.toml` from Lesson 2.
-
-In the HarborFlow story, this is where Maya stops talking about generic "requests" and starts defining the real object her team works on every day: a customer exception request.
+In the HarborFlow story, this is where Taylor can start defining the real entity that the team works with: a customer exception request.
 
 ## Start With The Main Record
 
-Rename the main entity to match the real workflow:
+Rename the main entity to match the real workflow - like one of these following examples:
 
-- `Request` → `VendorRequest`
-- `Request` → `AccessRequest`
-- `Request` → `HiringRequest`
-- `Request` → `ContractReview`
+- `ApprovalRequest` → `VendorRequest`
+- `ApprovalRequest` → `AccessRequest`
+- `ApprovalRequest` → `HiringRequest`
+- `ApprovalRequest` → `ContractReview`
 
-This matters because the name sets the tone for everything else in the app.
+We'll use this name to drive everything else in the blueprint.
 
-For HarborFlow, the natural change is:
+For HarborFlow, the change is:
 
-- `Request` → `ExceptionRequest`
+- `ApprovalRequest` → `ExceptionRequest`
 
 ## Tighten The Fields
 
-Keep only fields that someone will actually use in the first version.
+Keep only fields that someone will actually use in the first version. It's very easy to include too much data.
 
-Typical first-pass changes:
+The starter entity was modeling a purchasing approval, so some of its fields do not carry over cleanly:
 
-- rename `team` if the workflow really needs `department`, `requesterTeam`, or `costCenter`
-- rename `details` if the workflow needs `businessJustification` or `accessReason`
-- add one or two high-value fields like `owner`, `requestedBy`, or `dueDate`
-- remove anything that exists only because it sounded generic
+- `amount` does not apply to an exception request — remove it
+- `category` becomes `exceptionType` — keep it as an `Enum`, just with HarborFlow's own values
+- `managerId` assumed a pre-assigned approver — HarborFlow's ops team reviews as a pool, so remove it
+- `requesterId` becomes `submittedBy` — keep it as a `Ref` to `TeamMember`, since the Playground's starting example already ships that entity. That gives you a real relationship for free instead of a placeholder text field.
+- add `customerName` as a new `Text` field — the customer experiencing the exception is external to HarborFlow, so there is no entity to reference yet. A plain text field is the right call here, in contrast to `submittedBy`, which points at an internal team member you already have a record for.
 
-For HarborFlow, Maya might end up with fields like:
+For HarborFlow, Taylor might end up with fields like:
 
 - `customerName`
 - `submittedBy`
@@ -50,22 +47,32 @@ For HarborFlow, Maya might end up with fields like:
 One concrete version of that change looks like this:
 
 ```toml
-[entity.ExceptionRequest]
+[[entities]]
+name = "ExceptionRequest"
 fields = [
-  { name = "id", type = "ULID", primary_key = true, required = true },
+  { name = "id", type = "ULID", primary_key = true },
   { name = "title", type = "Text", required = true },
   { name = "customerName", type = "Text", required = true },
-  { name = "submittedBy", type = "Text", required = true },
-  { name = "exceptionType", type = "Text", required = true },
+  { name = "submittedBy", type = "Ref", ref = "TeamMember.id" },
+  { name = "exceptionType", type = "Enum", values = ["shipping_delay", "pricing_adjustment", "custom_terms", "other"], default = "other" },
   { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
-  { name = "justification", type = "LongText", nullable = true },
+  { name = "justification", type = "LongText" },
   { name = "status", type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted" },
-  { name = "createdAt", type = "DateTime", default = "now()" }
+  { name = "createdAt", type = "DateTime", default = "now" }
 ]
 ```
 
-Once you rename the entity, update the pages to point at `ExceptionRequest` instead of `Request`.
-That means your list page, form page, and detail page should all reference the new entity name before you move on.
+The bundled example also ships an `ApprovalAudit` entity for tracking who did what to a request. You can leave the audit feature itself alone, but update its `requestId` reference so validation still passes after the rename:
+
+```toml
+{ name = "requestId", type = "Ref", ref = "ExceptionRequest.id", required = true }
+```
+
+Once you rename the entity, update every page that referenced `ApprovalRequest` — its queries, its form, and its detail page — to use `ExceptionRequest` instead. Also update any workflow step that still references `ApprovalRequest`. The Playground's **Validation** tab will flag references still pointing at the old name, so use it as a checklist rather than re-reading the whole file by hand.
+
+## Consolidate The Pages
+
+The bundled example splits its home page into a dashboard (`/`) and a separate request list (`/requests`). To keep things simple and match the rest of this course, delete the dashboard page and rename `/requests` to `/` so it becomes your one list page. You can always reintroduce a dashboard later once there is more than one thing worth summarizing.
 
 ## Fix The Status Model
 
@@ -77,9 +84,9 @@ For example:
 status = { type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted" }
 ```
 
-The important rule is that the statuses should reflect real business transitions, not placeholder words.
+The important rule is that the statuses should reflect real business transitions, not placeholder words carried over from a different process.
 
-For the HarborFlow narrative, the first useful set might be:
+For the HarborFlow narrative, the first useful set is:
 
 - `submitted`
 - `reviewing`
@@ -89,7 +96,7 @@ For the HarborFlow narrative, the first useful set might be:
 
 ## Make The Vocabulary Match The Team
 
-Every field and status should sound like something the team would say in Slack, email, or meetings.
+Every field and status should sound like something the team would say in Slack, Teams, email, or meetings.
 
 That means:
 
@@ -97,28 +104,25 @@ That means:
 - avoid generic labels if there is a more precise term
 - remove ambiguity where two fields sound almost the same
 
-This is one of the most important moments in the course narrative. Once Maya renames the entity and fields into HarborFlow language, the blueprint stops feeling like a demo and starts feeling like a product her team could actually adopt.
+You want the blueprint to feel like a natural extension of your team's existing process, not something where you have to change the way everyone works.
 
 ## Review Questions
 
-Before moving on, ask:
+For the blueprint - ask some of these questions as a quick review:
 
 - if a teammate saw this entity, would they immediately recognize it?
 - does the status progression match how the work really moves?
 - are any fields missing that block a reviewer from making a decision?
-- are any fields present just because the model invented them?
-
-For HarborFlow, a strong review question is:
-
-- if an ops manager opened this tool cold, would they recognize it as the exception process they already run?
+- are any fields present just because the starter example invented them?
 
 ## Lesson Output
 
 By the end of this lesson, you should have:
 
 - a renamed primary entity
-- a cleaner set of fields
+- a cleaner set of fields, including a real `Ref` relationship where one makes sense
 - statuses that match the workflow
+- one consolidated list page instead of a separate dashboard
 - a vocabulary aligned to the actual team
 
 If you need syntax help while making those edits, use the [Blueprint Reference](/building/blueprint/).
@@ -127,16 +131,27 @@ If you need syntax help while making those edits, use the [Blueprint Reference](
 
 In this lesson, you are mainly editing the entity section:
 
-- rename `Request` to `ExceptionRequest`
-- replace generic fields with HarborFlow-specific fields
+- rename `ApprovalRequest` to `ExceptionRequest`
+- replace purchasing-specific fields with HarborFlow-specific fields
 - replace placeholder statuses with the real operating states
 - update page queries and forms so they reference `ExceptionRequest`
+- delete the separate dashboard page and consolidate on `/` as the list page
 
 This is mostly an **entity refactor** with a few matching page updates.
 
+### Checkpoint Blueprint
+
+Use [`lesson-3-blueprint.toml`](/tutorial-ops/checkpoints/lesson-3-blueprint.toml) if you want a complete, working file after the entity rename, field cleanup, audit-reference update, and page consolidation.
+
+The checkpoint should validate cleanly:
+
+```bash
+zebric validate --blueprint lesson-3-blueprint.toml
+```
+
 ## Zebric Concepts In This Lesson
 
-- **Entities**: the main focus is field design, naming, and status modeling
+- **Entities**: the main focus is field design, naming, relations, and status modeling
 - **Pages**: page definitions must stay aligned with the renamed entity
 - **Blueprints**: you are refining a working blueprint instead of regenerating it from scratch
 

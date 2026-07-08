@@ -4,9 +4,9 @@ title: Lesson 7 - Polish With Real Feedback
 description: Use stakeholder feedback to simplify the app, remove friction, and turn the blueprint into something people will actually adopt.
 ---
 
-This lesson is where Maya puts the HarborFlow tool in front of real teammates and learns what still feels rough.
+This lesson is where Taylor puts the HarborFlow tool in front of real teammates and learns what still feels rough.
 
-That matters because many internal tools fail for boring reasons:
+That matters because many internal tools fail for straight forward reasons:
 
 - labels are unclear
 - statuses mean different things to different people
@@ -17,22 +17,22 @@ That matters because many internal tools fail for boring reasons:
 
 By the end of this lesson, the HarborFlow tool should feel narrower, clearer, and easier to trust.
 
-This is not feature expansion. It is product refinement.
+We'd consider this to be product refinement, especially once end users have tried it out.
 
-## What Maya Hears From The Team
+## What Taylor Hears From The Team
 
-Once HarborFlow account managers and ops reviewers try the tool, Maya starts hearing comments like:
+Once HarborFlow account managers and ops reviewers try the tool, Taylor starts hearing comments like:
 
 - "I do not know what counts as high priority."
 - "I need to know who is reviewing this."
 - "The status names are close, but not quite how we talk about the process."
 - "I need to know what happens after I submit."
 
-These are not bugs. They are product signals.
+This is all actionable feedback.
 
-## What To Tighten
+## What To Refine in the Blueprint 
 
-Look for improvements like:
+Look for improvements such as:
 
 - better field labels
 - clearer help text
@@ -43,7 +43,7 @@ Look for improvements like:
 
 For HarborFlow, that might mean:
 
-- changing `priority` labels from generic terms to the language ops actually uses
+- changing `priority` labels from generic terms to the language operations actually uses
 - renaming `justification` to `Business Justification`
 - clarifying who owns review after submission
 - simplifying any field that people misunderstand on first read
@@ -62,23 +62,9 @@ After each change, run the app again and check the same core flow:
 3. trigger the approval workflow
 4. confirm the status and success messaging still make sense
 
-## Cut Before You Add
-
-The default instinct after feedback is to add more functionality.
-
-Resist that.
-
-For this lesson, the better question is:
-
-- what can we remove or simplify so the current flow is easier to use?
-
-This is how the app starts feeling intentional instead of improvised.
-
 ## HarborFlow Outcome
 
-By the end of this lesson, Maya is not trying to satisfy every possible exception case. She is trying to make the core exception path obvious enough that the ops team will actually move work through the tool.
-
-That is what makes the next step, deployment, worth doing.
+By the end of this lesson, Taylor is not trying to satisfy every possible exception case. The idea is to make the core exception path obvious enough that the ops team will actually move work through the tool.
 
 ## Lesson Output
 
@@ -101,6 +87,16 @@ This lesson usually produces small edits across sections you already have:
 - wording on page titles or workflow actions
 
 The point is not to add whole new systems. It is to make the current blueprint easier to trust and easier to use.
+
+### Checkpoint Blueprint
+
+Use [`lesson-7-blueprint.toml`](/tutorial-ops/checkpoints/lesson-7-blueprint.toml) if you want a complete, working file after a small polish pass on labels, priority vocabulary, success messages, and the approval action.
+
+The checkpoint should validate cleanly:
+
+```bash
+zebric validate --blueprint lesson-7-blueprint.toml
+```
 
 ## Zebric Concepts In This Lesson
 
