@@ -1,6 +1,6 @@
 {
   "name": "@zebric/react-simulator",
-  "version": "0.0.0",
+  "version": "0.0.1-rc.0",
   "description": "React component wrapper for the Zebric browser simulator",
   "type": "module",
   "main": "./dist/index.js",
