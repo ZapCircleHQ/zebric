@@ -8,6 +8,7 @@
     "start": "astro dev",
     "build": "astro build",
     "check": "astro check",
+    "smoke:tutorial-ops": "node ../../scripts/smoke-tutorial-ops-checkpoints.mjs",
     "preview": "astro preview",
     "astro": "astro"
   },

@@ -1,14 +1,14 @@
 ---
 slug: courses/tutorial-ops/lesson-4-improve-intake-and-review-pages
 title: Lesson 4 - Improve Intake and Review Pages
-description: Refine the list, form, and detail pages so the internal tool feels useful to real operators instead of like a generic CRUD demo.
+description: Refine the list, form, and detail pages so the internal tool feels useful to real operators instead of generic.
 ---
 
-This lesson is where the HarborFlow tool starts to feel real.
+Taylor already has the right core record, but the first version still feels like a generic request tracker. The next step is to make the pages fit how HarborFlow's team actually submits, reviews, and works with exception requests.
 
-Maya already has the right core record, but the first version still feels like a generic request tracker. The next step is to make the pages fit how HarborFlow's team actually submits, reviews, and works requests.
+Keep editing in the Playground's Editor tab. In this lesson, you are refining the pages that already point at `ExceptionRequest`, and checking each change against the Preview tab as you go.
 
-Keep editing the same `blueprint.toml`. In this lesson, you are refining the pages that already point at `ExceptionRequest`.
+A note on `auth`: the examples below keep `auth = "optional"` for now. Lesson 5 adds the `[auth]` block and a working sign-in page. Switch to `auth = "required"` there, once there is an actual login flow behind it — flipping it now would lock you out of every page you are about to test.
 
 ## The Goal
 
@@ -40,34 +40,41 @@ Practical improvements:
 For HarborFlow, the intake form might evolve into something like:
 
 ```toml
-[page."/requests/new"]
+[[pages]]
+path = "/requests/new"
 title = "Submit Exception Request"
 layout = "form"
-auth = "required"
+auth = "optional"
 
-[page."/requests/new".form]
+[pages.form]
 entity = "ExceptionRequest"
 method = "create"
 
-[[page."/requests/new".form.fields]]
+[[pages.form.fields]]
 name = "title"
 type = "text"
 label = "Request Title"
 required = true
 
-[[page."/requests/new".form.fields]]
+[[pages.form.fields]]
 name = "customerName"
 type = "text"
 label = "Customer Name"
 required = true
 
-[[page."/requests/new".form.fields]]
+[[pages.form.fields]]
 name = "exceptionType"
-type = "text"
+type = "select"
 label = "Exception Type"
 required = true
+options = [
+  { value = "shipping_delay", label = "Shipping Delay" },
+  { value = "pricing_adjustment", label = "Pricing Adjustment" },
+  { value = "custom_terms", label = "Custom Terms" },
+  { value = "other", label = "Other" }
+]
 
-[[page."/requests/new".form.fields]]
+[[pages.form.fields]]
 name = "priority"
 type = "select"
 label = "Priority"
@@ -78,14 +85,14 @@ options = [
   { value = "high", label = "High" }
 ]
 
-[[page."/requests/new".form.fields]]
+[[pages.form.fields]]
 name = "justification"
 type = "textarea"
 label = "Business Justification"
 required = true
 rows = 6
 
-[page."/requests/new".form.onSuccess]
+[pages.form.onSuccess]
 redirect = "/requests/{id}"
 message = "Request submitted. Operations will review it next."
 ```
@@ -110,12 +117,13 @@ Typical improvements:
 That list page might look like:
 
 ```toml
-[page."/"]
+[[pages]]
+path = "/"
 title = "Customer Exception Requests"
 layout = "list"
-auth = "required"
+auth = "optional"
 
-[page."/".query.requests]
+[pages.queries.requests]
 entity = "ExceptionRequest"
 orderBy = { createdAt = "desc" }
 ```
@@ -132,24 +140,23 @@ For HarborFlow, the detail page should make it easy to understand:
 - how urgent it is
 - what decision needs to happen next
 
-If a reviewer has to hunt for context, the page is not doing enough.
-
 A simple detail page baseline is:
 
 ```toml
-[page."/requests/:id"]
+[[pages]]
+path = "/requests/:id"
 title = "Exception Request"
 layout = "detail"
-auth = "required"
+auth = "optional"
 
-[page."/requests/:id".query.request]
+[pages.queries.request]
 entity = "ExceptionRequest"
-where = { id = "$params.id" }
+where = { id = "{id}" }
 ```
 
 ## HarborFlow Example Changes
 
-By the end of this lesson, Maya might make changes like:
+By the end of this lesson, Taylor would make these changes:
 
 - rename the home page from `Requests` to `Customer Exception Requests`
 - add `customerName` and `exceptionType` to the form
@@ -171,11 +178,21 @@ Use the [Blueprint Reference](/building/blueprint/) if you need to look up form 
 
 In this lesson, you are mainly editing the page sections:
 
-- update the list page title, auth, and query
+- update the list page title and query (`auth` stays `optional` until Lesson 5)
 - update the form page fields, labels, and success behavior
 - update the detail page so reviewers can inspect one request clearly
 
 The entity stays mostly stable here. The emphasis is on **page configuration and form design**.
+
+### Checkpoint Blueprint
+
+Use [`lesson-4-blueprint.toml`](/tutorial-ops/checkpoints/lesson-4-blueprint.toml) if you want a complete, working file with the refined intake form, queue page, and detail page.
+
+The checkpoint should validate cleanly:
+
+```bash
+zebric validate --blueprint lesson-4-blueprint.toml
+```
 
 ## Zebric Concepts In This Lesson
 

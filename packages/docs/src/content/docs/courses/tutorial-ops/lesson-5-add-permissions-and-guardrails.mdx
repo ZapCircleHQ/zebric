@@ -1,91 +1,91 @@
 ---
 slug: courses/tutorial-ops/lesson-5-add-permissions-and-guardrails
 title: Lesson 5 - Add Permissions and Guardrails
-description: Introduce the minimum access control needed to make the tool safe to share internally.
+description: Introduce role-based access control and page-level authentication, and test what you actually can in the Playground.
 ---
 
-This lesson is where the HarborFlow tool becomes safe enough to use beyond Maya's own laptop.
+In this lesson, we'll introduce authentication and access control - making this blueprint safe to use for the team.
 
-The first version probably runs with broad access. That is fine for prototyping, but not for internal rollout. Now the tool needs basic guardrails.
-
-Keep editing the same `blueprint.toml`. In this lesson, you will add auth settings and tighten access around the pages and entity you already created.
+Keep editing in the Playground. In this lesson, you will tighten access around the entity and pages you already have, and test as much of it as the sandbox allows.
 
 ## The Goal
 
-By the end of this lesson, the learner should know:
+By the end of this lesson, you'll have explored:
 
 - who can submit requests
 - who can review requests
 - who can approve unusual cases
 - which pages should require authentication
 
-## Start Simple
+## Authorization and Authentication
 
-You do not need a perfect enterprise permissions model.
+This lesson covers two related but different concerns:
 
-For HarborFlow, a good first cut is:
+- **Authorization** — once someone is using the tool, what are they allowed to see or change? This is entity-level access control, driven by `$currentUser.role`. You can fully test this in the Playground by switching accounts in the toolbar.
+- **Authentication** — is there a real person signed in at all? This depends on a working sign-in form backed by a real session, which only exists once you run the blueprint with the CLI in Lesson 6. The Playground can prove the *gate* fires — switch the Account dropdown to **Anonymous** and confirm you get redirected away from a page marked `auth = "required"` — but it will not show you a working login screen, because there is no real account system in the browser sandbox.
 
-- account managers can create requests
-- ops managers can review and update requests
-- directors can approve high-priority exceptions
-- the app requires sign-in for internal use
+We'll save the demonstration that authentication works until Lesson 6 - but we can test and verify authorization in this lesson.
+
+## Add Entity Access Rules
+
+We need to figure out who has access to what.
+
+For HarborFlow, Taylor wants:
+
+- broad internal visibility
+- narrower update rights
+- explicit approval ownership for exceptional requests
+
+One reasonable first pass is:
+
+```toml
+[entities.access]
+read = true
+create = true
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+```
+
+Add this access block directly below the `[[entities]]` entry where `name = "ExceptionRequest"`.
+
+Recall from Lesson 2 that the Playground's account switcher offers `requester`, `manager`, and `admin` — standing in for HarborFlow's account managers, ops managers, and directors. That is why the access rule above checks `role = "manager"` and `role = "admin"` instead of made-up strings like `ops_manager`: those are the exact personas you can pick from the toolbar to test the rule for real.
+
+Try it now: switch to **Requester** and confirm you cannot change a request's status. Switch to **Manager** or **Admin** and confirm you can. That immediate feedback loop is the reason this part of the lesson lives in the Playground.
+
+If your process needs tighter controls, ask these types of questions:
+
+- should submitters only see requests they created?
+- should reviewers be able to edit every field or only status and notes?
+- should directors be the only people allowed to approve high-priority requests?
 
 ## Add Page-Level Authentication
 
-Require authentication on the working pages so the tool is not effectively public:
+Require authentication on the working pages so the tool is not public:
 
 ```toml
-[page."/"]
+[[pages]]
+path = "/"
 title = "Customer Exception Requests"
 layout = "list"
 auth = "required"
 ```
 
-This is the fastest way to move from demo to internal application.
+Flip the auth flag from "optional" to "required" for the list, form, and detail pages you built in Lesson 4.
 
-If you have not enabled authentication yet, add a minimal auth setup before requiring sign-in on your pages:
+Add a minimal auth block alongside it, although it will not fully resolve until you run this from the command line:
 
 ```toml
 [auth]
 providers = ["email"]
 trustedOrigins = ["http://localhost:3000"]
 
-[page."/sign-in"]
+[[pages]]
+path = "/sign-in"
 title = "Sign In"
 layout = "auth"
 ```
 
-Without that setup, `auth = "required"` will describe the right intent but not give the learner a complete sign-in path.
-
-## Add Entity Access Rules
-
-Then tighten entity access so the right people can create, read, or update records.
-
-The important decision is not just "who can log in?" It is "who can change workflow state?"
-
-For HarborFlow, Maya wants:
-
-- broad internal visibility
-- narrower update rights
-- explicit approval ownership for exceptional requests
-
-One reasonable first cut is:
-
-```toml
-[entity.ExceptionRequest.access]
-read = true
-create = true
-update = { or = [{ "$currentUser.role" = "ops_manager" }, { "$currentUser.role" = "director" }] }
-delete = { "$currentUser.role" = "director" }
-```
-
-That is still simple, but it already creates a meaningful distinction between people who can submit work and people who can change workflow state.
-
-If your process needs tighter controls, start asking questions like:
-
-- should submitters only see requests they created?
-- should reviewers be able to edit every field or only status and notes?
-- should directors be the only people allowed to approve high-priority requests?
+In the Playground, switch the Account dropdown to **Anonymous** and try to open one of these pages. You should get redirected away — that confirms the required authentication is active. You will not see a working sign-in form yet; that requires the real engine, which is in Lesson 6.
 
 ## HarborFlow Guardrail Questions
 
@@ -96,11 +96,11 @@ Use questions like these:
 - who can move a request from `reviewing` to `approved`?
 - do rejected requests need a visible reason?
 
-These questions make the blueprint more credible because they match the real concerns of internal rollout.
+These are all realistic considerations for an internal operations tool once it gets past a proof of concept.
 
-## Keep The First Version Defensible
+## Version 1.0 Permissions
 
-The right outcome for this lesson is not "perfect permissions." It is:
+After going through this exercise, you'll have some strong security improvements:
 
 - the app is no longer accidentally open
 - the review flow has clear ownership
@@ -110,8 +110,8 @@ The right outcome for this lesson is not "perfect permissions." It is:
 
 By the end of this lesson, you should have:
 
-- authenticated pages
-- basic entity access rules
+- entity access rules you have personally verified by switching accounts in the Playground
+- page-level `auth = "required"` and a minimal `[auth]` block, verified only as far as the sandbox allows
 - a clearer understanding of who owns each step in the workflow
 
 Use [Security & Authentication](/building/security/) for the exact access-control patterns Zebric supports.
@@ -120,17 +120,24 @@ Use [Security & Authentication](/building/security/) for the exact access-contro
 
 In this lesson, you are adding security-related sections:
 
-- add an `[auth]` block if the app does not have one yet
-- add an auth page such as `/sign-in`
-- change working pages from public or optional auth to `auth = "required"`
-- add `[entity.ExceptionRequest.access]` rules for CRUD behavior
+- add `[entities.access]` rules for CRUD behavior under the `ExceptionRequest` entity, using `requester`/`manager`/`admin` as the role values
+- add an `[auth]` block and a `/sign-in` page
+- change working pages from `auth = "optional"` to `auth = "required"`
 
-This is the lesson where the blueprint stops being a local demo and starts becoming an internal application.
+### Checkpoint Blueprint
+
+Use [`lesson-5-blueprint.toml`](/tutorial-ops/checkpoints/lesson-5-blueprint.toml) if you want a complete, working file with entity access rules, required page auth, and a sign-in page.
+
+The checkpoint should validate cleanly:
+
+```bash
+zebric validate --blueprint lesson-5-blueprint.toml
+```
 
 ## Zebric Concepts In This Lesson
 
-- **Authentication**: page-level sign-in requirements and auth pages
-- **Access Control**: entity-level read, create, update, and delete rules
+- **Access Control**: entity-level read, create, update, and delete rules — fully testable via the Playground's account switcher
+- **Authentication**: page-level sign-in requirements and auth pages — configured here, verified for real once you leave the sandbox
 - **Pages**: auth requirements now shape who can reach the workflow UI
 - **Entities**: access rules define who can change workflow state
 

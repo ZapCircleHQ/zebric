@@ -4,9 +4,9 @@ title: Lesson 8 - Deploy and Roll Out the Tool
 description: Deploy the internal tool, hand it to the team, and close the loop with a lightweight rollout and feedback plan.
 ---
 
-This lesson finishes the first HarborFlow product arc.
+This lesson wraps up the first verson of the HarborFlow application.
 
-Maya now has a tool that works locally, reflects the real exception process, and includes enough access control and automation to matter. The next step is to get it into the hands of the team.
+Taylor now has a tool that works locally, reflects the real exception process, and includes enough access control and automation to matter. The next step is to get it into the hands of the team.
 
 ## The Goal
 
@@ -14,7 +14,7 @@ By the end of this lesson, the app should no longer be a local prototype. It sho
 
 ## Deployment Mindset
 
-The point of deployment is not to prove technical sophistication. The point is to reduce operational friction for the people doing the work.
+The point of deployment make the application available internally.
 
 For HarborFlow, success looks like:
 
@@ -37,7 +37,7 @@ Before you push the app to a shared environment, do one more local verification 
 
 ```bash
 zebric validate --blueprint blueprint.toml
-zebric dev --blueprint blueprint.toml --port 3000 --seed
+zebric dev --blueprint blueprint.toml --port 3000
 ```
 
 Then work through a production-minded checklist:
@@ -95,6 +95,16 @@ Typical final edits include:
 
 The bigger change is operational: this is where the blueprint moves from local iteration to a shared runtime environment.
 
+### Checkpoint Blueprint
+
+Use [`lesson-8-blueprint.toml`](/tutorial-ops/checkpoints/lesson-8-blueprint.toml) as the complete final course blueprint. It is intentionally close to the Lesson 7 checkpoint because this lesson is mostly about rollout, verification, and deployment discipline.
+
+Validate it before deploying:
+
+```bash
+zebric validate --blueprint lesson-8-blueprint.toml
+```
+
 ## Zebric Concepts In This Lesson
 
 - **Runtime Engines**: choosing how the blueprint will run outside your laptop
@@ -104,7 +114,7 @@ The bigger change is operational: this is where the blueprint moves from local i
 
 ## What The Full Arc Achieves
 
-In the HarborFlow narrative, Maya has now gone from:
+In the HarborFlow narrative, Taylor has now gone from:
 
 - a messy internal process
 - to a problem brief

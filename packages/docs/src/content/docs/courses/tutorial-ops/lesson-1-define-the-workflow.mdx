@@ -4,19 +4,19 @@ title: Lesson 1 - Define the Workflow
 description: Start with the operational pain, the owner, and the desired outcome before generating a Zebric blueprint.
 ---
 
-This lesson starts with the real business problem. The goal is to define a workflow clearly enough that an LLM or a human can turn it into a useful first blueprint.
+In this lesson, we'll look at a real business process - we'll want to be able to define the workflow clearly enough that we can turn it into a Zebric blueprint.
 
-In the course narrative, this is the moment where Maya, HarborFlow's Head of Operations, decides that the team's "customer exception request" process has become too messy to keep running through Slack and spreadsheets.
+For the purposes of this tutorial - this is where Taylor, HarborFlow's Head of Operations, decides that the team's "customer exception request" process has become too messy to keep running through Slack and spreadsheets.
 
-Account managers ask for one-off shipping exceptions. Ops managers review them inconsistently. Approvals get lost. No one has a clean list of what is waiting, what is approved, or what is blocked.
+Right now, everything is going through emails, text messages, and updates to spreadsheets that aren't seen right away. Some of the requests are getting lost in the process, and customers are unhappy. It's really hard to get an overhead view of where everything is in the process.
 
-## What This Lesson Produces
+## Goal for this Lesson
 
 By the end of this lesson, you should have:
 
-- one internal workflow worth fixing now
+- one internal workflow worth fixing now in your own team or organization
 - a named team or person who owns the process
-- a concrete description of the records that move through the workflow
+- a concrete description of the items that move through the workflow
 - a definition of what a successful first version should do
 - a short prompt brief for the LLM
 
@@ -25,7 +25,6 @@ By the end of this lesson, you should have:
 Pick a process with all of these characteristics:
 
 - it happens often enough to matter
-- it is annoying enough that people already complain about it
 - it does not require a full product team to validate
 - it can be improved by better intake, visibility, routing, or approvals
 
@@ -43,7 +42,7 @@ Bad first examples:
 - anything with many external integrations on day one
 - anything where no one agrees on the process yet
 
-For HarborFlow, the right first workflow is not "all operations." It is one narrow process:
+For HarborFlow, the right first workflow is one narrow process:
 
 - intake of customer exception requests
 - review by ops
@@ -62,9 +61,7 @@ Write down:
 - what a reviewer needs to decide
 - what happens when the request is approved or rejected
 
-Do not start with schema design language. Start with operational language.
-
-For Maya, that plain-language description might sound like this:
+For Taylor, that plain-language description might sound like this:
 
 - account managers submit exception requests
 - ops reviews whether the request is feasible
@@ -142,17 +139,13 @@ The first version is successful if:
 
 Turn that brief into one final prompt input for the next lesson. Keep it short, concrete, and operational.
 
-You do not need to create `blueprint.toml` yet, but you should leave this lesson with the exact text you plan to paste into the LLM next.
+If you don't have your own process, just use the HarborFlow template.
 
-## What Changes In `blueprint.toml`
-
-Nothing yet. This lesson happens before the first blueprint exists.
-
-The output of this lesson is the product brief that will drive your first `blueprint.toml` in Lesson 2.
+Lesson 2 happens entirely in the browser using the [Zebric Playground](https://playground.zebric.dev) — there is nothing to install yet.
 
 ## Zebric Concepts In This Lesson
 
-- **Blueprints**: you are defining what the blueprint needs to express before you write TOML
+- **Blueprints**: you are defining what the blueprint needs to express before you write it
 - **Entities**: you are identifying the main record the app will track
 - **Pages**: you are deciding which core pages the first version needs
 - **Workflows**: you are naming the business transitions the tool will eventually support

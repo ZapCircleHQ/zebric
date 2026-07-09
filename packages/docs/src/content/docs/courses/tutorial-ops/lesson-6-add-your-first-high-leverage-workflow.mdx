@@ -1,31 +1,43 @@
 ---
 slug: courses/tutorial-ops/lesson-6-add-your-first-high-leverage-workflow
 title: Lesson 6 - Add Your First High-Leverage Workflow
-description: Add one workflow that removes manual coordination work and makes the app operationally valuable.
+description: Add one workflow that removes manual coordination work and makes the blueprint valuable.
 ---
 
-This is the lesson where the HarborFlow tool stops being "an internal CRUD app" and starts becoming real operational software.
+Taylor wants to build one workflow that removes obvious coordination overhead from the exception process, and demonstrates the viability of Zebric applications.
 
-Maya does not need ten workflows. She needs one workflow that removes obvious coordination overhead from the exception process.
+In the Playground, workflows are traced, not actually executed — triggering one there logs a debug entry and tells you "external side effects are not executed in the browser simulator," but it will not really change a status or send a real notification. 
 
-Keep editing the same `blueprint.toml`. This lesson adds a workflow section and wires it into the existing request detail page.
+To see and test the real thing, we'll run the blueprint locally.
 
-## Pick One Workflow That Matters
+## Installing the CLI
 
-A good first workflow is one that:
+You will need Node.js installed (version 22.x or above).
 
-- happens often
-- creates confusion when done manually
-- is easy to explain
-- has a visible effect in the product
+Install the CLI:
+
+```bash
+npm install -g @zebric/cli
+```
+
+Then go back to the Playground, open the **Editor** tab, and click **Download** to save your blueprint as `exception-request.toml` (or rename it to `blueprint.toml`). Everything you built in Lessons 2 through 5 is usable as a real application.
+
+Run your blueprint after validating it:
+
+```bash
+zebric validate --blueprint blueprint.toml
+zebric dev --blueprint blueprint.toml
+```
+
+Open `http://localhost:3000` and sign in for the first time — this is where the `[auth]` block and `/sign-in` page from Lesson 5 can be demonstrated.
+
+From here on, keep editing this local `blueprint.toml`. This lesson adds a workflow section and wires it into the existing request detail page. Zebric has a hot reload feature in development mode, so saving your changes to the blueprint will refresh the application.
+
+## Choosing the First Workflow
 
 For HarborFlow, a strong first workflow is:
 
 - when an exception request is approved, move it forward and notify the right internal owner
-
-## Keep The Workflow Narrow
-
-Do not automate the whole company in one lesson.
 
 Start with one event and one useful outcome:
 
@@ -33,11 +45,11 @@ Start with one event and one useful outcome:
 - a notification is sent
 - a follow-up field is updated
 
-That is enough to make the product feel meaningfully better than spreadsheets and Slack.
+This should be enough to demonstrate feasibility.
 
 ## HarborFlow Example
 
-Maya might define a workflow like:
+Taylor might define a workflow like:
 
 - trigger: manual approval action on the request detail page
 - step 1: update status from `reviewing` to `approved`
@@ -59,58 +71,64 @@ default = "console"
 name = "console"
 type = "console"
 
-[workflow.ApproveExceptionRequest]
+[[workflows]]
+name = "ApproveExceptionRequest"
 description = "Approve an exception request and notify operations."
 
-[workflow.ApproveExceptionRequest.trigger]
+[workflows.trigger]
 manual = true
 
-[[workflow.ApproveExceptionRequest.steps]]
+[[workflows.steps]]
 type = "query"
 entity = "ExceptionRequest"
 action = "update"
-[workflow.ApproveExceptionRequest.steps.where]
+[workflows.steps.where]
 id = "{{ variables.data.record.id }}"
-[workflow.ApproveExceptionRequest.steps.data]
+[workflows.steps.data]
 status = "approved"
 
-[[workflow.ApproveExceptionRequest.steps]]
+[[workflows.steps]]
 type = "notify"
 adapter = "console"
 body = "Exception request approved: {{ variables.data.record.title }}"
 ```
 
+A TOML note: `[workflows.steps.where]` and `[workflows.steps.data]` attach to whichever `[[workflows.steps]]` entry was declared immediately above them. If you add a third step later, keep each step's `where`/`data` tables directly under that step's `[[workflows.steps]]` line, in order — moving them out of sequence silently reattaches them to the wrong step.
+
 Then expose it from the detail page with an action bar:
 
 ```toml
-[page."/requests/:id".actionBar]
+[pages.actionBar]
 statusField = "status"
 
-[[page."/requests/:id".actionBar.actions]]
+[[pages.actionBar.actions]]
 label = "Approve Request"
 workflow = "ApproveExceptionRequest"
 style = "primary"
 ```
 
+Add this action bar block under the existing `[[pages]]` entry where `path = "/requests/:id"`.
+
 Using the console adapter is enough for a first pass because you can verify the workflow wiring locally before you switch to Slack or email.
+
+One current limitation worth knowing: the action bar always renders every configured action, regardless of the record's status. `statusField` only displays a status badge — it does not hide or disable buttons based on state. Clicking **Approve Request** on a request that is already `approved`, `rejected`, or `completed` will still run the workflow and silently force the status back to `approved`. If that matters for your process, add a `condition` step at the start of the workflow that checks the current status and only proceeds when it is `reviewing`.
 
 ## Why This Matters
 
-This is often the moment when stakeholders stop seeing the tool as a prototype.
-
-At HarborFlow, the difference is simple:
+At HarborFlow, the difference is easy to see:
 
 - before: someone approves in Slack and hopes the right person notices
 - after: the request status changes in the system and the next owner is notified
 
-That is operational leverage.
+We could certainly use other tools to do the same thing, but Zebric keeps you in control.
 
 ## Lesson Output
 
 By the end of this lesson, you should have:
 
-- one workflow tied to a real business transition
-- one automation step with visible value
+- the CLI installed and your blueprint running locally instead of in the Playground
+- a working sign-in flow you can actually verify, not just a redirect
+- one workflow tied to a real business transition, with a real status change and a real console notification
 - a stronger case for rolling the tool out to the broader team
 
 Use [Workflows & Notifications](/building/workflows/) for more step types and adapter options.
@@ -120,14 +138,26 @@ Use [Workflows & Notifications](/building/workflows/) for more step types and ad
 In this lesson, you are adding automation-related sections:
 
 - add a `[notifications]` block and at least one adapter
-- add a `[workflow.ApproveExceptionRequest]` definition
+- add a `[[workflows]]` definition named `ApproveExceptionRequest`
 - add workflow steps to update data and send a notification
 - add an action bar to the detail page so users can trigger the workflow
 
 This is the first lesson where a user action leads to a **workflow-backed state change** instead of only CRUD behavior.
 
+### Checkpoint Blueprint
+
+Use [`lesson-6-blueprint.toml`](/tutorial-ops/checkpoints/lesson-6-blueprint.toml) if you want a complete, working file with auth, access control, the approval workflow, console notifications, and the detail-page action bar.
+
+Validate and run the checkpoint locally:
+
+```bash
+zebric validate --blueprint lesson-6-blueprint.toml
+zebric dev --blueprint lesson-6-blueprint.toml
+```
+
 ## Zebric Concepts In This Lesson
 
+- **CLI**: `zebric validate` and `zebric dev` run your blueprint for real, outside the browser sandbox
 - **Workflows**: manual triggers and multi-step automation
 - **Notifications**: console, Slack, or email adapters for alerts
 - **Pages**: action bars expose workflows in the UI

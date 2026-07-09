@@ -1,0 +1,137 @@
+version = "0.2.0"
+
+[project]
+name = "HarborFlow Exceptions"
+version = "1.0.0"
+description = "Customer exception request tracking for HarborFlow operations."
+
+[project.runtime]
+min_version = "0.2.0"
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+[[entities]]
+name = "TeamMember"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "role", type = "Enum", values = ["requester", "manager", "admin"], required = true },
+  { name = "department", type = "Text" }
+]
+
+[[entities]]
+name = "ExceptionRequest"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "customerName", type = "Text", required = true },
+  { name = "submittedBy", type = "Ref", ref = "TeamMember.id" },
+  { name = "exceptionType", type = "Enum", values = ["shipping_delay", "pricing_adjustment", "custom_terms", "other"], default = "other" },
+  { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "justification", type = "LongText" },
+  { name = "status", type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entities.access]
+read = true
+create = true
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[[entities]]
+name = "ApprovalAudit"
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "requestId", type = "Ref", ref = "ExceptionRequest.id", required = true },
+  { name = "actorId", type = "Ref", ref = "TeamMember.id" },
+  { name = "action", type = "Text", required = true },
+  { name = "note", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[[pages]]
+path = "/"
+title = "Customer Exception Requests"
+auth = "required"
+layout = "list"
+
+[pages.queries.requests]
+entity = "ExceptionRequest"
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/requests/new"
+title = "Submit Exception Request"
+auth = "required"
+layout = "form"
+
+[pages.form]
+entity = "ExceptionRequest"
+method = "create"
+onSuccess = { redirect = "/requests/{id}", message = "Request submitted. Operations will review it next." }
+
+[[pages.form.fields]]
+name = "title"
+type = "text"
+label = "Request Title"
+required = true
+
+[[pages.form.fields]]
+name = "customerName"
+type = "text"
+label = "Customer Name"
+required = true
+
+[[pages.form.fields]]
+name = "exceptionType"
+type = "select"
+label = "Exception Type"
+required = true
+options = [
+  { value = "shipping_delay", label = "Shipping Delay" },
+  { value = "pricing_adjustment", label = "Pricing Adjustment" },
+  { value = "custom_terms", label = "Custom Terms" },
+  { value = "other", label = "Other" }
+]
+
+[[pages.form.fields]]
+name = "priority"
+type = "select"
+label = "Priority"
+required = true
+options = [
+  { value = "low", label = "Low" },
+  { value = "medium", label = "Medium" },
+  { value = "high", label = "High" }
+]
+
+[[pages.form.fields]]
+name = "justification"
+type = "textarea"
+label = "Business Justification"
+required = true
+rows = 6
+
+[[pages]]
+path = "/requests/:id"
+title = "Exception Request"
+auth = "required"
+layout = "detail"
+
+[pages.queries.request]
+entity = "ExceptionRequest"
+where = { id = "{id}" }
+
+[pages.queries.audit]
+entity = "ApprovalAudit"
+where = { requestId = "{id}" }
+orderBy = { createdAt = "desc" }
+
+[[pages]]
+path = "/sign-in"
+title = "Sign In"
+layout = "auth"
