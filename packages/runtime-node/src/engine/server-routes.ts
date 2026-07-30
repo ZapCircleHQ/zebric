@@ -404,7 +404,6 @@ export function registerActionRoutes(
       const entity = typeof body.entity === 'string' ? body.entity : undefined
       const recordId = typeof body.recordId === 'string' ? body.recordId : undefined
       const successMessage = typeof body.successMessage === 'string' ? body.successMessage : undefined
-      const errorMessage = typeof body.errorMessage === 'string' ? body.errorMessage : undefined
       const session = await sessionManager.getSession(c.req.raw)
       const workflow = workflowManager!.getWorkflow(workflowName)
       if (!session) {

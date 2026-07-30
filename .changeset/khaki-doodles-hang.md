@@ -1,15 +1,17 @@
 ---
-"@zebric/runtime-simulator": patch
-"@zebric/react-simulator": patch
-"@zebric/runtime-worker": patch
-"@zebric/notifications": patch
-"@zebric/observability": patch
-"@zebric/runtime-core": patch
-"@zebric/runtime-hono": patch
-"@zebric/runtime-node": patch
-"@zebric/plugin-sdk": patch
-"@zebric/themes": patch
-"@zebric/cli": patch
+"@zebric/runtime-simulator": minor
+"@zebric/react-simulator": minor
+"@zebric/runtime-worker": minor
+"@zebric/notifications": minor
+"@zebric/observability": minor
+"@zebric/runtime-core": minor
+"@zebric/runtime-hono": minor
+"@zebric/runtime-node": minor
+"@zebric/plugin-sdk": minor
+"@zebric/themes": minor
+"@zebric/cli": minor
 ---
 
-Added client-side interactive widgets to blueprints + runtimes
+Add client-side blueprint widgets, conditional actions and workflow
+preconditions, stronger workflow authorization, and the runtime capabilities
+used by the dog-rescue example.

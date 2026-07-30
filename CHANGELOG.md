@@ -4,16 +4,24 @@ All notable changes to the Zebric repository are documented in this file.
 
 This changelog is a high-level project summary. Package versioning and publishing are managed with Changesets.
 
-## [0.3.0] - 2026-04-23
+## [0.3.0] - 2026-07-30
 
 ### Added
 
-- Added the first pass of client-side widgets, including a new `issue-board` example.
+- Added client-side blueprint widgets and the `issue-board` example.
+- Added conditional action visibility and enablement, workflow preconditions, and
+  shared condition evaluation across runtimes.
+- Added the `dog-rescue` example, including public adoption-interest flows,
+  internal review workflows, permissions, tasks, messages, and activity history.
 - Added benchmarking and diagnostics work, including admin-server metrics, route timing diagnostics, and Docker Compose benchmark coverage.
 
 ### Changed
 
 - Updated core dependencies across the repo, including React, TypeScript, Vitest, ESLint, Turbo, Hono, Better Auth, Drizzle, and Cloudflare tooling.
+- Strengthened manual-workflow authorization for authenticated and anonymous
+  callers and tightened database access checks.
+- Improved schema generation and query behavior needed by richer blueprint-driven
+  applications.
 - Improved the documentation and playground sites, including docs-site dependency updates and fixes for playground links and browser behavior.
 - Continued tightening CI and quality gates with browser-test targeting, coverage checks, and smaller workflow cleanups.
 
