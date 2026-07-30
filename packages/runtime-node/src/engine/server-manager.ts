@@ -263,6 +263,7 @@ export class ServerManager {
     registerWebhookRoutes(this.app, this.workflowManager)
     registerNotificationRoutes(this.app, this.notificationManager, this.workflowManager)
     registerActionRoutes(this.app, {
+      blueprint: this.blueprint,
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,

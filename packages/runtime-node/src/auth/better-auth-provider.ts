@@ -37,6 +37,19 @@ export class BetterAuthProvider implements AuthProvider {
             enabled: true,
           }
         : undefined,
+      user: {
+        additionalFields: {
+          role: {
+            type: 'string',
+            required: false,
+            defaultValue: 'user',
+            // Not accepted from sign-up/update request bodies - role assignment is a
+            // trusted server-side operation (seeding, an admin tool), never something a
+            // self-registering caller can set on themselves.
+            input: false,
+          },
+        },
+      },
       session: {
         expiresIn: 60 * 60 * 24 * 7, // 7 days
         updateAge: 60 * 60 * 24, // 1 day

@@ -6,6 +6,7 @@
 
 import { EventEmitter } from 'node:events'
 import { createExecutionId, type Logger } from '@zebric/observability'
+import { SYSTEM_SESSION } from '@zebric/runtime-core'
 import { WorkflowQueue, type WorkflowQueueOptions } from './workflow-queue.js'
 import { WorkflowExecutor } from './workflow-executor.js'
 import type { Workflow, WorkflowJob, WorkflowContext, WorkflowTrigger } from './types.js'
@@ -217,6 +218,10 @@ export class WorkflowManager extends EventEmitter {
               depth,
             },
           },
+          // Entity-triggered workflows have no attributable HTTP caller - they run as
+          // trusted background automation, not as the (often anonymous) request that
+          // happened to cause the underlying entity write.
+          session: SYSTEM_SESSION,
         }
 
         const job = this.queue.enqueue(workflow.name, context)
@@ -260,6 +265,7 @@ export class WorkflowManager extends EventEmitter {
             },
           },
           request,
+          session: SYSTEM_SESSION,
         }
 
         const job = this.queue.enqueue(workflow.name, context)
@@ -289,6 +295,7 @@ export class WorkflowManager extends EventEmitter {
           variables: {
             timestamp: new Date().toISOString(),
           },
+          session: SYSTEM_SESSION,
         }
 
         const job = this.queue.enqueue(workflow.name, context)

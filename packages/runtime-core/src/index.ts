@@ -17,6 +17,7 @@ export * from './blueprint/validation-error.js'
 
 // Database
 export * from './database/access-control.js'
+export * from './conditions.js'
 // schema-generator and schema-diff moved to runtime-node (Drizzle-specific)
 // query-executor moved to runtime-node (depends on connection, metrics)
 

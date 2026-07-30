@@ -118,8 +118,21 @@ describe('registerAPIRoutes access context', () => {
 describe('registerActionRoutes', () => {
   const session = { user: { id: 'user-1', email: 'user@example.com', name: 'User' } }
   const record = { id: 'item-1', status: 'candidate', title: 'Feature X' }
+  const anonymousActionBlueprint = {
+    auth: { permissions: { anonymous: { allow: ['*.*'] } } },
+    pages: [{
+      path: '/roadmap/item-1',
+      title: 'Roadmap Item',
+      queries: { item: { entity: 'RoadmapItem', where: { id: '$params.id' } } },
+      actionBar: {
+        actions: [{ label: 'Set status', workflow: 'SetRoadmapStatus' }],
+      },
+    }],
+    workflows: [{ name: 'SetRoadmapStatus', trigger: { manual: true }, steps: [] }],
+  }
 
   function makeApp(overrides: {
+    blueprint?: any
     getSession?: () => any
     findById?: () => any
     getWorkflow?: () => any
@@ -127,6 +140,7 @@ describe('registerActionRoutes', () => {
   } = {}) {
     const app = new Hono()
     registerActionRoutes(app, {
+      blueprint: overrides.blueprint,
       sessionManager: { getSession: overrides.getSession ?? (async () => session) } as any,
       queryExecutor: { findById: overrides.findById ?? vi.fn(async () => record) } as any,
       workflowManager: {
@@ -149,6 +163,421 @@ describe('registerActionRoutes', () => {
 
     expect(response.status).toBe(401)
     expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('does not treat an empty permissions config as anonymous action access', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: { auth: { permissions: {} } },
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('requires anonymous action workflows to be exposed on the posted page', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: anonymousActionBlueprint,
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('allows anonymous action workflows when blueprint permissions explicitly allow them', async () => {
+    const findById = vi.fn(async () => record)
+    const trigger = vi.fn(() => ({ id: 'job-1', workflowName: 'SetRoadmapStatus' }))
+    const app = makeApp({
+      blueprint: anonymousActionBlueprint,
+      getSession: async () => null,
+      findById,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(findById).toHaveBeenCalledWith('RoadmapItem', 'item-1', { session: null })
+    expect(trigger).toHaveBeenCalledWith(
+      'SetRoadmapStatus',
+      expect.objectContaining({
+        entity: 'RoadmapItem',
+        recordId: 'item-1',
+        session: null,
+      }),
+      expect.anything()
+    )
+  })
+
+  it('rejects anonymous action workflows when the posted entity does not match the page entity', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: anonymousActionBlueprint,
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'User', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('rejects anonymous action workflows that are not exposed by the page', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        ...anonymousActionBlueprint,
+        workflows: [
+          ...anonymousActionBlueprint.workflows,
+          { name: 'HiddenWorkflow', trigger: { manual: true }, steps: [] },
+        ],
+      },
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/HiddenWorkflow', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('rejects anonymous action workflows that are not manual workflows', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        ...anonymousActionBlueprint,
+        pages: [{
+          ...anonymousActionBlueprint.pages[0],
+          actionBar: {
+            actions: [{ label: 'Submit', workflow: 'SubmitItem' }],
+          },
+        }],
+        workflows: [{ name: 'SubmitItem', trigger: { entity: 'RoadmapItem', event: 'create' }, steps: [] }],
+      },
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SubmitItem', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('rejects action-bar workflows when the action condition does not match the loaded record', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        pages: [{
+          path: '/roadmap/item-1',
+          title: 'Roadmap Item',
+          queries: { item: { entity: 'RoadmapItem', where: { id: '$params.id' } } },
+          actionBar: {
+            actions: [{ label: 'Approve', workflow: 'SetRoadmapStatus', enabledWhen: { status: 'approved' } }],
+          },
+        }],
+        workflows: [{ name: 'SetRoadmapStatus', trigger: { manual: true }, steps: [] }],
+      },
+      findById: async () => ({ ...record, status: 'candidate' }),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when the workflow is gated by enabledWhen but no page is supplied to resolve it', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        pages: [{
+          path: '/roadmap/item-1',
+          title: 'Roadmap Item',
+          queries: { item: { entity: 'RoadmapItem', where: { id: '$params.id' } } },
+          actionBar: {
+            actions: [{ label: 'Approve', workflow: 'SetRoadmapStatus', enabledWhen: { status: 'approved' } }],
+          },
+        }],
+        workflows: [{ name: 'SetRoadmapStatus', trigger: { manual: true }, steps: [] }],
+      },
+      // The record actually satisfies the gate - but omitting `page` must still be rejected,
+      // since the server can't verify which action-bar entry (if any) authorized this call.
+      findById: async () => ({ ...record, status: 'approved' }),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('allows the request when any action-bar entry for the workflow matches the record, not just the first one found', async () => {
+    const trigger = vi.fn(() => ({ id: 'job-1', workflowName: 'SetRoadmapStatus' }))
+    const app = makeApp({
+      blueprint: {
+        pages: [{
+          path: '/roadmap/item-1',
+          title: 'Roadmap Item',
+          queries: { item: { entity: 'RoadmapItem', where: { id: '$params.id' } } },
+          actionBar: {
+            actions: [
+              { label: 'Approve', workflow: 'SetRoadmapStatus', enabledWhen: { status: 'candidate' } },
+              { label: 'Reject', workflow: 'SetRoadmapStatus', enabledWhen: { status: 'approved' } },
+            ],
+          },
+        }],
+        workflows: [{ name: 'SetRoadmapStatus', trigger: { manual: true }, steps: [] }],
+      },
+      findById: async () => ({ ...record, status: 'approved' }),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1', page: '/roadmap/item-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(trigger).toHaveBeenCalled()
+  })
+
+  it('rejects a precondition written against the removed top-level record/payload keys instead of silently passing', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      getWorkflow: vi.fn(() => ({
+        name: 'SetRoadmapStatus',
+        // Only resolvable under `variables.data.record.status` in the real trigger
+        // context - this top-level path must never spuriously match.
+        precondition: { 'record.status': 'candidate' },
+      })),
+      findById: async () => ({ ...record, status: 'candidate' }),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('denies anonymous access when the page has no determinable entity to verify against', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        auth: { permissions: { anonymous: { allow: ['Comment.update'] } } },
+        pages: [{
+          path: '/trigger',
+          title: 'Trigger',
+          actionBar: { actions: [{ label: 'Reset', workflow: 'ResetAllPasswords' }] },
+        }],
+        workflows: [{ name: 'ResetAllPasswords', trigger: { manual: true }, steps: [] }],
+      },
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/ResetAllPasswords', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ page: '/trigger', entity: 'Comment' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('derives the required permission action from the workflow steps instead of assuming update', async () => {
+    const trigger = vi.fn(() => ({ id: 'job-1', workflowName: 'SubmitApplication' }))
+    const app = makeApp({
+      blueprint: {
+        auth: { permissions: { anonymous: { allow: ['Application.create'] } } },
+        pages: [{
+          path: '/apply',
+          title: 'Apply',
+          queries: { form: { entity: 'Application', where: {} } },
+          actionBar: { actions: [{ label: 'Submit', workflow: 'SubmitApplication' }] },
+        }],
+        workflows: [{ name: 'SubmitApplication', trigger: { manual: true }, steps: [] }],
+      },
+      getWorkflow: vi.fn(() => ({
+        name: 'SubmitApplication',
+        trigger: { manual: true },
+        steps: [{ type: 'query', entity: 'Application', action: 'create', data: {} }],
+      })),
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/SubmitApplication', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ page: '/apply', entity: 'Application' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(trigger).toHaveBeenCalled()
+  })
+
+  it('does not let an update-only anonymous rule authorize a workflow whose steps delete records', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        auth: { permissions: { anonymous: { allow: ['RoadmapItem.update'] } } },
+        pages: [{
+          path: '/roadmap/item-1',
+          title: 'Roadmap Item',
+          queries: { item: { entity: 'RoadmapItem', where: { id: '$params.id' } } },
+          actionBar: { actions: [{ label: 'Delete', workflow: 'DeleteRoadmapItem' }] },
+        }],
+        workflows: [{ name: 'DeleteRoadmapItem', trigger: { manual: true }, steps: [] }],
+      },
+      getWorkflow: vi.fn(() => ({
+        name: 'DeleteRoadmapItem',
+        trigger: { manual: true },
+        steps: [{ type: 'query', entity: 'RoadmapItem', action: 'delete', where: {} }],
+      })),
+      getSession: async () => null,
+      trigger,
+    })
+
+    const response = await app.request('/actions/DeleteRoadmapItem', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ page: '/roadmap/item-1', entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(401)
+    expect(trigger).not.toHaveBeenCalled()
+  })
+
+  it('rejects an authenticated caller who can perform the first workflow step but not a later one, before triggering it', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      blueprint: {
+        auth: { permissions: { volunteer: { allow: ['RoadmapItem.update'] } } },
+      },
+      getSession: async () => ({ user: { id: 'user-1', email: 'v@example.com', role: 'volunteer' } }),
+      getWorkflow: vi.fn(() => ({
+        name: 'SetRoadmapStatus',
+        steps: [
+          { type: 'query', entity: 'RoadmapItem', action: 'update', where: {}, data: {} },
+          { type: 'query', entity: 'ActivityEvent', action: 'create', data: {} },
+        ],
+      })),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(403)
+    expect(trigger).not.toHaveBeenCalled()
+    const body = await response.json()
+    expect(body.error).toBe('Insufficient permissions for this workflow')
+  })
+
+  it('allows an authenticated caller who has permission for every entity/action the workflow steps write', async () => {
+    const trigger = vi.fn(() => ({ id: 'job-1', workflowName: 'SetRoadmapStatus' }))
+    const app = makeApp({
+      blueprint: {
+        auth: { permissions: { coordinator: { allow: ['RoadmapItem.update', 'ActivityEvent.create'] } } },
+      },
+      getSession: async () => ({ user: { id: 'user-1', email: 'c@example.com', role: 'coordinator' } }),
+      getWorkflow: vi.fn(() => ({
+        name: 'SetRoadmapStatus',
+        steps: [
+          { type: 'query', entity: 'RoadmapItem', action: 'update', where: {}, data: {} },
+          { type: 'query', entity: 'ActivityEvent', action: 'create', data: {} },
+        ],
+      })),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(trigger).toHaveBeenCalled()
+  })
+
+  it('rejects workflows when the workflow precondition does not match the loaded record', async () => {
+    const trigger = vi.fn()
+    const app = makeApp({
+      getWorkflow: vi.fn(() => ({
+        name: 'SetRoadmapStatus',
+        precondition: { 'variables.data.record.status': 'approved' },
+      })),
+      findById: async () => ({ ...record, status: 'candidate' }),
+      trigger,
+    })
+
+    const response = await app.request('/actions/SetRoadmapStatus', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ entity: 'RoadmapItem', recordId: 'item-1' }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(trigger).not.toHaveBeenCalled()
+    const body = await response.json()
+    expect(body.error).toBe('Workflow precondition failed')
   })
 
   it('returns 404 when the workflow does not exist', async () => {

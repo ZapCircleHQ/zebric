@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { AccessControl } from './access-control.js'
+import { PermissionManager } from '../auth/permissions.js'
+import { SYSTEM_SESSION } from '../auth/provider.js'
 import type { Entity } from '../types/blueprint.js'
 
 const makeEntity = (access?: any, fields?: any[]): Entity => ({
@@ -232,6 +234,41 @@ describe('AccessControl', () => {
       // Write should inherit from read restriction
       expect(AccessControl.canAccessField(field, 'write', null)).toBe(false)
       expect(AccessControl.canAccessField(field, 'write', authenticatedSession)).toBe(true)
+    })
+  })
+
+  describe('SYSTEM_SESSION', () => {
+    it('bypasses RBAC that would deny every other session', async () => {
+      const entity = makeEntity({ update: 'owner' })
+      const permissionManager = new PermissionManager({
+        permissions: { anonymous: { allow: [] } },
+      })
+
+      expect(await AccessControl.checkAccess({
+        action: 'update', entity, session: SYSTEM_SESSION, permissionManager,
+        data: { userId: 'someone-else' },
+      })).toBe(true)
+
+      // Sanity check: the same permissionManager/entity really does deny a normal session.
+      expect(await AccessControl.checkAccess({
+        action: 'update', entity, session: null, permissionManager,
+        data: { userId: 'someone-else' },
+      })).toBe(false)
+    })
+
+    it('bypasses row-level access conditions', async () => {
+      const entity = makeEntity({ read: 'owner' })
+      expect(await AccessControl.checkAccess({
+        action: 'read', entity, session: SYSTEM_SESSION,
+        data: { userId: 'someone-else' },
+      })).toBe(true)
+    })
+
+    it('is not subject to row-level read filters', () => {
+      const entity = makeEntity({ read: 'owner' })
+      expect(AccessControl.getFilterConditions(entity, SYSTEM_SESSION)).toBeNull()
+      // Sanity check: a real session still gets filtered by the owner rule.
+      expect(AccessControl.getFilterConditions(entity, authenticatedSession)).not.toBeNull()
     })
   })
 })

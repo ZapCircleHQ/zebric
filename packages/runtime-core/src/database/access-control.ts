@@ -6,6 +6,7 @@
 
 import type { Entity, AccessCondition, Field } from '../types/blueprint.js'
 import type { UserSession, PermissionManager } from '../auth/index.js'
+import { isSystemSession } from '../auth/index.js'
 
 export interface AccessContext {
   session?: UserSession | null
@@ -22,6 +23,13 @@ export class AccessControl {
    */
   static async checkAccess(context: AccessContext): Promise<boolean> {
     const { session, action, entity, data, permissionManager } = context
+
+    // Background workflow execution (entity/webhook/schedule triggers) is trusted app
+    // logic wired up by the blueprint author, not an end-user request - it bypasses both
+    // RBAC and row-level rules rather than being folded into the anonymous bucket.
+    if (isSystemSession(session)) {
+      return true
+    }
 
     // Step 1: Check permissions (RBAC) if permission manager is available
     if (permissionManager) {
@@ -75,6 +83,10 @@ export class AccessControl {
     entity: Entity,
     session?: UserSession | null
   ): Record<string, any> | null {
+    if (isSystemSession(session)) {
+      return null
+    }
+
     if (!entity.access?.read) {
       return null
     }

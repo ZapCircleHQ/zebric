@@ -8,7 +8,7 @@ import type { Blueprint, Page } from '../types/blueprint.js'
 import type { Theme } from './theme.js'
 import { html, SafeHtml, safe } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
-import { renderPrimaryAction, renderSecondaryAction } from './action-button-renderer.js'
+import { isActionEnabled, isActionVisible, renderPrimaryAction, renderSecondaryAction } from './action-button-renderer.js'
 import { getStatusRoleClass, getStatusSemanticRole } from './semantic-role-resolver.js'
 
 export function getStatusFieldName(config: Page['actionBar'], entity?: any): string | null {
@@ -54,12 +54,20 @@ export function renderActionBar(
   const statusRole = hasStatus ? getStatusSemanticRole(statusValue) : null
   const statusClass = statusRole ? getStatusRoleClass(statusRole) : ''
 
-  const primaryActions = (config.actions || []).map(action =>
-    renderPrimaryAction(action, record, entity, page, csrfToken, theme, utils, blueprint)
-  )
-  const secondaryActions = (config.secondaryActions || []).map(action =>
-    renderSecondaryAction(action, record, entity, page, csrfToken, theme, utils, blueprint)
-  )
+  const primaryActions = (config.actions || [])
+    .filter(action => isActionVisible(action, record))
+    .map(action =>
+      renderPrimaryAction(action, record, entity, page, csrfToken, theme, utils, blueprint, {
+        disabled: !isActionEnabled(action, record),
+      })
+    )
+  const secondaryActions = (config.secondaryActions || [])
+    .filter(action => isActionVisible(action, record))
+    .map(action =>
+      renderSecondaryAction(action, record, entity, page, csrfToken, theme, utils, blueprint, {
+        disabled: !isActionEnabled(action, record),
+      })
+    )
 
   const hasPrimary = primaryActions.length > 0
   const hasSecondary = secondaryActions.length > 0

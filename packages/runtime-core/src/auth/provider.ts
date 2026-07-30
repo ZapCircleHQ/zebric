@@ -24,6 +24,28 @@ export interface UserSession {
 }
 
 /**
+ * Identity used for background workflow execution (entity/webhook/schedule triggers),
+ * which has no attributable HTTP caller. Distinct from an anonymous request: it's never
+ * constructed from a request, only assigned internally by the workflow engine, so it
+ * can't be forged over HTTP. Permission/access checks treat it as fully trusted.
+ */
+export const SYSTEM_SESSION: UserSession = {
+  id: '__zebric_system__',
+  userId: '__zebric_system__',
+  user: {
+    id: '__zebric_system__',
+    email: 'system@zebric.internal',
+    name: 'Zebric Workflow Engine',
+  },
+  expiresAt: new Date('9999-12-31T23:59:59.000Z'),
+  createdAt: new Date(0),
+}
+
+export function isSystemSession(session: UserSession | null | undefined): boolean {
+  return session?.user?.id === SYSTEM_SESSION.user.id
+}
+
+/**
  * Configuration required to initialize an authentication provider
  */
 export interface AuthProviderConfig {

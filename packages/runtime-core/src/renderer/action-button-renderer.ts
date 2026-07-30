@@ -3,6 +3,7 @@ import type { Theme } from './theme.js'
 import { html, escapeHtmlAttr, SafeHtml, attr } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
 import { getActionButtonClass, getActionSemanticRole } from './semantic-role-resolver.js'
+import { evaluateCondition } from '../conditions.js'
 
 export function resolveActionPayload(action: ActionBarAction, record: any, utils: RendererUtils): Record<string, any> | undefined {
   if (!action.payload) {
@@ -29,17 +30,18 @@ export function renderPrimaryAction(
   csrfToken: string | undefined,
   theme: Theme,
   utils: RendererUtils,
-  blueprint?: Blueprint
+  blueprint?: Blueprint,
+  options: { disabled?: boolean } = {}
 ): SafeHtml {
   if (action.workflow) {
-    return renderWorkflowAction(action, record, entity, page, 'primary', csrfToken, theme, utils, blueprint)
+    return renderWorkflowAction(action, record, entity, page, 'primary', csrfToken, theme, utils, blueprint, options)
   }
 
   const method = (action.method || 'GET').toUpperCase()
   const href = action.href ? utils.interpolatePath(action.href, record) : '#'
   const buttonClass = getActionButtonClass(action.style, theme, blueprint)
   const semanticRole = getActionSemanticRole(action.style)
-  const confirmAttr = action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
+  const confirmAttr = !options.disabled && action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
 
   if (method === 'POST') {
     return html`
@@ -47,10 +49,18 @@ export function renderPrimaryAction(
         ${csrfToken ? html`<input type="hidden" name="_csrf" value="${escapeHtmlAttr(csrfToken)}" />` : ''}
         ${action.successMessage ? html`<input type="hidden" name="successMessage" value="${escapeHtmlAttr(action.successMessage)}" />` : ''}
         ${action.errorMessage ? html`<input type="hidden" name="errorMessage" value="${escapeHtmlAttr(action.errorMessage)}" />` : ''}
-        <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirmAttr}>
+        <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirmAttr}${options.disabled ? attr('disabled', true) : ''}>
           ${action.label}
         </button>
       </form>
+    `
+  }
+
+  if (options.disabled) {
+    return html`
+      <span class="${buttonClass} opacity-50 cursor-not-allowed" aria-disabled="true" data-zebric-role="${semanticRole}">
+        ${action.label}
+      </span>
     `
   }
 
@@ -76,13 +86,22 @@ export function renderSecondaryAction(
   csrfToken: string | undefined,
   theme: Theme,
   utils: RendererUtils,
-  blueprint?: Blueprint
+  blueprint?: Blueprint,
+  options: { disabled?: boolean } = {}
 ): SafeHtml {
   if (action.workflow) {
-    return renderWorkflowAction(action, record, entity, page, 'secondary', csrfToken, theme, utils, blueprint)
+    return renderWorkflowAction(action, record, entity, page, 'secondary', csrfToken, theme, utils, blueprint, options)
   }
 
   const href = action.href ? utils.interpolatePath(action.href, record) : '#'
+  if (options.disabled) {
+    return html`
+      <span class="${theme.linkSecondary} opacity-50 cursor-not-allowed" aria-disabled="true" data-zebric-role="secondary-action">
+        ${action.label}
+      </span>
+    `
+  }
+
   return html`
     <a
       href="${href}"
@@ -106,7 +125,8 @@ export function renderWorkflowAction(
   csrfToken: string | undefined,
   theme: Theme,
   utils: RendererUtils,
-  blueprint?: Blueprint
+  blueprint?: Blueprint,
+  options: { disabled?: boolean } = {}
 ): SafeHtml {
   const workflow = action.workflow!
   const payload = resolveActionPayload(action, record, utils)
@@ -121,7 +141,7 @@ export function renderWorkflowAction(
   const redirectTarget = action.redirect
     ? utils.interpolatePath(action.redirect, record)
     : (page ? utils.interpolatePath(page.path, record ?? {}) : '')
-  const confirmAttr = action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
+  const confirmAttr = !options.disabled && action.confirm ? attr('onclick', `return confirm('${escapeHtmlAttr(action.confirm)}')`) : ''
 
   return html`
     <form method="POST" action="/actions/${encodeURIComponent(workflow)}" class="inline" data-enhance="api">
@@ -133,9 +153,17 @@ export function renderWorkflowAction(
       ${payloadJson ? html`<input type="hidden" name="payload" value='${payloadJson}' />` : ''}
       ${action.successMessage ? html`<input type="hidden" name="successMessage" value="${escapeHtmlAttr(action.successMessage)}" />` : ''}
       ${action.errorMessage ? html`<input type="hidden" name="errorMessage" value="${escapeHtmlAttr(action.errorMessage)}" />` : ''}
-      <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirmAttr}>
+      <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirmAttr}${options.disabled ? attr('disabled', true) : ''}>
         ${action.label}
       </button>
     </form>
   `
+}
+
+export function isActionVisible(action: ActionBarAction, record: any): boolean {
+  return evaluateCondition(action.visibleWhen, record)
+}
+
+export function isActionEnabled(action: ActionBarAction, record: any): boolean {
+  return evaluateCondition(action.enabledWhen, record)
 }
