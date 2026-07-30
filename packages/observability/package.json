@@ -2,6 +2,11 @@
   "name": "@zebric/observability",
   "version": "0.3.0",
   "description": "Cross-runtime operational logging and correlation utilities for Zebric",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/observability"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,5 +41,8 @@
   },
   "peerDependencies": {
     "hono": ">=4.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

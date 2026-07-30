@@ -2,6 +2,11 @@
   "name": "@zebric/runtime-simulator",
   "version": "0.3.0",
   "description": "Browser-only Zebric simulator runtime",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/runtime-simulator"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,5 +35,8 @@
   "devDependencies": {
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
