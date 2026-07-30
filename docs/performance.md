@@ -1,6 +1,6 @@
 # Performance Benchmarks
 
-Baseline measurements taken on an Apple M-series Mac running Node.js 20. Numbers will vary by hardware, but the relative costs and scaling characteristics hold across environments.
+The benchmark suite targets Node.js 24. Numbers will vary by hardware, but the relative costs and scaling characteristics hold across environments.
 
 Run the benchmarks yourself:
 
