@@ -8,6 +8,8 @@
       "@zebric/runtime-hono",
       "@zebric/runtime-node",
       "@zebric/runtime-worker",
+      "@zebric/runtime-simulator",
+      "@zebric/react-simulator",
       "@zebric/cli",
       "@zebric/notifications",
       "@zebric/observability",
