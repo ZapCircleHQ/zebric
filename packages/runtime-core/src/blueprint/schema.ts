@@ -341,6 +341,8 @@ const ActionBarActionSchema = z.object({
   icon: z.string().optional(),
   workflow: z.string().optional(),
   payload: AnyRecordSchema.optional(),
+  visibleWhen: AnyRecordSchema.optional(),
+  enabledWhen: AnyRecordSchema.optional(),
   redirect: z.string().optional(),
   successMessage: z.string().optional(),
   errorMessage: z.string().optional(),
@@ -460,6 +462,7 @@ const WorkflowStepSchema = z.object({
 const WorkflowSchema = z.object({
   name: z.string(),
   trigger: WorkflowTriggerSchema,
+  precondition: AnyRecordSchema.optional(),
   steps: z.array(WorkflowStepSchema),
 })
 

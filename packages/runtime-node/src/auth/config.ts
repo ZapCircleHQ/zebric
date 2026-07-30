@@ -48,6 +48,16 @@ export function createAuth(config: BetterAuthConfig): Auth<any> {
           enabled: true,
         }
       : undefined,
+    user: {
+      additionalFields: {
+        role: {
+          type: 'string',
+          required: false,
+          defaultValue: 'user',
+          input: false,
+        },
+      },
+    },
     session: {
       expiresIn: 60 * 60 * 24 * 7, // 7 days
       updateAge: 60 * 60 * 24, // 1 day

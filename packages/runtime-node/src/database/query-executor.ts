@@ -550,6 +550,11 @@ export class QueryExecutor {
         continue
       }
 
+      if (value === 'now') {
+        normalized[field.name] = new Date()
+        continue
+      }
+
       const utcValue = typeof value === 'string' && value.includes('T') && !value.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(value)
         ? `${value}Z`
         : value

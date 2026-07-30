@@ -6,6 +6,7 @@
 
 import { EventEmitter } from 'node:events'
 import type { Logger } from '@zebric/observability'
+import { evaluateCondition } from '@zebric/runtime-core'
 import type { WorkflowJob, WorkflowContext, Workflow } from './types.js'
 
 export interface WorkflowQueueOptions {
@@ -85,6 +86,10 @@ export class WorkflowQueue extends EventEmitter {
 
     if (workflow.enabled === false) {
       throw new Error(`Workflow is disabled: ${workflowName}`)
+    }
+
+    if (workflow.precondition && !evaluateCondition(workflow.precondition, context)) {
+      throw new Error(`Workflow precondition failed: ${workflowName}`)
     }
 
     const job: WorkflowJob = {

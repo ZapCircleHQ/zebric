@@ -261,7 +261,9 @@ export class SchemaGenerator {
     }
 
     if (field.default !== undefined) {
-      if (field.default === 'now' && (field.type === 'DateTime' || field.type === 'Date')) {
+      if (field.default === 'now' && field.type === 'DateTime') {
+        column = column.default(this.dbType === 'sqlite' ? sql`(unixepoch())` : sql`CURRENT_TIMESTAMP`)
+      } else if (field.default === 'now' && field.type === 'Date') {
         column = column.default(sql`CURRENT_TIMESTAMP`)
       } else if (typeof field.default === 'string') {
         column = column.default(field.default)
@@ -358,7 +360,9 @@ export class SchemaGenerator {
     }
 
     if (field.default !== undefined) {
-      if (field.default === 'now' && (field.type === 'DateTime' || field.type === 'Date')) {
+      if (field.default === 'now' && field.type === 'DateTime') {
+        parts.push(this.dbType === 'sqlite' ? 'DEFAULT (unixepoch())' : 'DEFAULT CURRENT_TIMESTAMP')
+      } else if (field.default === 'now' && field.type === 'Date') {
         parts.push('DEFAULT CURRENT_TIMESTAMP')
       } else if (typeof field.default === 'string') {
         parts.push(`DEFAULT '${field.default}'`)
@@ -467,6 +471,7 @@ export class SchemaGenerator {
   email TEXT NOT NULL,
   emailVerified INTEGER,
   image TEXT,
+  role TEXT,
   createdAt INTEGER NOT NULL,
   updatedAt INTEGER NOT NULL
 );`,

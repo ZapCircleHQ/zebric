@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Staff sign in · {{ project.name }}</title>
+  {{ renderer.styles | raw }}
+  <style>
+    :root{--ink:#2b2420;--muted:#7a6f66;--line:#e7ded4;--paper:#fbf7f1;--amber:#c8722a}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--paper);color:var(--ink);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,sans-serif;padding:24px}
+    .card{width:100%;max-width:380px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:36px}
+    .brand{font-size:15px;font-weight:800;letter-spacing:-.02em;text-decoration:none;color:var(--ink)}
+    .brand i{color:var(--amber);font-style:normal}
+    h1{font-size:22px;letter-spacing:-.02em;margin:20px 0 4px}
+    .sub{color:var(--muted);margin:0 0 24px;font-size:13px}
+    form{display:grid;gap:16px}
+    label{display:block;font-size:12px;font-weight:700;margin-bottom:6px}
+    input[type=email],input[type=password]{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:#fff;outline:none;font-size:14px}
+    input:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(200,114,42,.14)}
+    button{width:100%;border:0;border-radius:8px;background:var(--ink);color:#fff;padding:12px 16px;font-weight:700;cursor:pointer}
+    button:hover{background:#463c33}
+    .feedback{min-height:20px;margin-bottom:4px;font-size:13px}
+    .back{display:inline-block;margin-top:20px;font-size:12px;color:var(--muted);text-decoration:none}
+    .back:hover{color:var(--ink)}
+    .footnote{margin-top:24px;font-size:11px;color:#a89c8f}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <a class="brand" href="/dogs"><i>&#128062;</i> Friendly Paws</a>
+    <h1>Staff sign in</h1>
+    <p class="sub">Sign in to review applications, manage tasks, and update dog status.</p>
+    <div class="feedback">{{ renderer.feedback | raw }}</div>
+    <form method="POST" action="{{ auth.action }}">
+      <input type="hidden" name="callbackURL" value="{{ auth.callback }}">
+      <input type="hidden" name="_csrf" value="{{ auth.csrfToken }}">
+      {{ renderer.fields.email | raw }}
+      {{ renderer.fields.password | raw }}
+      <button type="submit">Sign in</button>
+    </form>
+    <a class="back" href="/dogs">&larr; Browse adoptable dogs</a>
+    <p class="footnote">Staff accounts are provisioned by an administrator - there is no public sign-up.</p>
+  </div>
+  {{ renderer.script | raw }}
+</body>
+</html>

@@ -1,0 +1,951 @@
+version = "0.1.0"
+
+[project]
+name = "Friendly Paws"
+version = "0.1.0"
+description = "Dog rescue operations demo: public adoption interest, internal review, business rules, tasks, simulated email, and audit history."
+
+[project.runtime]
+min_version = "0.1.0"
+
+[ux]
+pattern = "queue-detail@v1"
+
+[ux.interaction]
+selection = "single"
+row_click = "open-detail"
+edit_mode = "modal"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
+
+[ux.data]
+mode = "table"
+density = "compact"
+pagination = "server"
+filters = "top-bar"
+column_config = true
+
+[ux.system.feedback]
+success = "toast"
+error = "inline"
+
+[ux.system.activity]
+timeline = true
+location = "side-panel"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Dashboard", "Dogs", "Applications", "Tasks", "Messages", "Workflow History"]
+
+[ux.responsive]
+mode = "desktop-first"
+collapse_sidebar = true
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+[design_adapter.roles]
+primary-action = "buttonPrimary"
+secondary-action = "buttonSecondary"
+destructive-action = "buttonSecondary"
+status-positive = "successState"
+status-warning = "warningState"
+status-negative = "errorState"
+surface-default = "body"
+surface-elevated = "card"
+
+# ==========================================
+# Entities
+# ==========================================
+
+[entity.Volunteer]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "email", type = "Email", required = true, unique = true },
+  { name = "role", type = "Enum", values = ["Volunteer", "Adoption Coordinator", "Admin"], default = "Volunteer" },
+  { name = "active", type = "Boolean", default = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Dog]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "breed", type = "Text", required = true },
+  { name = "age", type = "Float", required = true },
+  { name = "weight", type = "Float" },
+  { name = "sex", type = "Enum", values = ["Female", "Male"], required = true },
+  { name = "photoUrl", type = "Text" },
+  { name = "status", type = "Enum", values = ["Intake", "Foster", "Available", "Application Pending", "Meet & Greet Required", "Approved", "Pending Pickup", "Adopted", "Unavailable"], default = "Intake" },
+  { name = "temperament", type = "LongText" },
+  { name = "energyLevel", type = "Enum", values = ["Low", "Moderate", "High"], default = "Moderate" },
+  { name = "goodWithKids", type = "Boolean", default = false },
+  { name = "goodWithDogs", type = "Boolean", default = false },
+  { name = "goodWithCats", type = "Boolean", default = false },
+  { name = "medicalNotes", type = "LongText" },
+  { name = "fosterHome", type = "Text" },
+  { name = "adoptionFee", type = "Integer", default = 250 },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Dog.relations]
+applications = { type = "hasMany", entity = "AdoptionApplication", foreign_key = "dogId" }
+
+[entity.Applicant]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "firstName", type = "Text", required = true },
+  { name = "lastName", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "phone", type = "Text" },
+  { name = "address", type = "Text" },
+  { name = "city", type = "Text" },
+  { name = "state", type = "Text" },
+  { name = "zip", type = "Text" },
+  { name = "ownsOrRents", type = "Enum", values = ["Owns", "Rents"], required = true },
+  { name = "landlordApprovalRequired", type = "Boolean", default = false },
+  { name = "hasExistingPets", type = "Boolean", default = false },
+  { name = "existingDogsCount", type = "Integer", default = 0 },
+  { name = "existingCatsCount", type = "Integer", default = 0 },
+  { name = "otherPetsDescription", type = "LongText" },
+  { name = "previousDogExperience", type = "LongText" },
+  { name = "householdNotes", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Applicant.relations]
+applications = { type = "hasMany", entity = "AdoptionApplication", foreign_key = "applicantId" }
+
+[entity.AdoptionApplication]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true },
+  { name = "applicantId", type = "Ref", ref = "Applicant.id", required = true, index = true },
+  { name = "status", type = "Enum", values = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required", "Approved", "Rejected", "Withdrawn", "Completed"], default = "Submitted" },
+  { name = "submittedAt", type = "DateTime", default = "now" },
+  { name = "reviewedBy", type = "Ref", ref = "Volunteer.id" },
+  { name = "reviewNotes", type = "LongText" },
+  { name = "meetAndGreetRequired", type = "Boolean", default = false },
+  { name = "meetAndGreetReason", type = "LongText" },
+  { name = "homeVisitRequired", type = "Boolean", default = false },
+  { name = "decision", type = "Enum", values = ["Approved", "Rejected", "Withdrawn", "Completed"] },
+  { name = "decisionAt", type = "DateTime" },
+  { name = "decisionNotes", type = "LongText" }
+]
+
+[entity.AdoptionApplication.relations]
+dog = { type = "belongsTo", entity = "Dog", foreign_key = "dogId" }
+applicant = { type = "belongsTo", entity = "Applicant", foreign_key = "applicantId" }
+reviewer = { type = "belongsTo", entity = "Volunteer", foreign_key = "reviewedBy" }
+tasks = { type = "hasMany", entity = "Task", foreign_key = "relatedEntityId" }
+messages = { type = "hasMany", entity = "OutgoingMessage", foreign_key = "relatedEntityId" }
+activity = { type = "hasMany", entity = "ActivityEvent", foreign_key = "relatedEntityId" }
+
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "assignedTo", type = "Ref", ref = "Volunteer.id" },
+  { name = "relatedEntityType", type = "Enum", values = ["Dog", "Applicant", "AdoptionApplication"], required = true },
+  { name = "relatedEntityId", type = "Text", required = true, index = true },
+  { name = "status", type = "Enum", values = ["Open", "In Progress", "Completed", "Canceled"], default = "Open" },
+  { name = "dueDate", type = "Date" },
+  { name = "priority", type = "Enum", values = ["Low", "Normal", "High", "Urgent"], default = "Normal" },
+  { name = "createdByWorkflow", type = "Boolean", default = false },
+  { name = "completedAt", type = "DateTime" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Task.relations]
+assignee = { type = "belongsTo", entity = "Volunteer", foreign_key = "assignedTo" }
+
+[entity.OutgoingMessage]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "toEmail", type = "Email", required = true },
+  { name = "subject", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "template", type = "Text" },
+  { name = "status", type = "Enum", values = ["Drafted", "Sent", "Failed", "Simulated"], default = "Simulated" },
+  { name = "relatedEntityType", type = "Enum", values = ["Dog", "Applicant", "AdoptionApplication"], required = true },
+  { name = "relatedEntityId", type = "Text", required = true, index = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "sentAt", type = "DateTime" }
+]
+
+[entity.ActivityEvent]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "actor", type = "Text", required = true },
+  { name = "eventType", type = "Text", required = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "relatedEntityType", type = "Enum", values = ["Dog", "Applicant", "AdoptionApplication", "Task", "OutgoingMessage"], required = true },
+  { name = "relatedEntityId", type = "Text", required = true, index = true },
+  { name = "metadata", type = "JSON" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.WorkflowExecution]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "trigger", type = "Text", required = true },
+  { name = "steps", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["Completed", "Failed", "Running"], default = "Completed" },
+  { name = "durationMs", type = "Integer", default = 0 },
+  { name = "relatedEntityType", type = "Enum", values = ["Dog", "Applicant", "AdoptionApplication", "AdoptionInterest"], required = true },
+  { name = "relatedEntityId", type = "Text", required = true, index = true },
+  { name = "errors", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.AdoptionInterest]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true },
+  { name = "firstName", type = "Text", required = true },
+  { name = "lastName", type = "Text", required = true },
+  { name = "email", type = "Email", required = true },
+  { name = "phone", type = "Text" },
+  { name = "address", type = "Text" },
+  { name = "city", type = "Text" },
+  { name = "state", type = "Text" },
+  { name = "zip", type = "Text" },
+  { name = "ownsOrRents", type = "Enum", values = ["Owns", "Rents"], required = true },
+  { name = "hasExistingPets", type = "Boolean", default = false },
+  { name = "existingDogsCount", type = "Integer", default = 0 },
+  { name = "existingCatsCount", type = "Integer", default = 0 },
+  { name = "otherPetsDescription", type = "LongText" },
+  { name = "previousDogExperience", type = "LongText" },
+  { name = "householdNotes", type = "LongText" },
+  { name = "submittedAt", type = "DateTime", default = "now" }
+]
+
+[entity.AdoptionInterest.relations]
+dog = { type = "belongsTo", entity = "Dog", foreign_key = "dogId" }
+
+# ==========================================
+# Pages
+# ==========================================
+
+[page."/"]
+title = "Friendly Paws Dashboard"
+auth = "required"
+layout = "dashboard"
+
+[page."/".ux]
+pattern = "dashboard@v1"
+primitives = ["page", "header", "content", "card", "table"]
+
+[page."/".query.availableDogs]
+entity = "Dog"
+where = { status = "Available" }
+orderBy = { updatedAt = "desc" }
+limit = 20
+
+[page."/".query.pendingApplications]
+entity = "AdoptionApplication"
+where = { status = "Submitted" }
+orderBy = { submittedAt = "desc" }
+limit = 20
+include = ["dog", "applicant"]
+
+[page."/".query.meetGreets]
+entity = "AdoptionApplication"
+where = { status = "Meet & Greet Required" }
+orderBy = { submittedAt = "desc" }
+limit = 20
+include = ["dog", "applicant"]
+
+[page."/".query.adoptedDogs]
+entity = "Dog"
+where = { status = "Adopted" }
+orderBy = { updatedAt = "desc" }
+limit = 20
+
+[page."/".query.openTasks]
+entity = "Task"
+where = { status = "Open" }
+orderBy = { dueDate = "asc" }
+limit = 20
+include = ["assignee"]
+
+[page."/dogs"]
+title = "Dogs"
+auth = "none"
+layout = "list"
+
+[page."/dogs".ux]
+pattern = "data-table@v1"
+primitives = ["page", "header", "content", "table"]
+
+[page."/dogs".query.dogs]
+entity = "Dog"
+orderBy = { updatedAt = "desc" }
+limit = 200
+
+[page."/dogs/:id"]
+title = "Dog Detail"
+auth = "none"
+layout = "detail"
+
+[page."/dogs/:id".ux]
+pattern = "queue-detail@v1"
+primitives = ["page", "header", "content", "detail", "activity", "footer-actions"]
+
+[page."/dogs/:id".query.dog]
+entity = "Dog"
+where = { id = "$params.id" }
+
+[page."/dogs/:id".query.applications]
+entity = "AdoptionApplication"
+where = { dogId = "$params.id" }
+orderBy = { submittedAt = "desc" }
+include = ["applicant"]
+
+[page."/dogs/:id".query.activity]
+entity = "ActivityEvent"
+where = { relatedEntityId = "$params.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/dogs/:id".actionBar]
+title = "Dog Actions"
+description = "Manage availability and begin public interest."
+statusField = "status"
+
+[[page."/dogs/:id".actionBar.actions]]
+label = "I'm Interested"
+href = "/dogs/:id/interested"
+style = "primary"
+
+[[page."/dogs/:id".actionBar.actions]]
+label = "Mark Available"
+workflow = "SetDogStatus"
+style = "secondary"
+payload = { status = "Available" }
+visibleWhen = { status = ["Intake", "Foster", "Unavailable"] }
+successMessage = "Dog marked available."
+
+[[page."/dogs/:id".actionBar.actions]]
+label = "Mark Unavailable"
+workflow = "SetDogStatus"
+style = "secondary"
+payload = { status = "Unavailable" }
+visibleWhen = { status = ["Available"] }
+successMessage = "Dog marked unavailable."
+
+[page."/dogs/:id/interested"]
+title = "Adoption Interest"
+auth = "none"
+layout = "form"
+
+[page."/dogs/:id/interested".query.dog]
+entity = "Dog"
+where = { id = "$params.id" }
+
+[page."/dogs/:id/interested".form]
+entity = "AdoptionInterest"
+method = "create"
+mode = "page"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "dogId"
+type = "text"
+label = "Dog ID"
+default = "$params.id"
+required = true
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "firstName"
+type = "text"
+label = "First Name"
+required = true
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "lastName"
+type = "text"
+label = "Last Name"
+required = true
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "email"
+type = "email"
+label = "Email"
+required = true
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "phone"
+type = "text"
+label = "Phone"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "address"
+type = "text"
+label = "Address"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "city"
+type = "text"
+label = "City"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "state"
+type = "text"
+label = "State"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "zip"
+type = "text"
+label = "ZIP"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "ownsOrRents"
+type = "select"
+label = "Own or rent"
+required = true
+options = [
+  { value = "Owns", label = "Owns" },
+  { value = "Rents", label = "Rents" }
+]
+default = "Owns"
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "hasExistingPets"
+type = "checkbox"
+label = "Existing pets"
+default = false
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "existingDogsCount"
+type = "number"
+label = "Existing dogs count"
+default = 0
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "existingCatsCount"
+type = "number"
+label = "Existing cats count"
+default = 0
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "previousDogExperience"
+type = "textarea"
+label = "Previous dog experience"
+rows = 4
+
+[[page."/dogs/:id/interested".form.fields]]
+name = "householdNotes"
+type = "textarea"
+label = "Notes"
+rows = 4
+
+[page."/dogs/:id/interested".form.onSuccess]
+redirect = "/thanks"
+message = "Application submitted."
+
+[page."/thanks"]
+title = "Thanks"
+auth = "none"
+layout = "dashboard"
+
+[page."/thanks".query.availableDogs]
+entity = "Dog"
+where = { status = "Available" }
+limit = 3
+
+[page."/applications"]
+title = "Applications"
+auth = "required"
+layout = "list"
+
+[page."/applications".ux]
+pattern = "data-table@v1"
+primitives = ["page", "header", "content", "table"]
+
+[page."/applications".query.applications]
+entity = "AdoptionApplication"
+orderBy = { submittedAt = "desc" }
+limit = 200
+include = ["dog", "applicant", "reviewer"]
+
+[page."/applications/:id"]
+title = "Application Detail"
+auth = "required"
+layout = "detail"
+
+[page."/applications/:id".ux]
+pattern = "queue-detail@v1"
+primitives = ["page", "header", "content", "detail", "activity", "footer-actions"]
+
+[page."/applications/:id".query.application]
+entity = "AdoptionApplication"
+where = { id = "$params.id" }
+include = ["dog", "applicant", "reviewer"]
+
+[page."/applications/:id".query.tasks]
+entity = "Task"
+where = { relatedEntityId = "$params.id" }
+orderBy = { createdAt = "desc" }
+include = ["assignee"]
+
+[page."/applications/:id".query.messages]
+entity = "OutgoingMessage"
+where = { relatedEntityId = "$params.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/applications/:id".query.activity]
+entity = "ActivityEvent"
+where = { relatedEntityId = "$params.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/applications/:id".actionBar]
+title = "Application Actions"
+description = "Review, approve, reject, or require follow-up."
+statusField = "status"
+
+[[page."/applications/:id".actionBar.actions]]
+label = "Start Review"
+workflow = "ReviewApplication"
+style = "primary"
+payload = {}
+visibleWhen = { status = ["Submitted"] }
+successMessage = "Application moved into review."
+
+[[page."/applications/:id".actionBar.actions]]
+label = "Approve"
+workflow = "ApproveApplication"
+style = "primary"
+payload = {}
+visibleWhen = { status = ["In Review", "Meet & Greet Required", "Home Visit Required"] }
+successMessage = "Application approved."
+
+[[page."/applications/:id".actionBar.actions]]
+label = "Reject"
+workflow = "RejectApplication"
+style = "danger"
+payload = {}
+visibleWhen = { status = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required"] }
+successMessage = "Application rejected."
+
+[[page."/applications/:id".actionBar.actions]]
+label = "Require Home Visit"
+workflow = "RequireHomeVisit"
+style = "secondary"
+payload = {}
+visibleWhen = { status = ["In Review", "Meet & Greet Required"] }
+successMessage = "Home visit required."
+
+[[page."/applications/:id".actionBar.actions]]
+label = "Complete Adoption"
+workflow = "CompleteAdoption"
+style = "secondary"
+payload = {}
+visibleWhen = { status = ["Approved"] }
+successMessage = "Adoption completed."
+
+[page."/tasks"]
+title = "Tasks"
+auth = "required"
+layout = "list"
+
+[page."/tasks".query.tasks]
+entity = "Task"
+orderBy = { dueDate = "asc" }
+limit = 200
+include = ["assignee"]
+
+[page."/tasks/:id"]
+title = "Task Detail"
+auth = "required"
+layout = "detail"
+
+[page."/tasks/:id".query.task]
+entity = "Task"
+where = { id = "$params.id" }
+include = ["assignee"]
+
+[page."/tasks/:id".actionBar]
+title = "Task Actions"
+statusField = "status"
+
+[[page."/tasks/:id".actionBar.actions]]
+label = "Start"
+workflow = "SetTaskStatus"
+style = "primary"
+payload = { status = "In Progress" }
+visibleWhen = { status = ["Open"] }
+
+[[page."/tasks/:id".actionBar.actions]]
+label = "Complete"
+workflow = "SetTaskStatus"
+style = "secondary"
+payload = { status = "Completed" }
+visibleWhen = { status = ["Open", "In Progress"] }
+
+[page."/messages"]
+title = "Outgoing Messages"
+auth = "required"
+layout = "list"
+
+[page."/messages".query.messages]
+entity = "OutgoingMessage"
+orderBy = { createdAt = "desc" }
+limit = 200
+
+[page."/messages/:id"]
+title = "Outgoing Message"
+auth = "required"
+layout = "detail"
+
+[page."/messages/:id".query.message]
+entity = "OutgoingMessage"
+where = { id = "$params.id" }
+
+[page."/activity"]
+title = "Activity"
+auth = "required"
+layout = "list"
+
+[page."/activity".query.events]
+entity = "ActivityEvent"
+orderBy = { createdAt = "desc" }
+limit = 200
+
+[page."/workflow-history"]
+title = "Workflow History"
+auth = "required"
+layout = "list"
+
+[page."/workflow-history".query.executions]
+entity = "WorkflowExecution"
+orderBy = { createdAt = "desc" }
+limit = 200
+
+[page."/workflow-history/:id"]
+title = "Workflow Execution"
+auth = "required"
+layout = "detail"
+
+[page."/workflow-history/:id".query.execution]
+entity = "WorkflowExecution"
+where = { id = "$params.id" }
+
+[page."/applicants"]
+title = "Applicants"
+auth = "required"
+layout = "list"
+
+[page."/applicants".query.applicants]
+entity = "Applicant"
+orderBy = { createdAt = "desc" }
+limit = 200
+
+[page."/volunteers"]
+title = "Volunteers"
+auth = "required"
+layout = "list"
+
+[page."/volunteers".query.volunteers]
+entity = "Volunteer"
+orderBy = { name = "asc" }
+limit = 200
+
+# ==========================================
+# Workflows
+# ==========================================
+
+[workflow.SetDogStatus]
+description = "Manual dog status change with audit event."
+trigger = { manual = true }
+precondition = { "variables.data.payload.status" = ["Available", "Unavailable"], "variables.data.record.status" = ["Intake", "Foster", "Available", "Unavailable"] }
+
+[[workflow.SetDogStatus.steps]]
+type = "query"
+entity = "Dog"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "{{ variables.data.payload.status }}" }
+
+[[workflow.SetDogStatus.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Volunteer", eventType = "Dog status updated", summary = "Dog status updated to {{ variables.data.payload.status }}", relatedEntityType = "Dog", relatedEntityId = "{{ variables.data.record.id }}", metadata = { status = "{{ variables.data.payload.status }}" } }
+
+[workflow.SubmitAdoptionInterest]
+description = "Public adoption interest creates applicant, application, simulated emails, tasks, activity, and workflow history."
+trigger = { entity = "AdoptionInterest", event = "create" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "Applicant"
+action = "create"
+assignTo = "applicant"
+data = { firstName = "{{ trigger.after.firstName }}", lastName = "{{ trigger.after.lastName }}", email = "{{ trigger.after.email }}", phone = "{{ trigger.after.phone }}", address = "{{ trigger.after.address }}", city = "{{ trigger.after.city }}", state = "{{ trigger.after.state }}", zip = "{{ trigger.after.zip }}", ownsOrRents = "{{ trigger.after.ownsOrRents }}", landlordApprovalRequired = false, hasExistingPets = "{{ trigger.after.hasExistingPets }}", existingDogsCount = "{{ trigger.after.existingDogsCount }}", existingCatsCount = "{{ trigger.after.existingCatsCount }}", otherPetsDescription = "{{ trigger.after.otherPetsDescription }}", previousDogExperience = "{{ trigger.after.previousDogExperience }}", householdNotes = "{{ trigger.after.householdNotes }}" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "create"
+assignTo = "application"
+data = { dogId = "{{ trigger.after.dogId }}", applicantId = "{{ variables.applicant.id }}", status = "Submitted", meetAndGreetRequired = false, homeVisitRequired = false }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "Dog"
+action = "update"
+where = { id = "{{ trigger.after.dogId }}" }
+data = { status = "Application Pending" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "OutgoingMessage"
+action = "create"
+data = { toEmail = "{{ trigger.after.email }}", subject = "Thanks for your interest in Bella", body = "Hi {{ trigger.after.firstName }},\nThank you for your interest in adopting Bella.\nA Friendly Paws volunteer will review your application and contact you about next steps.\nFriendly Paws Dog Rescue", template = "applicant-confirmation", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "OutgoingMessage"
+action = "create"
+data = { toEmail = "volunteers@friendlypaws.example", subject = "New adoption application for Bella", body = "A new adoption application has been submitted for Bella.\nApplicant:\n{{ trigger.after.firstName }} {{ trigger.after.lastName }}\nReview the application in Friendly Paws.", template = "volunteer-notification", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Public Applicant", eventType = "Application submitted", summary = "Application submitted for Bella by {{ trigger.after.firstName }} {{ trigger.after.lastName }}", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { dogId = "{{ trigger.after.dogId }}" } }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "System", eventType = "Messages generated", summary = "Applicant confirmation email generated and volunteer notification generated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { templates = "applicant-confirmation, volunteer-notification" } }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "condition"
+if = { "trigger.after.hasExistingPets" = true }
+then = [
+  { type = "query", entity = "AdoptionApplication", action = "update", where = { id = "{{ variables.application.id }}" }, data = { status = "Meet & Greet Required", meetAndGreetRequired = true, meetAndGreetReason = "Applicant has existing pets" } },
+  { type = "query", entity = "Task", action = "create", data = { title = "Schedule Meet & Greet", description = "Applicant has existing pets. Schedule an introduction before approval.", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", status = "Open", priority = "High", createdByWorkflow = true } },
+  { type = "query", entity = "ActivityEvent", action = "create", data = { actor = "System", eventType = "Meet & greet rule applied", summary = "Meet & Greet Required: applicant has existing pets", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { rule = "existing-pets-require-meet-and-greet" } } }
+]
+else = [
+  { type = "query", entity = "ActivityEvent", action = "create", data = { actor = "System", eventType = "Meet & greet rule evaluated", summary = "Meet & greet not required by existing-pets rule", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { rule = "existing-pets-require-meet-and-greet" } } }
+]
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "condition"
+if = { "trigger.after.ownsOrRents" = "Rents" }
+then = [
+  { type = "query", entity = "Applicant", action = "update", where = { id = "{{ variables.applicant.id }}" }, data = { landlordApprovalRequired = true } },
+  { type = "query", entity = "Task", action = "create", data = { title = "Confirm landlord approval", description = "Applicant rents. Confirm landlord approval before final adoption.", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", status = "Open", priority = "Normal", createdByWorkflow = true } },
+  { type = "query", entity = "ActivityEvent", action = "create", data = { actor = "System", eventType = "Rental rule applied", summary = "Landlord approval required because applicant rents", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { rule = "rental-homes-require-landlord-approval" } } }
+]
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "WorkflowExecution"
+action = "create"
+data = { name = "Submit Adoption Interest", trigger = "Applicant submits adoption form", steps = "Create applicant\nCreate adoption application\nGenerate confirmation email\nGenerate volunteer notification\nEvaluate business rules\nCreate required tasks\nUpdate dog status\nLog activity", status = "Completed", durationMs = 0, relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+
+[workflow.ReviewApplication]
+description = "Volunteer starts review."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "Submitted" }
+
+[[workflow.ReviewApplication.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "In Review", reviewedBy = "{{ variables.data.user.id }}" }
+
+[[workflow.ReviewApplication.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Volunteer", eventType = "Application review started", summary = "Volunteer started application review", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", metadata = { status = "In Review" } }
+
+[workflow.ApproveApplication]
+description = "Coordinator approves application, updates dog, generates approval email, and creates pickup task."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["In Review", "Meet & Greet Required", "Home Visit Required"] }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "Approved", decision = "Approved" }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "Dog"
+action = "update"
+where = { id = "{{ variables.data.record.dogId }}" }
+data = { status = "Pending Pickup" }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "OutgoingMessage"
+action = "create"
+data = { toEmail = "applicant@example.com", subject = "Your application for Bella has been approved", body = "Hi applicant,\nGood news! Your application to adopt Bella has been approved.\nA volunteer will contact you to schedule pickup and finalize the adoption.\nFriendly Paws Dog Rescue", template = "approval-email", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "Schedule pickup", description = "Application approved. Schedule adoption pickup and final paperwork.", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", status = "Open", priority = "High", createdByWorkflow = true }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Adoption Coordinator", eventType = "Application approved", summary = "Application approved and dog status updated to Pending Pickup", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", metadata = { dogId = "{{ variables.data.record.dogId }}", dogStatus = "Pending Pickup" } }
+
+[[workflow.ApproveApplication.steps]]
+type = "query"
+entity = "WorkflowExecution"
+action = "create"
+data = { name = "Approve Application", trigger = "Adoption Coordinator clicks Approve", steps = "Set application status to Approved\nSet dog status to Pending Pickup\nGenerate approval email\nCreate pickup scheduling task\nLog activity", status = "Completed", durationMs = 0, relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+
+[workflow.RejectApplication]
+description = "Coordinator rejects application."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required"] }
+
+[[workflow.RejectApplication.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "Rejected", decision = "Rejected" }
+
+[[workflow.RejectApplication.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Adoption Coordinator", eventType = "Application rejected", summary = "Application rejected", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", metadata = { decision = "Rejected" } }
+
+[workflow.RequireHomeVisit]
+description = "Coordinator requires home visit."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["In Review", "Meet & Greet Required"] }
+
+[[workflow.RequireHomeVisit.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "Home Visit Required", homeVisitRequired = true }
+
+[[workflow.RequireHomeVisit.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "Schedule home visit", description = "Coordinator requested a home visit before final decision.", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", status = "Open", priority = "High", createdByWorkflow = true }
+
+[[workflow.RequireHomeVisit.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Adoption Coordinator", eventType = "Home visit required", summary = "Home visit required before decision", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", metadata = { rule = "manual-home-visit" } }
+
+[workflow.CompleteAdoption]
+description = "Coordinator completes adoption."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "Approved" }
+
+[[workflow.CompleteAdoption.steps]]
+type = "query"
+entity = "AdoptionApplication"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "Completed", decision = "Completed" }
+
+[[workflow.CompleteAdoption.steps]]
+type = "query"
+entity = "Dog"
+action = "update"
+where = { id = "{{ variables.data.record.dogId }}" }
+data = { status = "Adopted" }
+
+[[workflow.CompleteAdoption.steps]]
+type = "query"
+entity = "OutgoingMessage"
+action = "create"
+data = { toEmail = "applicant@example.com", subject = "Welcome to Friendly Paws", body = "Your adoption is complete. Attached next steps are simulated for the demo.", template = "welcome-packet", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+
+[[workflow.CompleteAdoption.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Adoption Coordinator", eventType = "Adoption completed", summary = "Adoption completed and dog status updated to Adopted", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}", metadata = { dogStatus = "Adopted" } }
+
+[[workflow.CompleteAdoption.steps]]
+type = "query"
+entity = "WorkflowExecution"
+action = "create"
+data = { name = "Complete Adoption", trigger = "Coordinator marks adoption complete", steps = "Set application status to Completed\nSet dog status to Adopted\nGenerate welcome packet email\nLog activity\nUpdate dashboard metrics", status = "Completed", durationMs = 0, relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+
+[workflow.SetTaskStatus]
+description = "Update task status."
+trigger = { manual = true }
+precondition = { "variables.data.payload.status" = ["In Progress", "Completed"], "variables.data.record.status" = ["Open", "In Progress"] }
+
+[[workflow.SetTaskStatus.steps]]
+type = "query"
+entity = "Task"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "{{ variables.data.payload.status }}" }
+
+[[workflow.SetTaskStatus.steps]]
+type = "query"
+entity = "ActivityEvent"
+action = "create"
+data = { actor = "Volunteer", eventType = "Task status updated", summary = "Task updated to {{ variables.data.payload.status }}", relatedEntityType = "Task", relatedEntityId = "{{ variables.data.record.id }}", metadata = { status = "{{ variables.data.payload.status }}" } }
+
+# ==========================================
+# Notifications / Auth / UI
+# ==========================================
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[auth]
+providers = ["email"]
+
+[auth.pages.signIn]
+engine = "liquid"
+type = "file"
+source = "templates/sign-in.liquid"
+
+[auth.permissions]
+# Public visitors can only browse dogs and submit interest - everything the automated
+# SubmitAdoptionInterest workflow does after that (create applicant/application, update
+# dog status, send emails, create tasks/activity/history) runs as the workflow engine's
+# own trusted system identity, not as this anonymous rule, so it stays narrow.
+anonymous = { allow = ["Dog.read", "AdoptionInterest.create"] }
+# Volunteers triage intake: start reviews and work tasks. Each entity/action pair here is
+# one a volunteer-triggered workflow actually writes - a role must cover every write a
+# workflow it can trigger performs, or that workflow fails partway through instead of
+# being cleanly rejected up front.
+volunteer = { allow = ["Dog.read", "Applicant.read", "AdoptionApplication.read", "AdoptionApplication.update", "Task.*", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.read"] }
+# Coordinators decide outcomes: approve/reject/require a visit/complete adoptions, which
+# also generates emails, pickup tasks, activity entries, and workflow history.
+coordinator = { allow = ["Dog.read", "Dog.update", "Applicant.read", "AdoptionApplication.*", "Task.*", "OutgoingMessage.create", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.create", "WorkflowExecution.read"] }
+admin = { allow = ["*.*"] }
+
+[ui]
+render_mode = "server"
+theme = "default"
+view_transitions = true

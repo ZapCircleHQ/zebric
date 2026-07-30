@@ -14,6 +14,7 @@ import type {
 import type { QueryExecutor } from '../database/query-executor.js'
 import type { NotificationManager } from '@zebric/notifications'
 import { createWorkflowLogger, type Logger } from '@zebric/observability'
+import { evaluateCondition as evaluateWorkflowCondition } from '@zebric/runtime-core'
 
 export interface EmailService {
   send(to: string, subject: string, body: string, template?: string): Promise<void>
@@ -678,67 +679,6 @@ export class WorkflowExecutor {
    * Evaluate a condition
    */
   private evaluateCondition(condition: Record<string, any>, context: WorkflowContext): boolean {
-    // Simple condition evaluation
-    // Supports: { "field": "value" } for equality
-    // Supports: { "field": { "$eq": "value" } } for explicit equality
-    // Supports: { "field": { "$ne": "value" } } for inequality
-    // Supports: { "field": { "$gt": 5 } } for greater than
-    // Supports: { "field": { "$lt": 5 } } for less than
-    // Supports: { "$and": [ ... ] } for AND conditions
-    // Supports: { "$or": [ ... ] } for OR conditions
-
-    for (const [key, value] of Object.entries(condition)) {
-      if (key === '$and') {
-        if (!Array.isArray(value)) {
-          return false
-        }
-        return value.every((cond) => this.evaluateCondition(cond, context))
-      }
-
-      if (key === '$or') {
-        if (!Array.isArray(value)) {
-          return false
-        }
-        return value.some((cond) => this.evaluateCondition(cond, context))
-      }
-
-      // Get value from context
-      const actualValue = this.getValueByPath(context, key)
-
-      // Handle operators
-      if (value && typeof value === 'object') {
-        for (const [op, expected] of Object.entries(value)) {
-          switch (op) {
-            case '$eq':
-              if (actualValue !== expected) return false
-              break
-            case '$ne':
-              if (actualValue === expected) return false
-              break
-            case '$gt':
-              if (!(actualValue > (expected as any))) return false
-              break
-            case '$gte':
-              if (!(actualValue >= (expected as any))) return false
-              break
-            case '$lt':
-              if (!(actualValue < (expected as any))) return false
-              break
-            case '$lte':
-              if (!(actualValue <= (expected as any))) return false
-              break
-            default:
-              throw new Error(`Unknown operator: ${op}`)
-          }
-        }
-      } else {
-        // Direct equality
-        if (actualValue !== value) {
-          return false
-        }
-      }
-    }
-
-    return true
+    return evaluateWorkflowCondition(condition, context)
   }
 }

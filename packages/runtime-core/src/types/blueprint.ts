@@ -263,6 +263,8 @@ export interface ActionBarAction {
   icon?: string
   workflow?: string
   payload?: Record<string, any>
+  visibleWhen?: Record<string, any>
+  enabledWhen?: Record<string, any>
   redirect?: string
   successMessage?: string
   errorMessage?: string
@@ -493,6 +495,7 @@ export interface PageMeta {
 export interface Workflow {
   name: string
   trigger: WorkflowTrigger
+  precondition?: Record<string, any>
   steps: WorkflowStep[]
 }
 

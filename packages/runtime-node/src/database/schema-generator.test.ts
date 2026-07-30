@@ -89,7 +89,9 @@ describe('SchemaGenerator', () => {
     expect(generator.getColumnDefinition({ name: 'title', type: 'Text', default: 'hello' } as any))
       .toBe("title TEXT DEFAULT 'hello'")
     expect(generator.getColumnDefinition({ name: 'createdAt', type: 'DateTime', default: 'now' } as any))
-      .toBe('created_at INTEGER DEFAULT CURRENT_TIMESTAMP')
+      .toBe('created_at INTEGER DEFAULT (unixepoch())')
+    expect(new SchemaGenerator('postgres').getColumnDefinition({ name: 'createdAt', type: 'DateTime', default: 'now' } as any))
+      .toBe('"created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP')
   })
 
   it('omits primary key and unique modifiers for alter column definitions', () => {
@@ -115,6 +117,9 @@ describe('SchemaGenerator', () => {
     const combined = statements.join('\n')
 
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS user')
+    // The `role` column must exist so it lines up with the `role` additionalField
+    // BetterAuthProvider declares - PermissionManager reads session.user.role for RBAC.
+    expect(combined).toMatch(/CREATE TABLE IF NOT EXISTS user \([^)]*\brole TEXT\b/)
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS session')
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS account')
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS verification')

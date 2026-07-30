@@ -23,6 +23,7 @@ const blueprint: Blueprint = {
       { name: 'visibility', type: 'Enum', values: ['public', 'internal'], required: true },
       { name: 'publishedAt', type: 'DateTime' },
       { name: 'createdAt', type: 'DateTime', default: 'now' },
+      { name: 'submittedAt', type: 'DateTime', default: 'now' },
     ],
     access: {
       read: { or: [{ visibility: 'public' }, 'authenticated'] },
@@ -91,6 +92,8 @@ describe('QueryExecutor row access', () => {
 
     expect(created.publishedAt).toBeInstanceOf(Date)
     expect(created.publishedAt.getTime()).not.toBeNaN()
+    expect(created.submittedAt).toBeInstanceOf(Date)
+    expect(created.submittedAt.getTime()).not.toBeNaN()
 
     const updated = await executor.update('RoadmapItem', 'scheduled-item', {
       publishedAt: '',
@@ -110,6 +113,18 @@ describe('QueryExecutor row access', () => {
     expect((created.publishedAt as Date).getUTCHours()).toBe(9)
     expect((created.publishedAt as Date).getUTCMinutes()).toBe(30)
     expect((created.publishedAt as Date).getUTCFullYear()).toBe(2024)
+  })
+
+  it('normalizes the DateTime now sentinel on writes', async () => {
+    const created = await executor.create('RoadmapItem', {
+      id: 'now-item',
+      title: 'Now test',
+      visibility: 'internal',
+      publishedAt: 'now',
+    }, { session: authenticatedSession })
+
+    expect(created.publishedAt).toBeInstanceOf(Date)
+    expect(created.publishedAt.getTime()).not.toBeNaN()
   })
 
   it('rejects invalid DateTime values with a field-specific error', async () => {

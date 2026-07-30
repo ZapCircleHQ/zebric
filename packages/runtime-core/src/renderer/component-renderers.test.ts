@@ -280,6 +280,43 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('data-zebric-role="primary-action"')
     })
 
+    it('hides actions when visibleWhen does not match the record', () => {
+      const page: Page = {
+        path: '/tasks/1',
+        title: 'Task',
+        layout: 'detail',
+        actionBar: {
+          actions: [
+            { label: 'Approve', href: '/approve/{id}', method: 'POST', visibleWhen: { status: 'In Review' } },
+            { label: 'Start Review', href: '/review/{id}', method: 'POST', visibleWhen: { status: 'Submitted' } },
+          ],
+        },
+      } as any
+
+      const result = renderer.renderActionBar(page, { id: '1', status: 'Submitted' }, undefined, 'csrf-token-123').toString()
+
+      expect(result).not.toContain('Approve')
+      expect(result).toContain('Start Review')
+    })
+
+    it('disables actions when enabledWhen does not match the record', () => {
+      const page: Page = {
+        path: '/tasks/1',
+        title: 'Task',
+        layout: 'detail',
+        actionBar: {
+          actions: [
+            { label: 'Complete', workflow: 'CompleteTask', enabledWhen: { status: ['In Progress'] } },
+          ],
+        },
+      } as any
+
+      const result = renderer.renderActionBar(page, { id: '1', status: 'Open' }, { name: 'Task' }, 'csrf-token-123').toString()
+
+      expect(result).toContain('Complete')
+      expect(result).toContain('disabled')
+    })
+
     it('maps action semantic roles through the design adapter', () => {
       blueprint = makeBlueprint({
         design_adapter: {

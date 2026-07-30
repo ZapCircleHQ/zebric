@@ -10,6 +10,7 @@ export interface WorkflowTrigger {
   condition?: Record<string, any>
   webhook?: string  // Webhook path like "/webhooks/github"
   schedule?: string  // Cron expression
+  manual?: boolean
 }
 
 export interface WorkflowStep {
@@ -62,6 +63,7 @@ export interface Workflow {
   name: string
   description?: string
   trigger: WorkflowTrigger
+  precondition?: Record<string, any>
   steps: WorkflowStep[]
   enabled?: boolean
   timeout?: number  // Timeout in milliseconds

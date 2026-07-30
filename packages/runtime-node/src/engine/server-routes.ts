@@ -2,9 +2,9 @@ import type { Hono } from 'hono'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
 import type { NotificationManager } from '@zebric/notifications'
-import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
-import type { Blueprint } from '@zebric/runtime-core'
-import { generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
+import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
+import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
+import { PermissionManager, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
@@ -61,6 +61,156 @@ function logRouteStageTiming(
       Object.entries(stageMs).map(([key, value]) => [key, Number(value.toFixed(3))])
     ),
   }))
+}
+
+function getPagePrimaryEntity(page: Blueprint['pages'][number] | undefined): string | undefined {
+  if (!page) {
+    return undefined
+  }
+
+  const boardQuery = page.board?.query ? page.queries?.[page.board.query] : undefined
+  if (boardQuery?.entity) {
+    return boardQuery.entity
+  }
+
+  if (page.form?.entity) {
+    return page.form.entity
+  }
+
+  const firstQuery = page.queries ? Object.values(page.queries)[0] : undefined
+  return firstQuery?.entity
+}
+
+function findPage(blueprint: Blueprint | undefined, pagePath: unknown): Blueprint['pages'][number] | undefined {
+  if (!blueprint || typeof pagePath !== 'string') {
+    return undefined
+  }
+  return blueprint.pages?.find((candidate) => candidate.path === pagePath)
+}
+
+function getPageActionBarActions(page: Blueprint['pages'][number] | undefined): ActionBarAction[] {
+  return [
+    ...(page?.actionBar?.actions ?? []),
+    ...(page?.actionBar?.secondaryActions ?? []),
+  ]
+}
+
+// Resolves which page/workflow-name pair the client claims to be acting from. The
+// caller is responsible for verifying the record against `entity` and for checking
+// permissions against `entity` (server-resolved), never against client-supplied input.
+function pageExposesWorkflow(
+  blueprint: Blueprint | undefined,
+  workflowName: string,
+  pagePath: unknown
+): boolean {
+  const workflow = blueprint?.workflows?.find((candidate) => candidate.name === workflowName)
+  if (!workflow?.trigger?.manual) {
+    return false
+  }
+
+  const page = findPage(blueprint, pagePath)
+  if (!page) {
+    return false
+  }
+
+  if (getPageActionBarActions(page).some((action) => action.workflow === workflowName)) {
+    return true
+  }
+
+  return page.board?.move?.workflow === workflowName
+}
+
+function findPageWorkflowActions(
+  blueprint: Blueprint | undefined,
+  workflowName: string,
+  pagePath: unknown
+): ActionBarAction[] {
+  const page = findPage(blueprint, pagePath)
+  if (!page?.actionBar) {
+    return []
+  }
+
+  return getPageActionBarActions(page).filter((action) => action.workflow === workflowName)
+}
+
+// True if ANY action-bar entry anywhere in the blueprint gates this workflow behind
+// visibleWhen/enabledWhen. Used to fail closed when the client doesn't supply a `page`
+// we can resolve the specific action from - otherwise the gating below is a no-op for
+// any caller that simply omits `page`.
+function workflowHasGatedAction(blueprint: Blueprint | undefined, workflowName: string): boolean {
+  if (!blueprint) {
+    return false
+  }
+  return (blueprint.pages ?? []).some((page) =>
+    getPageActionBarActions(page).some(
+      (action) => action.workflow === workflowName && (action.visibleWhen || action.enabledWhen)
+    )
+  )
+}
+
+interface RequiredEntityAction {
+  entity: string
+  action: 'create' | 'read' | 'update' | 'delete'
+}
+
+// Manual-trigger workflows carry no verb of their own, and a workflow's steps often
+// touch several different entities (e.g. approving an application also updates the
+// dog, creates a task, an email, and an activity record). Deriving the exact
+// (entity, action) pairs a workflow writes - instead of assuming one hardcoded verb,
+// or checking every action against a single entity - lets the caller be checked
+// against every write the workflow will actually attempt before step 1 ever runs.
+// Without this upfront check, a session permitted to perform only the workflow's
+// first step can trigger it, have that first (permitted) write commit, and then have
+// a later step fail on write N - leaving partially-applied, inconsistent data instead
+// of a clean rejection.
+function getWorkflowRequiredEntityActions(
+  workflow: { steps?: Array<Record<string, any>> } | undefined
+): RequiredEntityAction[] {
+  const seen = new Set<string>()
+  const pairs: RequiredEntityAction[] = []
+
+  const visit = (steps: Array<Record<string, any>> | undefined) => {
+    for (const step of steps ?? []) {
+      if (step.type === 'query' && step.entity && step.action) {
+        const action = step.action === 'find' ? 'read' : step.action
+        const key = `${step.entity}.${action}`
+        if (!seen.has(key)) {
+          seen.add(key)
+          pairs.push({ entity: step.entity, action })
+        }
+      }
+      visit(step.then)
+      visit(step.else)
+      visit(step.do)
+    }
+  }
+  visit(workflow?.steps)
+
+  return pairs
+}
+
+// Checks the caller against every (entity, action) pair a workflow's steps will
+// attempt, so an under-privileged caller is rejected before step 1 runs rather than
+// after some prefix of steps has already committed. `fallback` is only used for
+// workflows with no derivable query steps (e.g. purely a webhook/email step); when
+// there's nothing entity-related to check and no fallback was supplied, this allows
+// the call through rather than inventing a new restriction with no factual basis.
+async function checkWorkflowEntityPermissions(
+  permissionManager: PermissionManager,
+  session: UserSession | null,
+  workflow: { steps?: Array<Record<string, any>> } | undefined,
+  fallback?: RequiredEntityAction
+): Promise<boolean> {
+  const pairs = getWorkflowRequiredEntityActions(workflow)
+  const checks = pairs.length > 0 ? pairs : fallback ? [fallback] : []
+  if (checks.length === 0) {
+    return true
+  }
+
+  const results = await Promise.all(
+    checks.map((pair) => permissionManager.checkPermission({ session, entity: pair.entity, action: pair.action }))
+  )
+  return results.every(Boolean)
 }
 
 export function registerStaticUploads(app: Hono): void {
@@ -225,6 +375,7 @@ export function registerNotificationRoutes(
 export function registerActionRoutes(
   app: Hono,
   deps: {
+    blueprint?: Blueprint
     sessionManager: SessionManager
     queryExecutor: QueryExecutor
     workflowManager?: WorkflowManager
@@ -234,7 +385,9 @@ export function registerActionRoutes(
     return
   }
 
-  const { sessionManager, queryExecutor, workflowManager } = deps
+  const { blueprint, sessionManager, queryExecutor, workflowManager } = deps
+  const anonymousActionRule = blueprint?.auth?.permissions?.anonymous ?? blueprint?.auth?.permissions?.public
+  const permissionManager = blueprint ? new PermissionManager(blueprint.auth) : undefined
 
   app.post('/actions/:workflowName', async (c) => {
     const workflowName = c.req.param('workflowName')
@@ -247,16 +400,32 @@ export function registerActionRoutes(
     try {
       body = await parseActionRequestBody(c)
 
-      const session = await sessionManager.getSession(c.req.raw)
-      if (!session) {
-        return Response.json({ error: 'Unauthorized' }, { status: 401 })
-      }
-
       const payload = parseActionPayload(body.payload)
       const entity = typeof body.entity === 'string' ? body.entity : undefined
       const recordId = typeof body.recordId === 'string' ? body.recordId : undefined
       const successMessage = typeof body.successMessage === 'string' ? body.successMessage : undefined
       const errorMessage = typeof body.errorMessage === 'string' ? body.errorMessage : undefined
+      const session = await sessionManager.getSession(c.req.raw)
+      const workflow = workflowManager!.getWorkflow(workflowName)
+      if (!session) {
+        const exposed = pageExposesWorkflow(blueprint, workflowName, body.page)
+        const resolvedEntity = exposed ? getPagePrimaryEntity(findPage(blueprint, body.page)) : undefined
+        const entityMatches = !entity || entity === resolvedEntity
+        const allowed = exposed && resolvedEntity && entityMatches && anonymousActionRule && permissionManager
+          ? await checkWorkflowEntityPermissions(permissionManager, null, workflow, { entity: resolvedEntity, action: 'update' })
+          : false
+        if (!allowed) {
+          return Response.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+      } else if (permissionManager) {
+        // Verified upfront, not just per-step during execution: a caller permitted to
+        // perform only part of a workflow must never be able to trigger it at all, or
+        // that permitted prefix of steps commits before the workflow fails downstream.
+        const allowed = await checkWorkflowEntityPermissions(permissionManager, session, workflow)
+        if (!allowed) {
+          return Response.json({ error: 'Insufficient permissions for this workflow' }, { status: 403 })
+        }
+      }
       let record: any = null
 
       if (entity && recordId) {
@@ -267,11 +436,31 @@ export function registerActionRoutes(
         }
       }
 
-      const workflow = workflowManager!.getWorkflow(workflowName)
       if (!workflow) {
         return Response.json(
           { error: `Workflow '${workflowName}' not found` },
           { status: 404 }
+        )
+      }
+
+      const pageActions = findPageWorkflowActions(blueprint, workflowName, body.page)
+      if (pageActions.length > 0) {
+        const permitted = pageActions.some(
+          (action) => evaluateCondition(action.visibleWhen, record) && evaluateCondition(action.enabledWhen, record)
+        )
+        if (!permitted) {
+          return Response.json(
+            { error: 'Action is not available for this record' },
+            { status: 409 }
+          )
+        }
+      } else if (workflowHasGatedAction(blueprint, workflowName)) {
+        // The workflow is gated by visibleWhen/enabledWhen somewhere in the blueprint,
+        // but the caller didn't supply a `page` we can resolve the specific action from -
+        // fail closed rather than silently skipping the check.
+        return Response.json(
+          { error: 'Action is not available for this record' },
+          { status: 409 }
         )
       }
 
@@ -283,6 +472,26 @@ export function registerActionRoutes(
         page: body.page,
         redirect: body.redirect,
         session,
+      }
+
+      if (workflow.precondition) {
+        // Mirrors the context WorkflowManager.trigger() builds internally (trigger.data /
+        // variables.data / session only) - WorkflowQueue.enqueue evaluates the same
+        // precondition again against that context, so the two must stay in lockstep or a
+        // precondition that passes here could still throw there.
+        const preconditionContext: Record<string, any> = {
+          trigger: { type: 'manual', data: actionData },
+          variables: { data: actionData },
+        }
+        if (session) {
+          preconditionContext.session = session
+        }
+        if (!evaluateCondition(workflow.precondition, preconditionContext)) {
+          return Response.json(
+            { error: 'Workflow precondition failed' },
+            { status: 409 }
+          )
+        }
       }
 
       const job = workflowManager!.trigger(workflowName, actionData, {
