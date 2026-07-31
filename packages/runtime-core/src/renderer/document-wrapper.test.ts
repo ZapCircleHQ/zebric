@@ -38,6 +38,8 @@ describe('DocumentWrapper Zazzle rendering', () => {
     expect(html).toContain('--zb-surface-default:#fff9f2')
     expect(html).toContain('class="bg-gray-50 text-gray-900 min-h-screen zb-body"')
     expect(html).toContain('.zb-button-primary,[data-zebric-role="primary-action"]{background:var(--zb-color-primary)')
+    expect(html).toContain("'zebric-color-mode'")
+    expect(html).toContain('data-zebric-resolved-color-mode="dark"')
   })
 
   it('uses configured navigation model and primary nav items', () => {

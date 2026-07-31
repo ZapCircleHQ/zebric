@@ -224,8 +224,8 @@ export class HTMLRenderer {
   /**
    * Render sign-out page
    */
-  renderSignOutPage(callbackURL: string): string {
-    return this.authPageRenderers.renderSignOutPage(callbackURL)
+  renderSignOutPage(callbackURL: string, csrfToken?: string): string {
+    return this.authPageRenderers.renderSignOutPage(callbackURL, csrfToken)
   }
 
   /**
