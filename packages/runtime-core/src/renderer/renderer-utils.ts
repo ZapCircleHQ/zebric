@@ -16,7 +16,8 @@ export class RendererUtils {
     // If we have entity definition, use it
     if (entity?.fields) {
       return entity.fields
-        .filter((f: any) => !['id', 'createdAt', 'updatedAt'].includes(f.name))
+        .filter((f: any) => !this.isTechnicalIdentifierField(f))
+        .filter((f: any) => !['createdAt', 'updatedAt'].includes(f.name))
         .map((f: any) => ({ name: f.name, type: f.type }))
     }
 
@@ -24,8 +25,55 @@ export class RendererUtils {
 
     // Otherwise infer from record
     return Object.keys(record)
-      .filter(key => !['id', 'createdAt', 'updatedAt'].includes(key))
+      .filter(key => !this.isTechnicalIdentifierField({ name: key }))
+      .filter(key => !['createdAt', 'updatedAt'].includes(key))
       .map(key => ({ name: key, type: typeof record[key] }))
+  }
+
+  /**
+   * Technical identifiers are useful for persistence and URLs, but should not
+   * be presented as user-facing record data.
+   */
+  isTechnicalIdentifierField(field: { name?: string; type?: string; primary_key?: boolean }): boolean {
+    const name = field.name || ''
+    const type = (field.type || '').toLowerCase()
+    return Boolean(
+      field.primary_key
+      || ['uuid', 'ulid', 'ref'].includes(type)
+      || name === 'id'
+      || /(?:Id|_id)$/.test(name)
+    )
+  }
+
+  /**
+   * Resolve a human-readable record label without falling back to an ID.
+   */
+  getRecordLabel(record: any, entityName?: string): string {
+    if (!record || typeof record !== 'object') {
+      return entityName ? this.formatFieldName(entityName) : 'Record'
+    }
+
+    for (const field of ['title', 'name', 'subject', 'summary', 'email']) {
+      if (this.isReadableLabel(record[field])) return String(record[field])
+    }
+
+    const fullName = [record.firstName, record.lastName]
+      .filter(value => this.isReadableLabel(value))
+      .join(' ')
+    if (fullName) return fullName
+
+    for (const value of Object.values(record)) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+      for (const field of ['title', 'name', 'subject', 'email']) {
+        if (this.isReadableLabel((value as any)[field])) return String((value as any)[field])
+      }
+      const relatedName = [(value as any).firstName, (value as any).lastName]
+        .filter(candidate => this.isReadableLabel(candidate))
+        .join(' ')
+      if (relatedName) return relatedName
+    }
+
+    return entityName ? this.formatFieldName(entityName) : 'Record'
   }
 
   /**
@@ -53,11 +101,38 @@ export class RendererUtils {
         return value ? '✓' : '✗'
 
       case 'JSON':
-        return JSON.stringify(value, null, 2)
+        return JSON.stringify(this.redactTechnicalIdentifiers(value), null, 2)
 
       default:
-        return String(value)
+        return this.looksLikeTechnicalIdentifier(value) ? '—' : String(value)
     }
+  }
+
+  private isReadableLabel(value: any): boolean {
+    return value !== undefined
+      && value !== null
+      && String(value).trim() !== ''
+      && !this.looksLikeTechnicalIdentifier(value)
+  }
+
+  private looksLikeTechnicalIdentifier(value: any): boolean {
+    if (typeof value !== 'string') return false
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+      || /^[0-9A-HJKMNP-TV-Z]{26}$/.test(value)
+  }
+
+  private redactTechnicalIdentifiers(value: any): any {
+    if (Array.isArray(value)) {
+      return value.map(item => this.redactTechnicalIdentifiers(item))
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([key]) => !this.isTechnicalIdentifierField({ name: key }))
+          .map(([key, item]) => [key, this.redactTechnicalIdentifiers(item)])
+      )
+    }
+    return this.looksLikeTechnicalIdentifier(value) ? '—' : value
   }
 
   /**
@@ -77,10 +152,10 @@ export class RendererUtils {
       case 'delete':
         return pages.find((page) => page.form?.entity === entityName && page.form.method === 'delete')?.path || null
       case 'detail':
-        return pages.find((page) => page.layout === 'detail' && this.pageTargetsEntity(page, entityName))?.path || null
+        return pages.find((page) => page.layout === 'detail' && this.pagePrimaryEntity(page) === entityName)?.path || null
       case 'list':
         {
-          const candidates = pages.filter((page) => page.layout === 'list' && this.pageTargetsEntity(page, entityName))
+          const candidates = pages.filter((page) => page.layout === 'list' && this.pagePrimaryEntity(page) === entityName)
           if (candidates.length === 0) return null
           const slug = this.slugify(entityName)
           const preferred = candidates.find((page) => page.path !== '/' && page.path.includes(slug))
@@ -102,6 +177,18 @@ export class RendererUtils {
       return true
     }
     return false
+  }
+
+  /**
+   * Get the entity represented by a page's primary (first) query.
+   *
+   * Detail and list pages can include related-data queries. Those queries make
+   * the entity visible on the page, but do not make the page a canonical route
+   * for that entity.
+   */
+  private pagePrimaryEntity(page: Page): string | undefined {
+    const firstQuery = page.queries && Object.values(page.queries)[0]
+    return firstQuery?.entity
   }
 
   /**
