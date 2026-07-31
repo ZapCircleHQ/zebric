@@ -180,20 +180,11 @@ export class DocumentWrapper {
         })()
       </script>
       <style>
-        html[data-zebric-color-mode][data-zebric-resolved-color-mode="dark"] {
-          color-scheme: dark;
-          --zb-surface-default: #111827;
-          --zb-surface-card: #1f2937;
-          --zb-surface-dialog: #1f2937;
-          --zb-text-primary: #f3f4f6;
-          --zb-text-secondary: #9ca3af;
-          --zb-border-default: #374151;
-        }
         html[data-zebric-resolved-color-mode="dark"] .zb-body { background: var(--zb-surface-default); color: var(--zb-text-primary); }
         .zb-nav-actions { display: flex; align-items: center; gap: .5rem; margin-left: .25rem; }
         .zb-nav-action { display: inline-flex; width: 2.25rem; height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--zb-border-default); border-radius: var(--zb-radius-small); background: var(--zb-surface-card); color: var(--zb-text-secondary); cursor: pointer; }
         .zb-nav-action:hover { color: var(--zb-text-primary); border-color: var(--zb-text-secondary); }
-        .zb-nav-action:focus-visible, .zb-nav-auth:focus-visible { outline: 2px solid var(--zb-color-primary); outline-offset: 2px; }
+        .zb-nav-action:focus-visible, .zb-nav-auth:focus-visible { outline: 2px solid var(--zb-color-primary-text); outline-offset: 2px; }
         .zb-nav-account { display: flex; align-items: center; gap: .75rem; padding-left: .25rem; }
         .zb-nav-username { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zb-text-secondary); font-size: var(--zb-font-size-small); }
         .zb-nav-auth { white-space: nowrap; font-size: var(--zb-font-size-small); font-weight: var(--zb-font-weight-medium); }

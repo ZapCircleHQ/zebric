@@ -87,6 +87,61 @@ describe('Zazzle design systems', () => {
     expect(system.tokens).toEqual({ 'color-primary': 'rebeccapurple' })
   })
 
+  it('gives each built-in a dark-mode override scoped to its own name', () => {
+    const systems = ['modern', 'classic', 'friendly', 'minimal'] as const
+
+    for (const name of systems) {
+      const system = resolveDesignSystem({ name })
+      expect(system.css).toContain(`html[data-zebric-design-system="${name}"][data-zebric-resolved-color-mode="dark"]`)
+      expect(system.css).toContain('color-scheme:dark')
+    }
+
+    const darkBlocks = systems.map(name => {
+      const css = resolveDesignSystem({ name }).css
+      return css.slice(css.indexOf(`data-zebric-design-system="${name}"][data-zebric-resolved-color-mode="dark"`))
+    })
+    expect(new Set(darkBlocks.map(block => block.slice(0, 200))).size).toBe(4)
+  })
+
+  it('keeps dark-mode button text and link/focus color legible against inverted primaries', () => {
+    const minimal = resolveDesignSystem({ name: 'minimal' })
+
+    // minimal's light-mode color-primary is black; dark mode must not keep
+    // white button text on a (now white) primary background.
+    expect(minimal.tokens['color-primary']).toBe('#000000')
+    expect(minimal.tokens['text-on-primary']).toBe('#ffffff')
+    expect(minimal.css).toContain('--zb-color-primary:#ffffff')
+    expect(minimal.css).toContain('--zb-text-on-primary:#000000')
+  })
+
+  it('gives a custom system extending a built-in that built-in\'s dark palette, scoped by its own name', () => {
+    const system = resolveDesignSystem({ name: 'acme', extends: 'classic' })
+
+    expect(system.css).toContain('html[data-zebric-design-system="acme"][data-zebric-resolved-color-mode="dark"]')
+    expect(system.css).toContain('--zb-surface-default:#1c1815')
+  })
+
+  it('falls back to a generic dark palette for a from-scratch custom system', () => {
+    const system = resolveDesignSystem({ name: 'bare', tokens: { 'color-primary': 'rebeccapurple' } })
+
+    expect(system.css).toContain('html[data-zebric-design-system="bare"][data-zebric-resolved-color-mode="dark"]{color-scheme:dark;--zb-surface-default:#111827')
+  })
+
+  it('rejects an unsafe design system name in the dark-mode selector', () => {
+    const system = resolveDesignSystem({ name: 'acme"] </style><script>alert(1)</script>', extends: 'modern' })
+
+    expect(system.css).not.toContain('<script>')
+    expect(system.css).toContain('html[data-zebric-resolved-color-mode="dark"]{color-scheme:dark;--zb-color-primary:#e5e5e5')
+  })
+
+  it('routes primary-color text and button-text through dedicated tokens for dark-mode contrast', () => {
+    const system = resolveDesignSystem({ name: 'modern' })
+
+    expect(system.css).toContain('.zb-link-primary,.zb-link-primary:hover{color:var(--zb-color-primary-text)}')
+    expect(system.css).toContain('.zb-control:focus{border-color:var(--zb-color-primary-text)')
+    expect(system.css).toContain('color:var(--zb-text-on-primary)')
+  })
+
   it('escapes stylesheet paths and rejects token injection', () => {
     const html = renderDesignSystemStyles({
       name: 'safe',
