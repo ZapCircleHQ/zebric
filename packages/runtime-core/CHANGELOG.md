@@ -1,5 +1,15 @@
 # @zebric/runtime-core
 
+## 0.3.1
+
+### Patch Changes
+
+- 29339d4: Add Zazzle CSS-only design systems with four built-in styles, semantic color,
+  surface, spacing, radius, and typography tokens, blueprint inheritance and CSS
+  extensions, and renderer integration. Preserve business values that resemble
+  technical identifiers and correct double-escaping in checklist, timeline, and
+  activity labels.
+
 ## 0.3.0
 
 ### Minor Changes

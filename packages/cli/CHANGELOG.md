@@ -1,5 +1,11 @@
 # @zebric/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- @zebric/runtime-node@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
