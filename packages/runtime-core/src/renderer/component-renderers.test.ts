@@ -185,6 +185,29 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('Tâche française')
       expect(result).toContain('日本語 text 🚀')
     })
+
+    it('omits primary and reference identifiers from visible columns', () => {
+      const entity = {
+        name: 'Task',
+        fields: [
+          { name: 'id', type: 'ULID', primary_key: true },
+          { name: 'projectId', type: 'Ref', ref: 'Project.id' },
+          { name: 'assignedTo', type: 'Ref', ref: 'User.id' },
+          { name: 'title', type: 'Text' },
+        ],
+      }
+      const result = renderer.renderTable([{
+        id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        projectId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+        assignedTo: '01ARZ3NDEKTSV4RRFFQ69G5FAX',
+        title: 'Call adopter',
+      }], entity).toString()
+
+      expect(result).not.toMatch(/>\s*Project ID\s*</)
+      expect(result).not.toMatch(/>\s*Assigned To\s*</)
+      expect(result).toMatch(/>\s*Title\s*</)
+      expect(result).toContain('Call adopter')
+    })
   })
 
   describe('renderDetailFields', () => {
@@ -203,6 +226,30 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderDetailFields(record).toString()
       expect(result).toContain('Custom Field')
       expect(result).toContain('value')
+    })
+
+    it('omits identifier fields and redacts identifiers nested in JSON', () => {
+      const entity = {
+        name: 'Event',
+        fields: [
+          { name: 'id', type: 'UUID', primary_key: true },
+          { name: 'relatedEntityId', type: 'Text' },
+          { name: 'metadata', type: 'JSON' },
+        ],
+      }
+      const result = renderer.renderDetailFields({
+        id: '75e38a13-f7b8-4d2f-bff7-62d1602099be',
+        relatedEntityId: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        metadata: {
+          dogId: '01ARZ3NDEKTSV4RRFFQ69G5FAW',
+          note: 'Called adopter',
+        },
+      }, entity).toString()
+
+      expect(result).not.toContain('Related Entity ID')
+      expect(result).not.toContain('dogId')
+      expect(result).not.toContain('01ARZ3NDEKTSV4RRFFQ69G5FAW')
+      expect(result).toContain('Called adopter')
     })
   })
 
@@ -399,6 +446,19 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('Field is required')
       expect(result).toContain('role="alert"')
     })
+
+    it('renders hidden identifier fields without a visible label', () => {
+      const result = renderer.renderFormField({
+        name: 'dogId',
+        type: 'hidden',
+        default: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+      })
+
+      expect(result).toContain('type="hidden"')
+      expect(result).toContain('name="dogId"')
+      expect(result).not.toContain('<label')
+      expect(result).not.toContain('Dog ID')
+    })
   })
 
   describe('renderInput', () => {
@@ -539,6 +599,18 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('0')
     })
 
+    it('uses a human label instead of an identifier-only fallback', () => {
+      const application = {
+        id: '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+        applicant: { firstName: 'Sarah', lastName: 'Chen' },
+      }
+      const entity = { name: 'AdoptionApplication', fields: [] }
+      const result = renderer.renderDashboardWidget('pendingApplications', [application], entity).toString()
+
+      expect(result).toContain('Sarah Chen')
+      expect(result).not.toContain('>01ARZ3NDEKTSV4RRFFQ69G5FAV<')
+    })
+
     it('limits recent items to 5', () => {
       const items = Array.from({ length: 10 }, (_, i) => ({ id: String(i), title: `Task ${i}` }))
       const result = renderer.renderDashboardWidget('tasks', items, blueprint.entities[0]).toString()
@@ -550,6 +622,16 @@ describe('ComponentRenderers', () => {
   })
 
   describe('renderChecklist', () => {
+    it('escapes record labels exactly once', () => {
+      const result = renderer.renderChecklist([
+        { title: 'Bella & Friends <3', status: 'open' },
+      ]).toString()
+
+      expect(result).toContain('Bella &amp; Friends &lt;3')
+      expect(result).not.toContain('&amp;amp;')
+      expect(result).not.toContain('&amp;lt;')
+    })
+
     it('renders items with status', () => {
       const items = [
         { id: '1', title: 'Setup project', status: 'done' },
@@ -575,6 +657,16 @@ describe('ComponentRenderers', () => {
   })
 
   describe('renderRampTimeline', () => {
+    it('escapes milestone labels exactly once', () => {
+      const result = renderer.renderRampTimeline([
+        { title: "O'Brien's & Partners", status: 'pending' },
+      ]).toString()
+
+      expect(result).toContain('O&#x27;Brien&#x27;s &amp; Partners')
+      expect(result).not.toContain('&amp;#x27;')
+      expect(result).not.toContain('&amp;amp;')
+    })
+
     it('renders timeline items', () => {
       const items = [
         { id: '1', title: 'Milestone 1', status: 'approved' },
@@ -642,6 +734,33 @@ describe('ComponentRenderers', () => {
         .toString()
       expect(result).toContain('Task 1')
       expect(result).not.toContain('href="&#x2F;tasks&#x2F;1"')
+    })
+
+    it('uses the entity primary detail page instead of a related-data page', () => {
+      blueprint = makeBlueprint({
+        pages: [
+          {
+            path: '/projects/:id',
+            title: 'Project Detail',
+            layout: 'detail',
+            queries: {
+              project: { entity: 'Project' },
+              tasks: { entity: 'Task' },
+            },
+          },
+          ...makeBlueprint().pages,
+        ],
+      })
+      utils = new RendererUtils(blueprint)
+      renderer = new ComponentRenderers(blueprint, defaultTheme, utils)
+
+      const entity = blueprint.entities[0]
+      const result = renderer
+        .renderDashboardWidget('openTasks', [{ id: 'task-1', title: 'Task 1' }], entity)
+        .toString()
+
+      expect(result).toContain('href="&#x2F;tasks&#x2F;task-1"')
+      expect(result).not.toContain('href="&#x2F;projects&#x2F;task-1"')
     })
   })
 })

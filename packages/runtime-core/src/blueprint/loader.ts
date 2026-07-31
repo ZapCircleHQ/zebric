@@ -109,6 +109,7 @@ export class BlueprintParser {
       ui: parsed.ui,
       ux: parsed.ux,
       design_adapter: parsed.design_adapter,
+      design_system: parsed.design_system,
       notifications: parsed.notifications,
     }
 

@@ -4,6 +4,7 @@
   "private": true,
   "description": "Friendly Paws dog rescue operations demo built from a Zebric blueprint",
   "scripts": {
+    "predev": "pnpm --dir ../.. --filter @zebric/runtime-core build",
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
     "seed": "bash seed.sh",
     "validate": "zebric validate --blueprint blueprint.toml"

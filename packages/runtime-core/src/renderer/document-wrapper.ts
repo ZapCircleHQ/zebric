@@ -12,6 +12,7 @@ import type { FlashMessage } from '../routing/request-ports.js'
 import { renderNavigation } from './navigation-renderer.js'
 import { renderFlash } from './feedback-renderer.js'
 import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
+import { renderDesignSystemStyles, resolveDesignSystem, withDesignSystemTheme } from './design-system.js'
 
 export interface WrapInDocumentOptions {
   includeClientRuntime?: boolean
@@ -21,11 +22,14 @@ export interface WrapInDocumentOptions {
 
 export class DocumentWrapper {
   private reloadScript?: string
+  private theme: Theme
 
   constructor(
     private blueprint: Blueprint,
-    private theme: Theme
-  ) {}
+    theme: Theme
+  ) {
+    this.theme = withDesignSystemTheme(theme)
+  }
 
   /**
    * Set reload script for hot reload (development mode only)
@@ -50,16 +54,18 @@ export class DocumentWrapper {
     const escapedProjectName = escapeHtml(this.blueprint.project.name)
     const includeRuntime = options?.includeClientRuntime ?? options?.includeWidgetRuntime ?? false
     const widgetScript = includeRuntime ? WIDGET_CLIENT_RUNTIME : ''
+    const designSystem = resolveDesignSystem(this.blueprint.design_system)
 
     return `
       <!DOCTYPE html>
-      <html lang="en">
+      <html lang="en" data-zebric-design-system="${escapeHtml(designSystem.name)}">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${escapedTitle} - ${escapedProjectName}</title>
 
           ${this.renderInlineStyles().html}
+          ${renderDesignSystemStyles(designSystem)}
 
           ${viewTransitions ? `
             <meta name="view-transition" content="same-origin">

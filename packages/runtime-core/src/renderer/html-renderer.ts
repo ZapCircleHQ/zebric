@@ -28,6 +28,7 @@ import { RendererUtils } from './renderer-utils.js'
 import { ComponentRenderers } from './component-renderers.js'
 import { LayoutRenderers } from './layout-renderers.js'
 import { DocumentWrapper } from './document-wrapper.js'
+import { withDesignSystemTheme } from './design-system.js'
 import { AuthPageRenderers } from './auth-page-renderers.js'
 import { ErrorPageRenderers } from './error-page-renderers.js'
 
@@ -53,16 +54,17 @@ export class HTMLRenderer {
     templateRegistry?: TemplateRegistry,
     templateLoader?: TemplateLoader
   ) {
+    this.theme = withDesignSystemTheme(theme)
     this.templateRegistry = templateRegistry || new MemoryTemplateRegistry()
     this.templateLoader = templateLoader || new InlineTemplateLoader()
     this.initializeBuiltinTemplates()
 
     // Initialize helper renderers
     this.utils = new RendererUtils(blueprint)
-    this.componentRenderers = new ComponentRenderers(blueprint, theme, this.utils)
+    this.componentRenderers = new ComponentRenderers(blueprint, this.theme, this.utils)
     this.layoutRenderers = new LayoutRenderers(
       blueprint,
-      theme,
+      this.theme,
       this.templateRegistry,
       this.templateLoader,
       this.builtinTemplates,
@@ -71,15 +73,15 @@ export class HTMLRenderer {
       this.componentRenderers,
       this.utils
     )
-    this.documentWrapper = new DocumentWrapper(blueprint, theme)
+    this.documentWrapper = new DocumentWrapper(blueprint, this.theme)
     this.authPageRenderers = new AuthPageRenderers(
       blueprint,
-      theme,
+      this.theme,
       this.authTemplateCache,
       this.builtinTemplateEngine,
       this.templateLoader
     )
-    this.errorPageRenderers = new ErrorPageRenderers(theme)
+    this.errorPageRenderers = new ErrorPageRenderers(this.theme)
 
     // Note: Default templates are NOT loaded automatically
     // The built-in renderListLayout, renderDetailLayout, etc. methods are used instead

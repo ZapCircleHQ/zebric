@@ -4,6 +4,7 @@ import employeeOnboardingToml from './blueprints/employee-onboarding.toml?raw'
 import incidentIntakeToml from './blueprints/incident-intake.toml?raw'
 import assetRequestToml from './blueprints/asset-request.toml?raw'
 import issueTrackerToml from './blueprints/issue-tracker.toml?raw'
+import friendlyPawsToml from '../../../examples/dog-rescue/blueprint.toml?raw'
 
 export interface PlaygroundScenario {
   name: string
@@ -139,7 +140,129 @@ const issueTrackerAccounts: SimulatorAccount[] = [
   },
 ]
 
+const friendlyPawsAccounts: SimulatorAccount[] = [
+  {
+    id: 'maya',
+    email: 'maya@friendlypaws.example',
+    name: 'Maya Brooks',
+    role: 'volunteer',
+    roles: ['volunteer'],
+  },
+  {
+    id: 'eli',
+    email: 'eli@friendlypaws.example',
+    name: 'Eli Turner',
+    role: 'coordinator',
+    roles: ['coordinator'],
+  },
+  {
+    id: 'rina',
+    email: 'rina@friendlypaws.example',
+    name: 'Rina Shah',
+    role: 'admin',
+    roles: ['admin'],
+  },
+]
+
 export const examples: PlaygroundExample[] = [
+  {
+    slug: 'friendly-paws',
+    title: 'Friendly Paws Dog Rescue',
+    description:
+      'A dog rescue operations workspace for public adoption interest, application review, volunteer tasks, and simulated applicant communications.',
+    tags: ['workflows', 'roles', 'forms', 'operations'],
+    features: ['Public adoption interest flow', 'Role-based application review', 'Business-rule follow-up tasks', 'Messages and workflow history'],
+    blueprintPath: 'examples/dog-rescue/blueprint.toml',
+    blueprintToml: friendlyPawsToml,
+    seeds: {
+      active: {
+        Volunteer: [
+          { id: 'maya', name: 'Maya Brooks', email: 'maya@friendlypaws.example', role: 'Volunteer', active: true },
+          { id: 'eli', name: 'Eli Turner', email: 'eli@friendlypaws.example', role: 'Adoption Coordinator', active: true },
+          { id: 'rina', name: 'Rina Shah', email: 'rina@friendlypaws.example', role: 'Admin', active: true },
+        ],
+        Dog: [
+          { id: 'bella', name: 'Bella', breed: 'Labrador Mix', age: 3, weight: 48, sex: 'Female', photoUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d', status: 'Available', temperament: 'Affectionate, steady, eager to please.', energyLevel: 'Moderate', goodWithKids: true, goodWithDogs: true, goodWithCats: false, fosterHome: 'Maya Brooks', adoptionFee: 275 },
+          { id: 'milo', name: 'Milo', breed: 'Beagle', age: 2, weight: 26, sex: 'Male', photoUrl: 'https://images.unsplash.com/photo-1505628346881-b72b27e84530', status: 'Application Pending', temperament: 'Curious and food-motivated.', energyLevel: 'High', goodWithKids: true, goodWithDogs: true, goodWithCats: true, fosterHome: 'Eli Turner', adoptionFee: 250 },
+          { id: 'luna', name: 'Luna', breed: 'Australian Shepherd', age: 1.5, weight: 36, sex: 'Female', photoUrl: 'https://images.unsplash.com/photo-1548199973-03cce0bbc87b', status: 'Meet & Greet Required', temperament: 'Smart, alert, bonds quickly.', energyLevel: 'High', goodWithKids: false, goodWithDogs: true, goodWithCats: false, fosterHome: 'Rina Shah', adoptionFee: 300 },
+          { id: 'rocky', name: 'Rocky', breed: 'Boxer', age: 5, weight: 62, sex: 'Male', photoUrl: 'https://images.unsplash.com/photo-1587300003388-59208cc962cb', status: 'Pending Pickup', temperament: 'Goofy and people-focused.', energyLevel: 'Moderate', goodWithKids: true, goodWithDogs: false, goodWithCats: false, fosterHome: 'Maya Brooks', adoptionFee: 225 },
+        ],
+        Applicant: [
+          { id: 'sarah', firstName: 'Sarah', lastName: 'Chen', email: 'sarah.chen@example.com', phone: '555-0101', city: 'Austin', state: 'TX', zip: '78701', ownsOrRents: 'Rents', landlordApprovalRequired: true, hasExistingPets: true, existingDogsCount: 1, existingCatsCount: 0, previousDogExperience: 'Grew up with labs and currently has one senior dog.' },
+          { id: 'james', firstName: 'James', lastName: 'Miller', email: 'james.miller@example.com', phone: '555-0104', city: 'Cedar Park', state: 'TX', zip: '78613', ownsOrRents: 'Rents', landlordApprovalRequired: true, hasExistingPets: false, existingDogsCount: 0, existingCatsCount: 0, previousDogExperience: 'Had a boxer for 11 years.' },
+        ],
+        AdoptionApplication: [
+          { id: 'app-milo', dogId: 'milo', applicantId: 'sarah', status: 'Submitted', meetAndGreetRequired: true, meetAndGreetReason: 'Applicant has existing pets' },
+          { id: 'app-rocky', dogId: 'rocky', applicantId: 'james', status: 'Approved', reviewedBy: 'eli', meetAndGreetRequired: false, homeVisitRequired: false, decision: 'Approved', decisionNotes: 'Strong match' },
+        ],
+        Task: [
+          { id: 'task-meet', title: 'Schedule Meet & Greet', description: 'Sarah has an existing dog.', assignedTo: 'maya', relatedEntityType: 'AdoptionApplication', relatedEntityId: 'app-milo', status: 'Open', dueDate: '2026-08-03', priority: 'High', createdByWorkflow: true },
+          { id: 'task-pickup', title: 'Prepare Rocky pickup packet', description: 'Print final paperwork and care notes.', assignedTo: 'eli', relatedEntityType: 'AdoptionApplication', relatedEntityId: 'app-rocky', status: 'Open', dueDate: '2026-08-01', priority: 'Urgent', createdByWorkflow: true },
+        ],
+        OutgoingMessage: [
+          { id: 'msg-milo', toEmail: 'sarah.chen@example.com', subject: 'Thanks for your interest in Milo', body: 'Hi Sarah, thank you for your interest in adopting Milo.', template: 'applicant-confirmation', status: 'Simulated', relatedEntityType: 'AdoptionApplication', relatedEntityId: 'app-milo' },
+        ],
+        ActivityEvent: [
+          { id: 'event-milo', actor: 'System', eventType: 'Application submitted', summary: 'Application submitted for Milo', relatedEntityType: 'AdoptionApplication', relatedEntityId: 'app-milo', metadata: { dogId: 'milo' } },
+        ],
+        WorkflowExecution: [
+          { id: 'workflow-milo', name: 'Submit Adoption Interest', trigger: 'Applicant submits adoption form', steps: 'Create applicant\nCreate adoption application\nGenerate confirmation email\nEvaluate business rules\nCreate follow-up tasks', status: 'Completed', durationMs: 61, relatedEntityType: 'AdoptionApplication', relatedEntityId: 'app-milo' },
+        ],
+        AdoptionInterest: [],
+      },
+      public: {
+        Volunteer: [],
+        Dog: [
+          { id: 'bella', name: 'Bella', breed: 'Labrador Mix', age: 3, weight: 48, sex: 'Female', photoUrl: 'https://images.unsplash.com/photo-1552053831-71594a27632d', status: 'Available', temperament: 'Affectionate, steady, eager to please.', energyLevel: 'Moderate', goodWithKids: true, goodWithDogs: true, goodWithCats: false, fosterHome: 'Maya Brooks', adoptionFee: 275 },
+          { id: 'daisy', name: 'Daisy', breed: 'Terrier Mix', age: 0.7, weight: 18, sex: 'Female', photoUrl: 'https://images.unsplash.com/photo-1517849845537-4d257902454a', status: 'Available', temperament: 'Playful puppy, needs training.', energyLevel: 'High', goodWithKids: true, goodWithDogs: true, goodWithCats: true, fosterHome: 'Eli Turner', adoptionFee: 325 },
+        ],
+        Applicant: [],
+        AdoptionApplication: [],
+        Task: [],
+        OutgoingMessage: [],
+        ActivityEvent: [],
+        WorkflowExecution: [],
+        AdoptionInterest: [],
+      },
+      empty: {
+        Volunteer: [
+          { id: 'maya', name: 'Maya Brooks', email: 'maya@friendlypaws.example', role: 'Volunteer', active: true },
+          { id: 'eli', name: 'Eli Turner', email: 'eli@friendlypaws.example', role: 'Adoption Coordinator', active: true },
+          { id: 'rina', name: 'Rina Shah', email: 'rina@friendlypaws.example', role: 'Admin', active: true },
+        ],
+        Dog: [],
+        Applicant: [],
+        AdoptionApplication: [],
+        Task: [],
+        OutgoingMessage: [],
+        ActivityEvent: [],
+        WorkflowExecution: [],
+        AdoptionInterest: [],
+      },
+    },
+    defaultScenario: 'active',
+    defaultRole: 'eli',
+    accounts: friendlyPawsAccounts,
+    scenarios: [
+      { name: 'active', label: 'Active rescue', description: 'Available dogs, applications under review, follow-up tasks, and simulated messages.' },
+      { name: 'public', label: 'Public listings', description: 'Available dogs ready for a new adoption interest submission.' },
+      { name: 'empty', label: 'Empty rescue', description: 'Staff accounts exist, but operational records have not been added.' },
+    ],
+    trySteps: [
+      'Open Dogs and view Bella, an available Labrador mix.',
+      'Use I’m Interested to submit the public adoption form.',
+      'Open Applications and review Sarah Chen’s application for Milo.',
+      'Trigger Start Review, then inspect the created workflow trace.',
+      'Switch between Volunteer, Coordinator, and Admin to compare permissions.',
+    ],
+    githubUrl: 'https://github.com/zapcirclehq/zebric/tree/main/examples/dog-rescue/blueprint.toml',
+    runLocallyUrl: 'https://github.com/zapcirclehq/zebric/tree/main/examples/dog-rescue#readme',
+    docsUrls: [
+      { label: 'Workflows', href: 'https://docs.zebric.dev/building/workflows/' },
+      { label: 'Security', href: 'https://docs.zebric.dev/building/security/' },
+    ],
+    notes: 'The playground imports the same blueprint used by the local Friendly Paws example. Email delivery and external effects remain simulated in the browser.',
+  },
   {
     slug: 'issue-tracker',
     title: 'Issue Tracker',

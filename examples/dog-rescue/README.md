@@ -10,6 +10,9 @@ pnpm install
 pnpm dev
 ```
 
+The development command builds the workspace runtime before starting the
+example, so local renderer and design-system changes are included.
+
 In another shell:
 
 ```bash

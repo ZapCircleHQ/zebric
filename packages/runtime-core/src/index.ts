@@ -28,6 +28,7 @@ export * from './security/input-validator.js'
 
 // Rendering
 export * from './renderer/theme.js'
+export * from './renderer/design-system.js'
 export * from './renderer/html-renderer.js'
 export * from './renderer/template-system.js'
 export * from './renderer/default-templates.js'

@@ -6,6 +6,12 @@ import type { Blueprint, WorkflowStep, WorkflowTrigger } from '@zebric/runtime-c
 import '@zebric/react-simulator/styles.css'
 import './styles.css'
 import { examples, type PlaygroundDocLink, type PlaygroundExample } from './playground-examples'
+import {
+  getPlaygroundDesignSystem,
+  playgroundDesignSystems,
+  withPlaygroundDesignSystem,
+} from './design-system-selection'
+import type { BuiltinDesignSystemName } from '@zebric/runtime-core'
 
 type Route =
   | { name: 'examples' }
@@ -179,6 +185,7 @@ function ExampleDetailPage({
   const [copyStatus, setCopyStatus] = useState('')
   const [demoMode, setDemoMode] = useState(false)
   const [demoStepIndex, setDemoStepIndex] = useState(0)
+  const [selectedDesignSystem, setSelectedDesignSystem] = useState<BuiltinDesignSystemName>('modern')
   const originalBlueprint = example?.blueprintToml || ''
 
   useEffect(() => {
@@ -187,6 +194,15 @@ function ExampleDetailPage({
     setCopyStatus('')
     setDemoMode(false)
     setDemoStepIndex(0)
+    if (originalBlueprint) {
+      try {
+        setSelectedDesignSystem(getPlaygroundDesignSystem(
+          parser.parse(originalBlueprint, 'toml', `${slug}.toml`)
+        ))
+      } catch {
+        setSelectedDesignSystem('modern')
+      }
+    }
   }, [originalBlueprint])
 
   const parsedDraft = useMemo<ParsedBlueprintDraft>(() => {
@@ -201,6 +217,12 @@ function ExampleDetailPage({
   const validationReport = useMemo(
     () => createValidationReport(parsedDraft, blueprintDraft),
     [blueprintDraft, parsedDraft]
+  )
+  const simulatorBlueprint = useMemo(
+    () => parsedDraft.blueprint
+      ? withPlaygroundDesignSystem(parsedDraft.blueprint, selectedDesignSystem)
+      : undefined,
+    [parsedDraft.blueprint, selectedDesignSystem]
   )
 
   if (!example) {
@@ -284,8 +306,21 @@ function ExampleDetailPage({
 
       <section className="detail-layout">
         <div className={['simulator-column', demoTarget === 'simulator' ? 'is-demo-focus' : ''].filter(Boolean).join(' ')}>
+          <div className="design-system-picker">
+            <label htmlFor="playground-design-system">Design system</label>
+            <select
+              id="playground-design-system"
+              value={selectedDesignSystem}
+              onChange={(event) => setSelectedDesignSystem(event.target.value as BuiltinDesignSystemName)}
+            >
+              {playgroundDesignSystems.map(system => (
+                <option key={system.name} value={system.name}>{system.label}</option>
+              ))}
+            </select>
+          </div>
           <ZebricSimulator
-            blueprintToml={blueprintDraft}
+            blueprint={simulatorBlueprint}
+            blueprintToml={simulatorBlueprint ? undefined : blueprintDraft}
             seeds={example.seeds}
             initialSeed={example.defaultScenario}
             accounts={example.accounts}

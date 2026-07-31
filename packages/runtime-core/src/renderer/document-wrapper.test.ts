@@ -20,6 +20,26 @@ function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
 }
 
 describe('DocumentWrapper Zazzle rendering', () => {
+  it('includes the selected CSS-only design system', () => {
+    const wrapper = new DocumentWrapper(makeBlueprint({
+      design_system: {
+        name: 'dispatch',
+        extends: 'friendly',
+        tokens: { 'color-primary': '#123456' },
+        css: ['/styles/dispatch.css'],
+      },
+    }), defaultTheme)
+
+    const html = wrapper.wrapInDocument('Issues', safe('<p>Content</p>'))
+
+    expect(html).toContain('data-zebric-design-system="dispatch"')
+    expect(html).toContain('href="/styles/dispatch.css"')
+    expect(html).toContain('--zb-color-primary:#123456')
+    expect(html).toContain('--zb-surface-default:#fff9f2')
+    expect(html).toContain('class="bg-gray-50 text-gray-900 min-h-screen zb-body"')
+    expect(html).toContain('.zb-button-primary,[data-zebric-role="primary-action"]{background:var(--zb-color-primary)')
+  })
+
   it('uses configured navigation model and primary nav items', () => {
     const wrapper = new DocumentWrapper(makeBlueprint({
       ux: {
