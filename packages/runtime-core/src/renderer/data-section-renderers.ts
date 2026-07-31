@@ -22,7 +22,7 @@ export function renderChecklist(items: any[], utils: RendererUtils, _theme?: The
         return html`
           <li class="flex items-center justify-between rounded border border-gray-200 px-3 py-2">
             <div>
-              <p class="text-sm font-medium text-gray-900">${escapeHtml(item.title || item.name || item.id)}</p>
+              <p class="text-sm font-medium text-gray-900">${escapeHtml(utils.getRecordLabel(item))}</p>
               ${item.dueDate ? html`<p class="text-xs text-gray-500">Due ${utils.formatValue(item.dueDate, 'Date')}</p>` : ''}
             </div>
             <span class="text-xs font-semibold ${isDone ? 'text-green-600' : 'text-gray-500'}">
@@ -44,7 +44,7 @@ export function renderRampTimeline(items: any[], utils: RendererUtils): SafeHtml
       ${safe(items.map(item => html`
         <li class="mb-6 ml-4">
           <div class="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full ${item.status === 'approved' ? 'bg-green-600' : 'bg-gray-300'}"></div>
-          <p class="text-sm font-medium text-gray-900">${escapeHtml(item.title || item.name || item.id)}</p>
+          <p class="text-sm font-medium text-gray-900">${escapeHtml(utils.getRecordLabel(item))}</p>
           ${item.targetDate ? html`<p class="text-xs text-gray-500">Target ${utils.formatValue(item.targetDate, 'Date')}</p>` : ''}
           ${item.status ? html`<p class="text-xs text-gray-500">Status: ${escapeHtml(item.status)}</p>` : ''}
         </li>

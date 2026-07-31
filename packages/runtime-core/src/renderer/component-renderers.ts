@@ -67,9 +67,7 @@ export class ComponentRenderers {
 
     // Helper to get a readable identifier for an item
     const getItemIdentifier = (item: any): string => {
-      // Try common identifier fields in order of preference
-      const idField = item.name || item.title || item.id || (fields[0]?.name ? item[fields[0].name] : undefined)
-      return idField ? String(idField) : 'item'
+      return this.utils.getRecordLabel(item, entity?.name)
     }
 
     return html`
@@ -267,10 +265,10 @@ export class ComponentRenderers {
                         href="${this.utils.resolveEntityLink(detailPath, entity?.name || name, item)}"
                         class="${this.theme.linkPrimary}"
                       >
-                        ${item.title || item.name || item.id}
+                        ${this.utils.getRecordLabel(item, entity?.name)}
                       </a>
                     `
-                    : item.title || item.name || item.id}
+                    : this.utils.getRecordLabel(item, entity?.name)}
                 </li>
               `.html).join(''))}
             </ul>

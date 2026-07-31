@@ -43,4 +43,20 @@ describe('auth page rendering', () => {
     expect(html).toContain('<h1>Branded login</h1>')
     expect(html).toContain('<span>custom-csrf</span>')
   })
+
+  it('binds the redirect handler to a custom sign-in form without the standard id', () => {
+    const html = new HTMLRenderer(blueprint({
+      providers: ['email'],
+      pages: {
+        signIn: {
+          engine: 'liquid',
+          type: 'inline',
+          source: '<form method="POST" action="{{ auth.action }}">{{ renderer.fields.email | raw }}{{ renderer.fields.password | raw }}<button type="submit">Sign in</button></form>{{ renderer.script | raw }}',
+        },
+      },
+    })).renderSignInPage('/dashboard')
+
+    expect(html).toContain('document.querySelector(\'form[action="\' + endpoint + \'"]\')')
+    expect(html).toContain("window.location.href = callbackURL || '/'")
+  })
 })

@@ -32,7 +32,7 @@
     <h1>Staff sign in</h1>
     <p class="sub">Sign in to review applications, manage tasks, and update dog status.</p>
     <div class="feedback">{{ renderer.feedback | raw }}</div>
-    <form method="POST" action="{{ auth.action }}">
+    <form id="sign-in-form" method="POST" action="{{ auth.action }}">
       <input type="hidden" name="callbackURL" value="{{ auth.callback }}">
       <input type="hidden" name="_csrf" value="{{ auth.csrfToken }}">
       {{ renderer.fields.email | raw }}

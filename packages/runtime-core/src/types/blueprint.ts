@@ -297,7 +297,7 @@ export interface Form {
 
 export interface FormField {
   name: string
-  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime' | 'lookup'
+  type: 'text' | 'textarea' | 'email' | 'password' | 'number' | 'select' | 'checkbox' | 'radio' | 'file' | 'date' | 'datetime' | 'hidden' | 'lookup'
   label?: string
   placeholder?: string
   required?: boolean

@@ -328,6 +328,9 @@ export class LayoutRenderers {
       const columnItems = items.filter((item) => String(getBoardValue(item, board.groupBy) ?? '') === column.value)
       const cards = columnItems.map((item) => {
         const title = getBoardValue(item, board.card.title)
+        const cardTitle = title === undefined || title === null || title === ''
+          ? this.utils.getRecordLabel(item, entity?.name)
+          : this.utils.formatValue(title, 'Text')
         const description = board.card.description
           ? getBoardValue(item, board.card.description)
           : undefined
@@ -358,7 +361,7 @@ export class LayoutRenderers {
         return html`
           <article class="${this.theme.card} p-4" data-board-card data-record-id="${item.id ?? ''}">
             <h3 class="${this.theme.heading3}">
-              ${href ? html`<a href="${href}" class="${this.theme.linkPrimary}">${title ?? item.id}</a>` : title ?? item.id}
+              ${href ? html`<a href="${href}" class="${this.theme.linkPrimary}">${cardTitle}</a>` : cardTitle}
             </h3>
             ${description ? html`<p class="mt-2 text-sm text-gray-600">${description}</p>` : ''}
             ${metadata.length ? html`<div class="mt-3 flex flex-wrap gap-2">${safe(metadata.map((entry) => entry.html).join(''))}</div>` : ''}

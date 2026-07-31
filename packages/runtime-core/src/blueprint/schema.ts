@@ -130,6 +130,7 @@ const FormFieldSchema = z.object({
     'file',
     'date',
     'datetime',
+    'hidden',
     // Controls mountable as form fields — see controls/index.ts.
     'lookup',
   ]),

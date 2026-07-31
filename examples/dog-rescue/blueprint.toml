@@ -354,8 +354,7 @@ mode = "page"
 
 [[page."/dogs/:id/interested".form.fields]]
 name = "dogId"
-type = "text"
-label = "Dog ID"
+type = "hidden"
 default = "$params.id"
 required = true
 

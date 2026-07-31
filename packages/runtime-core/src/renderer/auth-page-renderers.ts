@@ -68,10 +68,11 @@ export class AuthPageRenderers {
         script: `
           <script>
             document.addEventListener('DOMContentLoaded', () => {
+              const endpoint = '${escapedActionJs}'
               const form = document.getElementById('sign-in-form')
+                || document.querySelector('form[action="' + endpoint + '"]')
               if (!form) return
               const feedback = document.getElementById('auth-feedback')
-              const endpoint = '${escapedActionJs}'
               const callbackURL = '${escapedCallbackJs}'
               const emailInput = form.querySelector('input[name="email"]')
               const passwordInput = form.querySelector('input[name="password"]')

@@ -74,6 +74,9 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
   const baseAttrs = `id="${fieldName}" name="${fieldName}" ${required} ${ariaRequired} ${fieldPattern} ${ariaInvalid} ${ariaDescribedBy} ${autocomplete}`.trim()
 
   switch (field.type) {
+    case 'hidden':
+      return `<input type="hidden" id="${fieldName}" name="${fieldName}" value="${escapeHtmlAttr(value)}" />`
+
     case 'lookup':
       if (!field.lookup) {
         return `<p class="control-lookup-error" role="alert">Lookup field "${escapeHtml(field.name)}" is missing its [form.fields.${escapeHtml(field.name)}.lookup] config block.</p>`
@@ -204,6 +207,9 @@ function formatDateTimeLocalValue(value: any): string {
 export function renderFormField(field: any, theme: Theme, utils: RendererUtils, record?: any, context?: { pagePath?: string }): string {
   const value = record?.[field.name] ?? field.default ?? ''
   const fieldName = escapeHtmlAttr(field.name)
+  if (field.type === 'hidden') {
+    return renderInput(field, value, theme, undefined, context)
+  }
   const fieldLabel = escapeHtml(field.label || utils.formatFieldName(field.name))
   const errorMsg = escapeHtml(field.error_message || '')
   const errorId = `${fieldName}-error`
