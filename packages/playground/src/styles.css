@@ -308,6 +308,38 @@ textarea {
   background: #ffffff;
 }
 
+.design-system-picker {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-bottom: 1px solid #cbd8cd;
+  background: #f7faf8;
+  padding: 10px 14px;
+}
+
+.design-system-picker label {
+  color: #3d4f46;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.design-system-picker select {
+  min-width: 132px;
+  border: 1px solid #9fb4a4;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #18201c;
+  padding: 7px 32px 7px 10px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.design-system-picker select:focus-visible {
+  outline: 2px solid #1f7a5c;
+  outline-offset: 2px;
+}
+
 .simulator-column.is-demo-focus {
   border-color: #d6a642;
   box-shadow: 0 0 0 4px rgba(214, 166, 66, 0.18);
@@ -1255,6 +1287,10 @@ textarea {
   .viewer-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .design-system-picker {
+    justify-content: space-between;
   }
 
   .blueprint-stats {
