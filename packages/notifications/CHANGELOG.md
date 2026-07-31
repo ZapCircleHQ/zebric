@@ -1,5 +1,12 @@
 # @zebric/notifications
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies [29339d4]
+  - @zebric/runtime-core@0.3.1
+
 ## 0.3.0
 
 ### Minor Changes
