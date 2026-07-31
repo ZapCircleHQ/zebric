@@ -8,6 +8,9 @@ description = "Dog rescue operations demo: public adoption interest, internal re
 [project.runtime]
 min_version = "0.1.0"
 
+[design_system]
+name = "friendly"
+
 [ux]
 pattern = "queue-detail@v1"
 

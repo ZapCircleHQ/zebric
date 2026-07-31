@@ -17,6 +17,7 @@ export interface Blueprint {
   ui?: UIConfig
   ux?: UXConfig
   design_adapter?: DesignAdapterConfig
+  design_system?: DesignSystemConfig
   notifications?: NotificationsConfig
   skills?: SkillConfig[]
 }
@@ -480,6 +481,17 @@ export interface DesignAdapterConfig {
     spacing?: Record<string, string>
     motion?: Record<string, string>
   }
+}
+
+export interface DesignSystemConfig {
+  /** Built-in name (`modern`, `classic`, `friendly`, or `minimal`) or a custom name. */
+  name?: string
+  /** Built-in system to inherit before applying token overrides. Omit to start from scratch. */
+  extends?: 'modern' | 'classic' | 'friendly' | 'minimal'
+  /** Semantic token names, with or without the `--zb-` prefix. */
+  tokens?: Record<string, string>
+  /** CSS stylesheet paths or URLs, loaded in declaration order. */
+  css?: string[]
 }
 
 export interface PageMeta {

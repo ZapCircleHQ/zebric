@@ -622,6 +622,16 @@ describe('ComponentRenderers', () => {
   })
 
   describe('renderChecklist', () => {
+    it('escapes record labels exactly once', () => {
+      const result = renderer.renderChecklist([
+        { title: 'Bella & Friends <3', status: 'open' },
+      ]).toString()
+
+      expect(result).toContain('Bella &amp; Friends &lt;3')
+      expect(result).not.toContain('&amp;amp;')
+      expect(result).not.toContain('&amp;lt;')
+    })
+
     it('renders items with status', () => {
       const items = [
         { id: '1', title: 'Setup project', status: 'done' },
@@ -647,6 +657,16 @@ describe('ComponentRenderers', () => {
   })
 
   describe('renderRampTimeline', () => {
+    it('escapes milestone labels exactly once', () => {
+      const result = renderer.renderRampTimeline([
+        { title: "O'Brien's & Partners", status: 'pending' },
+      ]).toString()
+
+      expect(result).toContain('O&#x27;Brien&#x27;s &amp; Partners')
+      expect(result).not.toContain('&amp;#x27;')
+      expect(result).not.toContain('&amp;amp;')
+    })
+
     it('renders timeline items', () => {
       const items = [
         { id: '1', title: 'Milestone 1', status: 'approved' },

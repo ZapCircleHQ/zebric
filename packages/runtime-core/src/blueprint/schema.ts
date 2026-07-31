@@ -556,6 +556,13 @@ const DesignAdapterConfigSchema = z.object({
   }).optional(),
 })
 
+const DesignSystemConfigSchema = z.object({
+  name: z.string().min(1).optional(),
+  extends: z.enum(['modern', 'classic', 'friendly', 'minimal']).optional(),
+  tokens: z.record(StringKeySchema, z.string()).optional(),
+  css: z.array(z.string().min(1)).optional(),
+})
+
 // ============================================================================
 // Notifications
 // ============================================================================
@@ -619,6 +626,7 @@ export const BlueprintSchema = z.object({
   ui: UIConfigSchema.optional(),
   ux: UXConfigSchema.optional(),
   design_adapter: DesignAdapterConfigSchema.optional(),
+  design_system: DesignSystemConfigSchema.optional(),
   notifications: NotificationsConfigSchema.optional(),
   skills: z.array(SkillConfigSchema).optional(),
 })

@@ -104,7 +104,7 @@ export class RendererUtils {
         return JSON.stringify(this.redactTechnicalIdentifiers(value), null, 2)
 
       default:
-        return this.looksLikeTechnicalIdentifier(value) ? '—' : String(value)
+        return String(value)
     }
   }
 
@@ -132,7 +132,7 @@ export class RendererUtils {
           .map(([key, item]) => [key, this.redactTechnicalIdentifiers(item)])
       )
     }
-    return this.looksLikeTechnicalIdentifier(value) ? '—' : value
+    return value
   }
 
   /**

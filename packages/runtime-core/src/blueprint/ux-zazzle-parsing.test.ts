@@ -48,6 +48,29 @@ ${uxToml}
 }
 
 describe('Zazzle UX parsing', () => {
+  it('parses a custom design system with inheritance, tokens, and CSS files', () => {
+    const bp = parser.parse(blueprintWithUX(`
+[design_system]
+name = "acme"
+extends = "modern"
+css = ["/styles/layout.css", "/styles/components.css"]
+
+[design_system.tokens]
+color-primary = "#ff0066"
+spacing-medium = "1.25rem"
+`), 'toml')
+
+    expect(bp.design_system).toEqual({
+      name: 'acme',
+      extends: 'modern',
+      css: ['/styles/layout.css', '/styles/components.css'],
+      tokens: {
+        'color-primary': '#ff0066',
+        'spacing-medium': '1.25rem',
+      },
+    })
+  })
+
   it('parses top-level UX and design adapter config', () => {
     const bp = parser.parse(blueprintWithUX(`
 [ux]
