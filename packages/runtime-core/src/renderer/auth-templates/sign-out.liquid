@@ -7,11 +7,17 @@
     <script>
       async function signOut() {
         try {
-          await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' })
+          const response = await fetch('/api/auth/sign-out', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'x-csrf-token': '{{ auth.csrfToken }}' }
+          })
+          if (!response.ok) throw new Error('Sign out failed with status ' + response.status)
+          window.location.href = '{{ auth.callbackJs }}'
         } catch (error) {
           console.error('Failed to sign out', error)
-        } finally {
-          window.location.href = '{{ auth.callbackJs }}'
+          const feedback = document.getElementById('sign-out-feedback')
+          if (feedback) feedback.hidden = false
         }
       }
       window.addEventListener('DOMContentLoaded', signOut)
@@ -23,11 +29,12 @@
       <div class="{{ theme.card }} w-full max-w-md p-8 text-center space-y-4">
         <h1 class="{{ theme.heading1 }}">Signing you out…</h1>
         <p class="text-gray-600">You will be redirected shortly.</p>
+        <p id="sign-out-feedback" class="text-sm text-red-600" hidden>Sign out failed. Please try again.</p>
         <noscript>
-          <p class="text-sm text-gray-500">
-            JavaScript is required to sign out automatically.
-            <a href="/api/auth/sign-out" class="{{ theme.linkPrimary }}">Click here</a> instead.
-          </p>
+          <form method="POST" action="/api/auth/sign-out">
+            <input type="hidden" name="_csrf" value="{{ auth.csrfToken }}">
+            <button type="submit" class="{{ theme.buttonPrimary }}">Sign out</button>
+          </form>
         </noscript>
       </div>
     </div>

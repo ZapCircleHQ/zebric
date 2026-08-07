@@ -29,13 +29,51 @@ export function renderNavigation(
       `
     }) || []
 
+  const notificationPath = resolveNotificationPath(blueprint)
+  const notificationControl = session && notificationPath
+    ? `
+      <a
+        href="${escapeHtmlAttr(notificationPath)}"
+        class="zb-nav-action"
+        aria-label="Notifications"
+        title="Notifications"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"></path>
+          <path d="M10 21h4"></path>
+        </svg>
+      </a>
+    `
+    : ''
+
+  const colorModeControl = `
+    <button
+      type="button"
+      class="zb-nav-action"
+      data-zebric-color-mode-control
+      aria-label="Color mode: Auto"
+      title="Color mode: Auto"
+    >
+      <svg data-zebric-color-mode-icon="auto" aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="8"></circle><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"></path>
+      </svg>
+      <svg data-zebric-color-mode-icon="light" hidden aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+        <circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"></path>
+      </svg>
+      <svg data-zebric-color-mode-icon="dark" hidden aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path>
+      </svg>
+      <span class="sr-only" data-zebric-color-mode-label>Auto</span>
+    </button>
+  `
+
   const authControl = session
     ? `
-      <div class="flex items-center gap-3">
-        <span class="text-sm text-gray-500">${escapeHtml(session.user?.name || session.user?.email || 'Signed in')}</span>
+      <div class="zb-nav-account">
+        <span class="zb-nav-username">${escapeHtml(session.user?.name || session.user?.email || 'Signed in')}</span>
         <a
           href="/auth/sign-out?callbackURL=${encodeURIComponent(currentPath || '/')}"
-          class="${theme.linkSecondary}"
+          class="zb-nav-auth ${theme.linkSecondary}"
           aria-label="Sign out"
         >
           Sign out
@@ -45,7 +83,7 @@ export function renderNavigation(
     : `
       <a
         href="/auth/sign-in?callbackURL=${encodeURIComponent(currentPath || '/')}"
-        class="${theme.linkPrimary}"
+        class="zb-nav-auth ${theme.linkPrimary}"
         aria-label="Sign in to your account"
       >
         Sign in
@@ -79,12 +117,33 @@ export function renderNavigation(
           </a>
           <div class="${navLinksClasses}">
             ${navItems.join('')}
-            ${authControl}
+            <div class="zb-nav-actions" aria-label="Application actions">
+              ${notificationControl}
+              ${colorModeControl}
+              ${authControl}
+            </div>
           </div>
         </div>
       </div>
     </nav>
   `)
+}
+
+/** Find an app-owned page suitable for notifications bubbled up to the user. */
+export function resolveNotificationPath(blueprint: Blueprint): string | undefined {
+  const pages = blueprint.pages?.filter(page => !page.path.includes(':')) ?? []
+  const preferredPaths = ['/notifications', '/inbox', '/activity']
+  for (const path of preferredPaths) {
+    const match = pages.find(page => page.path.toLowerCase() === path)
+    if (match) return match.path
+  }
+
+  const preferredTitles = ['notifications', 'inbox', 'activity']
+  for (const title of preferredTitles) {
+    const match = pages.find(page => page.title.toLowerCase() === title)
+    if (match) return match.path
+  }
+  return undefined
 }
 
 export function resolveNavPages(blueprint: Blueprint): Array<{ path: string; title: string }> {

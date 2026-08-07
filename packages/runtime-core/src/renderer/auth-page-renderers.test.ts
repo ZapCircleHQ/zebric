@@ -28,6 +28,17 @@ describe('auth page rendering', () => {
     expect(html).toContain("'x-csrf-token': csrfInput.value")
   })
 
+  it('submits the CSRF token when signing out', () => {
+    const html = new HTMLRenderer(blueprint()).renderSignOutPage(
+      'http://localhost:3000/',
+      'csrf-sign-out-token',
+    )
+
+    expect(html).toContain("'x-csrf-token': 'csrf-sign-out-token'")
+    expect(html).toContain('name="_csrf" value="csrf-sign-out-token"')
+    expect(html).toContain("if (!response.ok) throw new Error")
+  })
+
   it('uses a blueprint-provided inline sign-in template', () => {
     const html = new HTMLRenderer(blueprint({
       providers: ['email'],

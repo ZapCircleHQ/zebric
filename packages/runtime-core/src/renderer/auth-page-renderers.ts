@@ -271,10 +271,13 @@ export class AuthPageRenderers {
   /**
    * Render sign-out page
    */
-  renderSignOutPage(callbackURL: string): string {
+  renderSignOutPage(callbackURL: string, csrfToken?: string): string {
     const escapedCallbackJs = escapeJs(callbackURL || '/')
     return this.renderAuthTemplate('sign-out', {
-      auth: { callbackJs: escapedCallbackJs }
+      auth: {
+        callbackJs: escapedCallbackJs,
+        csrfToken: escapeHtmlAttr(csrfToken || ''),
+      }
     })
   }
 

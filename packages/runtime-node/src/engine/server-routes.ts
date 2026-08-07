@@ -253,7 +253,8 @@ export function registerAuthPages(app: Hono, blueprint: Blueprint, config: Engin
   app.get('/auth/sign-out', async (c) => {
     const callback = `${resolveOrigin(c.req.raw, config)}${getCallbackPath(c.req.raw)}`
     const renderer = await createAuthRenderer(blueprint, config)
-    return c.html(renderer.renderSignOutPage(callback))
+    const csrfToken = getInjectedCsrfTokenFromRequest(c.req.raw)
+    return c.html(renderer.renderSignOutPage(callback, csrfToken))
   })
 }
 

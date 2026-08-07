@@ -62,6 +62,32 @@ color-primary = "#222222"
 surface-default = "#ffffff"
 ```
 
+## Dark mode
+
+Every built-in ships a matching dark palette, tuned to stay on-brand (each
+system keeps its own hue and warmth rather than falling back to a generic
+gray) while meeting WCAG AA contrast. Visitors can cycle light/dark/auto from
+the nav bar; the resolved mode is written to
+`<html data-zebric-resolved-color-mode="dark">`, which is enough to flip the
+built-in's tokens automatically — no extra configuration needed.
+
+Two tokens exist specifically to keep contrast correct in both modes:
+
+- `text-on-primary` — the text color placed on top of a `color-primary`
+  filled surface (e.g. a primary button). Some built-ins invert `color-primary`
+  in dark mode (`minimal`'s black becomes white), so button text can't be
+  hardcoded to white.
+- `color-primary-text` — the brand color as used for *text* (links, focus
+  rings) rather than a filled background. A shade dark enough to hold white
+  button text is usually too dark to read as body-sized text on a dark page,
+  so dark mode needs a brighter tint here than `color-primary` itself uses.
+
+A custom system that only sets `color-primary` inherits sensible values for
+both from its `extends` base. Custom systems built `from scratch` (no
+`extends`) get a generic dark fallback for surfaces/text/borders; set your own
+`color-primary-text` / `text-on-primary` overrides if you need brand-accurate
+dark-mode links and buttons.
+
 ## Documentation
 
 Full docs at [docs.zebric.dev](https://docs.zebric.dev)

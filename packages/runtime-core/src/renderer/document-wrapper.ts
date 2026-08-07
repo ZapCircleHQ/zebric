@@ -64,6 +64,8 @@ export class DocumentWrapper {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>${escapedTitle} - ${escapedProjectName}</title>
 
+          ${this.renderColorModeBootstrap().html}
+
           ${this.renderInlineStyles().html}
           ${renderDesignSystemStyles(designSystem)}
 
@@ -161,12 +163,73 @@ export class DocumentWrapper {
     return safe(INLINE_TAILWIND_STYLE_TAG)
   }
 
+  private renderColorModeBootstrap(): SafeHtml {
+    return safe(`
+      <script>
+        (() => {
+          const key = 'zebric-color-mode'
+          const allowed = ['light', 'dark', 'auto']
+          let mode = 'auto'
+          try {
+            const stored = localStorage.getItem(key)
+            if (allowed.includes(stored)) mode = stored
+          } catch (_) {}
+          const dark = mode === 'dark' || (mode === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.zebricColorMode = mode
+          document.documentElement.dataset.zebricResolvedColorMode = dark ? 'dark' : 'light'
+        })()
+      </script>
+      <style>
+        html[data-zebric-resolved-color-mode="dark"] .zb-body { background: var(--zb-surface-default); color: var(--zb-text-primary); }
+        .zb-nav-actions { display: flex; align-items: center; gap: .5rem; margin-left: .25rem; }
+        .zb-nav-action { display: inline-flex; width: 2.25rem; height: 2.25rem; align-items: center; justify-content: center; border: 1px solid var(--zb-border-default); border-radius: var(--zb-radius-small); background: var(--zb-surface-card); color: var(--zb-text-secondary); cursor: pointer; }
+        .zb-nav-action:hover { color: var(--zb-text-primary); border-color: var(--zb-text-secondary); }
+        .zb-nav-action:focus-visible, .zb-nav-auth:focus-visible { outline: 2px solid var(--zb-color-primary-text); outline-offset: 2px; }
+        .zb-nav-account { display: flex; align-items: center; gap: .75rem; padding-left: .25rem; }
+        .zb-nav-username { max-width: 12rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zb-text-secondary); font-size: var(--zb-font-size-small); }
+        .zb-nav-auth { white-space: nowrap; font-size: var(--zb-font-size-small); font-weight: var(--zb-font-weight-medium); }
+        @media (max-width: 47.99rem) { .zb-nav-username { display: none; } }
+      </style>
+    `)
+  }
+
   /**
    * Render client-side enhancement script
    */
   private renderClientScript(): SafeHtml {
     return safe(`
       <script>
+        (() => {
+          const key = 'zebric-color-mode'
+          const modes = ['auto', 'light', 'dark']
+          const media = matchMedia('(prefers-color-scheme: dark)')
+          const root = document.documentElement
+          const control = document.querySelector('[data-zebric-color-mode-control]')
+          if (!control) return
+          const apply = (mode, persist) => {
+            const resolved = mode === 'dark' || (mode === 'auto' && media.matches) ? 'dark' : 'light'
+            root.dataset.zebricColorMode = mode
+            root.dataset.zebricResolvedColorMode = resolved
+            const name = mode.charAt(0).toUpperCase() + mode.slice(1)
+            control.setAttribute('aria-label', 'Color mode: ' + name + '. Activate to change.')
+            control.setAttribute('title', 'Color mode: ' + name)
+            const label = control.querySelector('[data-zebric-color-mode-label]')
+            if (label) label.textContent = name
+            control.querySelectorAll('[data-zebric-color-mode-icon]').forEach(icon => {
+              icon.hidden = icon.dataset.zebricColorModeIcon !== mode
+            })
+            if (persist) try { localStorage.setItem(key, mode) } catch (_) {}
+          }
+          control.addEventListener('click', () => {
+            const current = root.dataset.zebricColorMode || 'auto'
+            apply(modes[(modes.indexOf(current) + 1) % modes.length], true)
+          })
+          media.addEventListener?.('change', () => {
+            if (root.dataset.zebricColorMode === 'auto') apply('auto', false)
+          })
+          apply(root.dataset.zebricColorMode || 'auto', false)
+        })()
+
         // Minimal form enhancement
         document.querySelectorAll('form[data-enhance]').forEach(form => {
           if (form.dataset.enhance === 'none') return
