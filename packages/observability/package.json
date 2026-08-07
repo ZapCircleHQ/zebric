@@ -1,6 +1,6 @@
 {
   "name": "@zebric/observability",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Cross-runtime operational logging and correlation utilities for Zebric",
   "repository": {
     "type": "git",

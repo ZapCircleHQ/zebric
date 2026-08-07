@@ -1,5 +1,14 @@
 # @zebric/react-simulator
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [9aa29c3]
+- Updated dependencies [1df1c9a]
+  - @zebric/runtime-core@0.4.0
+  - @zebric/runtime-simulator@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
