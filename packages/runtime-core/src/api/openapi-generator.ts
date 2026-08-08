@@ -22,7 +22,7 @@ export interface OpenAPISpec {
   security: Array<Record<string, any[]>>
 }
 
-const FIELD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
+const FIELD_TYPE_MAP: Record<string, { type: string | string[]; format?: string }> = {
   Text: { type: 'string' },
   LongText: { type: 'string' },
   Email: { type: 'string', format: 'email' },
@@ -31,7 +31,7 @@ const FIELD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
   Boolean: { type: 'boolean' },
   DateTime: { type: 'string', format: 'date-time' },
   Date: { type: 'string', format: 'date' },
-  JSON: { type: 'object' },
+  JSON: { type: ['object', 'array'] },
   Ref: { type: 'string' },
   ULID: { type: 'string' },
   UUID: { type: 'string', format: 'uuid' },

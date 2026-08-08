@@ -10,7 +10,7 @@ interface OpenApiParameter {
   required?: boolean
   description?: string
   schema?: {
-    type?: string
+    type?: string | string[]
     enum?: unknown[]
     default?: unknown
   }
@@ -24,7 +24,7 @@ interface OpenApiOperation {
     content?: {
       'application/json'?: {
         schema?: {
-          properties?: Record<string, { type?: string; enum?: unknown[] }>
+          properties?: Record<string, { type?: string | string[]; enum?: unknown[] }>
           required?: string[]
         }
       }
@@ -58,11 +58,15 @@ export interface RuntimeToolFactoryOptions {
 function parameterSchema(parameter: OpenApiParameter): z.ZodType {
   const schema = parameter.schema ?? {}
   let result: z.ZodType
+  if (Array.isArray(schema.type) && schema.type.includes('object') && schema.type.includes('array')) {
+    result = z.json()
+  } else {
   switch (schema.type) {
     case 'integer': result = z.number().int(); break
     case 'number': result = z.number(); break
     case 'boolean': result = z.boolean(); break
     default: result = z.string()
+  }
   }
   if (schema.enum?.length) {
     result = result.refine(value => schema.enum!.includes(value), {

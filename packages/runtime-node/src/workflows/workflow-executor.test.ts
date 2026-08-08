@@ -1034,4 +1034,52 @@ describe('WorkflowExecutor', () => {
       expect(result.result.apiResponse).toEqual({ success: true, data: 'response' })
     })
   })
+
+  describe('transactional workflows', () => {
+    it('executes all steps in one transaction and emits entity events after commit', async () => {
+      const order: string[] = []
+      ;(mockDataLayer as any).transaction = vi.fn(async (fn: () => Promise<unknown>) => {
+        order.push('begin')
+        const result = await fn()
+        order.push('commit')
+        return result
+      })
+      ;(mockDataLayer.create as any).mockImplementation(async () => {
+        order.push('create')
+        return { id: 'created' }
+      })
+      mockEntityEventHandler.mockImplementation(async () => { order.push('event') })
+
+      const result = await executor.execute({
+        name: 'transactional-create',
+        trigger: { manual: true },
+        transactional: true,
+        steps: [{ type: 'query', entity: 'Result', action: 'create', data: { value: 'ok' } }],
+      }, {
+        trigger: { type: 'manual' },
+        variables: {},
+      })
+
+      expect(result.success).toBe(true)
+      expect(order).toEqual(['begin', 'create', 'commit', 'event'])
+    })
+
+    it('does not emit entity events when the transaction rolls back', async () => {
+      ;(mockDataLayer as any).transaction = vi.fn(async (fn: () => Promise<unknown>) => fn())
+      ;(mockDataLayer.create as any).mockRejectedValue(new Error('result insert failed'))
+
+      const result = await executor.execute({
+        name: 'transactional-failure',
+        trigger: { manual: true },
+        transactional: true,
+        steps: [{ type: 'query', entity: 'Result', action: 'create', data: { value: 'bad' } }],
+      }, {
+        trigger: { type: 'manual' },
+        variables: {},
+      })
+
+      expect(result).toMatchObject({ success: false, error: 'result insert failed' })
+      expect(mockEntityEventHandler).not.toHaveBeenCalled()
+    })
+  })
 })

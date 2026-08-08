@@ -12,6 +12,7 @@ import type { UserSession, PermissionManager } from '@zebric/runtime-core'
 import { AccessControl } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
+import { AsyncLocalStorage } from 'node:async_hooks'
 // performance.now() is available as a Web API (no import needed)
 
 export interface QueryContext {
@@ -22,6 +23,9 @@ export interface QueryContext {
 
 export class QueryExecutor {
   private permissionManager?: PermissionManager
+  private readonly transactionContext = new AsyncLocalStorage<{ token: symbol; db?: any }>()
+  private activeTransaction?: { token: symbol; done: Promise<void> }
+  private transactionTail: Promise<void> = Promise.resolve()
 
   constructor(
     private connection: DatabaseConnection,
@@ -29,6 +33,65 @@ export class QueryExecutor {
     private metrics?: MetricsRegistry
   ) {
     this.permissionManager = permissionManager
+  }
+
+  /**
+   * Execute a group of query operations as one database transaction.
+   * Calls made through this executor from other async contexts wait until the
+   * transaction completes, preventing them from joining a SQLite transaction.
+   */
+  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+    // Nested callers participate in the existing transaction.
+    if (this.transactionContext.getStore()) {
+      return fn()
+    }
+    await this.waitForTransaction()
+
+    let releaseQueue!: () => void
+    const previous = this.transactionTail
+    this.transactionTail = new Promise<void>((resolve) => { releaseQueue = resolve })
+    await previous
+
+    const token = Symbol('query-transaction')
+    let resolveDone!: () => void
+    const done = new Promise<void>((resolve) => { resolveDone = resolve })
+    this.activeTransaction = { token, done }
+
+    try {
+      const db = this.connection.getDb() as any
+      if (this.connection.getType() === 'postgres') {
+        return await db.transaction((tx: any) =>
+          this.transactionContext.run({ token, db: tx }, fn)
+        )
+      }
+
+      const sqlite = this.connection.getSQLite()
+      if (!sqlite) throw new Error('SQLite connection is not initialized')
+      sqlite.exec('BEGIN IMMEDIATE')
+      try {
+        const result = await this.transactionContext.run({ token }, fn)
+        sqlite.exec('COMMIT')
+        return result
+      } catch (error) {
+        sqlite.exec('ROLLBACK')
+        throw error
+      }
+    } finally {
+      this.activeTransaction = undefined
+      resolveDone()
+      releaseQueue()
+    }
+  }
+
+  private getDb(): any {
+    return this.transactionContext.getStore()?.db ?? this.connection.getDb()
+  }
+
+  private async waitForTransaction(): Promise<void> {
+    const active = this.activeTransaction
+    if (active && this.transactionContext.getStore()?.token !== active.token) {
+      await active.done
+    }
   }
 
   /**
@@ -42,7 +105,8 @@ export class QueryExecutor {
    * Execute a Blueprint query
    */
   async execute(queryDef: Query, context: QueryContext = {}): Promise<any[]> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(queryDef.entity)
     const entity = this.connection.getEntity(queryDef.entity)
 
@@ -141,7 +205,8 @@ export class QueryExecutor {
     query: string,
     options: { limit?: number; filter?: Record<string, any>; context?: QueryContext } = {}
   ): Promise<any[]> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(entityName)
     const entity = this.connection.getEntity(entityName)
 
@@ -226,7 +291,8 @@ export class QueryExecutor {
    * Create a new record
    */
   async create(entityName: string, data: Record<string, any>, context?: QueryContext): Promise<any> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(entityName)
     const entity = this.connection.getEntity(entityName)
 
@@ -317,7 +383,8 @@ export class QueryExecutor {
     data: Record<string, any>,
     context?: QueryContext
   ): Promise<any> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(entityName)
     const entity = this.connection.getEntity(entityName)
 
@@ -383,7 +450,8 @@ export class QueryExecutor {
    * Delete a record
    */
   async delete(entityName: string, id: string, context?: QueryContext): Promise<void> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(entityName)
     const entity = this.connection.getEntity(entityName)
 
@@ -425,7 +493,8 @@ export class QueryExecutor {
    * Count records matching query
    */
   async count(queryDef: Query, context: QueryContext = {}): Promise<number> {
-    const db = this.connection.getDb()
+    await this.waitForTransaction()
+    const db = this.getDb()
     const table = this.connection.getTable(queryDef.entity)
 
     if (!table) {

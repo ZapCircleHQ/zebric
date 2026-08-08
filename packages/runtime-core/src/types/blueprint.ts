@@ -508,6 +508,7 @@ export interface Workflow {
   name: string
   trigger: WorkflowTrigger
   precondition?: Record<string, any>
+  transactional?: boolean
   steps: WorkflowStep[]
 }
 

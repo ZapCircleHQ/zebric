@@ -108,7 +108,7 @@ describe('generateOpenAPISpec', () => {
       expect(props.priority).toEqual({ type: 'integer' })
       expect(props.isActive).toEqual({ type: 'boolean' })
       expect(props.score).toEqual({ type: 'number' })
-      expect(props.metadata).toEqual({ type: 'object' })
+      expect(props.metadata).toEqual({ type: ['object', 'array'] })
       expect(props.email).toEqual({ type: 'string', format: 'email' })
       expect(props.createdAt).toEqual({ type: 'string', format: 'date-time' })
     })

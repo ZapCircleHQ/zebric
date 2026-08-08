@@ -511,9 +511,10 @@ apply_blueprint_patch
 - [x] Claim the task atomically before testing.
 - [x] Fetch acceptance criteria, test target, and revision.
 - [ ] Refuse or ask for help when required context is missing.
-- [ ] Submit structured results and evidence.
-- [ ] Invoke `qa_completed`, `needs_work`, or a supported blocked outcome.
-- [ ] Observe all workflow jobs to terminal state.
+- [x] Submit structured results and evidence through the generated semantic tools.
+- [x] Invoke the supported `qa_completed` and `needs_work` outcomes.
+- [ ] Add and invoke a supported blocked outcome.
+- [x] Observe all invoked workflow jobs to terminal state.
 
 ### 6.2 Define a test-runner adapter
 
@@ -534,10 +535,11 @@ interface QaExecutor {
 
 ### 6.3 Normalize evidence
 
-- [ ] Produce the QA result format expected by Agent API v1.
-- [ ] Record the exact tested revision and environment.
+- [x] Produce the initial QA result format expected by Agent API v1.
+- [x] Record the exact tested revision in the QA result.
+- [ ] Record the exact tested environment in the QA result.
 - [ ] Upload large artifacts through a declared capability rather than embedding them in model context.
-- [ ] Include concise observations and machine-readable check status.
+- [x] Include concise observations and machine-readable check status.
 - [ ] Avoid including secrets, cookies, or personal data in evidence.
 
 ### 6.4 Handle interrupted QA runs
@@ -733,24 +735,50 @@ Evaluate:
 
 ### 11.1 Developer documentation
 
-- [ ] Installation and model-provider setup.
-- [ ] Connecting to a local and remote Zebric application.
-- [ ] Credential issuance, rotation, and scope guidance.
-- [ ] Author-mode filesystem safety.
-- [ ] Blueprint validation, review, and patch workflow.
-- [ ] QA executor integration guide.
-- [ ] Library API reference.
+All end-user documentation belongs under `packages/docs/src/content/docs` and must be added to the Starlight sidebar in `packages/docs/astro.config.mjs`.
+
+- [ ] Add `agents/zebric-agent/index.mdx` introducing Zebric Agent, its current maturity, supported use cases, and the boundary between Agent API and Zebric Agent.
+- [ ] Add `agents/zebric-agent/getting-started.mdx` covering installation, model-provider setup, local configuration, and a first no-mutation session.
+- [ ] Add `agents/zebric-agent/connect.mdx` covering discovery, local and remote application connections, credential references, multiple applications, and TLS expectations.
+- [ ] Add `agents/zebric-agent/author-mode.mdx` covering deterministic Blueprint validation, workspace roots, read-only defaults, filesystem safety, and the planned review/patch workflow.
+- [ ] Add `agents/zebric-agent/approvals.mdx` explaining read tools, mutation opt-in, approval requests, idempotency, rejection, retries, conflicts, and job observation.
+- [ ] Add `agents/zebric-agent/qa.mdx` documenting the Ready to Test workflow, the QA executor boundary, evidence handling, revision safety, interrupted runs, and currently implemented versus planned transitions.
+- [ ] Add `agents/zebric-agent/testing.mdx` explaining the no-model deterministic driver, mock contract tests, real-runtime harness, and how integrators can add scripted scenarios.
+- [ ] Add `reference/agent-library.mdx` for `createZebricAgent`, application configuration, credential providers, generated tools, mutation approval callbacks, and `DeterministicAgentDriver`.
+- [ ] Document model/provider compatibility separately from the stable Zebric Agent API.
+- [ ] Document credential issuance, rotation, and scopes only as they become available in Agent API; label environment-backed keys accurately in the meantime.
 
 ### 11.2 Application-author guidance
 
-- [ ] How to design useful semantic skills for Zebric Agent.
-- [ ] How action descriptions influence safe tool selection.
-- [ ] How to classify action risk and required scopes.
-- [ ] How to return bounded, structured results.
-- [ ] How to expose QA context without exposing secrets.
-- [ ] How to make workflow actions idempotent and observable.
+- [ ] Add an “Authoring for Zebric Agent” section to `building/agent-api/index.mdx`, linking to the canonical skills and workflow reference rather than duplicating it.
+- [ ] Explain how action names and descriptions influence safe tool selection.
+- [ ] Show how to design useful semantic skills instead of exposing broad CRUD operations.
+- [ ] Explain current GET-only defaults and explicit mutation approval behavior.
+- [ ] Document how to return bounded, structured results suitable for model context.
+- [ ] Document how to expose acceptance criteria, test targets, and revision context without exposing secrets.
+- [ ] Document how to make workflow actions atomic, idempotent, observable, and conflict-aware.
+- [ ] Add an application-author checklist that can be applied to Blueprints during review.
 
-### 11.3 Distribution
+### 11.3 CLI and troubleshooting documentation
+
+- [ ] Expand `reference/cli.mdx` as each `zebric-agent` command ships; avoid publishing planned command syntax as available behavior.
+- [ ] Add Zebric Agent diagnostics to `guides/troubleshooting.mdx`: model credentials, application credentials, discovery failures, schema incompatibility, approval rejection, tool validation, timeouts, job failures, and conflicts.
+- [ ] Document exit codes and structured JSON output once the CLI implements them.
+- [ ] Document how to inspect a deterministic transcript without exposing application credentials or sensitive response bodies.
+- [ ] Document current process-local limitations for job and idempotency observation.
+
+### 11.4 Documentation examples and quality gates
+
+- [ ] Use `examples/issue-board` as the canonical end-to-end example throughout the Agent API and Zebric Agent guides.
+- [ ] Keep examples synchronized with the deterministic harness so published requests and responses remain executable.
+- [ ] Add screenshots or terminal transcripts only after the corresponding interface is stable.
+- [ ] Cross-link Zebric Agent pages with `reference/skills.mdx`, `reference/api.mdx`, `building/workflows.mdx`, and `building/security.mdx`.
+- [ ] Add an “Agents” group to the Starlight sidebar with a clear reading order.
+- [ ] Run the docs build and link checks before release.
+- [ ] Add a documentation review gate to the Zebric Agent release checklist.
+- [ ] Clearly label experimental APIs and distinguish implemented behavior from roadmap items.
+
+### 11.5 Distribution
 
 - [ ] Publish `@zebric/agent`.
 - [ ] Expose the `zebric-agent` binary.

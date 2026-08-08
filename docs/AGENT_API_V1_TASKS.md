@@ -376,8 +376,8 @@ Suggested shape:
 
 ### 7.2 Model structured QA results
 
-- [ ] Add a QA result entity or equivalent immutable result record.
-- [ ] Record outcome, summary, individual checks, evidence references, tested revision, agent, and timestamps.
+- [x] Add a QA result entity or equivalent immutable result record.
+- [x] Record outcome, summary, individual checks, evidence references, tested revision, agent run, and creation timestamp.
 - [ ] Support `passed`, `failed`, `blocked`, and optionally `inconclusive` checks.
 - [ ] Validate evidence metadata and cap payload sizes.
 - [ ] Store large screenshots and logs externally and retain references in Zebric.
@@ -386,11 +386,12 @@ Suggested shape:
 
 - [x] `ClaimTaskForQA`
 - [ ] `ReportQAResult`
-- [ ] `CompleteQA`
-- [ ] `MarkNeedsWork`
+- [x] `CompleteQA`
+- [x] `MarkNeedsWork`
 - [ ] `ReleaseQAClaim` or claim expiration
-- [ ] Ensure every workflow validates allowed source state.
-- [ ] Ensure result creation, task transition, and audit entry have appropriate transactional behavior.
+- [x] Ensure implemented claim and terminal workflows validate allowed source state.
+- [x] Ensure QA result creation and task transition commit or roll back together.
+- [ ] Include the audit entry in the same transactional boundary, or define an outbox-backed consistency contract.
 
 ### 7.4 Publish a QA skill
 
@@ -420,16 +421,16 @@ Suggested shape:
 - [x] Discover the application and OpenAPI document.
 - [x] Authenticate.
 - [x] List only `ready_to_test` tasks.
-- [ ] Claim a task.
+- [x] Claim a task.
 - [ ] Read complete testing context.
-- [ ] Submit structured evidence.
-- [ ] Trigger `qa_completed`.
-- [ ] Observe the workflow to completion.
+- [x] Submit structured evidence.
+- [x] Trigger `qa_completed`.
+- [x] Observe the workflow to completion.
 - [ ] Verify task state and audit attribution.
 
 ### 8.3 Cover safety and failure cases
 
-- [ ] Two agents race concurrently to claim one task. (Atomic compare-and-set and sequential conflict coverage are complete; a synchronized race test remains.)
+- [x] Two agents race concurrently to claim one task; exactly one claim succeeds.
 - [x] A request is retried with the same idempotency key.
 - [x] An idempotency key is reused with a different body.
 - [x] A stale agent attempts a transition.
@@ -490,12 +491,48 @@ workflow.failed
 
 ### Documentation
 
-- [ ] Add an Agent API authoring guide.
-- [ ] Document credential provisioning and rotation.
-- [ ] Document semantic action design and unsafe anti-patterns.
-- [ ] Add copyable curl examples.
-- [ ] Add an agent connection walkthrough using only the base URL and credential.
-- [ ] Clearly separate Zebric orchestration from browser/test-runner responsibilities.
+All end-user documentation belongs under `packages/docs/src/content/docs` and must be added to the Starlight sidebar in `packages/docs/astro.config.mjs`.
+
+#### Agent API guide
+
+- [ ] Add `building/agent-api/index.mdx` explaining what makes a Zebric application agent-drivable and when to expose a skill instead of generic entity CRUD.
+- [ ] Add `building/agent-api/skills.mdx` with complete Blueprint examples for read actions, typed query filters, entity actions, and workflow-backed semantic mutations.
+- [ ] Add `building/agent-api/workflow-actions.mdx` covering preconditions, atomic conditional updates, `202 Accepted`, job observation, conflicts, and idempotent retries.
+- [ ] Add `building/agent-api/security.mdx` covering API keys, current limitations, least authority, CSRF behavior, credential handling, action descriptions, and unsafe exposure patterns.
+- [ ] Add a design checklist for semantic actions, bounded inputs/results, safe state transitions, and useful descriptions.
+
+#### Agent API reference
+
+- [ ] Expand `reference/skills.mdx` with the `query` schema, supported parameter types, `field` mapping, defaults, required values, enum constraints, pagination behavior, and validation errors.
+- [ ] Expand `reference/api.mdx` with `/.well-known/zebric-agent.json`, `/api/openapi.json`, workflow action responses, `/api/jobs/{id}`, `Idempotency-Key`, and `409` behavior.
+- [ ] Document the discovery document fields and capability flags, including how clients must treat a capability reported as `false`.
+- [ ] Document the workflow-job response schema and ownership rules.
+- [ ] Add a status-code and error-behavior table for authentication, authorization, validation, missing resources, stale transitions, and server failures.
+- [ ] Document which Agent API state is currently process-local, especially workflow jobs and idempotency records.
+
+#### Tutorials and examples
+
+- [ ] Add `guides/agent-ready-issue-board.mdx` that incrementally extends `examples/issue-board` rather than replacing its existing Blueprint.
+- [ ] Walk through stable workflow keys, QA context fields, `qaState`, filtered read actions, and `ClaimIssueForQA`.
+- [ ] Add copyable curl commands for discovery, listing Ready to Test work, claiming a task, retrying with the same idempotency key, and observing the job.
+- [ ] Show expected successful, idempotent-retry, and conflict responses.
+- [ ] Clearly separate Zebric's orchestration responsibilities from browser automation and test-runner responsibilities.
+- [ ] Link the guide to the source Blueprint and deterministic E2E harness.
+
+#### Operations and troubleshooting
+
+- [ ] Add Agent API credential provisioning to `building/security.mdx`, clearly separating current environment-backed API keys from planned scoped credentials and rotation support.
+- [ ] Add Agent API diagnostics to `guides/troubleshooting.mdx`: missing key environment variables, `401`, `403`, CSRF mistakes, undiscoverable actions, invalid filters, `409`, failed jobs, and expired process-local job state.
+- [ ] Add runtime deployment notes to `run/runtime.mdx` for trusted origins, HTTPS, secret injection, job retention limitations, and multi-instance limitations.
+- [ ] Add a compatibility note identifying the minimum Zebric runtime version for each Agent API capability.
+
+#### Documentation quality gates
+
+- [ ] Add every new page to the Starlight sidebar under an “Agents” or “Agent API” section.
+- [ ] Verify all TOML, curl, JSON, routes, and response examples against `examples/issue-board` and the deterministic harness.
+- [ ] Add links among the Blueprint, workflows, security, REST API, and skills reference pages instead of duplicating their foundational material.
+- [ ] Run the docs build and link checks in CI.
+- [ ] Mark experimental or incomplete capabilities explicitly; do not document planned scoped credentials, durable jobs, or MCP as currently available.
 
 ### Security review
 
