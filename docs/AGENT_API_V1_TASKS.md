@@ -449,10 +449,14 @@ Suggested shape:
 - [ ] Confirm the PostgreSQL scenarios pass in CI; the local development environment currently has no PostgreSQL server.
 - [x] Replace the Cloudflare D1 adapter's non-atomic callback transaction shim with an explicit unsupported error.
 - [x] Add a D1 `batch()` primitive and verify commit and rollback against Miniflare D1.
+- [x] Classify transactional workflows deterministically as database-only and optionally D1-batch eligible.
+- [x] Reject external effects such as webhooks, email, notifications, plugins, and delays inside database transactions.
+- [x] Reject transactional Blueprints in `runtime-worker` until an atomic workflow executor is available.
 - [ ] Add Agent API skill and workflow execution support to `runtime-worker`; it currently exposes the core HTTP/CRUD adapter only.
 - [ ] Compile eligible database-only transactional workflows into one D1 batch, rejecting workflows that require intermediate query results, external effects, delays, loops, or unsupported control flow.
 - [ ] Consider a SQLite-backed Durable Object execution adapter for general interactive transactions and per-application serialization.
-- [ ] Advertise runtime-specific transaction capability and limitations through discovery/OpenAPI metadata.
+- [x] Advertise Node transactional-workflow support through discovery metadata.
+- [ ] Add Agent API discovery to `runtime-worker` and advertise D1/Workers transaction limitations there.
 
 ### Acceptance criteria
 

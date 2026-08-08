@@ -862,6 +862,8 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
         workflowJobs: Boolean(blueprint.workflows?.length),
         idempotency: true,
         eventStream: false,
+        transactionalWorkflows: true,
+        d1BatchWorkflows: false,
       },
     }, {
       headers: {

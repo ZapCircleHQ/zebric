@@ -14,6 +14,7 @@ export * from './types/plugin.js'
 export * from './blueprint/schema.js'
 export * from './blueprint/loader.js'
 export * from './blueprint/validation-error.js'
+export * from './blueprint/workflow-analysis.js'
 
 // Database
 export * from './database/access-control.js'
