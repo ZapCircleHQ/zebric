@@ -176,6 +176,9 @@ importers:
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../runtime-node
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

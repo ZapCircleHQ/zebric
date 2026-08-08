@@ -799,6 +799,27 @@ function entityApiErrorStatus(error: unknown): 403 | 404 | 500 {
 }
 
 export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
+  app.get('/.well-known/zebric-agent.json', async (c) => {
+    const origin = resolveOrigin(c.req.raw, config)
+    return Response.json({
+      name: blueprint.project.name,
+      version: blueprint.project.version,
+      openapi: `${origin}/api/openapi.json`,
+      authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
+      skills: blueprint.skills?.map(skill => skill.name) ?? [],
+      capabilities: {
+        workflowJobs: false,
+        idempotency: false,
+        eventStream: false,
+      },
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=300',
+      },
+    })
+  })
+
   app.get('/api/openapi.json', async (c) => {
     const origin = resolveOrigin(c.req.raw, config)
     const spec = generateOpenAPISpec(blueprint, origin)

@@ -215,18 +215,18 @@ Runtime authorization remains authoritative even after local approval.
 
 ### 1.1 Create `@zebric/agent`
 
-- [ ] Add `packages/agent` to the pnpm workspace.
-- [ ] Add TypeScript build, lint, test, and package exports.
-- [ ] Add `deepagents` and required LangChain/LangGraph dependencies.
-- [ ] Pin compatible dependency ranges and document the tested versions.
+- [x] Add `packages/agent` to the pnpm workspace.
+- [x] Add TypeScript build, lint, test, and package exports.
+- [x] Add `deepagents` and required LangChain/LangGraph dependencies.
+- [x] Pin compatible dependency ranges and document the tested versions.
 - [ ] Re-export only Zebric-owned public types from the package root.
 - [ ] Keep Deep Agents-specific construction details in internal modules.
-- [ ] Add a changeset for the new package when it becomes publishable.
+- [x] Add a changeset for the new package when it becomes publishable.
 
 ### 1.2 Define the public factory
 
-- [ ] Implement `createZebricAgent(options)`.
-- [ ] Accept a model or model identifier without coupling the API to one provider.
+- [x] Implement `createZebricAgent(options)`.
+- [x] Accept a model or model identifier without coupling the API to one provider.
 - [ ] Accept runtime connections, workspace configuration, policy, checkpointer, and telemetry options.
 - [ ] Validate configuration before constructing the agent.
 - [ ] Return a stable Zebric wrapper rather than exposing an untyped Deep Agents graph directly.
@@ -254,7 +254,7 @@ const agent = await createZebricAgent({
 ### 1.3 Establish agent context
 
 - [ ] Define typed runtime context containing workspace, applications, agent run ID, and policy.
-- [ ] Keep credentials out of prompts, messages, checkpoints, and model-visible tool results.
+- [x] Keep credentials out of prompts, messages, checkpoints, and model-visible tool results.
 - [ ] Generate a unique run ID for each top-level task.
 - [ ] Propagate run and correlation identifiers through runtime API tools.
 - [ ] Define thread IDs separately from run IDs.
@@ -279,12 +279,12 @@ const agent = await createZebricAgent({
 
 ### 2.1 Reuse the canonical Blueprint loader
 
-- [ ] Call `BlueprintLoader` from `@zebric/runtime-core` directly.
-- [ ] Do not duplicate the Zod schema or reference-validation rules in the agent package.
-- [ ] Return structured validation details including path, code, message, and existing suggestions.
-- [ ] Support TOML and JSON Blueprints consistently with the CLI.
+- [x] Call the canonical `BlueprintParser` from `@zebric/runtime-core` directly.
+- [x] Do not duplicate the Zod schema or reference-validation rules in the agent package.
+- [x] Return structured validation details including path, code, message, and existing suggestions.
+- [x] Support TOML and JSON Blueprints consistently with the CLI.
 - [ ] Include engine-version validation when a target version is supplied.
-- [ ] Add fixture tests shared with or derived from CLI validation cases.
+- [x] Add fixture tests shared with or derived from CLI validation cases.
 
 Tool:
 
@@ -409,10 +409,10 @@ apply_blueprint_patch
 
 ### 4.1 Implement application discovery
 
-- [ ] Fetch `/.well-known/zebric-agent.json` when supported.
-- [ ] Fall back to `/api/openapi.json` for older runtimes.
-- [ ] Validate discovery and OpenAPI responses against local schemas.
-- [ ] Enforce allowed URL schemes and host policy.
+- [x] Fetch `/.well-known/zebric-agent.json` when supported.
+- [x] Fall back to `/api/openapi.json` for older runtimes.
+- [x] Validate discovery and OpenAPI responses against local schemas.
+- [x] Enforce allowed URL schemes and host policy.
 - [ ] Set request timeouts, response-size limits, and redirect restrictions.
 - [ ] Cache contracts using HTTP cache metadata while allowing explicit refresh.
 - [ ] Report runtime/contract incompatibility clearly.
@@ -420,19 +420,19 @@ apply_blueprint_patch
 ### 4.2 Resolve credentials safely
 
 - [ ] Support environment-variable credential references.
-- [ ] Support an injectable credential-provider interface for keychains and hosted secret managers.
-- [ ] Resolve credentials only at request execution time.
-- [ ] Never store the token in generated tools, descriptions, model context, or checkpoints.
-- [ ] Redact authorization headers and sensitive response fields from errors and traces.
+- [x] Support an injectable credential-provider interface for keychains and hosted secret managers.
+- [x] Resolve credentials only at request execution time.
+- [x] Never store the token in generated tools, descriptions, model context, or checkpoints.
+- [x] Redact authorization headers and sensitive response fields from errors and traces.
 
 ### 4.3 Generate tools from OpenAPI operations
 
-- [ ] Generate tools only from documented Zebric skill operations.
-- [ ] Use `operationId` as the stable identity and generate collision-safe tool names.
-- [ ] Convert JSON Schema inputs to runtime-validated tool schemas.
+- [x] Generate tools only from documented Zebric skill operations.
+- [x] Use `operationId` as the stable identity and generate collision-safe tool names.
+- [x] Convert JSON Schema inputs to runtime-validated tool schemas.
 - [ ] Preserve descriptions, enum values, required fields, and examples.
 - [ ] Attach risk, required scopes, HTTP method, application, and operation metadata to each tool.
-- [ ] Do not expose arbitrary URL, header, method, or request-body escape hatches.
+- [x] Do not expose arbitrary URL, header, method, or request-body escape hatches.
 - [ ] Bound tool result sizes and offload large results to the configured backend.
 
 ### 4.4 Classify action risk
@@ -689,8 +689,10 @@ mode = "project"
 ### 10.2 Build deterministic integration tests
 
 - [ ] Use a fake model for tool-routing and policy tests.
-- [ ] Use a mock Agent API server for discovery, authentication, jobs, conflicts, and retries.
-- [ ] Use real `runtime-core` Blueprint fixtures for validation tests.
+- [x] Add a no-model deterministic tool-call driver for public-contract E2E tests.
+- [x] Use a mock Agent API server for discovery and generated-tool tests.
+- [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
+- [x] Use real `runtime-core` Blueprint fixtures for validation tests.
 - [ ] Test credential redaction across errors, traces, and checkpoints.
 - [ ] Test filesystem path and symlink boundary enforcement.
 - [ ] Test approval interruption and resume behavior.

@@ -2,7 +2,33 @@ import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAPIRoutes, registerActionRoutes, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+
+describe('agent discovery routes', () => {
+  it('publishes application skills and current runtime capabilities', async () => {
+    const app = new Hono()
+    registerOpenAPIRoute(app, {
+      version: '0.1.0',
+      project: { name: 'Issue Board', version: '1.0.0', runtime: { min_version: '0.1.0' } },
+      entities: [],
+      pages: [],
+      skills: [{ name: 'issue_board', actions: [] }],
+      auth: { providers: ['email'], apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY' }] },
+    }, { port: 3000 } as any)
+
+    const response = await app.request('http://localhost:3000/.well-known/zebric-agent.json')
+    const body = await response.json() as any
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({
+      name: 'Issue Board',
+      openapi: 'http://localhost:3000/api/openapi.json',
+      authentication: [{ type: 'bearer' }],
+      skills: ['issue_board'],
+      capabilities: { workflowJobs: false, idempotency: false, eventStream: false },
+    })
+  })
+})
 
 describe('registerPageRoutes', () => {
   it('sets a CSRF cookie when a safe page request generated a token', async () => {

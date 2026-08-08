@@ -70,13 +70,13 @@ All protected calls use a scoped agent credential. Mutations accept an idempoten
 
 ### 1.1 Extend the Blueprint skill-action schema
 
-- [ ] Add a `query` declaration to `SkillAction`.
-- [ ] Support typed query parameters using existing field types.
-- [ ] Support enum values, required parameters, defaults, and descriptions.
-- [ ] Distinguish filtering parameters from pagination and cursor parameters.
+- [x] Add a `query` declaration to `SkillAction`.
+- [x] Support typed query parameters using existing field types.
+- [x] Support enum values, required parameters, defaults, and descriptions.
+- [x] Distinguish filtering parameters from pagination and cursor parameters.
 - [ ] Reject query declarations on incompatible action types.
 - [ ] Validate that filter fields exist on the referenced entity unless explicitly mapped.
-- [ ] Add TOML parsing and schema-validation tests.
+- [x] Add TOML parsing and schema-validation tests.
 
 Proposed shape:
 
@@ -101,18 +101,18 @@ required = false
 
 ### 1.2 Implement bounded server-side filtering
 
-- [ ] Parse only query parameters declared by the skill action.
-- [ ] Coerce and validate values according to their declared types.
-- [ ] Translate valid parameters into the query executor's `where` clause.
+- [x] Parse only query parameters declared by the skill action.
+- [x] Coerce and validate values according to their declared types.
+- [x] Translate valid parameters into the query executor's `where` clause.
 - [ ] Return `400` with a stable error body for invalid or undeclared parameters.
-- [ ] Preserve entity permission checks for filtered queries.
+- [x] Preserve entity permission checks for filtered queries.
 - [ ] Add limits for filter count, page size, and supported operators.
-- [ ] Prevent arbitrary field/operator injection.
+- [x] Prevent arbitrary field/operator injection.
 - [ ] Add runtime tests covering exact matches, enums, invalid values, permissions, limits, and empty results.
 
 ### 1.3 Improve pagination
 
-- [ ] Retain bounded `limit` support.
+- [x] Retain bounded `limit` support.
 - [ ] Define a stable pagination response envelope.
 - [ ] Add opaque cursor pagination, or document offset pagination as the v1 contract.
 - [ ] Include `nextCursor` or equivalent continuation data.
@@ -270,7 +270,7 @@ comment.create
 
 ### 5.1 Enrich generated OpenAPI
 
-- [ ] Generate typed query parameters and enum values.
+- [x] Generate typed query parameters and enum values.
 - [ ] Mark required body properties correctly.
 - [ ] Generate schemas for workflow job and result responses.
 - [ ] Document idempotency and concurrency headers.
@@ -283,11 +283,11 @@ comment.create
 
 ### 5.2 Add a well-known discovery document
 
-- [ ] Add `GET /.well-known/zebric-agent.json`.
-- [ ] Advertise the OpenAPI URL, authentication methods, skill names, and optional runtime capabilities.
-- [ ] Resolve URLs using the same trusted-origin logic as OpenAPI.
-- [ ] Add appropriate cache and CORS behavior.
-- [ ] Avoid exposing private Blueprint implementation details.
+- [x] Add `GET /.well-known/zebric-agent.json`.
+- [x] Advertise the OpenAPI URL, authentication methods, skill names, and optional runtime capabilities.
+- [x] Resolve URLs using the same trusted-origin logic as OpenAPI.
+- [x] Add appropriate cache and CORS behavior.
+- [x] Avoid exposing private Blueprint implementation details.
 
 Example:
 
@@ -409,17 +409,17 @@ Suggested shape:
 
 ### 8.1 Build an end-to-end harness
 
-- [ ] Start a real Zebric runtime with the QA reference Blueprint.
+- [x] Start a real Zebric runtime with the QA reference Blueprint.
 - [ ] Seed multiple projects and task states.
 - [ ] Provision credentials with different scopes.
-- [ ] Drive the runtime strictly through the published discovery and API surfaces.
-- [ ] Avoid importing internal runtime classes in the conformance client.
+- [x] Drive the runtime strictly through the published discovery and API surfaces.
+- [x] Avoid importing internal runtime classes in the conformance client.
 
 ### 8.2 Cover the happy path
 
-- [ ] Discover the application and OpenAPI document.
-- [ ] Authenticate.
-- [ ] List only `ready_to_test` tasks.
+- [x] Discover the application and OpenAPI document.
+- [x] Authenticate.
+- [x] List only `ready_to_test` tasks.
 - [ ] Claim a task.
 - [ ] Read complete testing context.
 - [ ] Submit structured evidence.

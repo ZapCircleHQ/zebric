@@ -3,6 +3,8 @@ import { createDeepAgent, type CreateDeepAgentParams } from 'deepagents'
 import { tool } from 'langchain'
 import { z } from 'zod'
 import { validateBlueprint } from '../authoring/validate-blueprint.js'
+import { discoverZebricApplication } from '../runtime/discovery-client.js'
+import { createRuntimeReadTools } from '../runtime/action-tool-factory.js'
 
 const SYSTEM_PROMPT = `You are Zebric Agent, a specialist for operating and authoring Zebric applications.
 
@@ -12,6 +14,12 @@ export interface CreateZebricAgentOptions {
   model: NonNullable<CreateDeepAgentParams['model']>
   workspaceRoot?: string
   checkpointer?: CreateDeepAgentParams['checkpointer']
+  applications?: Array<{
+    name: string
+    baseUrl: string
+    credential?: () => string | undefined | Promise<string | undefined>
+  }>
+  fetch?: typeof globalThis.fetch
 }
 
 function resolveWorkspacePath(root: string, requestedPath: string): string {
@@ -23,7 +31,9 @@ function resolveWorkspacePath(root: string, requestedPath: string): string {
   return target
 }
 
-export function createZebricAgent(options: CreateZebricAgentOptions) {
+export async function createZebricAgent(
+  options: CreateZebricAgentOptions
+): Promise<ReturnType<typeof createDeepAgent>> {
   const workspaceRoot = resolve(options.workspaceRoot ?? process.cwd())
   const validateBlueprintTool = tool(
     async ({ path }) => {
@@ -52,11 +62,21 @@ export function createZebricAgent(options: CreateZebricAgentOptions) {
     }
   )
 
+  const runtimeTools = []
+  for (const application of options.applications ?? []) {
+    const contract = await discoverZebricApplication(application.baseUrl, { fetch: options.fetch })
+    runtimeTools.push(...createRuntimeReadTools(contract, {
+      applicationName: application.name,
+      credential: application.credential,
+      fetch: options.fetch,
+    }))
+  }
+
   return createDeepAgent({
     name: 'zebric-agent',
     model: options.model,
     systemPrompt: SYSTEM_PROMPT,
-    tools: [validateBlueprintTool],
+    tools: [validateBlueprintTool, ...runtimeTools],
     checkpointer: options.checkpointer,
     interruptOn: {},
   })

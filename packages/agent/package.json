@@ -15,7 +15,10 @@
   "publishConfig": { "access": "public" },
   "scripts": {
     "build": "tsc",
+    "pretest": "pnpm --filter @zebric/runtime-node... build",
     "test": "vitest run",
+    "pretest:e2e": "pnpm --filter @zebric/runtime-node... build",
+    "test:e2e": "vitest run tests/e2e/issue-board.e2e.test.ts",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
@@ -26,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
+    "@zebric/runtime-node": "workspace:*",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },
