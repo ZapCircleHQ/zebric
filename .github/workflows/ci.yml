@@ -66,6 +66,22 @@ jobs:
   test:
     name: Tests
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zebric_test
+          POSTGRES_PASSWORD: zebric_test_password
+          POSTGRES_DB: zebric_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zebric_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ZEBRIC_TEST_POSTGRES_URL: postgres://zebric_test:zebric_test_password@127.0.0.1:5432/zebric_test
 
     steps:
       - name: Checkout code

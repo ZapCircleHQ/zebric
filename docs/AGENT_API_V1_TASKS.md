@@ -441,6 +441,19 @@ Suggested shape:
 - [ ] An agent attempts undeclared filters or body fields.
 - [x] One agent attempts to read another agent's job.
 
+### 8.4 Verify database and edge-runtime atomicity
+
+- [x] Prove SQLite rolls back the task transition when QA result creation fails.
+- [x] Add live PostgreSQL commit and rollback integration scenarios.
+- [x] Provision PostgreSQL in CI and run the live scenarios through `ZEBRIC_TEST_POSTGRES_URL`.
+- [ ] Confirm the PostgreSQL scenarios pass in CI; the local development environment currently has no PostgreSQL server.
+- [x] Replace the Cloudflare D1 adapter's non-atomic callback transaction shim with an explicit unsupported error.
+- [x] Add a D1 `batch()` primitive and verify commit and rollback against Miniflare D1.
+- [ ] Add Agent API skill and workflow execution support to `runtime-worker`; it currently exposes the core HTTP/CRUD adapter only.
+- [ ] Compile eligible database-only transactional workflows into one D1 batch, rejecting workflows that require intermediate query results, external effects, delays, loops, or unsupported control flow.
+- [ ] Consider a SQLite-backed Durable Object execution adapter for general interactive transactions and per-application serialization.
+- [ ] Advertise runtime-specific transaction capability and limitations through discovery/OpenAPI metadata.
+
 ### Acceptance criteria
 
 - The conformance suite runs in CI.
@@ -524,6 +537,7 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 - [ ] Add Agent API credential provisioning to `building/security.mdx`, clearly separating current environment-backed API keys from planned scoped credentials and rotation support.
 - [ ] Add Agent API diagnostics to `guides/troubleshooting.mdx`: missing key environment variables, `401`, `403`, CSRF mistakes, undiscoverable actions, invalid filters, `409`, failed jobs, and expired process-local job state.
 - [ ] Add runtime deployment notes to `run/runtime.mdx` for trusted origins, HTTPS, secret injection, job retention limitations, and multi-instance limitations.
+- [ ] Document database transaction support: Node SQLite, Node PostgreSQL, D1 atomic batches, and the planned Durable Object path for general Workers workflows.
 - [ ] Add a compatibility note identifying the minimum Zebric runtime version for each Agent API capability.
 
 #### Documentation quality gates
