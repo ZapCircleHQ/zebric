@@ -235,9 +235,14 @@ export class WorkflowExecutor {
           const before = queryContext
             ? await this.dataLayer.findById(step.entity, targetId, queryContext)
             : await this.dataLayer.findById(step.entity, targetId)
-          const updated = queryContext
-            ? await this.dataLayer.update(step.entity, targetId, data, queryContext)
-            : await this.dataLayer.update(step.entity, targetId, data)
+          const updateWhere = this.dataLayer.updateWhere?.bind(this.dataLayer)
+          const updated = updateWhere
+            ? (queryContext
+                ? await updateWhere(step.entity, targetId, this.withoutId(where), data, queryContext)
+                : await updateWhere(step.entity, targetId, this.withoutId(where), data))
+            : (queryContext
+                ? await this.dataLayer.update(step.entity, targetId, data, queryContext)
+                : await this.dataLayer.update(step.entity, targetId, data))
           await this.emitEntityEvent(step.entity, 'update', before, updated, context)
           return updated
         }
@@ -631,6 +636,12 @@ export class WorkflowExecutor {
     }
 
     return undefined
+  }
+
+  private withoutId(where: any): Record<string, any> {
+    if (!where || typeof where !== 'object') return {}
+    const { id: _id, ...expected } = where
+    return expected
   }
 
   private async emitEntityEvent(

@@ -39,7 +39,7 @@ echo "  Needs Work  $NEEDSWORK"
 echo "  QA Complete $QACOMPLETE"
 
 echo "Creating issues..."
-post_json /api/issues "{\"title\":\"Wire widget schema into the blueprint parser\",\"description\":\"Verify board widget parsing and rendering.\",\"acceptanceCriteria\":\"The board loads and renders every configured column without errors.\",\"testUrl\":\"$BASE/\",\"revision\":\"local-dev\",\"columnId\":\"$READY\",\"position\":0,\"important\":true}" >/dev/null
+post_json /api/issues "{\"title\":\"Wire widget schema into the blueprint parser\",\"description\":\"Verify board widget parsing and rendering.\",\"acceptanceCriteria\":\"The board loads and renders every configured column without errors.\",\"testUrl\":\"$BASE/\",\"revision\":\"local-dev\",\"qaState\":\"ready_to_test\",\"columnId\":\"$READY\",\"position\":0,\"important\":true}" >/dev/null
 post_json /api/issues "{\"title\":\"Ship a working board widget end-to-end\",\"columnId\":\"$INPROGRESS\",\"position\":0,\"important\":true}" >/dev/null
 post_json /api/issues "{\"title\":\"Drag-and-drop between columns\",\"columnId\":\"$INPROGRESS\",\"position\":1,\"important\":false}" >/dev/null
 post_json /api/issues "{\"title\":\"Sortable list widget\",\"columnId\":\"$BACKLOG\",\"position\":0,\"important\":false}" >/dev/null

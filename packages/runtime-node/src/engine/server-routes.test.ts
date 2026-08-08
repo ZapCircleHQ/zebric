@@ -25,7 +25,7 @@ describe('agent discovery routes', () => {
       openapi: 'http://localhost:3000/api/openapi.json',
       authentication: [{ type: 'bearer' }],
       skills: ['issue_board'],
-      capabilities: { workflowJobs: false, idempotency: false, eventStream: false },
+      capabilities: { workflowJobs: false, idempotency: true, eventStream: false },
     })
   })
 })

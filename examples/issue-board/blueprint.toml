@@ -30,6 +30,9 @@ fields = [
   { name = "acceptanceCriteria", type = "LongText" },
   { name = "testUrl", type = "Text" },
   { name = "revision", type = "Text" },
+  { name = "qaState", type = "Enum", values = ["ready_to_test", "testing", "needs_work", "qa_completed"] },
+  { name = "qaRunId", type = "Text" },
+  { name = "claimedBy", type = "Text" },
   { name = "columnId", type = "Ref", ref = "Column.id", index = true, required = true },
   { name = "position", type = "Integer", default = 0 },
   { name = "important", type = "Boolean", default = false },
@@ -192,6 +195,12 @@ type = "Boolean"
 required = false
 description = "Filter issues by importance."
 
+[skill.issue_board.actions.query.qaState]
+type = "Enum"
+values = ["ready_to_test", "testing", "needs_work", "qa_completed"]
+required = false
+description = "Filter by the issue's QA lifecycle state."
+
 [[skill.issue_board.actions]]
 name = "get_issue"
 description = "Fetch one issue and its QA context by id."
@@ -199,6 +208,37 @@ method = "GET"
 path = "/api/agent/issues/{id}"
 entity = "Issue"
 action = "get"
+
+[[skill.issue_board.actions]]
+name = "claim_issue_for_qa"
+description = "Atomically claim a Ready to Test issue for one QA run."
+method = "POST"
+path = "/api/agent/issues/{id}/claim"
+entity = "Issue"
+workflow = "ClaimIssueForQA"
+body = { runId = "Text" }
+
+[workflow.ClaimIssueForQA]
+description = "Compare-and-set an issue from ready_to_test to testing."
+trigger = { manual = true }
+
+[workflow.ClaimIssueForQA.precondition]
+"variables.data.record.qaState" = "ready_to_test"
+
+[[workflow.ClaimIssueForQA.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+assignTo = "claimedIssue"
+
+[workflow.ClaimIssueForQA.steps.where]
+id = "{{ variables.data.record.id }}"
+qaState = "ready_to_test"
+
+[workflow.ClaimIssueForQA.steps.data]
+qaState = "testing"
+qaRunId = "{{ variables.data.payload.runId }}"
+claimedBy = "{{ variables.data.session.user.id }}"
 
 [auth]
 providers = ["email"]

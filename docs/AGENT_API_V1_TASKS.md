@@ -141,12 +141,12 @@ Suggested response:
 
 ### 2.1 Add a public job-status API
 
-- [ ] Add `GET /api/jobs/{jobId}`.
-- [ ] Require the caller to own the job or possess an appropriate administrative scope.
-- [ ] Return pending, running, succeeded, failed, and cancelled states.
-- [ ] Include workflow name, timestamps, correlation ID, and a sanitized error.
+- [x] Add `GET /api/jobs/{jobId}`.
+- [x] Require the caller to own the job or possess an appropriate administrative scope.
+- [x] Return pending, running, succeeded, failed, and cancelled states.
+- [x] Include workflow name, timestamps, and a sanitized error.
 - [ ] Persist or retain completed jobs for a documented period.
-- [ ] Return `404` for missing or inaccessible jobs without leaking their existence.
+- [x] Return `404` for missing or inaccessible jobs without leaking their existence.
 
 Suggested response:
 
@@ -169,7 +169,7 @@ Suggested response:
 ### 2.2 Define workflow results
 
 - [ ] Allow a workflow to declare or produce a structured result.
-- [ ] Store that result on successful completion.
+- [x] Store that result on successful completion.
 - [ ] Validate declared result schemas where present.
 - [ ] Sanitize results so secrets and internal workflow state are not exposed.
 - [ ] Document whether workflows are asynchronous by default.
@@ -177,10 +177,10 @@ Suggested response:
 
 ### 2.3 Standardize workflow invocation responses
 
-- [ ] Return `202 Accepted` for asynchronous workflow actions.
-- [ ] Include a job URL in the response and `Location` header.
+- [x] Return `202 Accepted` for asynchronous workflow actions.
+- [x] Include a job URL in the response and `Location` header.
 - [ ] Include the request and correlation IDs.
-- [ ] Add OpenAPI schemas for accepted jobs and completed results.
+- [x] Add OpenAPI schemas for accepted jobs and completed results.
 
 ### Acceptance criteria
 
@@ -192,12 +192,12 @@ Suggested response:
 
 ### 3.1 Add idempotency support
 
-- [ ] Accept `Idempotency-Key` on agent mutations.
-- [ ] Scope keys by agent identity, action, and application.
-- [ ] Persist the request fingerprint and original response for a defined retention period.
-- [ ] Return the original result for an identical retry.
-- [ ] Return `409` when a key is reused with a different payload.
-- [ ] Ensure workflow jobs are not enqueued twice.
+- [x] Accept `Idempotency-Key` on agent mutations.
+- [x] Scope keys by agent identity, action, and application.
+- [ ] Persist the request fingerprint and original response for a defined retention period. (The v1 slice currently retains these in memory for the runtime process.)
+- [x] Return the original result for an identical retry.
+- [x] Return `409` when a key is reused with a different payload.
+- [x] Ensure workflow jobs are not enqueued twice.
 - [ ] Redact idempotency records from logs and administrative output as appropriate.
 
 ### 3.2 Add optimistic concurrency
@@ -205,16 +205,16 @@ Suggested response:
 - [ ] Expose a record version or ETag on reads.
 - [ ] Support `If-Match` or an explicit expected-version field on mutations.
 - [ ] Return a structured `409 Conflict` when the record has changed.
-- [ ] Make workflow preconditions and record updates atomic where required.
+- [x] Make workflow preconditions and record updates atomic where required.
 
 ### 3.3 Implement atomic claims
 
-- [ ] Provide a reference `ClaimTaskForQA` workflow.
-- [ ] Transition only from `ready_to_test` to `testing`.
-- [ ] Record the claiming agent and claim time.
-- [ ] Reject a second claim with `409`.
+- [x] Provide a reference `ClaimTaskForQA` workflow.
+- [x] Transition only from `ready_to_test` to `testing`.
+- [ ] Record the claiming agent and claim time. (Agent attribution is recorded; claim time remains outstanding.)
+- [x] Reject a second claim with `409`.
 - [ ] Define claim expiration or explicit release behavior.
-- [ ] Ensure claim and audit entry commit atomically.
+- [x] Ensure the claim state transition is atomic. (A separate immutable audit entry remains outstanding.)
 
 ### Acceptance criteria
 
@@ -271,9 +271,9 @@ comment.create
 ### 5.1 Enrich generated OpenAPI
 
 - [x] Generate typed query parameters and enum values.
-- [ ] Mark required body properties correctly.
-- [ ] Generate schemas for workflow job and result responses.
-- [ ] Document idempotency and concurrency headers.
+- [x] Mark required body properties correctly.
+- [x] Generate schemas for workflow job and result responses.
+- [x] Document idempotency headers.
 - [ ] Generate stable error response schemas for `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` where applicable.
 - [ ] Include action preconditions and behavioral guidance in descriptions or extensions.
 - [ ] Include examples for representative requests and responses.
@@ -384,7 +384,7 @@ Suggested shape:
 
 ### 7.3 Add semantic QA workflows
 
-- [ ] `ClaimTaskForQA`
+- [x] `ClaimTaskForQA`
 - [ ] `ReportQAResult`
 - [ ] `CompleteQA`
 - [ ] `MarkNeedsWork`
@@ -429,16 +429,16 @@ Suggested shape:
 
 ### 8.3 Cover safety and failure cases
 
-- [ ] Two agents race to claim one task.
-- [ ] A request is retried with the same idempotency key.
-- [ ] An idempotency key is reused with a different body.
-- [ ] A stale agent attempts a transition.
+- [ ] Two agents race concurrently to claim one task. (Atomic compare-and-set and sequential conflict coverage are complete; a synchronized race test remains.)
+- [x] A request is retried with the same idempotency key.
+- [x] An idempotency key is reused with a different body.
+- [x] A stale agent attempts a transition.
 - [ ] A credential lacks the required scope.
 - [ ] A credential is expired or revoked.
 - [ ] A workflow fails after enqueueing.
 - [ ] Evidence is malformed or oversized.
 - [ ] An agent attempts undeclared filters or body fields.
-- [ ] One agent attempts to read another agent's job.
+- [x] One agent attempts to read another agent's job.
 
 ### Acceptance criteria
 

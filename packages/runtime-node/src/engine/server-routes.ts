@@ -1,6 +1,7 @@
 import type { Hono } from 'hono'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
+import { createHash } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
 import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
@@ -561,6 +562,35 @@ export function registerSkillRoutes(
   }
 
   const entityNames = new Set(blueprint.entities.map(e => e.name.toLowerCase()))
+  const idempotency = new Map<string, { fingerprint: string; response: Promise<Response> }>()
+
+  if (workflowManager) {
+    app.get('/api/jobs/:id', async (c) => {
+      const authHeader = c.req.header('authorization') || ''
+      let session = null
+      if (authHeader.toLowerCase().startsWith('bearer ')) {
+        session = resolveApiKeySession(authHeader.slice(7), apiKeys)
+      }
+      if (!session) session = await sessionManager.getSession(c.req.raw)
+      if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+      const job = workflowManager.getJob(c.req.param('id'))
+      const ownerId = job?.context.session?.user?.id
+      if (!job || !ownerId || ownerId !== session.user?.id) {
+        return Response.json({ error: 'Job not found' }, { status: 404 })
+      }
+      return Response.json({
+        id: job.id,
+        workflow: job.workflowName,
+        status: job.status === 'completed' ? 'succeeded' : job.status,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        result: job.result,
+        error: job.status === 'failed' ? 'Workflow execution failed' : null,
+      })
+    })
+  }
 
   for (const skill of blueprint.skills) {
     for (const action of skill.actions) {
@@ -596,19 +626,40 @@ export function registerSkillRoutes(
 
           const actionDeps = { queryExecutor, workflowManager }
 
-          if (action.workflow) {
-            return await handleSkillWorkflow(c, action, session, actionDeps)
+          const executeAction = async (): Promise<Response> => {
+            if (action.workflow) {
+              return handleSkillWorkflow(c, action, session, actionDeps)
+            }
+            return handleSkillEntityAction(c, action, session, actionDeps)
           }
 
-          return await handleSkillEntityAction(c, action, session, actionDeps)
+          const idempotencyKey = c.req.header('idempotency-key')
+          if (method === 'get' || !idempotencyKey) return await executeAction()
+
+          const requestBody = await c.req.raw.clone().text()
+          const fingerprint = createHash('sha256').update(requestBody).digest('hex')
+          const scope = `${session?.user?.id || 'anonymous'}:${action.method}:${action.path}:${idempotencyKey}`
+          const existing = idempotency.get(scope)
+          if (existing) {
+            if (existing.fingerprint !== fingerprint) {
+              return Response.json({ error: 'Idempotency key reused with different input' }, { status: 409 })
+            }
+            return (await existing.response).clone()
+          }
+
+          const response = executeAction()
+          idempotency.set(scope, { fingerprint, response })
+          return (await response).clone()
         } catch (error) {
           console.error(`Skill route error (${skill.name}/${action.name}):`, error)
+          const message = error instanceof Error ? error.message : 'Unknown error'
+          const status = message.includes('precondition failed') || message.startsWith('Conflict:') ? 409 : 500
           return Response.json(
             {
               error: 'Skill action failed',
-              details: error instanceof Error ? error.message : 'Unknown error'
+              details: message
             },
-            { status: 500 }
+            { status }
           )
         }
       })
@@ -808,8 +859,8 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
       skills: blueprint.skills?.map(skill => skill.name) ?? [],
       capabilities: {
-        workflowJobs: false,
-        idempotency: false,
+        workflowJobs: Boolean(blueprint.workflows?.length),
+        idempotency: true,
         eventStream: false,
       },
     }, {

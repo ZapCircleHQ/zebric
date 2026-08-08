@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { validateBlueprint } from './validate-blueprint.js'
 
 describe('validateBlueprint', () => {
   it('validates the issue-board reference Blueprint', async () => {
     const result = await validateBlueprint({
-      path: resolve(process.cwd(), '../../examples/issue-board/blueprint.toml'),
+      path: fileURLToPath(new URL('../../../../examples/issue-board/blueprint.toml', import.meta.url)),
     })
 
     expect(result.valid).toBe(true)

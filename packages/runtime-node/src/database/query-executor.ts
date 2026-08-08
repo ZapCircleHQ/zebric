@@ -303,6 +303,20 @@ export class QueryExecutor {
     data: Record<string, any>,
     context?: QueryContext
   ): Promise<any> {
+    return this.updateWhere(entityName, id, {}, data, context)
+  }
+
+  /**
+   * Atomically update a record only while its current values match `expected`.
+   * Used by workflow state transitions to prevent concurrent claims.
+   */
+  async updateWhere(
+    entityName: string,
+    id: string,
+    expected: Record<string, any>,
+    data: Record<string, any>,
+    context?: QueryContext
+  ): Promise<any> {
     const db = this.connection.getDb()
     const table = this.connection.getTable(entityName)
     const entity = this.connection.getEntity(entityName)
@@ -346,13 +360,20 @@ export class QueryExecutor {
     const start = performance.now()
     try {
       // Update record
-      await (db as any)
+      const expectedWhere = this.buildWhere(expected, context ?? {}, entityName)
+      const whereClause = expectedWhere ? and(eq(table.id, id), expectedWhere) : eq(table.id, id)
+      const updated = await (db as any)
         .update(table)
         .set(dbData)
-        .where(eq(table.id, id))
+        .where(whereClause)
+        .returning()
+
+      if (!updated?.[0]) {
+        throw new Error(`Conflict: ${entityName} ${id} no longer matches the expected state`)
+      }
 
       // Return updated record
-      return await this.findById(entityName, id, context)
+      return this.toCamelCase(updated[0])
     } finally {
       this.metrics?.recordQuery(entityName, 'update', performance.now() - start)
     }

@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { validateBlueprint } from '../authoring/validate-blueprint.js'
 import { discoverZebricApplication } from '../runtime/discovery-client.js'
 import { createRuntimeReadTools } from '../runtime/action-tool-factory.js'
+import type { MutationApprovalRequest } from '../runtime/action-tool-factory.js'
 
 const SYSTEM_PROMPT = `You are Zebric Agent, a specialist for operating and authoring Zebric applications.
 
@@ -18,6 +19,10 @@ export interface CreateZebricAgentOptions {
     name: string
     baseUrl: string
     credential?: () => string | undefined | Promise<string | undefined>
+    mutations?: {
+      approve(request: MutationApprovalRequest): boolean | Promise<boolean>
+      idempotencyKey(operationId: string, input: Record<string, unknown>): string
+    }
   }>
   fetch?: typeof globalThis.fetch
 }
@@ -69,6 +74,7 @@ export async function createZebricAgent(
       applicationName: application.name,
       credential: application.credential,
       fetch: options.fetch,
+      mutations: application.mutations,
     }))
   }
 

@@ -499,6 +499,82 @@ describe('security: workflow body field filtering', () => {
   })
 })
 
+describe('agent workflow jobs and idempotency', () => {
+  function workflowApp(overrides: Record<string, any> = {}) {
+    let triggerCount = 0
+    const owner = { id: 's1', user: { id: 'u1', name: 'Agent' } }
+    const job = {
+      id: 'job-claim-1', workflowName: 'ClaimIssue', status: 'completed',
+      context: { session: owner }, createdAt: new Date(), completedAt: new Date(),
+      attempts: 1, result: { claimedIssue: { id: 'issue-1', qaState: 'testing' } },
+    }
+    const sm = new ServerManager(stubDeps({
+      skills: [{ name: 'qa', actions: [{
+        name: 'claim', method: 'POST', path: '/api/qa/{id}/claim',
+        body: { runId: 'Text' }, entity: 'Issue', workflow: 'ClaimIssue',
+      }] }],
+      entities: [{ name: 'Issue', fields: [{ name: 'id', type: 'ULID', primary_key: true }] }],
+      workflowManager: {
+        getWorkflow: () => ({ name: 'ClaimIssue', steps: [] }),
+        trigger: () => { triggerCount++; return job },
+        getJob: () => overrides.job ?? job,
+      },
+      sessionManager: { getSession: async () => overrides.session ?? owner },
+      queryExecutor: { findById: async () => ({ id: 'issue-1', qaState: 'ready_to_test' }) },
+      auth: { providers: ['email'] },
+    }))
+    return { app: initApp(sm), job, getTriggerCount: () => triggerCount }
+  }
+
+  it('returns the original workflow job for an identical idempotent retry', async () => {
+    const { app, getTriggerCount } = workflowApp()
+    const request = () => app.request('/api/qa/issue-1/claim', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', 'idempotency-key': 'claim-1',
+        cookie: 'csrf-token=x', 'x-csrf-token': 'x',
+      },
+      body: JSON.stringify({ runId: 'run-1' }),
+    })
+
+    const first = await request()
+    const retry = await request()
+
+    expect(first.status).toBe(202)
+    expect(retry.status).toBe(202)
+    expect(await retry.json()).toMatchObject({ job: { id: 'job-claim-1' } })
+    expect(getTriggerCount()).toBe(1)
+  })
+
+  it('rejects an idempotency key reused with different input', async () => {
+    const { app } = workflowApp()
+    const headers = {
+      'content-type': 'application/json', 'idempotency-key': 'claim-1',
+      cookie: 'csrf-token=x', 'x-csrf-token': 'x',
+    }
+    await app.request('/api/qa/issue-1/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-1' }),
+    })
+    const response = await app.request('/api/qa/issue-1/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-2' }),
+    })
+    expect(response.status).toBe(409)
+  })
+
+  it('returns only jobs owned by the authenticated caller', async () => {
+    const owned = workflowApp()
+    expect((await owned.app.request('/api/jobs/job-claim-1')).status).toBe(200)
+
+    const foreign = workflowApp({
+      job: {
+        ...owned.job,
+        context: { session: { user: { id: 'another-agent' } } },
+      },
+    })
+    expect((await foreign.app.request('/api/jobs/job-claim-1')).status).toBe(404)
+  })
+})
+
 describe('observability: request to workflow correlation', () => {
   it('propagates correlation and request ids from the HTTP request into workflow execution logs', async () => {
     const records: LogRecord[] = []

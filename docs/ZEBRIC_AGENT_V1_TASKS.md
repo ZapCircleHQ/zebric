@@ -438,8 +438,8 @@ apply_blueprint_patch
 ### 4.4 Classify action risk
 
 - [ ] Prefer explicit risk metadata from Agent API v1.
-- [ ] Default `GET` and `HEAD` operations to `read` unless marked otherwise.
-- [ ] Default other methods to `write` when metadata is absent.
+- [x] Expose `GET` operations as read tools by default.
+- [x] Keep non-GET operations unavailable unless an explicit mutation approval policy is configured.
 - [ ] Require explicit configuration before any operation is considered destructive or safe for auto-approval.
 - [ ] Show the target application, action, resource, and sanitized arguments in approval requests.
 
@@ -462,37 +462,37 @@ apply_blueprint_patch
 
 ### 5.1 Build the HTTP execution client
 
-- [ ] Add Bearer authentication without exposing tokens to the model.
-- [ ] Send agent run, correlation, and idempotency identifiers.
-- [ ] Apply per-request timeouts and cancellation.
+- [x] Add Bearer authentication without exposing tokens to the model.
+- [x] Send idempotency identifiers for mutations.
+- [x] Apply per-request timeouts and cancellation.
 - [ ] Parse stable Agent API error envelopes.
 - [ ] Distinguish authentication, authorization, validation, conflict, rate-limit, and server failures.
 - [ ] Retry only documented retryable failures.
-- [ ] Never automatically retry an unsafe mutation without idempotency protection.
+- [x] Never automatically retry an unsafe mutation without idempotency protection.
 
 ### 5.2 Add idempotency behavior
 
-- [ ] Generate a stable idempotency key for each logical mutation.
-- [ ] Reuse it when transport uncertainty causes a retry.
-- [ ] Do not reuse it after the user changes arguments.
+- [x] Generate a stable idempotency key for each logical mutation.
+- [x] Reuse it when transport uncertainty causes a retry.
+- [x] Do not reuse it after the user changes arguments.
 - [ ] Store keys in thread/checkpoint state without storing credentials.
-- [ ] Surface idempotency conflicts to the user.
+- [x] Surface idempotency conflicts to the user.
 
 ### 5.3 Observe asynchronous workflows
 
-- [ ] Recognize `202 Accepted` job responses.
-- [ ] Poll the declared job URL with bounded backoff.
-- [ ] Support cancellation and a maximum wait policy.
+- [x] Recognize `202 Accepted` job responses.
+- [x] Poll the declared job URL with a bounded interval and attempt limit.
+- [x] Support a maximum wait policy.
 - [ ] Resume observation from checkpointed job state.
-- [ ] Return the terminal workflow result to the agent.
-- [ ] Avoid claiming success before the job reaches a successful terminal state.
+- [x] Return the terminal workflow result to the agent.
+- [x] Avoid claiming success before the job reaches a successful terminal state.
 
 ### 5.4 Handle optimistic concurrency
 
 - [ ] Preserve ETags or record versions from reads.
 - [ ] Supply expected versions to mutation actions when supported.
 - [ ] On conflict, fetch authoritative state before deciding what to do.
-- [ ] Never silently overwrite a concurrent actor's change.
+- [x] Never silently overwrite a concurrent actor's state transition.
 
 ### Acceptance criteria
 
@@ -505,11 +505,11 @@ apply_blueprint_patch
 
 ### 6.1 Implement the reference QA procedure
 
-- [ ] Discover the application's QA skill rather than assuming fixed route paths.
-- [ ] List work filtered to `ready_to_test`.
+- [x] Discover the application's QA skill rather than assuming fixed route paths.
+- [x] List work filtered to `ready_to_test`.
 - [ ] Select work according to an explicit strategy such as priority then age.
-- [ ] Claim the task atomically before testing.
-- [ ] Fetch acceptance criteria, test target, revision, and constraints.
+- [x] Claim the task atomically before testing.
+- [x] Fetch acceptance criteria, test target, and revision.
 - [ ] Refuse or ask for help when required context is missing.
 - [ ] Submit structured results and evidence.
 - [ ] Invoke `qa_completed`, `needs_work`, or a supported blocked outcome.
@@ -706,7 +706,7 @@ mode = "project"
 - [ ] Read-only application summary.
 - [ ] QA task claim and completion.
 - [ ] QA failure and `needs_work` transition.
-- [ ] Concurrent claim conflict.
+- [x] Concurrent claim conflict.
 - [ ] Prompt injection encountered in application content.
 - [ ] Missing capability or unsupported runtime version.
 

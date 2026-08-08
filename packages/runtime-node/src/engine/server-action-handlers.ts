@@ -239,7 +239,15 @@ export async function handleSkillWorkflow(
 
   return Response.json({
     success: true,
-    job: { id: job.id, workflow: workflowName },
+    job: {
+      id: job.id,
+      workflow: workflowName,
+      status: job.status,
+      url: `/api/jobs/${job.id}`,
+    },
+  }, {
+    status: 202,
+    headers: { Location: `/api/jobs/${job.id}` },
   })
 }
 

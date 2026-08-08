@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createServer } from 'node:net'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createZebric, type Zebric } from '@zebric/runtime-node'
 import { createRuntimeReadTools } from '../../src/runtime/action-tool-factory.js'
 import { discoverZebricApplication } from '../../src/runtime/discovery-client.js'
@@ -14,12 +15,13 @@ describe('Zebric Agent deterministic E2E', () => {
   let baseUrl = ''
   let previousAgentKey: string | undefined
   const agentKey = 'deterministic-e2e-agent-key'
+  let seededIssueId = ''
 
   beforeAll(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
     const blueprintPath = join(tmpRoot, 'blueprint.toml')
     const dbPath = join(tmpRoot, 'app.db')
-    const sourceBlueprint = resolve(process.cwd(), '../../examples/issue-board/blueprint.toml')
+    const sourceBlueprint = fileURLToPath(new URL('../../../../examples/issue-board/blueprint.toml', import.meta.url))
     await writeFile(blueprintPath, await readFile(sourceBlueprint, 'utf8'), 'utf8')
 
     previousAgentKey = process.env.ISSUE_BOARD_AGENT_API_KEY
@@ -37,7 +39,7 @@ describe('Zebric Agent deterministic E2E', () => {
       logLevel: 'error',
     })
     await waitForHttp(`${baseUrl}/health`, 15_000)
-    await seedIssueBoard(baseUrl, agentKey)
+    seededIssueId = await seedIssueBoard(baseUrl, agentKey)
   }, 45_000)
 
   afterAll(async () => {
@@ -105,22 +107,86 @@ describe('Zebric Agent deterministic E2E', () => {
     })).rejects.toThrow()
     expect(driver.transcript).toEqual([])
   })
+
+  it('approves, atomically claims, retries, and observes the workflow job', async () => {
+    const approvals: Array<{ operationId: string; input: Record<string, unknown> }> = []
+    const contract = await discoverZebricApplication(baseUrl)
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'issue_board',
+      credential: () => agentKey,
+      mutations: {
+        approve: request => {
+          approvals.push({ operationId: request.operationId, input: request.input })
+          return true
+        },
+        idempotencyKey: (_operationId, input) => `claim:${input.id}:${input.runId}`,
+        pollIntervalMs: 5,
+      },
+    })
+    const driver = new DeterministicAgentDriver(tools)
+    const call = {
+      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      input: { id: seededIssueId, runId: 'qa-run-1' },
+    }
+
+    const firstOutput = await driver.invoke(call)
+    const firstJob = JSON.parse(String(firstOutput))
+    expect(firstJob.status).toBe('succeeded')
+    expect(firstJob.result.claimedIssue).toEqual(expect.objectContaining({
+      id: seededIssueId,
+      qaState: 'testing',
+      qaRunId: 'qa-run-1',
+      claimedBy: 'issue-board-agent',
+    }))
+
+    const retryOutput = await driver.invoke(call)
+    expect(JSON.parse(String(retryOutput)).id).toBe(firstJob.id)
+    expect(approvals).toHaveLength(2)
+
+    const issueResponse = await fetch(`${baseUrl}/api/agent/issues/${seededIssueId}`, {
+      headers: { authorization: `Bearer ${agentKey}` },
+    })
+    expect(await issueResponse.json()).toEqual(expect.objectContaining({
+      qaState: 'testing', qaRunId: 'qa-run-1', claimedBy: 'issue-board-agent',
+    }))
+  })
+
+  it('returns a conflict when another run claims the already claimed issue', async () => {
+    const contract = await discoverZebricApplication(baseUrl)
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'issue_board',
+      credential: () => agentKey,
+      mutations: {
+        approve: () => true,
+        idempotencyKey: (_operationId, input) => `claim:${input.id}:${input.runId}`,
+      },
+    })
+    const driver = new DeterministicAgentDriver(tools)
+
+    await expect(driver.invoke({
+      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      input: { id: seededIssueId, runId: 'qa-run-2' },
+    })).rejects.toThrow('HTTP 409')
+    expect(driver.transcript).toEqual([])
+  })
 })
 
-async function seedIssueBoard(baseUrl: string, credential: string): Promise<void> {
+async function seedIssueBoard(baseUrl: string, credential: string): Promise<string> {
   const ready = await postJson(baseUrl, credential, '/api/columns', {
     key: 'ready_to_test', name: 'Ready to Test', position: 0,
   }) as { id: string }
-  await postJson(baseUrl, credential, '/api/issues', {
+  const issue = await postJson(baseUrl, credential, '/api/issues', {
     title: 'Deterministic Agent API Test',
     description: 'Seeded through the real Zebric entity API.',
     acceptanceCriteria: 'The agent finds this issue through the Ready to Test queue.',
     testUrl: `${baseUrl}/`,
     revision: 'e2e-revision',
+    qaState: 'ready_to_test',
     columnId: ready.id,
     position: 0,
     important: true,
-  })
+  }) as { id: string }
+  return issue.id
 }
 
 async function postJson(

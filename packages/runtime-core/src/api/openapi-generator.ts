@@ -127,6 +127,7 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
           schema: {
             type: 'object',
             properties,
+            required: Object.keys(action.body),
           },
         },
       },
@@ -161,6 +162,20 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
 }
 
 function buildResponses(action: SkillAction): Record<string, any> {
+  if (action.workflow) {
+    return {
+      '202': {
+        description: 'Workflow accepted',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/WorkflowAccepted' },
+          },
+        },
+      },
+      '401': { description: 'Unauthorized' },
+      '409': { description: 'Workflow precondition or state conflict' },
+    }
+  }
   const statusCode = action.action === 'create' ? '201' : '200'
   const description = action.action === 'create' ? 'Created' : 'Success'
 
@@ -270,6 +285,19 @@ function buildOperation(
   // Responses
   operation.responses = buildResponses(action)
 
+  if (action.method !== 'GET') {
+    operation.parameters = [
+      ...(operation.parameters || []),
+      {
+        name: 'Idempotency-Key',
+        in: 'header',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Stable key used to safely retry this logical mutation.',
+      },
+    ]
+  }
+
   return operation
 }
 
@@ -278,9 +306,36 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
   for (const entity of blueprint.entities) {
     entityMap.set(entity.name, entity)
   }
-
-  // Build component schemas from entities
+  // Build component schemas from entities and workflow contracts
   const schemas: Record<string, any> = {}
+  schemas.WorkflowAccepted = {
+    type: 'object',
+    required: ['success', 'job'],
+    properties: {
+      success: { type: 'boolean' },
+      job: {
+        type: 'object',
+        required: ['id', 'workflow', 'status', 'url'],
+        properties: {
+          id: { type: 'string' },
+          workflow: { type: 'string' },
+          status: { type: 'string' },
+          url: { type: 'string' },
+        },
+      },
+    },
+  }
+  schemas.WorkflowJob = {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      workflow: { type: 'string' },
+      status: { type: 'string', enum: ['pending', 'running', 'succeeded', 'failed', 'cancelled'] },
+      result: {},
+      error: { type: ['string', 'null'] },
+    },
+  }
+
   for (const entity of blueprint.entities) {
     schemas[entity.name] = entityToSchema(entity)
     schemas[`${entity.name}Create`] = entityToCreateSchema(entity)
@@ -300,6 +355,21 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         const method = action.method.toLowerCase()
         paths[pathKey][method] = buildOperation(skill, action, entityMap)
       }
+    }
+  }
+  if (blueprint.workflows?.length) {
+    paths['/api/jobs/{id}'] = {
+      get: {
+        operationId: 'zebric_get_workflow_job',
+        tags: ['zebric'],
+        description: 'Observe a workflow job owned by the authenticated caller.',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Workflow job', content: { 'application/json': { schema: { $ref: '#/components/schemas/WorkflowJob' } } } },
+          '401': { description: 'Unauthorized' },
+          '404': { description: 'Job not found' },
+        },
+      },
     }
   }
 

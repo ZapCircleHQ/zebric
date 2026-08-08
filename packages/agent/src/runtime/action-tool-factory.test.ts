@@ -26,6 +26,16 @@ const contract: ZebricApplicationContract = {
         },
         post: { operationId: 'issue_board_mutate_issue' },
       },
+      '/api/agent/issues/{id}/claim': {
+        post: {
+          operationId: 'issue_board_claim_issue',
+          description: 'Claim an issue.',
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+          requestBody: { content: { 'application/json': { schema: {
+            properties: { runId: { type: 'string' } }, required: ['runId'],
+          } } } },
+        },
+      },
     },
   },
 }
@@ -63,6 +73,45 @@ describe('createRuntimeReadTools', () => {
     const tools = createRuntimeReadTools(contract, { applicationName: 'local', fetch: fetcher })
 
     await expect(tools[0]!.invoke({ key: 'done' })).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('approval-gates mutations and supplies an idempotency key', async () => {
+    const fetcher = vi.fn(async () => Response.json({ success: true })) as typeof fetch
+    const approve = vi.fn(async () => true)
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher,
+      mutations: {
+        approve,
+        idempotencyKey: (_operation, input) => `claim:${input.id}:${input.runId}`,
+        observeJobs: false,
+      },
+    })
+    const claim = tools.find(item => item.name === 'local_issue_board_claim_issue')!
+
+    await claim.invoke({ id: 'issue-1', runId: 'run-1' })
+
+    expect(approve).toHaveBeenCalledWith(expect.objectContaining({
+      operationId: 'issue_board_claim_issue', method: 'POST',
+    }))
+    const [, init] = fetcher.mock.calls[0]!
+    expect((init?.headers as Record<string, string>)['idempotency-key']).toBe('claim:issue-1:run-1')
+    expect(init?.body).toBe(JSON.stringify({ runId: 'run-1' }))
+  })
+
+  it('does not send a rejected mutation', async () => {
+    const fetcher = vi.fn() as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher,
+      mutations: {
+        approve: () => false,
+        idempotencyKey: () => 'unused',
+      },
+    })
+    const claim = tools.find(item => item.name === 'local_issue_board_claim_issue')!
+
+    await expect(claim.invoke({ id: 'issue-1', runId: 'run-1' }))
+      .rejects.toThrow('not approved')
     expect(fetcher).not.toHaveBeenCalled()
   })
 })

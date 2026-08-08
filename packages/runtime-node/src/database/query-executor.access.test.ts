@@ -82,6 +82,25 @@ describe('QueryExecutor row access', () => {
     await expect(executor.delete('RoadmapItem', 'public-item')).rejects.toThrow('Access denied')
   })
 
+  it('atomically updates only when the expected state still matches', async () => {
+    const updated = await executor.updateWhere(
+      'RoadmapItem',
+      'public-item',
+      { visibility: 'public' },
+      { visibility: 'internal' },
+      { session: authenticatedSession },
+    )
+    expect(updated.visibility).toBe('internal')
+
+    await expect(executor.updateWhere(
+      'RoadmapItem',
+      'public-item',
+      { visibility: 'public' },
+      { title: 'Stale update' },
+      { session: authenticatedSession },
+    )).rejects.toThrow('Conflict:')
+  })
+
   it('normalizes DateTime strings and blank optional values for database writes', async () => {
     const created = await executor.create('RoadmapItem', {
       id: 'scheduled-item',
