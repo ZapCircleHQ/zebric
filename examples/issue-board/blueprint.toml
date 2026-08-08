@@ -15,6 +15,7 @@ min_version = "0.1.0"
 [entity.Column]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
+  { name = "key", type = "Enum", values = ["backlog", "in_progress", "ready_to_test", "needs_work", "qa_completed"], required = true, unique = true },
   { name = "name", type = "Text", required = true },
   { name = "position", type = "Integer", default = 0 },
   { name = "createdAt", type = "DateTime", default = "now" },
@@ -25,6 +26,10 @@ fields = [
 fields = [
   { name = "id", type = "ULID", primary_key = true },
   { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "acceptanceCriteria", type = "LongText" },
+  { name = "testUrl", type = "Text" },
+  { name = "revision", type = "Text" },
   { name = "columnId", type = "Ref", ref = "Column.id", index = true, required = true },
   { name = "position", type = "Integer", default = 0 },
   { name = "important", type = "Boolean", default = false },
@@ -120,6 +125,19 @@ entity = "Column"
 method = "create"
 
 [[page."/columns/new".form.fields]]
+name = "key"
+type = "select"
+required = true
+label = "Workflow key"
+options = [
+  { value = "backlog", label = "Backlog" },
+  { value = "in_progress", label = "In Progress" },
+  { value = "ready_to_test", label = "Ready to Test" },
+  { value = "needs_work", label = "Needs Work" },
+  { value = "qa_completed", label = "QA Completed" }
+]
+
+[[page."/columns/new".form.fields]]
 name = "name"
 type = "text"
 required = true
@@ -134,3 +152,57 @@ label = "Position"
 [page."/columns/new".form.onSuccess]
 redirect = "/"
 message = "Column created"
+
+# ==========================================
+# Agent API — read-only vertical slice
+# ==========================================
+
+[skill.issue_board]
+description = "Inspect issue-board workflow columns and issues."
+
+[[skill.issue_board.actions]]
+name = "list_columns"
+description = "List workflow columns, optionally filtering by their stable workflow key."
+method = "GET"
+path = "/api/agent/columns"
+entity = "Column"
+action = "list"
+
+[skill.issue_board.actions.query.key]
+type = "Enum"
+values = ["backlog", "in_progress", "ready_to_test", "needs_work", "qa_completed"]
+required = false
+description = "Stable workflow key. Use ready_to_test to locate the QA queue column."
+
+[[skill.issue_board.actions]]
+name = "list_issues"
+description = "List issues, optionally filtering by column id and importance."
+method = "GET"
+path = "/api/agent/issues"
+entity = "Issue"
+action = "list"
+
+[skill.issue_board.actions.query.columnId]
+type = "Ref"
+required = false
+description = "Filter issues by the id returned from list_columns."
+
+[skill.issue_board.actions.query.important]
+type = "Boolean"
+required = false
+description = "Filter issues by importance."
+
+[[skill.issue_board.actions]]
+name = "get_issue"
+description = "Fetch one issue and its QA context by id."
+method = "GET"
+path = "/api/agent/issues/{id}"
+entity = "Issue"
+action = "get"
+
+[auth]
+providers = ["email"]
+
+[[auth.apiKeys]]
+name = "issue-board-agent"
+keyEnv = "ISSUE_BOARD_AGENT_API_KEY"

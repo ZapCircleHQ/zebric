@@ -3,6 +3,42 @@ import type { SkillAction } from '@zebric/runtime-core'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 
+function coerceQueryValue(value: string, type: string): string | number | boolean {
+  if (type === 'Integer') {
+    if (!/^-?\d+$/.test(value)) throw new Error(`Expected an integer, received "${value}"`)
+    return Number.parseInt(value, 10)
+  }
+  if (type === 'Float') {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) throw new Error(`Expected a number, received "${value}"`)
+    return parsed
+  }
+  if (type === 'Boolean') {
+    if (value === 'true') return true
+    if (value === 'false') return false
+    throw new Error(`Expected true or false, received "${value}"`)
+  }
+  return value
+}
+
+function parseSkillQuery(c: Context, action: SkillAction): Record<string, any> {
+  const where: Record<string, any> = {}
+  for (const [name, config] of Object.entries(action.query || {})) {
+    const rawValue = c.req.query(name)
+    const value = rawValue ?? config.default
+    if (value === undefined) {
+      if (config.required) throw new Error(`Missing required query parameter "${name}"`)
+      continue
+    }
+    const coerced = typeof value === 'string' ? coerceQueryValue(value, config.type) : value
+    if (config.values?.length && !config.values.includes(String(coerced))) {
+      throw new Error(`Invalid value for query parameter "${name}"`)
+    }
+    if (name !== 'limit' && name !== 'offset') where[config.field || name] = coerced
+  }
+  return where
+}
+
 export interface ActionHandlerDeps {
   queryExecutor: QueryExecutor
   workflowManager?: WorkflowManager
@@ -66,7 +102,15 @@ export async function handleSkillEntityAction(
     }
 
     case 'list': {
-      const where: Record<string, any> = {}
+      let where: Record<string, any>
+      try {
+        where = parseSkillQuery(c, action)
+      } catch (error) {
+        return Response.json({
+          error: 'Invalid query parameters',
+          details: error instanceof Error ? error.message : String(error),
+        }, { status: 400 })
+      }
       if (action.mapParams) {
         for (const [pathParam, entityField] of Object.entries(action.mapParams)) {
           const value = c.req.param(pathParam)

@@ -26,16 +26,20 @@ extract_id() {
 }
 
 echo "Creating columns..."
-BACKLOG=$(post_json /api/columns '{"name":"Backlog","position":0}' | extract_id)
-INPROGRESS=$(post_json /api/columns '{"name":"In Progress","position":1}' | extract_id)
-DONE=$(post_json /api/columns '{"name":"Done","position":2}' | extract_id)
+BACKLOG=$(post_json /api/columns '{"key":"backlog","name":"Backlog","position":0}' | extract_id)
+INPROGRESS=$(post_json /api/columns '{"key":"in_progress","name":"In Progress","position":1}' | extract_id)
+READY=$(post_json /api/columns '{"key":"ready_to_test","name":"Ready to Test","position":2}' | extract_id)
+NEEDSWORK=$(post_json /api/columns '{"key":"needs_work","name":"Needs Work","position":3}' | extract_id)
+QACOMPLETE=$(post_json /api/columns '{"key":"qa_completed","name":"QA Completed","position":4}' | extract_id)
 
 echo "  Backlog     $BACKLOG"
 echo "  In Progress $INPROGRESS"
-echo "  Done        $DONE"
+echo "  Ready       $READY"
+echo "  Needs Work  $NEEDSWORK"
+echo "  QA Complete $QACOMPLETE"
 
 echo "Creating issues..."
-post_json /api/issues "{\"title\":\"Wire widget schema into the blueprint parser\",\"columnId\":\"$DONE\",\"position\":0,\"important\":true}" >/dev/null
+post_json /api/issues "{\"title\":\"Wire widget schema into the blueprint parser\",\"description\":\"Verify board widget parsing and rendering.\",\"acceptanceCriteria\":\"The board loads and renders every configured column without errors.\",\"testUrl\":\"$BASE/\",\"revision\":\"local-dev\",\"columnId\":\"$READY\",\"position\":0,\"important\":true}" >/dev/null
 post_json /api/issues "{\"title\":\"Ship a working board widget end-to-end\",\"columnId\":\"$INPROGRESS\",\"position\":0,\"important\":true}" >/dev/null
 post_json /api/issues "{\"title\":\"Drag-and-drop between columns\",\"columnId\":\"$INPROGRESS\",\"position\":1,\"important\":false}" >/dev/null
 post_json /api/issues "{\"title\":\"Sortable list widget\",\"columnId\":\"$BACKLOG\",\"position\":0,\"important\":false}" >/dev/null

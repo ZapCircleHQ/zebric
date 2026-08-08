@@ -234,12 +234,30 @@ function buildOperation(
     }))
   }
 
+  if (action.query) {
+    const queryParameters = Object.entries(action.query).map(([name, config]) => {
+      const mapped = FIELD_TYPE_MAP[config.type] || { type: 'string' }
+      const schema: Record<string, any> = { ...mapped }
+      if (config.values?.length) schema.enum = config.values
+      if (config.default !== undefined) schema.default = config.default
+      return {
+        name,
+        in: 'query',
+        required: config.required === true,
+        schema,
+        ...(config.description ? { description: config.description } : {}),
+      }
+    })
+    operation.parameters = [...(operation.parameters || []), ...queryParameters]
+  }
+
   // Pagination query params for list actions
   if (action.action === 'list') {
+    const declaredQueryParams = new Set(Object.keys(action.query || {}))
     operation.parameters = [
       ...(operation.parameters || []),
-      { name: 'limit', in: 'query', schema: { type: 'integer', default: 100, maximum: 1000 }, description: 'Maximum number of records to return (default 100, max 1000).' },
-      { name: 'offset', in: 'query', schema: { type: 'integer', default: 0 }, description: 'Number of records to skip.' },
+      ...(!declaredQueryParams.has('limit') ? [{ name: 'limit', in: 'query', schema: { type: 'integer', default: 100, maximum: 1000 }, description: 'Maximum number of records to return (default 100, max 1000).' }] : []),
+      ...(!declaredQueryParams.has('offset') ? [{ name: 'offset', in: 'query', schema: { type: 'integer', default: 0 }, description: 'Number of records to skip.' }] : []),
     ]
   }
 

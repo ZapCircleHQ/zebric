@@ -232,6 +232,37 @@ describe('generateOpenAPISpec', () => {
       ])
     })
 
+    it('includes declared query parameters', () => {
+      const bp = minimalBlueprint({
+        skills: [{
+          name: 'qa',
+          actions: [{
+            name: 'list_issues',
+            method: 'GET',
+            path: '/api/qa/issues',
+            entity: 'Simple',
+            action: 'list',
+            query: {
+              status: {
+                type: 'Enum',
+                values: ['ready_to_test'],
+                description: 'Filter by workflow status.',
+              },
+            },
+          }],
+        }],
+      })
+      const op = generateOpenAPISpec(bp).paths['/api/qa/issues'].get
+
+      expect(op.parameters).toContainEqual({
+        name: 'status',
+        in: 'query',
+        required: false,
+        schema: { type: 'string', enum: ['ready_to_test'] },
+        description: 'Filter by workflow status.',
+      })
+    })
+
     it('includes request body from explicit body definition', () => {
       const bp = minimalBlueprint({
         skills: [

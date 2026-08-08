@@ -129,6 +129,36 @@ id = "issueId"
     expect(action.mapParams).toEqual({ id: 'issueId' })
   })
 
+  it('parses typed skill query parameters', () => {
+    const toml = blueprintWithSkill(`
+[skill.dispatch]
+description = "Manage issues."
+
+[[skill.dispatch.actions]]
+name = "list_issues"
+method = "GET"
+path = "/api/issues"
+entity = "Issue"
+action = "list"
+
+[skill.dispatch.actions.query.status]
+type = "Enum"
+values = ["ready", "done"]
+required = false
+description = "Filter by status."
+`)
+    const action = parser.parse(toml, 'toml').skills![0].actions[0]
+
+    expect(action.query).toEqual({
+      status: {
+        type: 'Enum',
+        values: ['ready', 'done'],
+        required: false,
+        description: 'Filter by status.',
+      },
+    })
+  })
+
   it('parses skill actions with workflow reference', () => {
     const toml = blueprintWithSkill(`
 [skill.dispatch]

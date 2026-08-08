@@ -613,10 +613,20 @@ export interface SkillAction {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   path: string
   body?: Record<string, string>
+  query?: Record<string, SkillQueryParameter>
   entity?: string
   action?: 'create' | 'list' | 'get' | 'update' | 'delete'
   mapParams?: Record<string, string>
   workflow?: string
+}
+
+export interface SkillQueryParameter {
+  type: FieldType
+  field?: string
+  values?: string[]
+  required?: boolean
+  default?: string | number | boolean
+  description?: string
 }
 
 export interface SkillConfig {
