@@ -72,7 +72,11 @@ export class WorkflowExecutor {
   /**
    * Execute a workflow
    */
-  async execute(workflow: Workflow, context: WorkflowContext): Promise<WorkflowExecutionResult> {
+  async execute(
+    workflow: Workflow,
+    context: WorkflowContext,
+    options?: { beforeTransactionalCommit?: () => Promise<void> }
+  ): Promise<WorkflowExecutionResult> {
     const logs: WorkflowLog[] = []
     const workflowLogger = this.logger
       ? createWorkflowLogger(this.logger, workflow.name, {
@@ -150,7 +154,10 @@ export class WorkflowExecutor {
         }
         const deferredEvents: Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]> = []
         await this.deferredEntityEvents.run(deferredEvents, () =>
-          this.dataLayer.transaction(() => executeSteps())
+          this.dataLayer.transaction(async () => {
+            await executeSteps()
+            await options?.beforeTransactionalCommit?.()
+          })
         )
         for (const event of deferredEvents) {
           await this.onEntityEvent?.(event)

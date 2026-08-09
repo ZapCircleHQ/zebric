@@ -127,4 +127,14 @@ describe('SchemaGenerator', () => {
     const userTableMatches = combined.match(/CREATE TABLE IF NOT EXISTS user \(/g) || []
     expect(userTableMatches).toHaveLength(1)
   })
+
+  it('always provisions the internal audit outbox', () => {
+    for (const dialect of ['sqlite', 'postgres'] as const) {
+      const combined = new SchemaGenerator(dialect)
+        .generateInitialSchemaStatements(blueprint([]))
+        .join('\n')
+      expect(combined).toContain('CREATE TABLE IF NOT EXISTS __zbl_audit_outbox')
+      expect(combined).toContain('delivered_at BIGINT')
+    }
+  })
 })

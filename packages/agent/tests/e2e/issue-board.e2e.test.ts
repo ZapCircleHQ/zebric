@@ -388,6 +388,16 @@ describe('Zebric Agent deterministic E2E', () => {
       runId: 'qa-run-rollback',
       success: false,
     }))
+    expect(entries.filter(entry =>
+      entry.eventType === 'workflow.failed'
+      && entry.workflowName === 'CompleteQA'
+      && entry.runId === 'qa-run-rollback'
+    )).toHaveLength(1)
+    expect(entries.filter(entry =>
+      entry.eventType === 'workflow.completed'
+      && entry.workflowName === 'CompleteQA'
+      && entry.runId === 'qa-run-rollback'
+    )).toHaveLength(0)
     expect(await readFile(auditPath, 'utf8')).not.toContain(agentKey)
   })
 })

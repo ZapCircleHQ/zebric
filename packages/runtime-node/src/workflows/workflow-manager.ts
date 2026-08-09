@@ -20,17 +20,23 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   httpClient?: any
   notificationService?: NotificationManager
   logger?: Logger
+  enqueueTransactionalAudit?: (job: WorkflowJob, workflow: Workflow) => Promise<void>
+  deliverAuditOutbox?: () => Promise<void>
 }
 
 export class WorkflowManager extends EventEmitter {
   private queue: WorkflowQueue
   private executor: WorkflowExecutor
   private logger?: Logger
+  private enqueueTransactionalAudit?: WorkflowManagerOptions['enqueueTransactionalAudit']
+  private deliverAuditOutbox?: WorkflowManagerOptions['deliverAuditOutbox']
   private readonly maxEntityTriggerDepth = 5
 
   constructor(options: WorkflowManagerOptions) {
     super()
     this.logger = options.logger
+    this.enqueueTransactionalAudit = options.enqueueTransactionalAudit
+    this.deliverAuditOutbox = options.deliverAuditOutbox
 
     // Initialize queue
     this.queue = new WorkflowQueue({
@@ -76,9 +82,20 @@ export class WorkflowManager extends EventEmitter {
     // Execute jobs when they're ready
     this.queue.on('job:execute', async (job: WorkflowJob, workflow: Workflow) => {
       try {
-        const result = await this.executor.execute(workflow, job.context)
+        const result = await this.executor.execute(workflow, job.context, {
+          beforeTransactionalCommit: workflow.transactional && this.enqueueTransactionalAudit
+            ? () => this.enqueueTransactionalAudit!(job, workflow)
+            : undefined,
+        })
 
         if (result.success) {
+          if (workflow.transactional) {
+            try {
+              await this.deliverAuditOutbox?.()
+            } catch (error) {
+              this.logger?.error('Audit outbox delivery failed; intent remains pending', { error })
+            }
+          }
           this.queue.completeJob(job.id, result.result)
         } else {
           this.queue.failJob(job.id, new Error(result.error || 'Unknown error'))

@@ -697,6 +697,7 @@ mode = "project"
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
 - [x] Assert authenticated agent, credential, run, request, and correlation attribution in the runtime audit log.
 - [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
+- [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.
 - [x] Use real `runtime-core` Blueprint fixtures for validation tests.
 - [ ] Test credential redaction across errors, traces, and checkpoints.
 - [ ] Test filesystem path and symlink boundary enforcement.

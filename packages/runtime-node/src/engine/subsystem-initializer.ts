@@ -15,6 +15,7 @@ import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
 import { createBetterAuthProvider, type AuthProviderConfig } from '../auth/index.js'
 import { WorkflowManager, ProductionHttpClient } from '../workflows/index.js'
+import type { WorkflowJob } from '../workflows/types.js'
 import { CacheInterface, MemoryCache, RedisCache } from '../cache/index.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { PluginRegistry } from '../plugins/index.js'
@@ -62,6 +63,7 @@ export class SubsystemInitializer {
   private cache?: CacheInterface
   private notificationManager?: NotificationManager
   private auditLogger: AuditLogger
+  private auditOutboxDelivery?: Promise<void>
 
   constructor(deps: SubsystemInitializerDependencies) {
     this.blueprint = deps.blueprint
@@ -272,6 +274,16 @@ export class SubsystemInitializer {
       retryDelay: 1000,
       maxRetries: 3,
       jobTimeout: 30000,
+      enqueueTransactionalAudit: async (job, workflow) => {
+        const event = this.buildWorkflowAuditEvent(job, true)
+        await this.queryExecutor!.enqueueAuditOutbox({
+          id: `workflow:${job.id}:completed`,
+          topic: AuditEventType.WORKFLOW_COMPLETED,
+          payload: JSON.stringify(event),
+          createdAt: Date.now(),
+        })
+      },
+      deliverAuditOutbox: () => this.deliverAuditOutbox(),
     })
 
     // Register workflows from blueprint
@@ -307,23 +319,9 @@ export class SubsystemInitializer {
         requestId: job.context.trace?.requestId,
         executionId: job.context.trace?.executionId,
       })
-      const attribution = job.context.variables?.data?.attribution
-      this.auditLogger.log({
-        eventType: AuditEventType.WORKFLOW_COMPLETED,
-        severity: AuditSeverity.INFO,
-        action: `Workflow completed: ${job.workflowName}`,
-        actionName: job.workflowName,
-        workflowName: job.workflowName,
-        success: true,
-        actorType: job.context.session?.actor?.type,
-        actorId: job.context.session?.actor?.id,
-        agentId: attribution?.agentId,
-        credentialId: attribution?.credentialId,
-        runId: attribution?.runId,
-        correlationId: job.context.trace?.correlationId,
-        requestId: job.context.trace?.requestId,
-        metadata: { jobId: job.id, executionId: job.context.trace?.executionId },
-      })
+      if (!this.workflowManager?.getWorkflow(job.workflowName)?.transactional) {
+        this.auditLogger.log(this.buildWorkflowAuditEvent(job, true))
+      }
     })
 
     this.workflowManager.on('job:failed', (job) => {
@@ -335,27 +333,56 @@ export class SubsystemInitializer {
         executionId: job.context.trace?.executionId,
         error: job.error,
       })
-      const attribution = job.context.variables?.data?.attribution
-      this.auditLogger.log({
-        eventType: AuditEventType.WORKFLOW_FAILED,
-        severity: AuditSeverity.WARNING,
-        action: `Workflow failed: ${job.workflowName}`,
-        actionName: job.workflowName,
-        workflowName: job.workflowName,
-        success: false,
-        errorMessage: 'Workflow execution failed',
-        actorType: job.context.session?.actor?.type,
-        actorId: job.context.session?.actor?.id,
-        agentId: attribution?.agentId,
-        credentialId: attribution?.credentialId,
-        runId: attribution?.runId,
-        correlationId: job.context.trace?.correlationId,
-        requestId: job.context.trace?.requestId,
-        metadata: { jobId: job.id, executionId: job.context.trace?.executionId },
-      })
+      this.auditLogger.log(this.buildWorkflowAuditEvent(job, false))
     })
 
+    await this.deliverAuditOutbox()
+
     return this.workflowManager
+  }
+
+  private buildWorkflowAuditEvent(job: WorkflowJob, success: boolean) {
+    const attribution = job.context.variables?.data?.attribution
+    return {
+      eventType: success ? AuditEventType.WORKFLOW_COMPLETED : AuditEventType.WORKFLOW_FAILED,
+      auditId: `workflow:${job.id}:${success ? 'completed' : 'failed'}`,
+      severity: success ? AuditSeverity.INFO : AuditSeverity.WARNING,
+      action: `Workflow ${success ? 'completed' : 'failed'}: ${job.workflowName}`,
+      actionName: job.workflowName,
+      workflowName: job.workflowName,
+      success,
+      errorMessage: success ? undefined : 'Workflow execution failed',
+      actorType: job.context.session?.actor?.type,
+      actorId: job.context.session?.actor?.id,
+      agentId: attribution?.agentId,
+      credentialId: attribution?.credentialId,
+      runId: attribution?.runId,
+      correlationId: job.context.trace?.correlationId,
+      requestId: job.context.trace?.requestId,
+      metadata: { jobId: job.id, executionId: job.context.trace?.executionId },
+    }
+  }
+
+  private async deliverAuditOutbox(): Promise<void> {
+    if (this.auditOutboxDelivery) return this.auditOutboxDelivery
+    this.auditOutboxDelivery = this.deliverPendingAuditOutbox()
+    try {
+      await this.auditOutboxDelivery
+    } finally {
+      this.auditOutboxDelivery = undefined
+    }
+  }
+
+  private async deliverPendingAuditOutbox(): Promise<void> {
+    if (!this.queryExecutor) return
+    for (const record of await this.queryExecutor.listPendingAuditOutbox()) {
+      if (record.topic !== AuditEventType.WORKFLOW_COMPLETED) continue
+      const delivered = this.auditLogger.log(JSON.parse(record.payload))
+      if (!delivered) {
+        throw new Error(`Audit outbox delivery failed for ${record.id}`)
+      }
+      await this.queryExecutor.markAuditOutboxDelivered(record.id)
+    }
   }
 
   /**

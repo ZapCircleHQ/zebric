@@ -391,7 +391,9 @@ Suggested shape:
 - [ ] `ReleaseQAClaim` or claim expiration
 - [x] Ensure implemented claim and terminal workflows validate allowed source state.
 - [x] Ensure QA result creation and task transition commit or roll back together.
-- [ ] Include the audit entry in the same transactional boundary, or define an outbox-backed consistency contract.
+- [x] Include the audit intent in the same transactional boundary using a database outbox; deliver it to the existing audit log after commit with startup retry.
+
+Transactional completion audit delivery is at least once. The outbox row is acknowledged only after the existing audit logger confirms its append, and each event has a stable `auditId` so downstream consumers can detect or deduplicate a replay. A rolled-back workflow cannot retain a completion intent; its terminal failure is logged after rollback.
 
 ### 7.4 Publish a QA skill
 

@@ -56,6 +56,32 @@ describePostgres('QueryExecutor PostgreSQL transactions', () => {
 
     expect(await executor.findById('TransactionIssue', issueId)).toMatchObject({ state: 'testing' })
   })
+
+  it('commits and rolls back audit outbox intents with their transaction', async () => {
+    const committedId = `postgres-committed-${ulid()}`
+    const rolledBackId = `postgres-rolled-back-${ulid()}`
+
+    await executor.transaction(() => executor.enqueueAuditOutbox({
+      id: committedId,
+      topic: 'workflow.completed',
+      payload: '{"success":true}',
+      createdAt: Date.now(),
+    }))
+    await expect(executor.transaction(async () => {
+      await executor.enqueueAuditOutbox({
+        id: rolledBackId,
+        topic: 'workflow.completed',
+        payload: '{"success":true}',
+        createdAt: Date.now(),
+      })
+      throw new Error('rollback audit intent')
+    })).rejects.toThrow('rollback audit intent')
+
+    const pending = await executor.listPendingAuditOutbox(1_000)
+    expect(pending.some(record => record.id === committedId)).toBe(true)
+    expect(pending.some(record => record.id === rolledBackId)).toBe(false)
+    await executor.markAuditOutboxDelivered(committedId)
+  })
 })
 
 const blueprint: Blueprint = {

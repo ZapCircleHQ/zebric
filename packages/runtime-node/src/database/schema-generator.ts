@@ -443,7 +443,9 @@ export class SchemaGenerator {
    * Generate initial schema statements for full Blueprint.
    */
   generateInitialSchemaStatements(blueprint: Blueprint): string[] {
-    const statements: string[] = []
+    const statements: string[] = [
+      `CREATE TABLE IF NOT EXISTS __zbl_audit_outbox (\n  id TEXT PRIMARY KEY,\n  topic TEXT NOT NULL,\n  payload TEXT NOT NULL,\n  created_at BIGINT NOT NULL,\n  delivered_at BIGINT\n);`,
+    ]
 
     if (blueprint.auth?.providers) {
       statements.push(...this.getBetterAuthSchema())

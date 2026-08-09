@@ -1058,10 +1058,12 @@ describe('WorkflowExecutor', () => {
       }, {
         trigger: { type: 'manual' },
         variables: {},
+      }, {
+        beforeTransactionalCommit: async () => { order.push('audit-intent') },
       })
 
       expect(result.success).toBe(true)
-      expect(order).toEqual(['begin', 'create', 'commit', 'event'])
+      expect(order).toEqual(['begin', 'create', 'audit-intent', 'commit', 'event'])
     })
 
     it('does not emit entity events when the transaction rolls back', async () => {
@@ -1080,6 +1082,25 @@ describe('WorkflowExecutor', () => {
 
       expect(result).toMatchObject({ success: false, error: 'result insert failed' })
       expect(mockEntityEventHandler).not.toHaveBeenCalled()
+    })
+
+    it('does not enqueue a success audit intent after a step fails', async () => {
+      ;(mockDataLayer as any).transaction = vi.fn(async (fn: () => Promise<unknown>) => fn())
+      ;(mockDataLayer.create as any).mockRejectedValue(new Error('result insert failed'))
+      const beforeTransactionalCommit = vi.fn()
+
+      const result = await executor.execute({
+        name: 'transactional-failure',
+        trigger: { manual: true },
+        transactional: true,
+        steps: [{ type: 'query', entity: 'Result', action: 'create', data: { value: 'bad' } }],
+      }, {
+        trigger: { type: 'manual' },
+        variables: {},
+      }, { beforeTransactionalCommit })
+
+      expect(result.success).toBe(false)
+      expect(beforeTransactionalCommit).not.toHaveBeenCalled()
     })
   })
 })

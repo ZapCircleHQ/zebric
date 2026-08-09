@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -31,5 +31,21 @@ describe('AuditLogger agent attribution', () => {
       metadata: { apiKey: '[REDACTED]' },
     })
     expect(readFileSync(path, 'utf8')).not.toContain('must-not-appear')
+  })
+
+  it('reports a failed durable append so an outbox record is not acknowledged', () => {
+    root = mkdtempSync(join(tmpdir(), 'zebric-audit-'))
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const logger = new AuditLogger({ logPath: root })
+
+    expect(logger.log({
+      eventType: AuditEventType.WORKFLOW_COMPLETED,
+      action: 'Workflow completed: Test',
+    })).toBe(false)
+    expect(stderr).toHaveBeenCalledWith(
+      '[AUDIT ERROR] Failed to write audit log:',
+      expect.anything()
+    )
+    stderr.mockRestore()
   })
 })

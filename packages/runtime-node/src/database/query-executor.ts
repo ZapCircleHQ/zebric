@@ -21,6 +21,13 @@ export interface QueryContext {
   session?: UserSession | null
 }
 
+export interface AuditOutboxRecord {
+  id: string
+  topic: string
+  payload: string
+  createdAt: number
+}
+
 export class QueryExecutor {
   private permissionManager?: PermissionManager
   private readonly transactionContext = new AsyncLocalStorage<{ token: symbol; db?: any }>()
@@ -92,6 +99,43 @@ export class QueryExecutor {
     if (active && this.transactionContext.getStore()?.token !== active.token) {
       await active.done
     }
+  }
+
+  /** Persist an audit intent in the caller's active database transaction. */
+  async enqueueAuditOutbox(record: AuditOutboxRecord): Promise<void> {
+    await this.waitForTransaction()
+    if (!this.transactionContext.getStore()) {
+      throw new Error('Audit outbox entries must be enqueued inside a database transaction')
+    }
+    const db = this.getDb() as any
+    const statement = sql`INSERT INTO __zbl_audit_outbox (id, topic, payload, created_at) VALUES (${record.id}, ${record.topic}, ${record.payload}, ${record.createdAt})`
+    if (this.connection.getType() === 'postgres') await db.execute(statement)
+    else db.run(statement)
+  }
+
+  /** Return undelivered audit intents without mutating them. */
+  async listPendingAuditOutbox(limit = 100): Promise<AuditOutboxRecord[]> {
+    await this.waitForTransaction()
+    const db = this.getDb() as any
+    const statement = sql`SELECT id, topic, payload, created_at FROM __zbl_audit_outbox WHERE delivered_at IS NULL ORDER BY created_at ASC LIMIT ${limit}`
+    const result = this.connection.getType() === 'postgres'
+      ? await db.execute(statement)
+      : db.all(statement)
+    const rows = Array.isArray(result) ? result : result?.rows ?? []
+    return rows.map((row: any) => ({
+      id: row.id,
+      topic: row.topic,
+      payload: row.payload,
+      createdAt: Number(row.created_at),
+    }))
+  }
+
+  async markAuditOutboxDelivered(id: string): Promise<void> {
+    await this.waitForTransaction()
+    const db = this.getDb() as any
+    const statement = sql`UPDATE __zbl_audit_outbox SET delivered_at = ${Date.now()} WHERE id = ${id} AND delivered_at IS NULL`
+    if (this.connection.getType() === 'postgres') await db.execute(statement)
+    else db.run(statement)
   }
 
   /**

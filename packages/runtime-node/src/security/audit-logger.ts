@@ -82,6 +82,7 @@ export interface AuditLogEntry {
 
   // Security
   requestId?: string
+  auditId?: string
   correlationId?: string
   actorType?: 'user' | 'agent' | 'system'
   actorId?: string
@@ -123,9 +124,9 @@ export class AuditLogger {
   /**
    * Log an audit event (write-once)
    */
-  log(event: Partial<AuditLogEntry> & { eventType: AuditEventType; action: string }): void {
+  log(event: Partial<AuditLogEntry> & { eventType: AuditEventType; action: string }): boolean {
     if (!this.config.enabled) {
-      return
+      return false
     }
 
     try {
@@ -139,9 +140,11 @@ export class AuditLogger {
       if (!this.config.splitLogs) {
         console.log(`[AUDIT] ${event.eventType}: ${event.action}`)
       }
+      return true
     } catch (error) {
       // NEVER throw from audit logger - log to stderr instead
       console.error('[AUDIT ERROR] Failed to write audit log:', error)
+      return false
     }
   }
 
@@ -263,6 +266,7 @@ export class AuditLogger {
       errorMessage: partial.errorMessage,
       metadata: this.sanitizeMetadata(partial.metadata),
       requestId: partial.requestId,
+      auditId: partial.auditId,
       correlationId: partial.correlationId,
       actorType: partial.actorType,
       actorId: partial.actorId,
