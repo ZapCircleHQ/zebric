@@ -2,6 +2,7 @@ import type { Context } from 'hono'
 import type { SkillAction } from '@zebric/runtime-core'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
+import { resolveAgentAttribution } from './server-security.js'
 
 function coerceQueryValue(value: string, type: string): string | number | boolean {
   if (type === 'Integer') {
@@ -193,7 +194,7 @@ export async function handleSkillWorkflow(
     // If the action declares a body schema, only keep declared fields.
     // This prevents user-injected keys from reaching workflow templates
     // (e.g. an attacker adding a "url" field that a webhook step resolves).
-    if (action.body && Object.keys(action.body).length > 0) {
+    if (action.body !== undefined) {
       const allowed = new Set(Object.keys(action.body))
       for (const key of Object.keys(rawBody)) {
         if (allowed.has(key)) {
@@ -230,6 +231,7 @@ export async function handleSkillWorkflow(
     record,
     user: session?.user,
     session,
+    attribution: resolveAgentAttribution(c, session),
   }
 
   const job = workflowManager.trigger(workflowName, data, {

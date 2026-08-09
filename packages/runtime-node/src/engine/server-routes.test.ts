@@ -3,6 +3,17 @@ import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { createApiKeyRegistry } from './server-security.js'
+
+function testApiKeys(scopes: string[], name = 'roadmap-agent') {
+  return createApiKeyRegistry([{ token: 'secret-key', credential: {
+    name,
+    agentId: name,
+    credentialId: `${name}-credential`,
+    displayName: name,
+    scopes,
+  } }])
+}
 
 describe('agent discovery routes', () => {
   it('publishes application skills and current runtime capabilities', async () => {
@@ -99,7 +110,7 @@ describe('registerAPIRoutes access context', () => {
       blueprint,
       sessionManager: { getSession: async () => null } as any,
       queryExecutor: { execute } as any,
-      apiKeys: new Map([['secret-key', { name: 'roadmap-agent' }]]),
+      apiKeys: testApiKeys(['entity.item.list']),
     })
 
     const response = await app.request('/api/items', {
@@ -117,7 +128,7 @@ describe('registerAPIRoutes access context', () => {
       blueprint,
       sessionManager: { getSession: async () => null } as any,
       queryExecutor: { create } as any,
-      apiKeys: new Map([['secret-key', { name: 'roadmap-agent' }]]),
+      apiKeys: testApiKeys(['entity.item.create']),
     })
 
     const response = await app.request('/api/items', {
@@ -131,6 +142,21 @@ describe('registerAPIRoutes access context', () => {
 
     expect(response.status).toBe(201)
     expect(create.mock.calls[0]?.[2]?.session.user.id).toBe('roadmap-agent')
+  })
+
+  it('prevents API keys from bypassing skills through unscoped entity routes', async () => {
+    const app = new Hono()
+    registerAPIRoutes(app, {
+      blueprint,
+      sessionManager: { getSession: async () => null } as any,
+      queryExecutor: { delete: vi.fn() } as any,
+      apiKeys: testApiKeys(['qa.read'], 'qa-agent'),
+    })
+    const response = await app.request('/api/items/item-1', {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer secret-key' },
+    })
+    expect(response.status).toBe(403)
   })
 
   it('returns forbidden when query access is denied', async () => {

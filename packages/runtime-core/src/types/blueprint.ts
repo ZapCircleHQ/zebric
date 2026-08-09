@@ -533,6 +533,11 @@ export interface WorkflowStep {
 export interface ApiKeyConfig {
   name: string
   keyEnv: string
+  agentId?: string
+  credentialId?: string
+  displayName?: string
+  scopes?: string[]
+  constraints?: Record<string, string[]>
 }
 
 export interface AuthConfig {
@@ -619,6 +624,7 @@ export interface SkillAction {
   action?: 'create' | 'list' | 'get' | 'update' | 'delete'
   mapParams?: Record<string, string>
   workflow?: string
+  scopes?: string[]
 }
 
 export interface SkillQueryParameter {

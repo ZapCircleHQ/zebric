@@ -226,28 +226,28 @@ Suggested response:
 
 ### 4.1 Introduce first-class agent principals
 
-- [ ] Represent API callers as agent principals rather than user-shaped synthetic sessions.
-- [ ] Include agent ID, credential ID, display name, scopes, and tenant/project constraints.
-- [ ] Preserve compatibility with the existing session and permission infrastructure.
-- [ ] Make actor type available to workflows and audit templates.
+- [x] Represent API callers as agent principals, retaining a user-shaped compatibility view only for existing permission rules.
+- [x] Include agent ID, credential ID, display name, scopes, and declared tenant/project constraints in the principal.
+- [x] Preserve compatibility with the existing session and permission infrastructure.
+- [x] Make actor type and authenticated attribution available to workflows and audit templates.
 
 ### 4.2 Harden credentials
 
-- [ ] Store credential verifiers securely instead of retaining plaintext keys.
+- [x] Store SHA-256 credential verifiers in the runtime registry instead of retaining plaintext API keys there.
 - [ ] Support credential expiration, rotation, and revocation.
-- [ ] Identify credentials without logging secret material.
+- [x] Identify credentials by stable credential ID without logging or retaining secret material in the registry.
 - [ ] Add administrative tooling for issuing and revoking agent credentials.
 - [ ] Document environment-based static keys as development-only or legacy behavior.
 - [ ] Evaluate OAuth 2 client credentials or short-lived signed tokens after the scoped-key implementation.
 
 ### 4.3 Add scopes and resource constraints
 
-- [ ] Allow skills or individual actions to declare required scopes.
-- [ ] Restrict credentials to selected skills and actions.
+- [x] Allow individual skill actions to declare required scopes.
+- [x] Restrict credentials to selected skill actions.
 - [ ] Support project, tenant, or entity-row constraints.
-- [ ] Include required scopes in OpenAPI security declarations.
-- [ ] Return `401` for invalid credentials and `403` for insufficient scope.
-- [ ] Ensure generic entity APIs do not unintentionally bypass skill-level restrictions.
+- [x] Include required scopes in OpenAPI operation metadata.
+- [x] Return `401` for invalid credentials and `403` for insufficient scope.
+- [x] Ensure generic entity APIs require explicit entity scopes and cannot bypass skill-level restrictions.
 
 Example scopes:
 
@@ -342,8 +342,8 @@ Suggested shape:
 ### 6.1 Standardize agent attribution
 
 - [ ] Attach actor type, agent ID, credential ID, run ID, correlation ID, and request ID to mutations and workflow jobs.
-- [ ] Accept a bounded `X-Agent-Run-ID` header or equivalent request field.
-- [ ] Make attribution metadata available to workflow audit steps.
+- [x] Accept and validate a bounded `X-Agent-Run-ID` header for agent mutations.
+- [x] Make authenticated agent, credential, run, correlation, and request metadata available to workflow steps.
 - [ ] Ensure automatic entity-triggered workflows retain the initiating actor.
 
 ### 6.2 Add operational telemetry
@@ -434,7 +434,7 @@ Suggested shape:
 - [x] A request is retried with the same idempotency key.
 - [x] An idempotency key is reused with a different body.
 - [x] A stale agent attempts a transition.
-- [ ] A credential lacks the required scope.
+- [x] A credential lacks the required scope and cannot bypass it through generic CRUD.
 - [ ] A credential is expired or revoked.
 - [ ] A workflow fails after enqueueing.
 - [ ] Evidence is malformed or oversized.

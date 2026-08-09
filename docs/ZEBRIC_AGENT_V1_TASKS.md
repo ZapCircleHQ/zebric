@@ -256,7 +256,8 @@ const agent = await createZebricAgent({
 - [ ] Define typed runtime context containing workspace, applications, agent run ID, and policy.
 - [x] Keep credentials out of prompts, messages, checkpoints, and model-visible tool results.
 - [ ] Generate a unique run ID for each top-level task.
-- [ ] Propagate run and correlation identifiers through runtime API tools.
+- [x] Propagate a trusted agent run ID through runtime mutation tools using `X-Agent-Run-ID`.
+- [ ] Propagate correlation identifiers through runtime API tools.
 - [ ] Define thread IDs separately from run IDs.
 
 ### 1.4 Add a minimal CLI

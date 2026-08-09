@@ -486,6 +486,11 @@ const PermissionRuleSchema = z.object({
 const ApiKeyConfigSchema = z.object({
   name: z.string(),
   keyEnv: z.string(),
+  agentId: z.string().optional(),
+  credentialId: z.string().optional(),
+  displayName: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  constraints: z.record(z.string(), z.array(z.string())).optional(),
 })
 
 const AuthConfigSchema = z.object({
@@ -601,6 +606,7 @@ const SkillActionSchema = z.object({
   action: z.enum(['create', 'list', 'get', 'update', 'delete']).optional(),
   mapParams: z.record(StringKeySchema, z.string()).optional(),
   workflow: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
 })
 
 const SkillConfigSchema = z.object({

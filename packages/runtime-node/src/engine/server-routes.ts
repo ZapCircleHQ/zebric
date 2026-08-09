@@ -26,7 +26,7 @@ import {
   setFlashMessage,
   acceptsJson,
 } from './server-utils.js'
-import { resolveApiKeySession } from './server-security.js'
+import { agentHasScopes, resolveAgentAttribution, resolveApiKeySession } from './server-security.js'
 import {
   handleSkillEntityAction,
   handleSkillWorkflow,
@@ -38,6 +38,15 @@ function getCorrelationId(c: any): string | undefined {
   return (c as any).get('correlationId') as string | undefined
     ?? c.req.header('x-correlation-id')
     ?? undefined
+}
+
+function sessionSecurityId(session: UserSession | null | undefined): string | undefined {
+  if (session?.actor?.type === 'agent') return session.actor.credentialId
+  return session?.user?.id
+}
+
+function entityScope(entity: string, action: string): string {
+  return `entity.${entity.toLowerCase()}.${action}`
 }
 
 function getRequestId(c: any): string | undefined {
@@ -552,7 +561,7 @@ export function registerSkillRoutes(
     sessionManager: SessionManager
     queryExecutor: QueryExecutor
     workflowManager?: WorkflowManager
-    apiKeys: Map<string, { name: string }>
+    apiKeys: ReadonlyMap<string, { name: string }>
   }
 ): void {
   const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys } = deps
@@ -575,8 +584,8 @@ export function registerSkillRoutes(
       if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
       const job = workflowManager.getJob(c.req.param('id'))
-      const ownerId = job?.context.session?.user?.id
-      if (!job || !ownerId || ownerId !== session.user?.id) {
+      const ownerId = sessionSecurityId(job?.context.session)
+      if (!job || !ownerId || ownerId !== sessionSecurityId(session)) {
         return Response.json({ error: 'Job not found' }, { status: 404 })
       }
       return Response.json({
@@ -623,6 +632,10 @@ export function registerSkillRoutes(
           if (skill.auth !== 'none' && !session) {
             return Response.json({ error: 'Unauthorized' }, { status: 401 })
           }
+          if (!agentHasScopes(session, action.scopes ?? [])) {
+            return Response.json({ error: 'Forbidden', requiredScopes: action.scopes }, { status: 403 })
+          }
+          if (method !== 'get') resolveAgentAttribution(c, session)
 
           const actionDeps = { queryExecutor, workflowManager }
 
@@ -638,7 +651,7 @@ export function registerSkillRoutes(
 
           const requestBody = await c.req.raw.clone().text()
           const fingerprint = createHash('sha256').update(requestBody).digest('hex')
-          const scope = `${session?.user?.id || 'anonymous'}:${action.method}:${action.path}:${idempotencyKey}`
+          const scope = `${sessionSecurityId(session) || 'anonymous'}:${action.method}:${action.path}:${idempotencyKey}`
           const existing = idempotency.get(scope)
           if (existing) {
             if (existing.fingerprint !== fingerprint) {
@@ -653,7 +666,9 @@ export function registerSkillRoutes(
         } catch (error) {
           console.error(`Skill route error (${skill.name}/${action.name}):`, error)
           const message = error instanceof Error ? error.message : 'Unknown error'
-          const status = message.includes('precondition failed') || message.startsWith('Conflict:') ? 409 : 500
+          const status = message.startsWith('Invalid agent attribution:')
+            ? 400
+            : message.includes('precondition failed') || message.startsWith('Conflict:') ? 409 : 500
           return Response.json(
             {
               error: 'Skill action failed',
@@ -674,7 +689,7 @@ export function registerAPIRoutes(
     sessionManager: SessionManager
     queryExecutor: QueryExecutor
     workflowManager?: WorkflowManager
-    apiKeys: Map<string, { name: string }>
+    apiKeys: ReadonlyMap<string, { name: string }>
   }
 ): void {
   const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys } = deps
@@ -691,6 +706,7 @@ export function registerAPIRoutes(
       try {
         const data = await c.req.json<Record<string, any>>()
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        if (!agentHasScopes(session, [entityScope(entity.name, 'create')])) throw new Error('Access denied: insufficient agent scope')
         const createStartedAt = performance.now()
         const result = await queryExecutor.create(entity.name, data, { session })
         const createMs = performance.now() - createStartedAt
@@ -727,6 +743,7 @@ export function registerAPIRoutes(
     app.get(entityPath, async (c) => {
       try {
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        if (!agentHasScopes(session, [entityScope(entity.name, 'list')])) throw new Error('Access denied: insufficient agent scope')
         const limitParam = parseInt(c.req.query('limit') || '', 10)
         const offsetParam = parseInt(c.req.query('offset') || '', 10)
         const limit = Math.min(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : 100, 1000)
@@ -757,6 +774,7 @@ export function registerAPIRoutes(
       try {
         const { id } = c.req.param() as { id: string }
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        if (!agentHasScopes(session, [entityScope(entity.name, 'get')])) throw new Error('Access denied: insufficient agent scope')
         const result = await queryExecutor.findById(entity.name, id, { session })
         if (!result) {
           return Response.json({ error: 'Not found' }, { status: 404 })
@@ -779,6 +797,7 @@ export function registerAPIRoutes(
         const { id } = c.req.param() as { id: string }
         const data = await c.req.json<Record<string, any>>()
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        if (!agentHasScopes(session, [entityScope(entity.name, 'update')])) throw new Error('Access denied: insufficient agent scope')
         const before = workflowManager
           ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
@@ -806,6 +825,7 @@ export function registerAPIRoutes(
       try {
         const { id } = c.req.param() as { id: string }
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+        if (!agentHasScopes(session, [entityScope(entity.name, 'delete')])) throw new Error('Access denied: insufficient agent scope')
         const existing = workflowManager
           ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
@@ -832,7 +852,7 @@ export function registerAPIRoutes(
 async function resolveEntityApiSession(
   c: any,
   sessionManager: SessionManager,
-  apiKeys: Map<string, { name: string }>
+  apiKeys: ReadonlyMap<string, { name: string }>
 ) {
   const authHeader = c.req.header('authorization') || ''
   if (authHeader.toLowerCase().startsWith('bearer ')) {

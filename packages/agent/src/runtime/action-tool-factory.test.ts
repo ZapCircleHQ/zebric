@@ -84,6 +84,7 @@ describe('createRuntimeReadTools', () => {
       mutations: {
         approve,
         idempotencyKey: (_operation, input) => `claim:${input.id}:${input.runId}`,
+        agentRunId: () => 'trusted-agent-run',
         observeJobs: false,
       },
     })
@@ -96,6 +97,7 @@ describe('createRuntimeReadTools', () => {
     }))
     const [, init] = fetcher.mock.calls[0]!
     expect((init?.headers as Record<string, string>)['idempotency-key']).toBe('claim:issue-1:run-1')
+    expect((init?.headers as Record<string, string>)['x-agent-run-id']).toBe('trusted-agent-run')
     expect(init?.body).toBe(JSON.stringify({ runId: 'run-1' }))
   })
 

@@ -52,6 +52,7 @@ export interface RuntimeToolFactoryOptions {
     observeJobs?: boolean
     pollIntervalMs?: number
     maxPolls?: number
+    agentRunId?: () => string
   }
 }
 
@@ -155,6 +156,7 @@ export function createRuntimeReadTools(
             ...(isMutation ? {
               'content-type': 'application/json',
               'idempotency-key': options.mutations!.idempotencyKey(operation.operationId!, input),
+              ...(options.mutations!.agentRunId ? { 'x-agent-run-id': options.mutations!.agentRunId() } : {}),
             } : {}),
             ...(credential ? { authorization: `Bearer ${credential}` } : {}),
           },

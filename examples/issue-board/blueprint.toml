@@ -53,6 +53,8 @@ fields = [
   { name = "evidence", type = "JSON" },
   { name = "testedRevision", type = "Text", required = true },
   { name = "agentRunId", type = "Text", required = true },
+  { name = "agentId", type = "Text", required = true },
+  { name = "credentialId", type = "Text", required = true },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
@@ -186,6 +188,7 @@ method = "GET"
 path = "/api/agent/columns"
 entity = "Column"
 action = "list"
+scopes = ["qa.list"]
 
 [skill.issue_board.actions.query.key]
 type = "Enum"
@@ -200,6 +203,7 @@ method = "GET"
 path = "/api/agent/issues"
 entity = "Issue"
 action = "list"
+scopes = ["qa.list"]
 
 [skill.issue_board.actions.query.columnId]
 type = "Ref"
@@ -224,6 +228,7 @@ method = "GET"
 path = "/api/agent/issues/{id}"
 entity = "Issue"
 action = "get"
+scopes = ["qa.read"]
 
 [[skill.issue_board.actions]]
 name = "claim_issue_for_qa"
@@ -232,7 +237,8 @@ method = "POST"
 path = "/api/agent/issues/{id}/claim"
 entity = "Issue"
 workflow = "ClaimIssueForQA"
-body = { runId = "Text" }
+scopes = ["qa.claim"]
+body = {}
 
 [workflow.ClaimIssueForQA]
 description = "Compare-and-set an issue from ready_to_test to testing."
@@ -253,8 +259,8 @@ qaState = "ready_to_test"
 
 [workflow.ClaimIssueForQA.steps.data]
 qaState = "testing"
-qaRunId = "{{ variables.data.payload.runId }}"
-claimedBy = "{{ variables.data.session.user.id }}"
+qaRunId = "{{ variables.data.attribution.runId }}"
+claimedBy = "{{ variables.data.attribution.agentId }}"
 
 [[skill.issue_board.actions]]
 name = "complete_qa"
@@ -263,7 +269,8 @@ method = "POST"
 path = "/api/agent/issues/{id}/qa-complete"
 entity = "Issue"
 workflow = "CompleteQA"
-body = { resultId = "Text", runId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
+scopes = ["qa.report", "qa.transition"]
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
 
 [workflow.CompleteQA]
 description = "Complete a claimed QA run and persist its structured result."
@@ -289,7 +296,7 @@ assignTo = "completedIssue"
 [workflow.CompleteQA.steps.where]
 id = "{{ variables.data.record.id }}"
 qaState = "testing"
-qaRunId = "{{ variables.data.payload.runId }}"
+qaRunId = "{{ variables.data.attribution.runId }}"
 [workflow.CompleteQA.steps.data]
 qaState = "qa_completed"
 columnId = "{{ variables.targetColumn.id }}"
@@ -307,7 +314,9 @@ summary = "{{ variables.data.payload.summary }}"
 checks = "{{ variables.data.payload.checks }}"
 evidence = "{{ variables.data.payload.evidence }}"
 testedRevision = "{{ variables.data.payload.testedRevision }}"
-agentRunId = "{{ variables.data.payload.runId }}"
+agentRunId = "{{ variables.data.attribution.runId }}"
+agentId = "{{ variables.data.attribution.agentId }}"
+credentialId = "{{ variables.data.attribution.credentialId }}"
 
 [[skill.issue_board.actions]]
 name = "mark_qa_needs_work"
@@ -316,7 +325,8 @@ method = "POST"
 path = "/api/agent/issues/{id}/qa-needs-work"
 entity = "Issue"
 workflow = "MarkQANeedsWork"
-body = { resultId = "Text", runId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
+scopes = ["qa.report", "qa.transition"]
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
 
 [[skill.issue_board.actions]]
 name = "list_qa_results"
@@ -325,6 +335,7 @@ method = "GET"
 path = "/api/agent/qa-results"
 entity = "QAResult"
 action = "list"
+scopes = ["qa.read"]
 
 [skill.issue_board.actions.query.issueId]
 type = "Ref"
@@ -355,7 +366,7 @@ assignTo = "completedIssue"
 [workflow.MarkQANeedsWork.steps.where]
 id = "{{ variables.data.record.id }}"
 qaState = "testing"
-qaRunId = "{{ variables.data.payload.runId }}"
+qaRunId = "{{ variables.data.attribution.runId }}"
 [workflow.MarkQANeedsWork.steps.data]
 qaState = "needs_work"
 columnId = "{{ variables.targetColumn.id }}"
@@ -373,7 +384,9 @@ summary = "{{ variables.data.payload.summary }}"
 checks = "{{ variables.data.payload.checks }}"
 evidence = "{{ variables.data.payload.evidence }}"
 testedRevision = "{{ variables.data.payload.testedRevision }}"
-agentRunId = "{{ variables.data.payload.runId }}"
+agentRunId = "{{ variables.data.attribution.runId }}"
+agentId = "{{ variables.data.attribution.agentId }}"
+credentialId = "{{ variables.data.attribution.credentialId }}"
 
 [auth]
 providers = ["email"]
@@ -381,3 +394,23 @@ providers = ["email"]
 [[auth.apiKeys]]
 name = "issue-board-agent"
 keyEnv = "ISSUE_BOARD_AGENT_API_KEY"
+agentId = "zebric-qa-agent"
+credentialId = "issue-board-e2e-key"
+displayName = "Zebric QA Agent"
+scopes = ["qa.list", "qa.read", "qa.claim", "qa.report", "qa.transition"]
+
+[[auth.apiKeys]]
+name = "issue-board-seeder"
+keyEnv = "ISSUE_BOARD_SEEDER_API_KEY"
+agentId = "issue-board-test-fixture"
+credentialId = "issue-board-seeder-key"
+displayName = "Issue Board Test Seeder"
+scopes = ["entity.column.create", "entity.issue.create"]
+
+[[auth.apiKeys]]
+name = "issue-board-observer"
+keyEnv = "ISSUE_BOARD_OBSERVER_API_KEY"
+agentId = "zebric-qa-agent"
+credentialId = "issue-board-observer-key"
+displayName = "Zebric QA Agent Observer Credential"
+scopes = ["qa.read"]

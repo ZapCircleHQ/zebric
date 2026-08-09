@@ -21,6 +21,16 @@ export interface UserSession {
   }
   expiresAt: Date
   createdAt: Date
+  actor?: AuthenticatedActor
+}
+
+export interface AuthenticatedActor {
+  type: 'user' | 'agent' | 'system'
+  id: string
+  displayName?: string
+  credentialId?: string
+  scopes?: string[]
+  constraints?: Record<string, string[]>
 }
 
 /**
@@ -39,6 +49,11 @@ export const SYSTEM_SESSION: UserSession = {
   },
   expiresAt: new Date('9999-12-31T23:59:59.000Z'),
   createdAt: new Date(0),
+  actor: {
+    type: 'system',
+    id: '__zebric_system__',
+    displayName: 'Zebric Workflow Engine',
+  },
 }
 
 export function isSystemSession(session: UserSession | null | undefined): boolean {

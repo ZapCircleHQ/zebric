@@ -1,7 +1,33 @@
 import type { Context } from 'hono'
 import { getCookie, setCookie } from 'hono/cookie'
-import { randomUUID } from 'node:crypto'
-import { injectCsrfTokenIntoRequest, type Blueprint } from '@zebric/runtime-core'
+import { createHash, randomUUID } from 'node:crypto'
+import { injectCsrfTokenIntoRequest, type Blueprint, type AuthenticatedActor, type UserSession } from '@zebric/runtime-core'
+
+export interface ApiKeyCredential {
+  name: string
+  agentId: string
+  credentialId: string
+  displayName: string
+  scopes: string[]
+  constraints?: Record<string, string[]>
+}
+
+export interface AgentAttribution {
+  actorType: 'agent'
+  agentId: string
+  credentialId: string
+  runId: string
+}
+
+function apiKeyVerifier(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('base64url')
+}
+
+export function createApiKeyRegistry(
+  entries: Array<{ token: string; credential: ApiKeyCredential }>
+): Map<string, ApiKeyCredential> {
+  return new Map(entries.map(({ token, credential }) => [apiKeyVerifier(token), credential]))
+}
 
 export function getClientIp(c: Context): string {
   const forwarded = c.req.header('x-forwarded-for')
@@ -91,7 +117,7 @@ export function normalizeCsrfToken(value: string | undefined): string | undefine
 export async function applyCsrfProtection(
   c: Context,
   csrfCookieName: string,
-  apiKeys: Map<string, { name: string }>,
+  apiKeys: ReadonlyMap<string, { name: string }>,
   devConfig?: { logLevel?: string }
 ): Promise<Response | void> {
   const pathname = new URL(c.req.url).pathname
@@ -110,7 +136,7 @@ export async function applyCsrfProtection(
   const authHeader = c.req.header('authorization') || ''
   if (authHeader.toLowerCase().startsWith('bearer ')) {
     const token = authHeader.slice(7)
-    if (apiKeys.has(token)) return
+    if (apiKeys.has(apiKeyVerifier(token))) return
   }
 
   const isSafeMethod = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
@@ -176,8 +202,8 @@ export function applySecurityHeaders(c: Context, requestId: string, traceId: str
   c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
 }
 
-export function initApiKeys(blueprint: Blueprint): Map<string, { name: string }> {
-  const apiKeys = new Map<string, { name: string }>()
+export function initApiKeys(blueprint: Blueprint): Map<string, ApiKeyCredential> {
+  const apiKeys = new Map<string, ApiKeyCredential>()
   const apiKeyConfigs = blueprint.auth?.apiKeys
   if (!apiKeyConfigs || apiKeyConfigs.length === 0) return apiKeys
 
@@ -187,20 +213,66 @@ export function initApiKeys(blueprint: Blueprint): Map<string, { name: string }>
       console.warn(`API key "${keyConfig.name}": env var ${keyConfig.keyEnv} is not set, skipping`)
       continue
     }
-    apiKeys.set(keyValue, { name: keyConfig.name })
+    apiKeys.set(apiKeyVerifier(keyValue), {
+      name: keyConfig.name,
+      agentId: keyConfig.agentId ?? keyConfig.name,
+      credentialId: keyConfig.credentialId ?? keyConfig.name,
+      displayName: keyConfig.displayName ?? keyConfig.name,
+      scopes: [...(keyConfig.scopes ?? [])],
+      ...(keyConfig.constraints ? { constraints: keyConfig.constraints } : {}),
+    })
   }
 
   return apiKeys
 }
 
-export function resolveApiKeySession(bearerToken: string, apiKeys: Map<string, { name: string }>): any | null {
-  const keyConfig = apiKeys.get(bearerToken)
+export function resolveApiKeySession(
+  bearerToken: string,
+  apiKeys: ReadonlyMap<string, { name: string } & Partial<ApiKeyCredential>>
+): UserSession | null {
+  const keyConfig = apiKeys.get(apiKeyVerifier(bearerToken))
   if (!keyConfig) return null
+  const agentId = keyConfig.agentId ?? keyConfig.name
+  const credentialId = keyConfig.credentialId ?? keyConfig.name
+  const displayName = keyConfig.displayName ?? keyConfig.name
+  const actor: AuthenticatedActor = {
+    type: 'agent',
+    id: agentId,
+    credentialId,
+    displayName,
+    scopes: [...(keyConfig.scopes ?? [])],
+    ...(keyConfig.constraints ? { constraints: keyConfig.constraints } : {}),
+  }
   return {
-    id: `apikey-${keyConfig.name}`,
-    userId: keyConfig.name,
-    user: { id: keyConfig.name, name: keyConfig.name, email: '' },
+    id: `apikey-${credentialId}`,
+    userId: agentId,
+    user: { id: agentId, name: displayName, email: '' },
     expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     createdAt: new Date(),
+    actor,
   }
+}
+
+export function resolveAgentAttribution(c: Context, session: UserSession | null): AgentAttribution | undefined {
+  if (session?.actor?.type !== 'agent') return undefined
+  const runId = c.req.header('x-agent-run-id')?.trim()
+  if (!runId) throw new Error('Invalid agent attribution: X-Agent-Run-ID is required')
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) {
+    throw new Error('Invalid agent attribution: X-Agent-Run-ID must be 1-128 safe characters')
+  }
+  if (!session.actor.credentialId) {
+    throw new Error('Invalid agent attribution: credential ID is missing')
+  }
+  return {
+    actorType: 'agent',
+    agentId: session.actor.id,
+    credentialId: session.actor.credentialId,
+    runId,
+  }
+}
+
+export function agentHasScopes(session: UserSession | null | undefined, required: string[]): boolean {
+  if (session?.actor?.type !== 'agent' || required.length === 0) return true
+  const granted = new Set(session.actor.scopes ?? [])
+  return granted.has('*') || required.every(scope => granted.has(scope))
 }

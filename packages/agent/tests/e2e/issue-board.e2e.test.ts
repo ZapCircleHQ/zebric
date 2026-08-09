@@ -14,8 +14,13 @@ describe('Zebric Agent deterministic E2E', () => {
   let zebric: Zebric | undefined
   let baseUrl = ''
   let previousAgentKey: string | undefined
+  let previousSeederKey: string | undefined
+  let previousObserverKey: string | undefined
   const agentKey = 'deterministic-e2e-agent-key'
-  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string }
+  const seederKey = 'deterministic-e2e-seeder-key'
+  const observerKey = 'deterministic-e2e-observer-key'
+  let claimedJobId = ''
+  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string }
 
   beforeAll(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
@@ -25,7 +30,11 @@ describe('Zebric Agent deterministic E2E', () => {
     await writeFile(blueprintPath, await readFile(sourceBlueprint, 'utf8'), 'utf8')
 
     previousAgentKey = process.env.ISSUE_BOARD_AGENT_API_KEY
+    previousSeederKey = process.env.ISSUE_BOARD_SEEDER_API_KEY
+    previousObserverKey = process.env.ISSUE_BOARD_OBSERVER_API_KEY
     process.env.ISSUE_BOARD_AGENT_API_KEY = agentKey
+    process.env.ISSUE_BOARD_SEEDER_API_KEY = seederKey
+    process.env.ISSUE_BOARD_OBSERVER_API_KEY = observerKey
     const port = await findOpenPort()
     baseUrl = `http://127.0.0.1:${port}`
     zebric = await createZebric({
@@ -39,13 +48,17 @@ describe('Zebric Agent deterministic E2E', () => {
       logLevel: 'error',
     })
     await waitForHttp(`${baseUrl}/health`, 15_000)
-    seededIssues = await seedIssueBoard(baseUrl, agentKey)
+    seededIssues = await seedIssueBoard(baseUrl, seederKey)
   }, 45_000)
 
   afterAll(async () => {
     if (zebric) await zebric.stop()
     if (previousAgentKey === undefined) delete process.env.ISSUE_BOARD_AGENT_API_KEY
     else process.env.ISSUE_BOARD_AGENT_API_KEY = previousAgentKey
+    if (previousSeederKey === undefined) delete process.env.ISSUE_BOARD_SEEDER_API_KEY
+    else process.env.ISSUE_BOARD_SEEDER_API_KEY = previousSeederKey
+    if (previousObserverKey === undefined) delete process.env.ISSUE_BOARD_OBSERVER_API_KEY
+    else process.env.ISSUE_BOARD_OBSERVER_API_KEY = previousObserverKey
     if (tmpRoot) await rm(tmpRoot, { recursive: true, force: true })
   })
 
@@ -70,7 +83,7 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { columnId: columns[0]!.id },
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
-    expect(issues).toHaveLength(4)
+    expect(issues).toHaveLength(5)
     const issue = issues.find(item => item.title === 'Deterministic Agent API Test')!
     expect(issue).toEqual(expect.objectContaining({
       acceptanceCriteria: 'The agent finds this issue through the Ready to Test queue.',
@@ -107,6 +120,50 @@ describe('Zebric Agent deterministic E2E', () => {
     expect(driver.transcript).toEqual([])
   })
 
+  it('requires server-bound run attribution and ignores spoofed body identity', async () => {
+    const withoutRun = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.identity}/claim`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${agentKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': 'identity-missing-run',
+      },
+      body: JSON.stringify({ runId: 'body-spoof' }),
+    })
+    expect(withoutRun.status).toBe(400)
+
+    const accepted = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.identity}/claim`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${agentKey}`,
+        'content-type': 'application/json',
+        'idempotency-key': 'identity-valid-run',
+        'x-agent-run-id': 'identity-header-run',
+      },
+      body: JSON.stringify({ runId: 'body-spoof' }),
+    })
+    expect(accepted.status).toBe(202)
+    const { job } = await accepted.json() as any
+    await waitForJob(baseUrl, agentKey, job.url)
+
+    const issue = await getJson(baseUrl, agentKey, `/api/agent/issues/${seededIssues.identity}`) as any
+    expect(issue).toMatchObject({
+      qaState: 'testing',
+      qaRunId: 'identity-header-run',
+      claimedBy: 'zebric-qa-agent',
+    })
+  })
+
+  it('prevents the QA credential from bypassing skill scopes through generic CRUD', async () => {
+    const response = await fetch(`${baseUrl}/api/issues/${seededIssues.complete}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${agentKey}` },
+    })
+    expect(response.status).toBe(403)
+    expect(await getJson(baseUrl, agentKey, `/api/agent/issues/${seededIssues.complete}`))
+      .toEqual(expect.objectContaining({ id: seededIssues.complete }))
+  })
+
   it('approves, atomically claims, retries, and observes the workflow job', async () => {
     const approvals: Array<{ operationId: string; input: Record<string, unknown> }> = []
     const contract = await discoverZebricApplication(baseUrl)
@@ -118,24 +175,26 @@ describe('Zebric Agent deterministic E2E', () => {
           approvals.push({ operationId: request.operationId, input: request.input })
           return true
         },
-        idempotencyKey: (_operationId, input) => `claim:${input.id}:${input.runId}`,
+        idempotencyKey: (_operationId, input) => `claim:${input.id}:qa-run-1`,
+        agentRunId: () => 'qa-run-1',
         pollIntervalMs: 5,
       },
     })
     const driver = new DeterministicAgentDriver(tools)
     const call = {
       tool: 'issue_board_issue_board_claim_issue_for_qa',
-      input: { id: seededIssues.complete, runId: 'qa-run-1' },
+      input: { id: seededIssues.complete },
     }
 
     const firstOutput = await driver.invoke(call)
     const firstJob = JSON.parse(String(firstOutput))
+    claimedJobId = firstJob.id
     expect(firstJob.status).toBe('succeeded')
     expect(firstJob.result.claimedIssue).toEqual(expect.objectContaining({
       id: seededIssues.complete,
       qaState: 'testing',
       qaRunId: 'qa-run-1',
-      claimedBy: 'issue-board-agent',
+      claimedBy: 'zebric-qa-agent',
     }))
 
     const retryOutput = await driver.invoke(call)
@@ -146,8 +205,15 @@ describe('Zebric Agent deterministic E2E', () => {
       headers: { authorization: `Bearer ${agentKey}` },
     })
     expect(await issueResponse.json()).toEqual(expect.objectContaining({
-      qaState: 'testing', qaRunId: 'qa-run-1', claimedBy: 'issue-board-agent',
+      qaState: 'testing', qaRunId: 'qa-run-1', claimedBy: 'zebric-qa-agent',
     }))
+  })
+
+  it('isolates workflow jobs by credential even when credentials share an agent ID', async () => {
+    const response = await fetch(`${baseUrl}/api/jobs/${claimedJobId}`, {
+      headers: { authorization: `Bearer ${observerKey}` },
+    })
+    expect(response.status).toBe(404)
   })
 
   it('returns a conflict when another run claims the already claimed issue', async () => {
@@ -157,14 +223,15 @@ describe('Zebric Agent deterministic E2E', () => {
       credential: () => agentKey,
       mutations: {
         approve: () => true,
-        idempotencyKey: (_operationId, input) => `claim:${input.id}:${input.runId}`,
+        idempotencyKey: (_operationId, input) => `claim:${input.id}:qa-run-2`,
+        agentRunId: () => 'qa-run-2',
       },
     })
     const driver = new DeterministicAgentDriver(tools)
 
     await expect(driver.invoke({
       tool: 'issue_board_issue_board_claim_issue_for_qa',
-      input: { id: seededIssues.complete, runId: 'qa-run-2' },
+      input: { id: seededIssues.complete },
     })).rejects.toThrow('HTTP 409')
     expect(driver.transcript).toEqual([])
   })
@@ -176,12 +243,13 @@ describe('Zebric Agent deterministic E2E', () => {
       mutations: {
         approve: () => true,
         idempotencyKey: () => `race:${seededIssues.race}:${runId}`,
+        agentRunId: () => runId,
         pollIntervalMs: 2,
       },
     }))
     const calls = ['race-run-a', 'race-run-b'].map(runId => makeDriver(runId).invoke({
       tool: 'issue_board_issue_board_claim_issue_for_qa',
-      input: { id: seededIssues.race, runId },
+      input: { id: seededIssues.race },
     }))
 
     const settled = await Promise.allSettled(calls)
@@ -195,13 +263,12 @@ describe('Zebric Agent deterministic E2E', () => {
   })
 
   it('records a passing result and moves the issue to QA Completed', async () => {
-    const driver = await mutationDriver(baseUrl, agentKey)
+    const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-1')
     const output = await driver.invoke({
       tool: 'issue_board_issue_board_complete_qa',
       input: {
         id: seededIssues.complete,
         resultId: 'qa-result-complete',
-        runId: 'qa-run-1',
         summary: 'Acceptance criteria passed.',
         checks: [{ name: 'Board loads', status: 'passed' }],
         evidence: [{ type: 'test_log', url: 'artifact://qa-run-1/log' }],
@@ -212,7 +279,12 @@ describe('Zebric Agent deterministic E2E', () => {
       status: 'succeeded',
       result: {
         completedIssue: { qaState: 'qa_completed' },
-        qaResult: { outcome: 'qa_completed', agentRunId: 'qa-run-1' },
+        qaResult: {
+          outcome: 'qa_completed',
+          agentRunId: 'qa-run-1',
+          agentId: 'zebric-qa-agent',
+          credentialId: 'issue-board-e2e-key',
+        },
       },
     })
 
@@ -226,17 +298,16 @@ describe('Zebric Agent deterministic E2E', () => {
   })
 
   it('records a failing result and moves a separately claimed issue to Needs Work', async () => {
-    const driver = await mutationDriver(baseUrl, agentKey)
+    const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-needs-work')
     await driver.invoke({
       tool: 'issue_board_issue_board_claim_issue_for_qa',
-      input: { id: seededIssues.needsWork, runId: 'qa-run-needs-work' },
+      input: { id: seededIssues.needsWork },
     })
     const output = await driver.invoke({
       tool: 'issue_board_issue_board_mark_qa_needs_work',
       input: {
         id: seededIssues.needsWork,
         resultId: 'qa-result-needs-work',
-        runId: 'qa-run-needs-work',
         summary: 'Empty title causes a server error.',
         checks: [{ name: 'Empty title validation', status: 'failed' }],
         evidence: [],
@@ -253,10 +324,10 @@ describe('Zebric Agent deterministic E2E', () => {
   })
 
   it('rolls back the issue transition when QA result creation fails', async () => {
-    const driver = await mutationDriver(baseUrl, agentKey)
+    const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-rollback')
     await driver.invoke({
       tool: 'issue_board_issue_board_claim_issue_for_qa',
-      input: { id: seededIssues.rollback, runId: 'qa-run-rollback' },
+      input: { id: seededIssues.rollback },
     })
 
     await expect(driver.invoke({
@@ -264,7 +335,6 @@ describe('Zebric Agent deterministic E2E', () => {
       input: {
         id: seededIssues.rollback,
         resultId: 'qa-result-complete',
-        runId: 'qa-run-rollback',
         summary: 'This result ID deliberately collides.',
         checks: [{ name: 'Rollback check', status: 'passed' }],
         evidence: [],
@@ -288,7 +358,7 @@ describe('Zebric Agent deterministic E2E', () => {
 async function seedIssueBoard(
   baseUrl: string,
   credential: string
-): Promise<{ complete: string; needsWork: string; race: string; rollback: string }> {
+): Promise<{ complete: string; needsWork: string; race: string; rollback: string; identity: string }> {
   const ready = await postJson(baseUrl, credential, '/api/columns', {
     key: 'ready_to_test', name: 'Ready to Test', position: 0,
   }) as { id: string }
@@ -309,16 +379,18 @@ async function seedIssueBoard(
   const needsWork = await createIssue('Deterministic Needs Work Test', 1)
   const race = await createIssue('Deterministic Claim Race Test', 2)
   const rollback = await createIssue('Deterministic Transaction Rollback Test', 3)
-  return { complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id }
+  const identity = await createIssue('Deterministic Identity Test', 4)
+  return { complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id, identity: identity.id }
 }
 
-async function mutationDriver(baseUrl: string, credential: string): Promise<DeterministicAgentDriver> {
+async function mutationDriver(baseUrl: string, credential: string, runId: string): Promise<DeterministicAgentDriver> {
   const contract = await discoverZebricApplication(baseUrl)
   return new DeterministicAgentDriver(createRuntimeReadTools(contract, {
     applicationName: 'issue_board', credential: () => credential,
     mutations: {
       approve: () => true,
-      idempotencyKey: (operationId, input) => `${operationId}:${input.id}:${input.runId}`,
+      idempotencyKey: (operationId, input) => `${operationId}:${input.id}:${runId}`,
+      agentRunId: () => runId,
       pollIntervalMs: 2,
     },
   }))
@@ -330,6 +402,16 @@ async function getJson(baseUrl: string, credential: string, path: string): Promi
   })
   if (!response.ok) throw new Error(`GET ${path} failed: ${response.status}`)
   return response.json()
+}
+
+async function waitForJob(baseUrl: string, credential: string, path: string): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const job = await getJson(baseUrl, credential, path) as any
+    if (job.status === 'succeeded') return
+    if (['failed', 'cancelled'].includes(job.status)) throw new Error(`Workflow job ${job.status}`)
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+  throw new Error('Timed out waiting for workflow job')
 }
 
 async function postJson(

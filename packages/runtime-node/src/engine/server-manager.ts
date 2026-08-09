@@ -24,6 +24,7 @@ import {
   applyCsrfProtection,
   applySecurityHeaders,
   initApiKeys,
+  type ApiKeyCredential,
 } from './server-security.js'
 import {
   registerStaticUploads,
@@ -97,7 +98,7 @@ export class ServerManager {
   private getHealthStatusFn?: () => Promise<any>
   private notificationManager?: NotificationManager
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
-  private apiKeys = new Map<string, { name: string }>()
+  private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
 
   constructor(deps: ServerManagerDependencies) {
