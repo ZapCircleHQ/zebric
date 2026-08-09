@@ -465,6 +465,7 @@ const WorkflowSchema = z.object({
   trigger: WorkflowTriggerSchema,
   precondition: AnyRecordSchema.optional(),
   transactional: z.boolean().optional(),
+  retries: z.number().int().min(1).optional(),
   steps: z.array(WorkflowStepSchema),
 })
 

@@ -695,6 +695,8 @@ mode = "project"
 - [x] Add a no-model deterministic tool-call driver for public-contract E2E tests.
 - [x] Use a mock Agent API server for discovery and generated-tool tests.
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
+- [x] Assert authenticated agent, credential, run, request, and correlation attribution in the runtime audit log.
+- [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
 - [x] Use real `runtime-core` Blueprint fixtures for validation tests.
 - [ ] Test credential redaction across errors, traces, and checkpoints.
 - [ ] Test filesystem path and symlink boundary enforcement.

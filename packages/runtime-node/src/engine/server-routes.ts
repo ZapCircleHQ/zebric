@@ -10,6 +10,7 @@ import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
 import {
   registerWidgetRoutes as registerSharedWidgetRoutes,
   registerSearchRoutes as registerSharedSearchRoutes,
@@ -562,9 +563,10 @@ export function registerSkillRoutes(
     queryExecutor: QueryExecutor
     workflowManager?: WorkflowManager
     apiKeys: ReadonlyMap<string, { name: string }>
+    auditLogger?: AuditLogger
   }
 ): void {
-  const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys } = deps
+  const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys, auditLogger } = deps
 
   if (!blueprint.skills || blueprint.skills.length === 0) {
     return
@@ -633,17 +635,52 @@ export function registerSkillRoutes(
             return Response.json({ error: 'Unauthorized' }, { status: 401 })
           }
           if (!agentHasScopes(session, action.scopes ?? [])) {
+            auditLogger?.logAccessDenied(action.path, `${skill.name}.${action.name}`, session?.actor?.id ?? session?.user?.id, {
+              actorType: session?.actor?.type,
+              actorId: session?.actor?.id,
+              agentId: session?.actor?.type === 'agent' ? session.actor.id : undefined,
+              credentialId: session?.actor?.credentialId,
+              requestId: getRequestId(c),
+              correlationId: getCorrelationId(c),
+              actionName: `${skill.name}.${action.name}`,
+              metadata: { requiredScopes: action.scopes },
+            })
             return Response.json({ error: 'Forbidden', requiredScopes: action.scopes }, { status: 403 })
           }
-          if (method !== 'get') resolveAgentAttribution(c, session)
+          const attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
 
           const actionDeps = { queryExecutor, workflowManager }
 
           const executeAction = async (): Promise<Response> => {
-            if (action.workflow) {
-              return handleSkillWorkflow(c, action, session, actionDeps)
-            }
-            return handleSkillEntityAction(c, action, session, actionDeps)
+            const response = action.workflow
+              ? await handleSkillWorkflow(c, action, session, actionDeps)
+              : await handleSkillEntityAction(c, action, session, actionDeps)
+            auditLogger?.log({
+              eventType: AuditEventType.AGENT_ACTION,
+              severity: response.ok ? AuditSeverity.INFO : AuditSeverity.WARNING,
+              action: `${skill.name}.${action.name}`,
+              actionName: `${skill.name}.${action.name}`,
+              resource: action.path,
+              entityType: action.entity,
+              entityId: c.req.param('id'),
+              success: response.ok,
+              userId: session?.user?.id,
+              sessionId: session?.id,
+              actorType: session?.actor?.type,
+              actorId: session?.actor?.id ?? session?.user?.id,
+              agentId: attribution?.agentId,
+              credentialId: attribution?.credentialId ?? session?.actor?.credentialId,
+              runId: attribution?.runId,
+              requestId: getRequestId(c),
+              correlationId: getCorrelationId(c),
+              metadata: {
+                skill: skill.name,
+                method: action.method,
+                workflow: action.workflow,
+                status: response.status,
+              },
+            })
+            return response
           }
 
           const idempotencyKey = c.req.header('idempotency-key')
@@ -707,6 +744,7 @@ export function registerAPIRoutes(
         const data = await c.req.json<Record<string, any>>()
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'create')])) throw new Error('Access denied: insufficient agent scope')
+        const attribution = resolveAgentAttribution(c, session)
         const createStartedAt = performance.now()
         const result = await queryExecutor.create(entity.name, data, { session })
         const createMs = performance.now() - createStartedAt
@@ -715,6 +753,8 @@ export function registerAPIRoutes(
         await triggerEntityWorkflows(entity.name, 'create', undefined, result, workflowManager, {
           correlationId: getCorrelationId(c),
           requestId: getRequestId(c),
+          session,
+          attribution,
         })
         const triggerMs = performance.now() - triggerStartedAt
 
@@ -798,6 +838,7 @@ export function registerAPIRoutes(
         const data = await c.req.json<Record<string, any>>()
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'update')])) throw new Error('Access denied: insufficient agent scope')
+        const attribution = resolveAgentAttribution(c, session)
         const before = workflowManager
           ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
@@ -805,6 +846,8 @@ export function registerAPIRoutes(
         await triggerEntityWorkflows(entity.name, 'update', before, result, workflowManager, {
           correlationId: getCorrelationId(c),
           requestId: getRequestId(c),
+          session,
+          attribution,
         })
         return Response.json(result)
       } catch (error) {
@@ -826,6 +869,7 @@ export function registerAPIRoutes(
         const { id } = c.req.param() as { id: string }
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'delete')])) throw new Error('Access denied: insufficient agent scope')
+        const attribution = resolveAgentAttribution(c, session)
         const existing = workflowManager
           ? await queryExecutor.findById(entity.name, id, { session }).catch(() => null)
           : null
@@ -833,6 +877,8 @@ export function registerAPIRoutes(
         await triggerEntityWorkflows(entity.name, 'delete', existing || { id }, undefined, workflowManager, {
           correlationId: getCorrelationId(c),
           requestId: getRequestId(c),
+          session,
+          attribution,
         })
         return Response.json({ success: true })
       } catch (error) {
@@ -862,8 +908,9 @@ async function resolveEntityApiSession(
   return sessionManager.getSession(c.req.raw)
 }
 
-function entityApiErrorStatus(error: unknown): 403 | 404 | 500 {
+function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
   const message = error instanceof Error ? error.message : String(error)
+  if (message.startsWith('Invalid agent attribution:')) return 400
   if (message.includes('Access denied')) return 403
   if (message.toLowerCase().includes('not found')) return 404
   return 500

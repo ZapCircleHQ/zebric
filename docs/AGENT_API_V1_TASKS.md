@@ -341,15 +341,15 @@ Suggested shape:
 
 ### 6.1 Standardize agent attribution
 
-- [ ] Attach actor type, agent ID, credential ID, run ID, correlation ID, and request ID to mutations and workflow jobs.
+- [x] Attach actor type, agent ID, credential ID, run ID, correlation ID, and request ID to Agent API skill mutations and workflow jobs.
 - [x] Accept and validate a bounded `X-Agent-Run-ID` header for agent mutations.
 - [x] Make authenticated agent, credential, run, correlation, and request metadata available to workflow steps.
-- [ ] Ensure automatic entity-triggered workflows retain the initiating actor.
+- [x] Ensure automatic entity-triggered workflows retain the initiating actor.
 
 ### 6.2 Add operational telemetry
 
 - [ ] Record action name, outcome, latency, and status code without recording secrets.
-- [ ] Trace an API request through workflow enqueueing and completion.
+- [x] Trace an API request through workflow enqueueing and terminal completion or failure audit events.
 - [ ] Add metrics for authorization failures, conflicts, retries, duplicate idempotency keys, and failed jobs.
 - [ ] Provide administrators a way to inspect an agent run and its resulting mutations.
 
@@ -426,7 +426,7 @@ Suggested shape:
 - [x] Submit structured evidence.
 - [x] Trigger `qa_completed`.
 - [x] Observe the workflow to completion.
-- [ ] Verify task state and audit attribution.
+- [x] Verify task state and audit attribution.
 
 ### 8.3 Cover safety and failure cases
 

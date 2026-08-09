@@ -13,6 +13,7 @@ describe('Zebric Agent deterministic E2E', () => {
   let tmpRoot = ''
   let zebric: Zebric | undefined
   let baseUrl = ''
+  let auditPath = ''
   let previousAgentKey: string | undefined
   let previousSeederKey: string | undefined
   let previousObserverKey: string | undefined
@@ -26,6 +27,7 @@ describe('Zebric Agent deterministic E2E', () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
     const blueprintPath = join(tmpRoot, 'blueprint.toml')
     const dbPath = join(tmpRoot, 'app.db')
+    auditPath = join(tmpRoot, 'app.audit.log')
     const sourceBlueprint = fileURLToPath(new URL('../../../../examples/issue-board/blueprint.toml', import.meta.url))
     await writeFile(blueprintPath, await readFile(sourceBlueprint, 'utf8'), 'utf8')
 
@@ -330,7 +332,7 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { id: seededIssues.rollback },
     })
 
-    await expect(driver.invoke({
+    const failedOutput = await driver.invoke({
       tool: 'issue_board_issue_board_complete_qa',
       input: {
         id: seededIssues.rollback,
@@ -340,7 +342,11 @@ describe('Zebric Agent deterministic E2E', () => {
         evidence: [],
         testedRevision: 'e2e-revision',
       },
-    })).rejects.toThrow()
+    })
+    expect(JSON.parse(String(failedOutput))).toMatchObject({
+      workflow: 'CompleteQA',
+      status: 'failed',
+    })
 
     const issue = await getJson(baseUrl, agentKey, `/api/agent/issues/${seededIssues.rollback}`) as any
     expect(issue).toEqual(expect.objectContaining({
@@ -352,6 +358,37 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { issueId: seededIssues.rollback },
     })))
     expect(results).not.toContainEqual(expect.objectContaining({ issueId: seededIssues.rollback }))
+  })
+
+  it('writes authenticated agent and workflow attribution to the Zebric audit log', async () => {
+    const entries = (await readFile(auditPath, 'utf8'))
+      .trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+
+    expect(entries).toContainEqual(expect.objectContaining({
+      eventType: 'agent.action',
+      actionName: 'issue_board.complete_qa',
+      actorType: 'agent',
+      actorId: 'zebric-qa-agent',
+      agentId: 'zebric-qa-agent',
+      credentialId: 'issue-board-e2e-key',
+      runId: 'qa-run-1',
+      success: true,
+    }))
+    expect(entries).toContainEqual(expect.objectContaining({
+      eventType: 'workflow.completed',
+      workflowName: 'CompleteQA',
+      credentialId: 'issue-board-e2e-key',
+      runId: 'qa-run-1',
+      success: true,
+    }))
+    expect(entries).toContainEqual(expect.objectContaining({
+      eventType: 'workflow.failed',
+      workflowName: 'CompleteQA',
+      credentialId: 'issue-board-e2e-key',
+      runId: 'qa-run-rollback',
+      success: false,
+    }))
+    expect(await readFile(auditPath, 'utf8')).not.toContain(agentKey)
   })
 })
 
@@ -425,6 +462,7 @@ async function postJson(
     headers: {
       authorization: `Bearer ${credential}`,
       'content-type': 'application/json',
+      'x-agent-run-id': 'issue-board-seed-run',
     },
     body: JSON.stringify(body),
   })

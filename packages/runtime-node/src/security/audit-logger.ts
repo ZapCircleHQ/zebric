@@ -29,6 +29,11 @@ export enum AuditEventType {
   DATA_UPDATE = 'data.update',
   DATA_DELETE = 'data.delete',
 
+  // Agent and workflow events
+  AGENT_ACTION = 'agent.action',
+  WORKFLOW_COMPLETED = 'workflow.completed',
+  WORKFLOW_FAILED = 'workflow.failed',
+
   // Security Events
   SUSPICIOUS_ACTIVITY = 'security.suspicious',
   RATE_LIMIT_EXCEEDED = 'security.rate_limit',
@@ -77,6 +82,14 @@ export interface AuditLogEntry {
 
   // Security
   requestId?: string
+  correlationId?: string
+  actorType?: 'user' | 'agent' | 'system'
+  actorId?: string
+  agentId?: string
+  credentialId?: string
+  runId?: string
+  workflowName?: string
+  actionName?: string
   signature?: string // For tamper detection (future)
 }
 
@@ -250,6 +263,14 @@ export class AuditLogger {
       errorMessage: partial.errorMessage,
       metadata: this.sanitizeMetadata(partial.metadata),
       requestId: partial.requestId,
+      correlationId: partial.correlationId,
+      actorType: partial.actorType,
+      actorId: partial.actorId,
+      agentId: partial.agentId,
+      credentialId: partial.credentialId,
+      runId: partial.runId,
+      workflowName: partial.workflowName,
+      actionName: partial.actionName,
     }
   }
 
@@ -273,13 +294,14 @@ export class AuditLogger {
     let totalSize = 0
 
     for (const [key, value] of Object.entries(metadata)) {
+      if (value === undefined) continue
       // Skip sensitive fields
       if (this.isSensitiveField(key)) {
         sanitized[key] = '[REDACTED]'
         continue
       }
 
-      const serialized = JSON.stringify(value)
+      const serialized = JSON.stringify(value) ?? ''
       const size = serialized.length
 
       // Check size limit
@@ -334,6 +356,10 @@ export class AuditLogger {
       userId: session?.user?.id,
       userEmail: session?.user?.email,
       sessionId: (session as any)?.sessionId || (session as any)?.id,
+      actorType: session?.actor?.type,
+      actorId: session?.actor?.id ?? session?.user?.id,
+      agentId: session?.actor?.type === 'agent' ? session.actor.id : undefined,
+      credentialId: session?.actor?.credentialId,
       ipAddress: request?.ip || request?.headers?.['x-forwarded-for'],
       userAgent: request?.headers?.['user-agent'],
     }

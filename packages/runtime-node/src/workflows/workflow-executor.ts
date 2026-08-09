@@ -44,6 +44,8 @@ export interface WorkflowExecutorOptions {
     sourceWorkflow: string
     depth: number
     trace?: WorkflowContext['trace']
+    session?: WorkflowContext['session']
+    attribution?: any
   }) => Promise<void>
 }
 
@@ -683,6 +685,8 @@ export class WorkflowExecutor {
       sourceWorkflow,
       depth,
       trace: context.trace,
+      session: context.session,
+      attribution: context.variables?.data?.attribution,
     }
     const deferred = this.deferredEntityEvents.getStore()
     if (deferred) {

@@ -104,6 +104,33 @@ describe('WorkflowManager entity triggers', () => {
     expect(jobs[0]?.context.session).toBe(SYSTEM_SESSION)
   })
 
+  it('preserves an initiating agent and attribution through entity-triggered workflows', async () => {
+    const manager = new WorkflowManager({ dataLayer: {} as any })
+    manager.registerWorkflow({
+      name: 'on-agent-update',
+      trigger: { entity: 'Request', event: 'update' },
+      steps: [],
+    })
+    const session = {
+      id: 'apikey-credential-1',
+      userId: 'qa-agent',
+      user: { id: 'qa-agent', email: '' },
+      actor: { type: 'agent', id: 'qa-agent', credentialId: 'credential-1', scopes: ['qa.transition'] },
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    }
+    const attribution = {
+      actorType: 'agent', agentId: 'qa-agent', credentialId: 'credential-1', runId: 'run-1',
+    }
+
+    const jobs = await manager.triggerEntityEvent('Request', 'update', {
+      before: { id: 'req_1' }, after: { id: 'req_1' },
+    }, { initiatingSession: session, attribution })
+
+    expect(jobs[0]?.context.session).toBe(session)
+    expect(jobs[0]?.context.variables.data.attribution).toEqual(attribution)
+  })
+
   it('runs webhook- and schedule-triggered workflows as SYSTEM_SESSION', async () => {
     const manager = new WorkflowManager({
       dataLayer: {} as any

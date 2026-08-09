@@ -17,6 +17,8 @@ export interface AgentAttribution {
   agentId: string
   credentialId: string
   runId: string
+  correlationId?: string
+  requestId?: string
 }
 
 function apiKeyVerifier(value: string): string {
@@ -268,6 +270,8 @@ export function resolveAgentAttribution(c: Context, session: UserSession | null)
     agentId: session.actor.id,
     credentialId: session.actor.credentialId,
     runId,
+    ...((c as any).get?.('correlationId') ? { correlationId: (c as any).get('correlationId') } : {}),
+    ...((c as any).get?.('requestId') ? { requestId: (c as any).get('requestId') } : {}),
   }
 }
 

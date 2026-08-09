@@ -49,7 +49,7 @@ export class WorkflowManager extends EventEmitter {
       httpClient: options.httpClient,
       notificationService: options.notificationService,
       logger: options.logger,
-      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, trace }) => {
+      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, trace, session, attribution }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
           sourceWorkflow,
           depth: depth + 1,
@@ -59,6 +59,8 @@ export class WorkflowManager extends EventEmitter {
                 requestId: trace.requestId,
               }
             : undefined,
+          initiatingSession: session,
+          attribution,
         })
       }
     })
@@ -172,6 +174,8 @@ export class WorkflowManager extends EventEmitter {
         correlationId?: string
         requestId?: string
       }
+      initiatingSession?: WorkflowContext['session']
+      attribution?: any
     }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
@@ -217,11 +221,11 @@ export class WorkflowManager extends EventEmitter {
               sourceWorkflow: options?.sourceWorkflow,
               depth,
             },
+            ...(options?.attribution ? { data: { attribution: options.attribution } } : {}),
           },
-          // Entity-triggered workflows have no attributable HTTP caller - they run as
-          // trusted background automation, not as the (often anonymous) request that
-          // happened to cause the underlying entity write.
-          session: SYSTEM_SESSION,
+          // Execute as trusted automation when no actor is known, but preserve the
+          // initiating principal when this event came from an attributable mutation.
+          session: options?.initiatingSession ?? SYSTEM_SESSION,
         }
 
         const job = this.queue.enqueue(workflow.name, context)

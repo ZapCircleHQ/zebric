@@ -223,6 +223,7 @@ export class ZebricEngine extends EventEmitter {
         logger: this.logger,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
+        auditLogger: this.auditLogger,
         notificationManager: this.notificationManager,
         getHealthStatus: () => this.getHealth(),
       })

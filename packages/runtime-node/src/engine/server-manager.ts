@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import type { Context } from 'hono'
 import type { NotificationManager } from '@zebric/notifications'
+import type { AuditLogger } from '../security/index.js'
 import { createRequestId, type Logger } from '@zebric/observability'
 import {
   createHonoLoggerMiddleware,
@@ -57,6 +58,7 @@ export interface ServerManagerDependencies {
   errorHandler: ErrorHandler
   pendingSchemaDiff: SchemaDiffResult | null
   notificationManager?: NotificationManager
+  auditLogger?: AuditLogger
   getHealthStatus?: () => Promise<any>
 }
 
@@ -97,6 +99,7 @@ export class ServerManager {
   private errorHandler: ErrorHandler
   private getHealthStatusFn?: () => Promise<any>
   private notificationManager?: NotificationManager
+  private auditLogger?: AuditLogger
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
   private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
@@ -116,6 +119,7 @@ export class ServerManager {
     this.logger = deps.logger
     this.errorHandler = deps.errorHandler
     this.notificationManager = deps.notificationManager
+    this.auditLogger = deps.auditLogger
     this.getHealthStatusFn = deps.getHealthStatus
   }
 
@@ -275,6 +279,7 @@ export class ServerManager {
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,
+      auditLogger: this.auditLogger,
     })
     registerAPIRoutes(this.app, {
       blueprint: this.blueprint,

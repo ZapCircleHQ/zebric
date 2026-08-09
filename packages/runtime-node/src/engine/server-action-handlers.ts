@@ -78,9 +78,12 @@ export async function handleSkillEntityAction(
         }
       }
       const result = await queryExecutor.create(entityName, body, { session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'create', undefined, result, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json(result, { status: 201 })
     }
@@ -95,9 +98,12 @@ export async function handleSkillEntityAction(
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       const result = await queryExecutor.update(entityName, id, body, { session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'update', before, result, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json(result)
     }
@@ -158,9 +164,12 @@ export async function handleSkillEntityAction(
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       await queryExecutor.delete(entityName, id, { session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json({ success: true })
     }
@@ -262,6 +271,8 @@ export async function triggerEntityWorkflows(
   trace?: {
     correlationId?: string
     requestId?: string
+    session?: any
+    attribution?: any
   }
 ): Promise<void> {
   if (!workflowManager) {
@@ -269,7 +280,11 @@ export async function triggerEntityWorkflows(
   }
 
   try {
-    await workflowManager.triggerEntityEvent(entity, event, { before, after }, { trace })
+    await workflowManager.triggerEntityEvent(entity, event, { before, after }, {
+      trace,
+      initiatingSession: trace?.session,
+      attribution: trace?.attribution,
+    })
   } catch (error) {
     console.error(`Failed to trigger ${event} workflows for ${entity}:`, error)
   }

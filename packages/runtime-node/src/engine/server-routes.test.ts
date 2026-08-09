@@ -136,6 +136,7 @@ describe('registerAPIRoutes access context', () => {
       headers: {
         authorization: 'Bearer secret-key',
         'content-type': 'application/json',
+        'x-agent-run-id': 'entity-create-run',
       },
       body: JSON.stringify({ title: 'Agent item' }),
     })

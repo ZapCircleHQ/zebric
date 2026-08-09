@@ -276,6 +276,7 @@ body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "J
 description = "Complete a claimed QA run and persist its structured result."
 trigger = { manual = true }
 transactional = true
+retries = 1
 
 [workflow.CompleteQA.precondition]
 "variables.data.record.qaState" = "testing"

@@ -18,7 +18,7 @@ import { WorkflowManager, ProductionHttpClient } from '../workflows/index.js'
 import { CacheInterface, MemoryCache, RedisCache } from '../cache/index.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { PluginRegistry } from '../plugins/index.js'
-import type { AuditLogger } from '../security/index.js'
+import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
 import { NotificationManager } from '@zebric/notifications'
 
 export interface SubsystemInitializerDependencies {
@@ -61,6 +61,7 @@ export class SubsystemInitializer {
   private workflowManager?: WorkflowManager
   private cache?: CacheInterface
   private notificationManager?: NotificationManager
+  private auditLogger: AuditLogger
 
   constructor(deps: SubsystemInitializerDependencies) {
     this.blueprint = deps.blueprint
@@ -68,6 +69,7 @@ export class SubsystemInitializer {
     this.metrics = deps.metrics
     this.plugins = deps.plugins
     this.logger = deps.logger
+    this.auditLogger = deps.auditLogger
   }
 
   /**
@@ -305,6 +307,23 @@ export class SubsystemInitializer {
         requestId: job.context.trace?.requestId,
         executionId: job.context.trace?.executionId,
       })
+      const attribution = job.context.variables?.data?.attribution
+      this.auditLogger.log({
+        eventType: AuditEventType.WORKFLOW_COMPLETED,
+        severity: AuditSeverity.INFO,
+        action: `Workflow completed: ${job.workflowName}`,
+        actionName: job.workflowName,
+        workflowName: job.workflowName,
+        success: true,
+        actorType: job.context.session?.actor?.type,
+        actorId: job.context.session?.actor?.id,
+        agentId: attribution?.agentId,
+        credentialId: attribution?.credentialId,
+        runId: attribution?.runId,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        metadata: { jobId: job.id, executionId: job.context.trace?.executionId },
+      })
     })
 
     this.workflowManager.on('job:failed', (job) => {
@@ -315,6 +334,24 @@ export class SubsystemInitializer {
         requestId: job.context.trace?.requestId,
         executionId: job.context.trace?.executionId,
         error: job.error,
+      })
+      const attribution = job.context.variables?.data?.attribution
+      this.auditLogger.log({
+        eventType: AuditEventType.WORKFLOW_FAILED,
+        severity: AuditSeverity.WARNING,
+        action: `Workflow failed: ${job.workflowName}`,
+        actionName: job.workflowName,
+        workflowName: job.workflowName,
+        success: false,
+        errorMessage: 'Workflow execution failed',
+        actorType: job.context.session?.actor?.type,
+        actorId: job.context.session?.actor?.id,
+        agentId: attribution?.agentId,
+        credentialId: attribution?.credentialId,
+        runId: attribution?.runId,
+        correlationId: job.context.trace?.correlationId,
+        requestId: job.context.trace?.requestId,
+        metadata: { jobId: job.id, executionId: job.context.trace?.executionId },
       })
     })
 
