@@ -35,6 +35,7 @@ import {
   registerNotificationRoutes,
   registerActionRoutes,
   registerSkillRoutes,
+  registerWorkflowJobRoutes,
   registerAPIRoutes,
   registerOpenAPIRoute,
   registerPageRoutes,
@@ -272,6 +273,11 @@ export class ServerManager {
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
+    })
+    registerWorkflowJobRoutes(this.app, {
+      sessionManager: this.sessionManager,
+      workflowManager: this.workflowManager,
+      apiKeys: this.apiKeys,
     })
     registerSkillRoutes(this.app, {
       blueprint: this.blueprint,

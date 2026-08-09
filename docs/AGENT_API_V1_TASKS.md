@@ -435,10 +435,11 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 - [x] Two agents race concurrently to claim one task; exactly one claim succeeds.
 - [x] A request is retried with the same idempotency key.
 - [x] An idempotency key is reused with a different body.
+- [x] An idempotency key is reused for a different resource and cannot replay the first resource's response.
 - [x] A stale agent attempts a transition.
 - [x] A credential lacks the required scope and cannot bypass it through generic CRUD.
 - [ ] A credential is expired or revoked.
-- [ ] A workflow fails after enqueueing.
+- [x] A workflow fails after enqueueing without emitting a misleading completion audit.
 - [ ] Evidence is malformed or oversized.
 - [ ] An agent attempts undeclared filters or body fields.
 - [x] One agent attempts to read another agent's job.

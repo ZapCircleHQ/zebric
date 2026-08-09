@@ -40,20 +40,22 @@ export interface MutationApprovalRequest {
   input: Record<string, unknown>
 }
 
+export interface RuntimeMutationOptions {
+  approve(request: MutationApprovalRequest): boolean | Promise<boolean>
+  idempotencyKey(operationId: string, input: Record<string, unknown>): string
+  observeJobs?: boolean
+  pollIntervalMs?: number
+  maxPolls?: number
+  agentRunId?: () => string
+}
+
 export interface RuntimeToolFactoryOptions {
   applicationName: string
   credential?: CredentialProvider
   fetch?: typeof globalThis.fetch
   timeoutMs?: number
   maxResponseBytes?: number
-  mutations?: {
-    approve(request: MutationApprovalRequest): boolean | Promise<boolean>
-    idempotencyKey(operationId: string, input: Record<string, unknown>): string
-    observeJobs?: boolean
-    pollIntervalMs?: number
-    maxPolls?: number
-    agentRunId?: () => string
-  }
+  mutations?: RuntimeMutationOptions
 }
 
 function parameterSchema(parameter: OpenApiParameter): z.ZodType {
@@ -204,9 +206,16 @@ async function observeJob(
     const response = await fetcher(jobUrl, {
       headers: { accept: 'application/json', ...(credential ? { authorization: `Bearer ${credential}` } : {}) },
       redirect: 'error',
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     })
     if (!response.ok) throw new Error(`Workflow job request failed with HTTP ${response.status}`)
+    const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
+    const contentLength = Number(response.headers.get('content-length') ?? 0)
+    if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
     const body = await response.text()
+    if (new TextEncoder().encode(body).byteLength > maxResponseBytes) {
+      throw new Error('Zebric API response exceeds the configured size limit')
+    }
     const job = JSON.parse(body)
     if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return body
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))

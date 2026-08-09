@@ -1,5 +1,6 @@
 export * from './agent/create-zebric-agent.js'
 export * from './authoring/validate-blueprint.js'
+export * from './authoring/workspace-path.js'
 export * from './runtime/discovery-client.js'
 export * from './runtime/action-tool-factory.js'
 export * from './testing/deterministic-driver.js'

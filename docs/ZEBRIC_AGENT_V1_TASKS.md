@@ -705,7 +705,7 @@ mode = "project"
 - [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.
 - [x] Use real `runtime-core` Blueprint fixtures for validation tests.
 - [ ] Test credential redaction across errors, traces, and checkpoints.
-- [ ] Test filesystem path and symlink boundary enforcement.
+- [x] Test filesystem path traversal and symlink boundary enforcement for existing workspace reads.
 - [ ] Test approval interruption and resume behavior.
 
 ### 10.3 Build scenario evaluations
@@ -801,7 +801,7 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 - [ ] Credential exfiltration through model context, tool errors, redirects, traces, checkpoints, or generated patches.
 - [ ] Server-side request forgery through user-supplied base URLs or runtime-provided links.
 - [ ] Tool-schema poisoning or misleading action descriptions from an untrusted application.
-- [ ] Path traversal and symlink escape from workspace tools.
+- [x] Path traversal and symlink escape from existing-file workspace read tools.
 - [ ] Shell injection in test or validation commands.
 - [ ] Confused-deputy behavior across multiple connected applications.
 - [ ] Cross-project memory or checkpoint leakage.

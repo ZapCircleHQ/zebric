@@ -1,11 +1,12 @@
-import { resolve, relative, isAbsolute } from 'node:path'
+import { resolve } from 'node:path'
 import { createDeepAgent, type CreateDeepAgentParams } from 'deepagents'
 import { tool } from 'langchain'
 import { z } from 'zod'
 import { validateBlueprint } from '../authoring/validate-blueprint.js'
 import { discoverZebricApplication } from '../runtime/discovery-client.js'
 import { createRuntimeReadTools } from '../runtime/action-tool-factory.js'
-import type { MutationApprovalRequest } from '../runtime/action-tool-factory.js'
+import type { RuntimeMutationOptions } from '../runtime/action-tool-factory.js'
+import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 
 const SYSTEM_PROMPT = `You are Zebric Agent, a specialist for operating and authoring Zebric applications.
 
@@ -19,21 +20,9 @@ export interface CreateZebricAgentOptions {
     name: string
     baseUrl: string
     credential?: () => string | undefined | Promise<string | undefined>
-    mutations?: {
-      approve(request: MutationApprovalRequest): boolean | Promise<boolean>
-      idempotencyKey(operationId: string, input: Record<string, unknown>): string
-    }
+    mutations?: RuntimeMutationOptions
   }>
   fetch?: typeof globalThis.fetch
-}
-
-function resolveWorkspacePath(root: string, requestedPath: string): string {
-  const target = resolve(root, requestedPath)
-  const pathFromRoot = relative(root, target)
-  if (pathFromRoot === '..' || pathFromRoot.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || isAbsolute(pathFromRoot)) {
-    throw new Error('Blueprint path is outside the configured workspace')
-  }
-  return target
 }
 
 export async function createZebricAgent(
@@ -43,7 +32,7 @@ export async function createZebricAgent(
   const validateBlueprintTool = tool(
     async ({ path }) => {
       const result = await validateBlueprint({
-        path: resolveWorkspacePath(workspaceRoot, path),
+        path: await resolveExistingWorkspacePath(workspaceRoot, path),
       })
       if (result.valid) {
         return JSON.stringify({

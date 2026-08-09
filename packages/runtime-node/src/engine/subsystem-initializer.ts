@@ -375,14 +375,7 @@ export class SubsystemInitializer {
 
   private async deliverPendingAuditOutbox(): Promise<void> {
     if (!this.queryExecutor) return
-    for (const record of await this.queryExecutor.listPendingAuditOutbox()) {
-      if (record.topic !== AuditEventType.WORKFLOW_COMPLETED) continue
-      const delivered = this.auditLogger.log(JSON.parse(record.payload))
-      if (!delivered) {
-        throw new Error(`Audit outbox delivery failed for ${record.id}`)
-      }
-      await this.queryExecutor.markAuditOutboxDelivered(record.id)
-    }
+    await drainAuditOutbox(this.queryExecutor, this.auditLogger)
   }
 
   /**
@@ -419,6 +412,26 @@ export class SubsystemInitializer {
 
     if (this.cache) {
       await this.cache.close()
+    }
+  }
+}
+
+export async function drainAuditOutbox(
+  queryExecutor: Pick<QueryExecutor, 'listPendingAuditOutbox' | 'markAuditOutboxDelivered'>,
+  auditLogger: Pick<AuditLogger, 'log'>,
+  batchSize = 100
+): Promise<void> {
+  while (true) {
+    const records = await queryExecutor.listPendingAuditOutbox(batchSize)
+    if (records.length === 0) return
+    for (const record of records) {
+      if (record.topic !== AuditEventType.WORKFLOW_COMPLETED) {
+        throw new Error(`Unsupported audit outbox topic ${record.topic}`)
+      }
+      if (!auditLogger.log(JSON.parse(record.payload))) {
+        throw new Error(`Audit outbox delivery failed for ${record.id}`)
+      }
+      await queryExecutor.markAuditOutboxDelivered(record.id)
     }
   }
 }

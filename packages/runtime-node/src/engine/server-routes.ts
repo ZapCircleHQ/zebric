@@ -575,34 +575,6 @@ export function registerSkillRoutes(
   const entityNames = new Set(blueprint.entities.map(e => e.name.toLowerCase()))
   const idempotency = new Map<string, { fingerprint: string; response: Promise<Response> }>()
 
-  if (workflowManager) {
-    app.get('/api/jobs/:id', async (c) => {
-      const authHeader = c.req.header('authorization') || ''
-      let session = null
-      if (authHeader.toLowerCase().startsWith('bearer ')) {
-        session = resolveApiKeySession(authHeader.slice(7), apiKeys)
-      }
-      if (!session) session = await sessionManager.getSession(c.req.raw)
-      if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
-      const job = workflowManager.getJob(c.req.param('id'))
-      const ownerId = sessionSecurityId(job?.context.session)
-      if (!job || !ownerId || ownerId !== sessionSecurityId(session)) {
-        return Response.json({ error: 'Job not found' }, { status: 404 })
-      }
-      return Response.json({
-        id: job.id,
-        workflow: job.workflowName,
-        status: job.status === 'completed' ? 'succeeded' : job.status,
-        createdAt: job.createdAt,
-        startedAt: job.startedAt,
-        completedAt: job.completedAt,
-        result: job.result,
-        error: job.status === 'failed' ? 'Workflow execution failed' : null,
-      })
-    })
-  }
-
   for (const skill of blueprint.skills) {
     for (const action of skill.actions) {
       // Skip actions that map directly to standard CRUD routes
@@ -620,10 +592,11 @@ export function registerSkillRoutes(
       const method = action.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete'
 
       app[method](honoPath, async (c) => {
+        let session: UserSession | null = null
+        let attribution: ReturnType<typeof resolveAgentAttribution>
         try {
           // Auth check — try API key first, then session
           const authHeader = c.req.header('authorization') || ''
-          let session = null
           if (authHeader.toLowerCase().startsWith('bearer ')) {
             const token = authHeader.slice(7)
             session = resolveApiKeySession(token, apiKeys)
@@ -647,7 +620,7 @@ export function registerSkillRoutes(
             })
             return Response.json({ error: 'Forbidden', requiredScopes: action.scopes }, { status: 403 })
           }
-          const attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
+          attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
 
           const actionDeps = { queryExecutor, workflowManager }
 
@@ -687,8 +660,12 @@ export function registerSkillRoutes(
           if (method === 'get' || !idempotencyKey) return await executeAction()
 
           const requestBody = await c.req.raw.clone().text()
-          const fingerprint = createHash('sha256').update(requestBody).digest('hex')
-          const scope = `${sessionSecurityId(session) || 'anonymous'}:${action.method}:${action.path}:${idempotencyKey}`
+          const requestUrl = new URL(c.req.url)
+          const requestTarget = `${requestUrl.pathname}${requestUrl.search}`
+          const fingerprint = createHash('sha256')
+            .update(`${action.method}\n${requestTarget}\n${requestBody}`)
+            .digest('hex')
+          const scope = `${sessionSecurityId(session) || 'anonymous'}:${idempotencyKey}`
           const existing = idempotency.get(scope)
           if (existing) {
             if (existing.fingerprint !== fingerprint) {
@@ -706,6 +683,27 @@ export function registerSkillRoutes(
           const status = message.startsWith('Invalid agent attribution:')
             ? 400
             : message.includes('precondition failed') || message.startsWith('Conflict:') ? 409 : 500
+          auditLogger?.log({
+            eventType: AuditEventType.AGENT_ACTION,
+            severity: AuditSeverity.WARNING,
+            action: `${skill.name}.${action.name}`,
+            actionName: `${skill.name}.${action.name}`,
+            resource: action.path,
+            entityType: action.entity,
+            entityId: c.req.param('id'),
+            success: false,
+            errorMessage: 'Skill action failed',
+            userId: session?.user?.id,
+            sessionId: session?.id,
+            actorType: session?.actor?.type,
+            actorId: session?.actor?.id ?? session?.user?.id,
+            agentId: attribution?.agentId,
+            credentialId: attribution?.credentialId ?? session?.actor?.credentialId,
+            runId: attribution?.runId,
+            requestId: getRequestId(c),
+            correlationId: getCorrelationId(c),
+            metadata: { skill: skill.name, method: action.method, workflow: action.workflow, status },
+          })
           return Response.json(
             {
               error: 'Skill action failed',
@@ -717,6 +715,43 @@ export function registerSkillRoutes(
       })
     }
   }
+}
+
+export function registerWorkflowJobRoutes(
+  app: Hono,
+  deps: {
+    sessionManager: SessionManager
+    workflowManager?: WorkflowManager
+    apiKeys: ReadonlyMap<string, { name: string }>
+  }
+): void {
+  const { sessionManager, workflowManager, apiKeys } = deps
+  if (!workflowManager) return
+  app.get('/api/jobs/:id', async (c) => {
+    const authHeader = c.req.header('authorization') || ''
+    let session = null
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      session = resolveApiKeySession(authHeader.slice(7), apiKeys)
+    }
+    if (!session) session = await sessionManager.getSession(c.req.raw)
+    if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const job = workflowManager.getJob(c.req.param('id'))
+    const ownerId = sessionSecurityId(job?.context.session)
+    if (!job || !ownerId || ownerId !== sessionSecurityId(session)) {
+      return Response.json({ error: 'Job not found' }, { status: 404 })
+    }
+    return Response.json({
+      id: job.id,
+      workflow: job.workflowName,
+      status: job.status === 'completed' ? 'succeeded' : job.status,
+      createdAt: job.createdAt,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+      result: job.result,
+      error: job.status === 'failed' ? 'Workflow execution failed' : null,
+    })
+  })
 }
 
 export function registerAPIRoutes(

@@ -116,4 +116,28 @@ describe('createRuntimeReadTools', () => {
       .rejects.toThrow('not approved')
     expect(fetcher).not.toHaveBeenCalled()
   })
+
+  it('applies timeout and response-size limits while polling jobs', async () => {
+    const fetcher = vi.fn(async (_input, init) => {
+      if (fetcher.mock.calls.length === 1) {
+        return Response.json({ job: { url: '/api/jobs/job-1' } }, { status: 202 })
+      }
+      expect(init?.signal).toBeDefined()
+      return new Response(JSON.stringify({ status: 'running', padding: 'x'.repeat(300) }))
+    }) as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local',
+      fetch: fetcher,
+      maxResponseBytes: 150,
+      mutations: {
+        approve: () => true,
+        idempotencyKey: () => 'claim-1',
+        agentRunId: () => 'run-1',
+      },
+    })
+    const claim = tools.find(item => item.name === 'local_issue_board_claim_issue')!
+
+    await expect(claim.invoke({ id: 'issue-1', runId: 'run-1' }))
+      .rejects.toThrow('exceeds the configured size limit')
+  })
 })
