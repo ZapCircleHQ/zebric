@@ -220,7 +220,7 @@ Runtime authorization remains authoritative even after local approval.
 - [x] Add `packages/agent` to the pnpm workspace.
 - [x] Add TypeScript build, lint, test, and package exports.
 - [x] Add `deepagents` and required LangChain/LangGraph dependencies.
-- [x] Pin compatible dependency ranges and document the tested versions.
+- [ ] Pin or intentionally bound compatible dependency ranges and document the tested Deep Agents/LangChain versions.
 - [ ] Re-export only Zebric-owned public types from the package root.
 - [ ] Keep Deep Agents-specific construction details in internal modules.
 - [x] Add a changeset for the new package when it becomes publishable.
@@ -256,7 +256,8 @@ const agent = await createZebricAgent({
 ### 1.3 Establish agent context
 
 - [ ] Define typed runtime context containing workspace, applications, agent run ID, and policy.
-- [x] Keep credentials out of prompts, messages, checkpoints, and model-visible tool results.
+- [x] Resolve credentials through non-model-visible providers at request time.
+- [ ] Prove credentials remain absent from prompts, messages, checkpoints, traces, and model-visible tool results.
 - [ ] Generate a unique run ID for each top-level task.
 - [x] Propagate a trusted agent run ID through runtime mutation tools using `X-Agent-Run-ID`.
 - [ ] Propagate correlation identifiers through runtime API tools.
@@ -415,7 +416,8 @@ apply_blueprint_patch
 - [x] Fetch `/.well-known/zebric-agent.json` when supported.
 - [x] Fall back to `/api/openapi.json` for older runtimes.
 - [x] Validate discovery and OpenAPI responses against local schemas.
-- [x] Enforce allowed URL schemes and host policy.
+- [x] Enforce HTTP(S) schemes, same-origin discovered contracts, and redirect rejection.
+- [ ] Add a configurable host/private-network policy for SSRF-sensitive deployments.
 - [ ] Set request timeouts, response-size limits, and redirect restrictions.
 - [ ] Cache contracts using HTTP cache metadata while allowing explicit refresh.
 - [ ] Report runtime/contract incompatibility clearly.
@@ -425,18 +427,22 @@ apply_blueprint_patch
 - [ ] Support environment-variable credential references.
 - [x] Support an injectable credential-provider interface for keychains and hosted secret managers.
 - [x] Resolve credentials only at request execution time.
-- [x] Never store the token in generated tools, descriptions, model context, or checkpoints.
-- [x] Redact authorization headers and sensitive response fields from errors and traces.
+- [x] Do not store resolved tokens in generated tool schemas, descriptions, or returned errors.
+- [ ] Test redaction across prompts, traces, checkpoints, and sensitive response fields.
 
 ### 4.3 Generate tools from OpenAPI operations
 
-- [x] Generate tools only from documented Zebric skill operations.
-- [x] Use `operationId` as the stable identity and generate collision-safe tool names.
-- [x] Convert JSON Schema inputs to runtime-validated tool schemas.
-- [ ] Preserve descriptions, enum values, required fields, and examples.
+- [x] Generate tools only from operations in the validated Zebric OpenAPI contract.
+- [x] Use `operationId` as the stable operation identity and sanitize generated tool names.
+- [ ] Detect tool-name collisions across operations and connected applications.
+- [x] Convert the current Zebric scalar, enum, and JSON-field schema subset to runtime-validated tool schemas.
+- [ ] Support or explicitly reject unsupported JSON Schema constructs such as `$ref`, unions, nested objects, and composed schemas.
+- [x] Preserve operation descriptions, enum values, and required fields for the supported schema subset.
+- [ ] Preserve examples and richer schema annotations.
 - [ ] Attach risk, required scopes, HTTP method, application, and operation metadata to each tool.
 - [x] Do not expose arbitrary URL, header, method, or request-body escape hatches.
-- [ ] Bound tool result sizes and offload large results to the configured backend.
+- [x] Reject HTTP and job responses exceeding the configured inline size limit.
+- [ ] Offload supported large results to a configured backend instead of returning them inline.
 
 ### 4.4 Classify action risk
 
@@ -475,11 +481,13 @@ apply_blueprint_patch
 
 ### 5.2 Add idempotency behavior
 
-- [x] Generate a stable idempotency key for each logical mutation.
-- [x] Reuse it when transport uncertainty causes a retry.
-- [x] Do not reuse it after the user changes arguments.
+- [x] Invoke a configured idempotency-key provider for every mutation.
+- [ ] Generate and persist stable logical-mutation keys in agent thread state.
+- [ ] Reuse a key only when transport uncertainty causes a retry of identical arguments.
+- [x] Let the runtime reject reuse after arguments or the target resource change.
 - [ ] Store keys in thread/checkpoint state without storing credentials.
-- [x] Surface idempotency conflicts to the user.
+- [x] Surface HTTP `409` conflicts instead of treating them as success.
+- [ ] Parse stable error codes so idempotency conflicts are distinguishable from state/version conflicts.
 
 ### 5.3 Observe asynchronous workflows
 
@@ -585,9 +593,10 @@ Subagents should be introduced only where context isolation or specialized tools
 - [ ] Pass a narrow task and relevant operation descriptions.
 - [ ] Prevent it from gaining workspace write access implicitly.
 
-### 7.4 QA specialist
+### 7.4 Extension-provided specialist
 
-- [ ] Give the QA specialist the claimed task context and QA executor only.
+- [ ] Let an installed application extension define any domain-specific specialist, context, and executor contract.
+- [ ] Give an issue-board QA specialist only the claimed task context and its extension-provided executor.
 - [ ] Keep final status mutation with the supervisor or a separately approved operator.
 - [ ] Return structured checks and evidence, not an unbounded narrative.
 
@@ -664,7 +673,7 @@ mode = "project"
 - [ ] `zebric-agent review [blueprint]`
 - [ ] `zebric-agent connect <url>`
 - [ ] `zebric-agent run --prompt <text>`
-- [ ] `zebric-agent qa --application <name>`
+- [ ] Support extension-provided commands without baking their business vocabulary into the core CLI; an issue-board extension may provide `qa`.
 - [ ] `zebric-agent threads list|resume|delete`
 - [ ] `zebric-agent memory inspect|clear`
 - [ ] Decide whether these later become subcommands of the main `zebric` CLI.
@@ -751,7 +760,7 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 - [ ] Add `agents/zebric-agent/connect.mdx` covering discovery, local and remote application connections, credential references, multiple applications, and TLS expectations.
 - [ ] Add `agents/zebric-agent/author-mode.mdx` covering deterministic Blueprint validation, workspace roots, read-only defaults, filesystem safety, and the planned review/patch workflow.
 - [ ] Add `agents/zebric-agent/approvals.mdx` explaining read tools, mutation opt-in, approval requests, idempotency, rejection, retries, conflicts, and job observation.
-- [ ] Add `agents/zebric-agent/qa.mdx` documenting the Ready to Test workflow, the QA executor boundary, evidence handling, revision safety, interrupted runs, and currently implemented versus planned transitions.
+- [ ] Add an application-extension/reference-scenario guide using issue-board QA to explain executor boundaries, evidence handling, revision safety, and interrupted runs without presenting QA vocabulary as core agent behavior.
 - [ ] Add `agents/zebric-agent/testing.mdx` explaining the no-model deterministic driver, mock contract tests, real-runtime harness, and how integrators can add scripted scenarios.
 - [ ] Add `reference/agent-library.mdx` for `createZebricAgent`, application configuration, credential providers, generated tools, mutation approval callbacks, and `DeterministicAgentDriver`.
 - [ ] Document model/provider compatibility separately from the stable Zebric Agent API.
@@ -830,16 +839,16 @@ The projects can advance in parallel, but the following dependencies should rema
 
 Until the corresponding Agent API feature exists, the agent should report the missing capability rather than emulate unsafe behavior. For example, it should not approximate an atomic claim with an unguarded generic update.
 
-## Suggested Delivery Order
+## Remaining Delivery Priority
 
-1. Create `@zebric/agent`, its public factory, and a minimal CLI.
-2. Ship deterministic Blueprint validation and inspection tools.
-3. Add read-only runtime discovery and generated OpenAPI tools.
-4. Add policy metadata, approvals, credential isolation, and mutating runtime actions.
-5. Add workflow-job observation, idempotency, and checkpoint resume.
-6. Add Blueprint review, patch proposals, application, and revalidation.
-7. Implement the QA operator against the Agent API reference application.
-8. Add specialist subagents only after single-agent workflows are reliable.
+1. Return a stable Zebric wrapper with validated configuration, typed run context, and generated run/correlation IDs.
+2. Add the minimal CLI and environment-backed credential references without exposing resolved secrets.
+3. Finish generic tool metadata, collision detection, stable errors, approval policy, and contract fingerprints.
+4. Add checkpointed idempotency/job observation before implementing automatic retry or interrupted-run behavior.
+5. Ship bounded Blueprint inspection and high-confidence deterministic linting before model-driven patch application.
+6. Add patch proposals, approval, application, and revalidation while preserving dirty worktrees.
+7. Keep issue-board QA as a conformance fixture; define a generic extension boundary before publishing domain executors or specialists.
+8. Add specialist subagents only after the corresponding single-agent workflows and security boundaries are reliable.
 9. Complete evaluation, telemetry, documentation, and publishing.
 
 ## First Vertical Slice
@@ -869,5 +878,5 @@ Zebric Agent v1 is complete when:
 - It never exposes credentials to the model, traces, checkpoints, or CLI output.
 - It handles idempotency, conflicts, asynchronous jobs, and interrupted runs correctly.
 - It completes the QA reference scenario through semantic application workflows.
-- Its filesystem, network, memory, and subagent boundaries pass security tests.
+- Its filesystem, network, and memory boundaries pass security tests; any enabled extensions or subagents pass equivalent isolation tests.
 - Its scenario evaluation suite meets documented reliability and safety thresholds.

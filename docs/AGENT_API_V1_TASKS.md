@@ -43,6 +43,10 @@ Agent API v1 should harden and complete this model rather than introduce a separ
 - **Return structured, stable outcomes.** Agents should not need to parse HTML or error strings.
 - **Fail closed.** Undeclared parameters, unavailable actions, stale state, and insufficient scopes must not silently succeed.
 
+## V1 Scope Boundary
+
+Agent API v1 is the secure HTTP contract implemented first by `runtime-node`: discovery, typed semantic skills, scoped identity, attributable/idempotent mutations, observable jobs, atomic state transitions, stable errors, and auditability. Cloudflare Workers execution parity, event streaming, generated MCP, durable multi-instance job storage, and advanced credential protocols are follow-on capabilities. The v1 contract should leave room for them without making them prerequisites for a useful Node release.
+
 ## Target Runtime Contract
 
 A conforming application exposes:
@@ -142,7 +146,8 @@ Suggested response:
 ### 2.1 Add a public job-status API
 
 - [x] Add `GET /api/jobs/{jobId}`.
-- [x] Require the caller to own the job or possess an appropriate administrative scope.
+- [x] Require the caller to own the job.
+- [ ] Add an explicit administrative scope for cross-owner job inspection.
 - [x] Return pending, running, succeeded, failed, and cancelled states.
 - [x] Include workflow name, timestamps, and a sanitized error.
 - [ ] Persist or retain completed jobs for a documented period.
@@ -193,7 +198,7 @@ Suggested response:
 ### 3.1 Add idempotency support
 
 - [x] Accept `Idempotency-Key` on agent mutations.
-- [x] Scope keys by agent identity, action, and application.
+- [x] Scope keys by authenticated principal and application; fingerprint the HTTP method, resolved target, query, and body so cross-action or cross-resource reuse conflicts.
 - [ ] Persist the request fingerprint and original response for a defined retention period. (The v1 slice currently retains these in memory for the runtime process.)
 - [x] Return the original result for an identical retry.
 - [x] Return `409` when a key is reused with a different payload.
@@ -214,7 +219,7 @@ Suggested response:
 - [ ] Record the claiming agent and claim time. (Agent attribution is recorded; claim time remains outstanding.)
 - [x] Reject a second claim with `409`.
 - [ ] Define claim expiration or explicit release behavior.
-- [x] Ensure the claim state transition is atomic. (A separate immutable audit entry remains outstanding.)
+- [x] Ensure the claim state transition and completion audit intent are atomic through the database outbox.
 
 ### Acceptance criteria
 
@@ -397,7 +402,8 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 
 ### 7.4 Publish a QA skill
 
-- [ ] Declare list, get, claim, report, complete, needs-work, and release actions.
+- [x] Declare list, get, claim, complete, and needs-work actions.
+- [ ] Add report-only and release/expiration actions when their workflows are defined.
 - [ ] Give each action specific descriptions and examples.
 - [ ] Apply the minimum required scopes.
 - [ ] Confirm all action schemas and outcomes appear correctly in OpenAPI.
@@ -414,7 +420,7 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 
 - [x] Start a real Zebric runtime with the QA reference Blueprint.
 - [ ] Seed multiple projects and task states.
-- [ ] Provision credentials with different scopes.
+- [x] Provision reference credentials with different read, mutation, and seeding scopes.
 - [x] Drive the runtime strictly through the published discovery and API surfaces.
 - [x] Avoid importing internal runtime classes in the conformance client.
 
@@ -446,6 +452,8 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 
 ### 8.4 Verify database and edge-runtime atomicity
 
+Node SQLite/PostgreSQL behavior is part of the core v1 release gate. Workers items below are compatibility work and may follow v1 provided discovery accurately reports them as unsupported.
+
 - [x] Prove SQLite rolls back the task transition when QA result creation fails.
 - [x] Add live PostgreSQL commit and rollback integration scenarios.
 - [x] Provision PostgreSQL in CI and run the live scenarios through `ZEBRIC_TEST_POSTGRES_URL`.
@@ -467,7 +475,7 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 - It verifies behavior through public contracts rather than implementation details.
 - Failures clearly identify contract regressions.
 
-## Milestone 9: Events and MCP Adapter
+## Post-v1 Extensions: Events and MCP Adapter
 
 These are follow-on capabilities and are not required to ship the core Agent API v1.
 
@@ -564,15 +572,15 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 - [ ] Sanitize workflow errors and job results.
 - [ ] Verify tenant isolation for records, jobs, idempotency records, events, and audit data.
 
-## Suggested Delivery Order
+## Remaining Delivery Priority
 
-1. Queryable skill collections.
-2. Job status and structured outcomes.
-3. Atomic claims, conflicts, and idempotency.
-4. Agent principals, scopes, credential lifecycle, and attribution.
-5. Enriched OpenAPI, discovery document, and stable errors.
-6. QA reference application and end-to-end conformance suite.
-7. Events and generated MCP support.
+1. Stabilize machine-readable error envelopes and strict server-side input validation.
+2. Add durable single-runtime idempotency/job retention and explicitly document multi-instance limitations.
+3. Complete credential expiration, rotation, revocation, and administrative issuance.
+4. Enforce project/tenant/row constraints and finish the security threat model.
+5. Complete OpenAPI security metadata, conformance snapshots, end-user documentation, and CI gates.
+6. Add Workers parity where it can preserve the same contract; advertise unsupported capabilities until then.
+7. Treat events and generated MCP as post-v1 transports over the canonical capability model.
 
 The first usable vertical slice should include one filtered list action, one atomic claim workflow, one terminal QA transition, job observation, scoped authentication, audit attribution, and an end-to-end test. This proves the full contract before broadening it across every entity and workflow type.
 
@@ -590,4 +598,4 @@ Agent API v1 is complete when:
 - Credentials are scoped, revocable, attributable, and tenant-safe.
 - Every mutation has a complete agent and workflow audit trail.
 - The QA reference scenario passes through the public API in CI.
-- OpenAPI is canonical, with any MCP support generated from the same capability model.
+- OpenAPI is canonical, and future transports such as MCP must be generated from the same capability model rather than creating another execution path.
