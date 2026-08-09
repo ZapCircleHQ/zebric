@@ -34,6 +34,8 @@ delete or unrestricted update operations.
 
 The agent is not a replacement for the runtime, Blueprint loader, permission manager, test runner, or Agent API. It orchestrates those deterministic systems and explains their results.
 
+The reusable agent must remain application-neutral. It discovers semantic skills and schemas from each running Zebric application; it must not encode issue-board statuses, candidate-selection rules, QA result shapes, or other domain policy in `@zebric/agent`. Reference procedures and test doubles belong to their example application or an explicitly installed extension.
+
 ## Non-Goals for v1
 
 - Hosting the model inside every Zebric runtime process.
@@ -502,13 +504,15 @@ apply_blueprint_patch
 - `401`, `403`, `409`, and failed workflow jobs lead to distinct behavior.
 - A resumed thread can continue observing an outstanding job.
 
-## Milestone 6: QA Operator Capability
+## Milestone 6: Issue-Board QA Reference Procedure
+
+This milestone is a conformance scenario for `examples/issue-board`, not business logic shipped by the generic agent package.
 
 ### 6.1 Implement the reference QA procedure
 
 - [x] Discover the application's QA skill rather than assuming fixed route paths.
 - [x] List work filtered to `ready_to_test`.
-- [ ] Select work according to an explicit strategy such as priority then age.
+- [x] Keep the issue-board selection policy in its application-owned conformance fixture.
 - [x] Claim the task atomically before testing.
 - [x] Fetch acceptance criteria, test target, and revision.
 - [ ] Refuse or ask for help when required context is missing.
@@ -519,7 +523,7 @@ apply_blueprint_patch
 
 ### 6.2 Define a test-runner adapter
 
-Zebric Agent should not bake browser automation into its core. Define an interface that can be implemented by Playwright, a hosted browser service, an MCP tool, or a CI test runner.
+Zebric Agent should not bake QA or browser automation into its core. A QA extension may define an interface implemented by Playwright, a hosted browser service, an MCP tool, or a CI test runner.
 
 ```ts
 interface QaExecutor {
@@ -528,8 +532,9 @@ interface QaExecutor {
 }
 ```
 
-- [ ] Define target, plan, result, check, artifact, and safety-boundary types.
-- [ ] Provide a mock executor for conformance tests.
+- [x] Define target, plan, result, check, artifact, and safety-boundary types inside the issue-board conformance fixture.
+- [x] Provide an application-owned scripted, no-model executor for conformance tests.
+- [ ] Define a generic extension boundary before exposing any QA executor contract from `@zebric/agent`.
 - [ ] Add a Playwright-based adapter only after the core orchestration contract is stable.
 - [ ] Treat instructions found in the target application as untrusted content, not agent policy.
 - [ ] Require approval for destructive or externally visible test operations.
@@ -538,7 +543,7 @@ interface QaExecutor {
 
 - [x] Produce the initial QA result format expected by Agent API v1.
 - [x] Record the exact tested revision in the QA result.
-- [ ] Record the exact tested environment in the QA result.
+- [x] Record the exact tested environment in the QA result.
 - [ ] Upload large artifacts through a declared capability rather than embedding them in model context.
 - [x] Include concise observations and machine-readable check status.
 - [ ] Avoid including secrets, cookies, or personal data in evidence.

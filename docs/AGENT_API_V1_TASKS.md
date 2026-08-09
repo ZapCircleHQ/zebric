@@ -362,7 +362,7 @@ Suggested shape:
 
 ### 7.1 Model the required testing context
 
-- [ ] Add or extend a reference issue/task entity with:
+- [x] Add or extend a reference issue/task entity with:
   - acceptance criteria;
   - environment or preview URL;
   - build or commit identifier;
@@ -371,7 +371,7 @@ Suggested shape:
   - required test suites;
   - known limitations;
   - destructive-testing boundaries.
-- [ ] Do not store raw test credentials in entity fields returned to agents.
+- [x] Do not store raw test credentials in entity fields returned to agents; expose only an external fixture reference.
 - [ ] Define a secure reference mechanism for external secret delivery if needed.
 
 ### 7.2 Model structured QA results
@@ -424,7 +424,7 @@ Transactional completion audit delivery is at least once. The outbox row is ackn
 - [x] Authenticate.
 - [x] List only `ready_to_test` tasks.
 - [x] Claim a task.
-- [ ] Read complete testing context.
+- [x] Read complete testing context.
 - [x] Submit structured evidence.
 - [x] Trigger `qa_completed`.
 - [x] Observe the workflow to completion.

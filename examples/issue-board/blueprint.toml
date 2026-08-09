@@ -30,6 +30,11 @@ fields = [
   { name = "acceptanceCriteria", type = "LongText" },
   { name = "testUrl", type = "Text" },
   { name = "revision", type = "Text" },
+  { name = "featureFlags", type = "JSON" },
+  { name = "testFixtureRef", type = "Text" },
+  { name = "requiredTestSuites", type = "JSON" },
+  { name = "knownLimitations", type = "LongText" },
+  { name = "destructiveTestingBoundaries", type = "LongText" },
   { name = "qaState", type = "Enum", values = ["ready_to_test", "testing", "needs_work", "qa_completed"] },
   { name = "qaRunId", type = "Text" },
   { name = "claimedBy", type = "Text" },
@@ -52,6 +57,7 @@ fields = [
   { name = "checks", type = "JSON" },
   { name = "evidence", type = "JSON" },
   { name = "testedRevision", type = "Text", required = true },
+  { name = "testedEnvironment", type = "Text", required = true },
   { name = "agentRunId", type = "Text", required = true },
   { name = "agentId", type = "Text", required = true },
   { name = "credentialId", type = "Text", required = true },
@@ -270,7 +276,7 @@ path = "/api/agent/issues/{id}/qa-complete"
 entity = "Issue"
 workflow = "CompleteQA"
 scopes = ["qa.report", "qa.transition"]
-body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text", testedEnvironment = "Text" }
 
 [workflow.CompleteQA]
 description = "Complete a claimed QA run and persist its structured result."
@@ -315,6 +321,7 @@ summary = "{{ variables.data.payload.summary }}"
 checks = "{{ variables.data.payload.checks }}"
 evidence = "{{ variables.data.payload.evidence }}"
 testedRevision = "{{ variables.data.payload.testedRevision }}"
+testedEnvironment = "{{ variables.data.payload.testedEnvironment }}"
 agentRunId = "{{ variables.data.attribution.runId }}"
 agentId = "{{ variables.data.attribution.agentId }}"
 credentialId = "{{ variables.data.attribution.credentialId }}"
@@ -327,7 +334,7 @@ path = "/api/agent/issues/{id}/qa-needs-work"
 entity = "Issue"
 workflow = "MarkQANeedsWork"
 scopes = ["qa.report", "qa.transition"]
-body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text" }
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text", testedEnvironment = "Text" }
 
 [[skill.issue_board.actions]]
 name = "list_qa_results"
@@ -385,6 +392,7 @@ summary = "{{ variables.data.payload.summary }}"
 checks = "{{ variables.data.payload.checks }}"
 evidence = "{{ variables.data.payload.evidence }}"
 testedRevision = "{{ variables.data.payload.testedRevision }}"
+testedEnvironment = "{{ variables.data.payload.testedEnvironment }}"
 agentRunId = "{{ variables.data.attribution.runId }}"
 agentId = "{{ variables.data.attribution.agentId }}"
 credentialId = "{{ variables.data.attribution.credentialId }}"

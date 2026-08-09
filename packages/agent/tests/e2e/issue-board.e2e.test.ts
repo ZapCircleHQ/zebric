@@ -8,6 +8,10 @@ import { createZebric, type Zebric } from '@zebric/runtime-node'
 import { createRuntimeReadTools } from '../../src/runtime/action-tool-factory.js'
 import { discoverZebricApplication } from '../../src/runtime/discovery-client.js'
 import { DeterministicAgentDriver } from '../../src/testing/deterministic-driver.js'
+import {
+  ScriptedIssueBoardQa,
+  selectIssueBoardQaCandidate,
+} from './fixtures/issue-board-qa.js'
 
 describe('Zebric Agent deterministic E2E', () => {
   let tmpRoot = ''
@@ -86,10 +90,16 @@ describe('Zebric Agent deterministic E2E', () => {
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
     expect(issues).toHaveLength(5)
-    const issue = issues.find(item => item.title === 'Deterministic Agent API Test')!
+    const issue = selectIssueBoardQaCandidate(issues as any)!
+    expect(issue.title).toBe('Deterministic Agent API Test')
     expect(issue).toEqual(expect.objectContaining({
       acceptanceCriteria: 'The agent finds this issue through the Ready to Test queue.',
       revision: 'e2e-revision',
+      featureFlags: { redesignedBoard: true },
+      testFixtureRef: 'fixture://issue-board/qa-user',
+      requiredTestSuites: ['smoke', 'issue-board'],
+      knownLimitations: 'Email delivery is simulated in this environment.',
+      destructiveTestingBoundaries: 'Do not delete projects or user accounts.',
     }))
 
     const issueOutput = await driver.invoke({
@@ -266,15 +276,40 @@ describe('Zebric Agent deterministic E2E', () => {
 
   it('records a passing result and moves the issue to QA Completed', async () => {
     const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-1')
+    const issue = JSON.parse(String(await driver.invoke({
+      tool: 'issue_board_issue_board_get_issue',
+      input: { id: seededIssues.complete },
+    }))) as any
+    const target = {
+      taskId: issue.id,
+      url: issue.testUrl,
+      revision: issue.revision,
+      acceptanceCriteria: issue.acceptanceCriteria,
+      featureFlags: issue.featureFlags,
+      fixtureRef: issue.testFixtureRef,
+      requiredSuites: issue.requiredTestSuites,
+      knownLimitations: issue.knownLimitations,
+      destructiveTestingBoundaries: issue.destructiveTestingBoundaries,
+    }
+    const qaExecutor = new ScriptedIssueBoardQa()
+    expect(await qaExecutor.inspectTarget(target)).toMatchObject({
+      reachable: true,
+      observedRevision: 'e2e-revision',
+    })
+    const qaResult = await qaExecutor.execute({
+      target,
+      checks: [{ name: 'Board loads', instruction: issue.acceptanceCriteria }],
+    })
     const output = await driver.invoke({
       tool: 'issue_board_issue_board_complete_qa',
       input: {
         id: seededIssues.complete,
         resultId: 'qa-result-complete',
-        summary: 'Acceptance criteria passed.',
-        checks: [{ name: 'Board loads', status: 'passed' }],
-        evidence: [{ type: 'test_log', url: 'artifact://qa-run-1/log' }],
-        testedRevision: 'e2e-revision',
+        summary: qaResult.summary,
+        checks: qaResult.checks,
+        evidence: qaResult.artifacts,
+        testedRevision: qaResult.testedRevision,
+        testedEnvironment: qaResult.testedEnvironment,
       },
     })
     expect(JSON.parse(String(output))).toMatchObject({
@@ -286,6 +321,7 @@ describe('Zebric Agent deterministic E2E', () => {
           agentRunId: 'qa-run-1',
           agentId: 'zebric-qa-agent',
           credentialId: 'issue-board-e2e-key',
+          testedEnvironment: `${baseUrl}/`,
         },
       },
     })
@@ -295,8 +331,10 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { issueId: seededIssues.complete },
     })))
     expect(results).toEqual([expect.objectContaining({
-      outcome: 'qa_completed', testedRevision: 'e2e-revision',
+      outcome: 'qa_completed', testedRevision: 'e2e-revision', testedEnvironment: `${baseUrl}/`,
     })])
+    expect(qaExecutor.inspectedTargets).toEqual([target])
+    expect(qaExecutor.executedPlans).toHaveLength(1)
   })
 
   it('records a failing result and moves a separately claimed issue to Needs Work', async () => {
@@ -314,6 +352,7 @@ describe('Zebric Agent deterministic E2E', () => {
         checks: [{ name: 'Empty title validation', status: 'failed' }],
         evidence: [],
         testedRevision: 'e2e-revision',
+        testedEnvironment: `${baseUrl}/`,
       },
     })
     expect(JSON.parse(String(output))).toMatchObject({
@@ -341,6 +380,7 @@ describe('Zebric Agent deterministic E2E', () => {
         checks: [{ name: 'Rollback check', status: 'passed' }],
         evidence: [],
         testedRevision: 'e2e-revision',
+        testedEnvironment: `${baseUrl}/`,
       },
     })
     expect(JSON.parse(String(failedOutput))).toMatchObject({
@@ -419,7 +459,14 @@ async function seedIssueBoard(
     title,
     description: 'Seeded through the real Zebric entity API.',
     acceptanceCriteria: 'The agent finds this issue through the Ready to Test queue.',
-    testUrl: `${baseUrl}/`, revision: 'e2e-revision', qaState: 'ready_to_test',
+    testUrl: `${baseUrl}/`,
+    revision: 'e2e-revision',
+    featureFlags: { redesignedBoard: true },
+    testFixtureRef: 'fixture://issue-board/qa-user',
+    requiredTestSuites: ['smoke', 'issue-board'],
+    knownLimitations: 'Email delivery is simulated in this environment.',
+    destructiveTestingBoundaries: 'Do not delete projects or user accounts.',
+    qaState: 'ready_to_test',
     columnId: ready.id, position, important: true,
   }) as Promise<{ id: string }>
   const complete = await createIssue('Deterministic Agent API Test', 0)
