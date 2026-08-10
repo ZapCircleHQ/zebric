@@ -1,4 +1,5 @@
 export * from './agent/create-zebric-agent.js'
+export type { ZebricAgentRuntimeContext } from './agent/runtime-context.js'
 export * from './authoring/validate-blueprint.js'
 export * from './authoring/workspace-path.js'
 export * from './runtime/discovery-client.js'

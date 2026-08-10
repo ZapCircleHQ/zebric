@@ -56,6 +56,7 @@ export interface RuntimeToolFactoryOptions {
   timeoutMs?: number
   maxResponseBytes?: number
   mutations?: RuntimeMutationOptions
+  correlationId?: () => string | undefined
 }
 
 function parameterSchema(parameter: OpenApiParameter): z.ZodType {
@@ -146,6 +147,7 @@ export function createRuntimeReadTools(
         }
 
         const credential = await options.credential?.()
+        const correlationId = options.correlationId?.()
         const requestBody = isMutation
           ? Object.fromEntries(Object.keys(bodyProperties).filter(name => input[name] !== undefined).map(name => [name, input[name]]))
           : undefined
@@ -155,6 +157,7 @@ export function createRuntimeReadTools(
           signal: AbortSignal.timeout(timeoutMs),
           headers: {
             accept: 'application/json',
+            ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
             ...(isMutation ? {
               'content-type': 'application/json',
               'idempotency-key': options.mutations!.idempotencyKey(operation.operationId!, input),
@@ -203,8 +206,13 @@ async function observeJob(
   const maxPolls = options.mutations?.maxPolls ?? 100
   const pollIntervalMs = options.mutations?.pollIntervalMs ?? 25
   for (let attempt = 0; attempt < maxPolls; attempt++) {
+    const correlationId = options.correlationId?.()
     const response = await fetcher(jobUrl, {
-      headers: { accept: 'application/json', ...(credential ? { authorization: `Bearer ${credential}` } : {}) },
+      headers: {
+        accept: 'application/json',
+        ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
+        ...(credential ? { authorization: `Bearer ${credential}` } : {}),
+      },
       redirect: 'error',
       signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     })

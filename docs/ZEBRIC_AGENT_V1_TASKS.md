@@ -230,8 +230,8 @@ Runtime authorization remains authoritative even after local approval.
 - [x] Implement `createZebricAgent(options)`.
 - [x] Accept a model or model identifier without coupling the API to one provider.
 - [ ] Accept runtime connections, workspace configuration, policy, checkpointer, and telemetry options.
-- [ ] Validate configuration before constructing the agent.
-- [ ] Return a stable Zebric wrapper rather than exposing an untyped Deep Agents graph directly.
+- [x] Validate model, workspace aliasing, application names, duplicate connections, and credential-free HTTP(S) application URLs before constructing the agent.
+- [x] Return a stable Zebric-owned `ZebricAgent` wrapper rather than exposing an untyped Deep Agents graph directly.
 
 Proposed API:
 
@@ -255,13 +255,13 @@ const agent = await createZebricAgent({
 
 ### 1.3 Establish agent context
 
-- [ ] Define typed runtime context containing workspace, applications, agent run ID, and policy.
+- [x] Define typed invocation-local runtime context containing workspace, applications, agent run ID, correlation ID, thread ID, and policy.
 - [x] Resolve credentials through non-model-visible providers at request time.
 - [ ] Prove credentials remain absent from prompts, messages, checkpoints, traces, and model-visible tool results.
-- [ ] Generate a unique run ID for each top-level task.
+- [x] Generate a unique run ID for each top-level task.
 - [x] Propagate a trusted agent run ID through runtime mutation tools using `X-Agent-Run-ID`.
-- [ ] Propagate correlation identifiers through runtime API tools.
-- [ ] Define thread IDs separately from run IDs.
+- [x] Propagate a unique correlation identifier through runtime API tools and job polling.
+- [x] Define caller-supplied checkpoint thread IDs separately from generated run IDs.
 
 ### 1.4 Add a minimal CLI
 
