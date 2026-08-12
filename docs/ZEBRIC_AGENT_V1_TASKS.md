@@ -841,15 +841,44 @@ Until the corresponding Agent API feature exists, the agent should report the mi
 
 ## Remaining Delivery Priority
 
-1. Return a stable Zebric wrapper with validated configuration, typed run context, and generated run/correlation IDs.
-2. Add the minimal CLI and environment-backed credential references without exposing resolved secrets.
-3. Finish generic tool metadata, collision detection, stable errors, approval policy, and contract fingerprints.
-4. Add checkpointed idempotency/job observation before implementing automatic retry or interrupted-run behavior.
-5. Ship bounded Blueprint inspection and high-confidence deterministic linting before model-driven patch application.
-6. Add patch proposals, approval, application, and revalidation while preserving dirty worktrees.
-7. Keep issue-board QA as a conformance fixture; define a generic extension boundary before publishing domain executors or specialists.
-8. Add specialist subagents only after the corresponding single-agent workflows and security boundaries are reliable.
-9. Complete evaluation, telemetry, documentation, and publishing.
+1. Prove the real `createZebricAgent`/Deep Agents path with a fake model, including tool selection, no-tool prompts, mutation proposals, and failures; the deterministic driver remains a complementary contract harness.
+2. Make one Zebric-owned approval policy authoritative: remove or reject inert configuration, attach risk metadata, interrupt before mutations, and prove approval rejection and checkpointed resume.
+3. Add environment-backed credential references and comprehensive redaction tests across prompts, messages, tool results, errors, checkpoints, telemetry, and CLI output.
+4. Explicitly support or reject every encountered OpenAPI/JSON Schema construct instead of silently weakening generated validation; add contract fingerprints and compatibility failures.
+5. Add the minimal usable CLI with `validate`, non-interactive `run`, `--workspace`, `--connect`, `--model`, environment credential references, stable exit codes, and JSON output.
+6. Stabilize the package surface, dependency compatibility policy, lint/build/publish checks, and end-user documentation before calling the package releasable.
+7. Ship bounded Blueprint inspection and high-confidence deterministic linting before model-driven patch application.
+8. Add patch proposals, approval, application, and revalidation while preserving dirty worktrees.
+9. Keep issue-board QA as a conformance fixture; define a generic extension boundary before publishing domain executors or specialists.
+10. Add specialist subagents only after the corresponding single-agent workflows and security boundaries are reliable.
+11. Complete broader evaluation, telemetry, and publishing gates.
+
+## Release Readiness Gates
+
+The current implementation is a library-level technical preview and deterministic vertical-slice foundation. Passing the no-model tool harness alone does not prove that the Deep Agents orchestration path is usable or safe. Do not describe `@zebric/agent` as Zebric Agent v1 until the Definition of Done below is satisfied.
+
+### First public preview blockers
+
+- [ ] Add a fake-model integration test that invokes the real `createZebricAgent` graph rather than calling generated tools directly.
+- [ ] Prove the graph completes a no-tool prompt and selects a declared read tool without exposing framework-specific state through the Zebric wrapper.
+- [ ] Prove the graph proposes a mutation, stops at the Zebric approval boundary, and resumes exactly once after approval without duplicating the mutation.
+- [ ] Make `CreateZebricAgentOptions.approval` enforce behavior, or remove it until an enforceable policy exists; no accepted public option may be informational only.
+- [ ] Define precedence and validation between top-level approval policy, per-application mutation configuration, and Deep Agents `interruptOn` behavior.
+- [ ] Support `{ type = "env", name = "..." }` credential references in library and CLI configuration while continuing to support injected providers.
+- [ ] Add negative tests proving resolved model and application credentials never appear in prompts, messages, schemas, descriptions, tool results, errors, checkpoints, deterministic transcripts, telemetry, or CLI output.
+- [ ] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
+- [ ] Add a minimal `zebric-agent` executable with deterministic `validate` and non-interactive `run` flows before advertising a user-facing agent product.
+- [ ] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.
+- [ ] Test the packed package in a clean temporary consumer project, including ESM imports, declarations, binary execution, and required runtime dependencies.
+- [ ] Make build, type-check, lint, unit, fake-model integration, real-runtime E2E, package-pack, and docs checks runnable in CI.
+- [ ] Publish getting-started, connection, approvals/security, library API, CLI, testing-harness, compatibility, and current-limitations documentation before the first public preview.
+
+### Full v1 blockers beyond the first preview
+
+- [ ] Add bounded Blueprint inspection and deterministic linting with stable finding IDs before claiming authoring review support.
+- [ ] Add minimal patch proposal, explicit approval, dirty-worktree preservation, patch application, and deterministic revalidation before claiming Blueprint improvement support.
+- [ ] Add a durable execution-state adapter and document/process-test restart and multi-instance behavior before claiming durable interrupted-run recovery.
+- [ ] Complete provider/model compatibility scenarios, prompt-injection tests, network/workspace/checkpoint isolation tests, and documented reliability and safety thresholds.
 
 ## First Vertical Slice
 

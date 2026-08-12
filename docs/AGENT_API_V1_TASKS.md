@@ -584,6 +584,19 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 
 The first usable vertical slice should include one filtered list action, one atomic claim workflow, one terminal QA transition, job observation, scoped authentication, audit attribution, and an end-to-end test. This proves the full contract before broadening it across every entity and workflow type.
 
+## Zebric Agent Release Dependencies
+
+These are Agent API-owned prerequisites for safely releasing a generic client. CLI behavior, model orchestration, credential-reference resolution, local approval policy, and client-side schema conversion remain owned by `ZEBRIC_AGENT_V1_TASKS.md`.
+
+- [ ] Publish the common error envelope in OpenAPI for every applicable `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` response.
+- [ ] Give every public error a stable code and explicit retryability; distinguish idempotency-key misuse, stale state/version conflicts, workflow precondition failures, and transient server failures.
+- [ ] Publish per-operation authentication requirements, required scopes, semantic risk/effect metadata, and action preconditions so a generic client can make an informed approval proposal.
+- [ ] Publish a stable contract/runtime version or fingerprint input that clients can record and use to reject incompatible pending calls after refresh.
+- [ ] Add conformance tests proving discovery, OpenAPI, runtime validation, authorization, errors, and job responses agree for the same action.
+- [ ] Add negative conformance cases for undeclared fields, unsupported filters, invalid enums, malformed bodies, missing scopes, stale transitions, duplicate idempotency keys with changed targets/arguments, and inaccessible jobs.
+- [ ] Document which failures a client may retry automatically and require idempotency protection for every retryable mutation path.
+- [ ] Keep the deterministic issue-board harness as the cross-project release gate proving the published contract is sufficient without private Blueprint knowledge or hard-coded domain behavior in `@zebric/agent`.
+
 ## Definition of Done for Agent API v1
 
 Agent API v1 is complete when:
