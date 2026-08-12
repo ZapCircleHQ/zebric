@@ -1,5 +1,6 @@
 import { tool } from 'langchain'
 import { z } from 'zod'
+import { createHash, randomUUID } from 'node:crypto'
 import type { ZebricApplicationContract } from './discovery-client.js'
 
 type CredentialProvider = () => string | undefined | Promise<string | undefined>
@@ -42,11 +43,47 @@ export interface MutationApprovalRequest {
 
 export interface RuntimeMutationOptions {
   approve(request: MutationApprovalRequest): boolean | Promise<boolean>
-  idempotencyKey(operationId: string, input: Record<string, unknown>): string
+  idempotencyKey?(operationId: string, input: Record<string, unknown>): string
   observeJobs?: boolean
   pollIntervalMs?: number
   maxPolls?: number
   agentRunId?: () => string
+  state?: MutationExecutionStateStore
+  stateContext?: () => string | undefined
+}
+
+export interface MutationExecutionState {
+  idempotencyKey: string
+  jobUrl?: string
+}
+
+export interface MutationExecutionStateStore {
+  get(key: string): MutationExecutionState | undefined | Promise<MutationExecutionState | undefined>
+  set(key: string, value: MutationExecutionState): void | Promise<void>
+  delete(key: string): void | Promise<void>
+}
+
+export class InMemoryMutationExecutionStateStore implements MutationExecutionStateStore {
+  private readonly entries = new Map<string, MutationExecutionState>()
+  get(key: string) { return this.entries.get(key) }
+  set(key: string, value: MutationExecutionState) { this.entries.set(key, value) }
+  delete(key: string) { this.entries.delete(key) }
+}
+
+export type ZebricApiErrorKind = 'authentication' | 'authorization' | 'validation' | 'not_found' | 'conflict' | 'rate_limit' | 'server' | 'http'
+
+export class ZebricApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly code: string,
+    readonly requestId: string | undefined,
+    readonly kind: ZebricApiErrorKind,
+    readonly retryable: boolean
+  ) {
+    super(message)
+    this.name = 'ZebricApiError'
+  }
 }
 
 export interface RuntimeToolFactoryOptions {
@@ -148,6 +185,21 @@ export function createRuntimeReadTools(
 
         const credential = await options.credential?.()
         const correlationId = options.correlationId?.()
+        const stateKey = isMutation ? mutationStateKey(options, operation.operationId!, method, path, input) : undefined
+        const priorState = stateKey ? await options.mutations?.state?.get(stateKey) : undefined
+        if (priorState?.jobUrl) {
+          const output = await observeJob(fetcher, new URL(priorState.jobUrl), contract.baseUrl, credential, options)
+          await options.mutations?.state?.delete(stateKey!)
+          return output
+        }
+        const idempotencyKey = isMutation
+          ? priorState?.idempotencyKey
+            ?? options.mutations!.idempotencyKey?.(operation.operationId!, input)
+            ?? randomUUID()
+          : undefined
+        if (stateKey && idempotencyKey && !priorState) {
+          await options.mutations?.state?.set(stateKey, { idempotencyKey })
+        }
         const requestBody = isMutation
           ? Object.fromEntries(Object.keys(bodyProperties).filter(name => input[name] !== undefined).map(name => [name, input[name]]))
           : undefined
@@ -160,7 +212,7 @@ export function createRuntimeReadTools(
             ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
             ...(isMutation ? {
               'content-type': 'application/json',
-              'idempotency-key': options.mutations!.idempotencyKey(operation.operationId!, input),
+              'idempotency-key': idempotencyKey!,
               ...(options.mutations!.agentRunId ? { 'x-agent-run-id': options.mutations!.agentRunId() } : {}),
             } : {}),
             ...(credential ? { authorization: `Bearer ${credential}` } : {}),
@@ -173,12 +225,21 @@ export function createRuntimeReadTools(
         if (new TextEncoder().encode(responseBody).byteLength > maxResponseBytes) {
           throw new Error('Zebric API response exceeds the configured size limit')
         }
-        if (!response.ok) throw new Error(`Zebric API request failed with HTTP ${response.status}`)
+        if (!response.ok) {
+          if (stateKey && response.status < 500 && response.status !== 429) {
+            await options.mutations?.state?.delete(stateKey)
+          }
+          throw parseApiError(response, responseBody)
+        }
         if (response.status === 202 && options.mutations?.observeJobs !== false) {
           const accepted = JSON.parse(responseBody)
           const jobUrl = new URL(accepted.job?.url || response.headers.get('location'), contract.baseUrl)
-          return observeJob(fetcher, jobUrl, contract.baseUrl, credential, options)
+          if (stateKey) await options.mutations?.state?.set(stateKey, { idempotencyKey: idempotencyKey!, jobUrl: jobUrl.toString() })
+          const output = await observeJob(fetcher, jobUrl, contract.baseUrl, credential, options)
+          if (stateKey) await options.mutations?.state?.delete(stateKey)
+          return output
         }
+        if (stateKey) await options.mutations?.state?.delete(stateKey)
         return responseBody
       },
       {
@@ -190,7 +251,65 @@ export function createRuntimeReadTools(
     }
   }
 
+  const names = new Set<string>()
+  for (const generatedTool of tools) {
+    if (names.has(generatedTool.name)) {
+      throw new Error(`Zebric tool-name collision: ${generatedTool.name}`)
+    }
+    names.add(generatedTool.name)
+  }
   return tools
+}
+
+function parseApiError(response: Response, body: string): ZebricApiError {
+  let envelope: { error?: { message?: unknown; code?: unknown; requestId?: unknown } } = {}
+  try {
+    envelope = JSON.parse(body)
+  } catch {
+    // Unstructured upstream bodies are intentionally not reflected to the model.
+  }
+  const status = response.status
+  const kind: ZebricApiErrorKind = status === 401 ? 'authentication'
+    : status === 403 ? 'authorization'
+      : status === 400 || status === 422 ? 'validation'
+        : status === 404 ? 'not_found'
+          : status === 409 ? 'conflict'
+            : status === 429 ? 'rate_limit'
+              : status >= 500 ? 'server'
+                : 'http'
+  const message = typeof envelope.error?.message === 'string'
+    ? envelope.error.message
+    : `Zebric API request failed with HTTP ${status}`
+  const code = typeof envelope.error?.code === 'string' ? envelope.error.code : `HTTP_${status}`
+  const requestId = typeof envelope.error?.requestId === 'string'
+    ? envelope.error.requestId
+    : response.headers.get('x-request-id') ?? undefined
+  return new ZebricApiError(message, status, code, requestId, kind, status === 429 || status >= 500)
+}
+
+function mutationStateKey(
+  options: RuntimeToolFactoryOptions,
+  operationId: string,
+  method: string,
+  path: string,
+  input: Record<string, unknown>
+): string | undefined {
+  const context = options.mutations?.stateContext?.()
+  if (!context || !options.mutations?.state) return undefined
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify([method.toUpperCase(), path, operationId, stableValue(input)]))
+    .digest('hex')
+  return `${context}:${options.applicationName}:${fingerprint}`
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableValue(nested)]))
+  }
+  return value
 }
 
 async function observeJob(
@@ -216,7 +335,6 @@ async function observeJob(
       redirect: 'error',
       signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     })
-    if (!response.ok) throw new Error(`Workflow job request failed with HTTP ${response.status}`)
     const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
     const contentLength = Number(response.headers.get('content-length') ?? 0)
     if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
@@ -224,6 +342,7 @@ async function observeJob(
     if (new TextEncoder().encode(body).byteLength > maxResponseBytes) {
       throw new Error('Zebric API response exceeds the configured size limit')
     }
+    if (!response.ok) throw parseApiError(response, body)
     const job = JSON.parse(body)
     if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return body
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))

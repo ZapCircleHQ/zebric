@@ -434,7 +434,7 @@ apply_blueprint_patch
 
 - [x] Generate tools only from operations in the validated Zebric OpenAPI contract.
 - [x] Use `operationId` as the stable operation identity and sanitize generated tool names.
-- [ ] Detect tool-name collisions across operations and connected applications.
+- [x] Detect sanitized tool-name collisions across operations and connected applications before constructing the agent.
 - [x] Convert the current Zebric scalar, enum, and JSON-field schema subset to runtime-validated tool schemas.
 - [ ] Support or explicitly reject unsupported JSON Schema constructs such as `$ref`, unions, nested objects, and composed schemas.
 - [x] Preserve operation descriptions, enum values, and required fields for the supported schema subset.
@@ -474,18 +474,18 @@ apply_blueprint_patch
 - [x] Add Bearer authentication without exposing tokens to the model.
 - [x] Send idempotency identifiers for mutations.
 - [x] Apply per-request timeouts and cancellation.
-- [ ] Parse stable Agent API error envelopes.
-- [ ] Distinguish authentication, authorization, validation, conflict, rate-limit, and server failures.
+- [x] Parse stable Agent API error envelopes into safe typed failures without retaining unrecognized response fields.
+- [x] Distinguish authentication, authorization, validation, missing-resource, conflict, rate-limit, and server failures.
 - [ ] Retry only documented retryable failures.
 - [x] Never automatically retry an unsafe mutation without idempotency protection.
 
 ### 5.2 Add idempotency behavior
 
-- [x] Invoke a configured idempotency-key provider for every mutation.
-- [ ] Generate and persist stable logical-mutation keys in agent thread state.
-- [ ] Reuse a key only when transport uncertainty causes a retry of identical arguments.
+- [x] Invoke a configured idempotency-key provider for every fresh logical mutation, while reusing stored keys for uncertain retries.
+- [x] Generate and persist stable logical-mutation keys in an injectable execution-state store scoped by thread/run, application, operation, target, and canonical arguments.
+- [x] Reuse a key only while an identical mutation has an uncertain or outstanding result; clear it after a known terminal response.
 - [x] Let the runtime reject reuse after arguments or the target resource change.
-- [ ] Store keys in thread/checkpoint state without storing credentials.
+- [x] Store keys and job URLs through a credential-free execution-state interface; the default implementation is process-local and durable deployments must inject persistent storage.
 - [x] Surface HTTP `409` conflicts instead of treating them as success.
 - [ ] Parse stable error codes so idempotency conflicts are distinguishable from state/version conflicts.
 
@@ -494,7 +494,7 @@ apply_blueprint_patch
 - [x] Recognize `202 Accepted` job responses.
 - [x] Poll the declared job URL with a bounded interval and attempt limit.
 - [x] Support a maximum wait policy.
-- [ ] Resume observation from checkpointed job state.
+- [x] Resume observation from stored job state without resubmitting the mutation.
 - [x] Return the terminal workflow result to the agent.
 - [x] Avoid claiming success before the job reaches a successful terminal state.
 

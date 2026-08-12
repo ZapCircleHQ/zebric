@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeReadTools } from './action-tool-factory.js'
+import { createRuntimeReadTools, InMemoryMutationExecutionStateStore, ZebricApiError } from './action-tool-factory.js'
 import type { ZebricApplicationContract } from './discovery-client.js'
 
 const contract: ZebricApplicationContract = {
@@ -76,6 +76,31 @@ describe('createRuntimeReadTools', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('rejects sanitized tool-name collisions', () => {
+    const colliding = structuredClone(contract)
+    colliding.openapi.paths['/api/collision'] = {
+      get: { operationId: 'issue-board-list-columns' },
+    }
+    expect(() => createRuntimeReadTools(colliding, { applicationName: 'local' }))
+      .toThrow('Zebric tool-name collision: local_issue_board_list_columns')
+  })
+
+  it('parses safe Agent API error envelopes into typed failures', async () => {
+    const fetcher = vi.fn(async () => Response.json({
+      error: { message: 'Issue state changed', code: 'STATE_CONFLICT', requestId: 'req-1' },
+      ignoredSecret: 'must-not-appear',
+    }, { status: 409 })) as typeof fetch
+    const tools = createRuntimeReadTools(contract, { applicationName: 'local', fetch: fetcher })
+
+    const failure = await tools[0]!.invoke({}).catch(error => error)
+    expect(failure).toBeInstanceOf(ZebricApiError)
+    expect(failure).toMatchObject({
+      message: 'Issue state changed', status: 409, code: 'STATE_CONFLICT',
+      requestId: 'req-1', kind: 'conflict', retryable: false,
+    })
+    expect(JSON.stringify(failure)).not.toContain('must-not-appear')
+  })
+
   it('approval-gates mutations and supplies an idempotency key', async () => {
     const fetcher = vi.fn(async () => Response.json({ success: true })) as typeof fetch
     const approve = vi.fn(async () => true)
@@ -139,5 +164,43 @@ describe('createRuntimeReadTools', () => {
 
     await expect(claim.invoke({ id: 'issue-1', runId: 'run-1' }))
       .rejects.toThrow('exceeds the configured size limit')
+  })
+
+  it('resumes a checkpointed job without resubmitting its mutation', async () => {
+    const state = new InMemoryMutationExecutionStateStore()
+    const firstFetcher = vi.fn(async (_input, init) => {
+      if (init?.method === 'POST') {
+        return Response.json({ job: { url: '/api/jobs/job-resume' } }, { status: 202 })
+      }
+      return Response.json({ id: 'job-resume', status: 'running' })
+    }) as typeof fetch
+    const mutationOptions = {
+      approve: () => true,
+      state,
+      stateContext: () => 'thread-1',
+      agentRunId: () => 'run-1',
+      pollIntervalMs: 0,
+      maxPolls: 1,
+    }
+    const firstClaim = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: firstFetcher, mutations: mutationOptions,
+    }).find(item => item.name === 'local_issue_board_claim_issue')!
+
+    await expect(firstClaim.invoke({ id: 'issue-1', runId: 'qa-1' }))
+      .rejects.toThrow('Timed out waiting for Zebric workflow job')
+    expect(firstFetcher).toHaveBeenCalledTimes(2)
+
+    const resumedFetcher = vi.fn(async (_input, init) => {
+      expect(init?.method).toBeUndefined()
+      return Response.json({ id: 'job-resume', status: 'succeeded', result: { claimed: true } })
+    }) as typeof fetch
+    const resumedClaim = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: resumedFetcher,
+      mutations: { ...mutationOptions, agentRunId: () => 'run-2' },
+    }).find(item => item.name === 'local_issue_board_claim_issue')!
+
+    const output = await resumedClaim.invoke({ runId: 'qa-1', id: 'issue-1' })
+    expect(JSON.parse(String(output))).toMatchObject({ status: 'succeeded' })
+    expect(resumedFetcher).toHaveBeenCalledTimes(1)
   })
 })

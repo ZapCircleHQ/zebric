@@ -4,6 +4,8 @@ The first-party Zebric agent library. The initial vertical slice provides determ
 
 `createZebricAgent` returns a Zebric-owned wrapper around the orchestration graph. Each `invoke` call creates isolated run and correlation IDs, while an optional caller-supplied `threadId` identifies checkpointed conversation state. Generated runtime tools propagate the invocation attribution without placing credentials or identifiers in model-visible tool inputs.
 
+Mutation execution state records only generated idempotency keys and outstanding job URLs. The default store is process-local; deployments that need restart or multi-instance recovery should provide a durable `mutationState` implementation. When a stored job is resumed, the agent observes that job directly instead of resubmitting the mutation.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:

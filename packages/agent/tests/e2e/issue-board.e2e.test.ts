@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createZebric, type Zebric } from '@zebric/runtime-node'
-import { createRuntimeReadTools } from '../../src/runtime/action-tool-factory.js'
+import { createRuntimeReadTools, InMemoryMutationExecutionStateStore } from '../../src/runtime/action-tool-factory.js'
 import { discoverZebricApplication } from '../../src/runtime/discovery-client.js'
 import { DeterministicAgentDriver } from '../../src/testing/deterministic-driver.js'
 import {
@@ -25,7 +25,7 @@ describe('Zebric Agent deterministic E2E', () => {
   const seederKey = 'deterministic-e2e-seeder-key'
   const observerKey = 'deterministic-e2e-observer-key'
   let claimedJobId = ''
-  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string }
+  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string }
 
   beforeAll(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
@@ -89,7 +89,7 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { columnId: columns[0]!.id },
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
-    expect(issues).toHaveLength(5)
+    expect(issues).toHaveLength(6)
     const issue = selectIssueBoardQaCandidate(issues as any)!
     expect(issue.title).toBe('Deterministic Agent API Test')
     expect(issue).toEqual(expect.objectContaining({
@@ -219,6 +219,43 @@ describe('Zebric Agent deterministic E2E', () => {
     expect(await issueResponse.json()).toEqual(expect.objectContaining({
       qaState: 'testing', qaRunId: 'qa-run-1', claimedBy: 'zebric-qa-agent',
     }))
+  })
+
+  it('resumes an interrupted workflow job without submitting the mutation twice', async () => {
+    const contract = await discoverZebricApplication(baseUrl)
+    const state = new InMemoryMutationExecutionStateStore()
+    const requests: Array<{ method: string; url: string }> = []
+    const trackedFetch: typeof fetch = async (input, init) => {
+      requests.push({ method: init?.method ?? 'GET', url: String(input) })
+      return fetch(input, init)
+    }
+    const mutation = {
+      approve: () => true,
+      state,
+      stateContext: () => 'thread-interrupted',
+      agentRunId: () => 'run-interrupted',
+      pollIntervalMs: 2,
+      maxPolls: 0,
+    }
+    const call = {
+      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      input: { id: seededIssues.interrupted },
+    }
+    const interrupted = new DeterministicAgentDriver(createRuntimeReadTools(contract, {
+      applicationName: 'issue_board', credential: () => agentKey, fetch: trackedFetch,
+      mutations: mutation,
+    }))
+    await expect(interrupted.invoke(call)).rejects.toThrow('Timed out waiting for Zebric workflow job')
+
+    const resumed = new DeterministicAgentDriver(createRuntimeReadTools(contract, {
+      applicationName: 'issue_board', credential: () => agentKey, fetch: trackedFetch,
+      mutations: { ...mutation, maxPolls: 100 },
+    }))
+    const output = JSON.parse(String(await resumed.invoke(call)))
+
+    expect(output.status).toBe('succeeded')
+    expect(requests.filter(request => request.method === 'POST')).toHaveLength(1)
+    expect(requests.some(request => request.method === 'GET' && request.url.includes('/api/jobs/'))).toBe(true)
   })
 
   it('isolates workflow jobs by credential even when credentials share an agent ID', async () => {
@@ -474,7 +511,8 @@ async function seedIssueBoard(
   const race = await createIssue('Deterministic Claim Race Test', 2)
   const rollback = await createIssue('Deterministic Transaction Rollback Test', 3)
   const identity = await createIssue('Deterministic Identity Test', 4)
-  return { complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id, identity: identity.id }
+  const interrupted = await createIssue('Deterministic Interrupted Job Test', 5)
+  return { complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id, identity: identity.id, interrupted: interrupted.id }
 }
 
 async function mutationDriver(baseUrl: string, credential: string, runId: string): Promise<DeterministicAgentDriver> {

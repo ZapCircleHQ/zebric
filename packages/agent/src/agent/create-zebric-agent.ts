@@ -5,7 +5,7 @@ import { tool } from 'langchain'
 import { z } from 'zod'
 import { validateBlueprint } from '../authoring/validate-blueprint.js'
 import { discoverZebricApplication } from '../runtime/discovery-client.js'
-import { createRuntimeReadTools } from '../runtime/action-tool-factory.js'
+import { createRuntimeReadTools, InMemoryMutationExecutionStateStore } from '../runtime/action-tool-factory.js'
 import type { RuntimeMutationOptions } from '../runtime/action-tool-factory.js'
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import {
@@ -44,6 +44,7 @@ export interface CreateZebricAgentOptions {
     mutations?: RuntimeMutationOptions
   }>
   fetch?: typeof globalThis.fetch
+  mutationState?: import('../runtime/action-tool-factory.js').MutationExecutionStateStore
 }
 
 export async function createZebricAgent(
@@ -80,6 +81,7 @@ export async function createZebricAgent(
   )
 
   const runtimeTools = []
+  const mutationState = options.mutationState ?? new InMemoryMutationExecutionStateStore()
   for (const application of options.applications ?? []) {
     const contract = await discoverZebricApplication(application.baseUrl, { fetch: options.fetch })
     runtimeTools.push(...createRuntimeReadTools(contract, {
@@ -90,9 +92,19 @@ export async function createZebricAgent(
         ...application.mutations,
         agentRunId: application.mutations.agentRunId
           ?? (() => getZebricAgentRuntimeContext()?.runId ?? ''),
+        state: application.mutations.state ?? mutationState,
+        stateContext: application.mutations.stateContext
+          ?? (() => getZebricAgentRuntimeContext()?.threadId ?? getZebricAgentRuntimeContext()?.runId),
       } : undefined,
       correlationId: () => getZebricAgentRuntimeContext()?.correlationId,
     }))
+  }
+  const toolNames = new Set<string>(['validate_blueprint'])
+  for (const runtimeTool of runtimeTools) {
+    if (toolNames.has(runtimeTool.name)) {
+      throw new Error(`Zebric tool-name collision: ${runtimeTool.name}`)
+    }
+    toolNames.add(runtimeTool.name)
   }
 
   const graph = createDeepAgent({

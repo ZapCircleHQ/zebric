@@ -30,6 +30,26 @@ describe('createZebricAgent', () => {
     expect(graphInvokeMock).not.toHaveBeenCalled()
   })
 
+  it('rejects tool-name collisions across connected applications', async () => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/zebric-agent.json')) {
+        return Response.json({ name: 'App', openapi: '/api/openapi.json' })
+      }
+      return Response.json({
+        openapi: '3.1.0', info: { title: 'App', version: '1.0.0' },
+        paths: { '/api/items': { get: { operationId: 'list_items' } } },
+      })
+    }
+    await expect(createZebricAgent({
+      model: 'openai:test-model', fetch: fetcher,
+      applications: [
+        { name: 'a-b', baseUrl: 'https://one.example' },
+        { name: 'a_b', baseUrl: 'https://two.example' },
+      ],
+    })).rejects.toThrow('Zebric tool-name collision: a_b_list_items')
+  })
+
   it('discovers configured applications while constructing runtime tools', async () => {
     const fetcher: typeof fetch = async (input) => {
       const url = String(input)
