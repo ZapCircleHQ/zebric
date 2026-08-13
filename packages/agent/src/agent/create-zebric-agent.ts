@@ -1,11 +1,16 @@
 import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { Command } from '@langchain/langgraph'
 import { createDeepAgent, type CreateDeepAgentParams } from 'deepagents'
 import { tool } from 'langchain'
 import { z } from 'zod'
 import { validateBlueprint } from '../authoring/validate-blueprint.js'
 import { discoverZebricApplication } from '../runtime/discovery-client.js'
-import { createRuntimeReadTools, InMemoryMutationExecutionStateStore } from '../runtime/action-tool-factory.js'
+import {
+  createRuntimeReadTools,
+  getRuntimeToolMetadata,
+  InMemoryMutationExecutionStateStore,
+} from '../runtime/action-tool-factory.js'
 import type { RuntimeMutationOptions } from '../runtime/action-tool-factory.js'
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import {
@@ -26,7 +31,12 @@ export interface ZebricAgentInvokeOptions {
 
 export interface ZebricAgent {
   invoke(input: unknown, options?: ZebricAgentInvokeOptions): Promise<unknown>
+  resume(threadId: string, decision: ZebricApprovalDecision): Promise<unknown>
 }
+
+export type ZebricApprovalDecision =
+  | { type: 'approve' }
+  | { type: 'reject'; message: string }
 
 export interface CreateZebricAgentOptions {
   model: ZebricAgentModel
@@ -36,7 +46,7 @@ export interface CreateZebricAgentOptions {
     mode?: 'read-only' | 'read-write'
   }
   checkpointer?: unknown
-  approval?: 'none' | 'writes-and-mutations'
+  approval?: 'callback' | 'human-in-the-loop'
   applications?: Array<{
     name: string
     baseUrl: string
@@ -53,6 +63,8 @@ export async function createZebricAgent(
   validateOptions(options)
   const workspaceRoot = resolve(options.workspace?.root ?? options.workspaceRoot ?? process.cwd())
   const workspaceMode = options.workspace?.mode ?? 'read-only'
+  const approval = options.approval ?? 'callback'
+  const interruptedContexts = new Map<string, ZebricAgentRuntimeContext>()
   const validateBlueprintTool = tool(
     async ({ path }) => {
       const result = await validateBlueprint({
@@ -100,11 +112,19 @@ export async function createZebricAgent(
     }))
   }
   const toolNames = new Set<string>(['validate_blueprint'])
+  const interruptOn: NonNullable<CreateDeepAgentParams['interruptOn']> = {}
   for (const runtimeTool of runtimeTools) {
     if (toolNames.has(runtimeTool.name)) {
       throw new Error(`Zebric tool-name collision: ${runtimeTool.name}`)
     }
     toolNames.add(runtimeTool.name)
+    const metadata = getRuntimeToolMetadata(runtimeTool)
+    if (approval === 'human-in-the-loop' && metadata?.risk === 'write') {
+      interruptOn[runtimeTool.name] = {
+        allowedDecisions: ['approve', 'reject'],
+        description: `Approve ${metadata.method} ${metadata.path} on ${metadata.application}.`,
+      }
+    }
   }
 
   const graph = createDeepAgent({
@@ -113,27 +133,58 @@ export async function createZebricAgent(
     systemPrompt: SYSTEM_PROMPT,
     tools: [validateBlueprintTool, ...runtimeTools],
     checkpointer: options.checkpointer as CreateDeepAgentParams['checkpointer'],
-    interruptOn: {},
+    interruptOn,
   })
 
   return {
     async invoke(input, invokeOptions = {}) {
-      const context: ZebricAgentRuntimeContext = {
-        runId: randomUUID(),
-        correlationId: randomUUID(),
-        ...(invokeOptions.threadId ? { threadId: invokeOptions.threadId } : {}),
-        workspace: { root: workspaceRoot, mode: workspaceMode },
-        applications: (options.applications ?? []).map(application => application.name),
-        policy: { approval: options.approval ?? 'writes-and-mutations' },
-      }
-      return runWithZebricAgentRuntimeContext(context, () => graph.invoke(
+      const context = createInvocationContext(options, workspaceRoot, workspaceMode, invokeOptions.threadId, approval)
+      const result = await runWithZebricAgentRuntimeContext(context, () => graph.invoke(
         input as never,
         invokeOptions.threadId
           ? { configurable: { thread_id: invokeOptions.threadId } }
           : undefined
       ))
+      if (invokeOptions.threadId && isInterruptedResult(result)) {
+        interruptedContexts.set(invokeOptions.threadId, context)
+      }
+      return result
+    },
+    async resume(threadId, decision) {
+      if (approval !== 'human-in-the-loop') {
+        throw new Error('Zebric Agent resume requires human-in-the-loop approval mode')
+      }
+      const context = interruptedContexts.get(threadId)
+      if (!context) throw new Error(`No interrupted Zebric Agent run exists for thread: ${threadId}`)
+      const result = await runWithZebricAgentRuntimeContext(context, () => graph.invoke(
+        new Command({ resume: { decisions: [decision] } }) as never,
+        { configurable: { thread_id: threadId } }
+      ))
+      if (!isInterruptedResult(result)) interruptedContexts.delete(threadId)
+      return result
     },
   }
+}
+
+function createInvocationContext(
+  options: CreateZebricAgentOptions,
+  workspaceRoot: string,
+  workspaceMode: 'read-only' | 'read-write',
+  threadId: string | undefined,
+  approval: 'callback' | 'human-in-the-loop'
+): ZebricAgentRuntimeContext {
+  return {
+    runId: randomUUID(),
+    correlationId: randomUUID(),
+    ...(threadId ? { threadId } : {}),
+    workspace: { root: workspaceRoot, mode: workspaceMode },
+    applications: (options.applications ?? []).map(application => application.name),
+    policy: { approval },
+  }
+}
+
+function isInterruptedResult(result: unknown): boolean {
+  return Boolean(result && typeof result === 'object' && Array.isArray((result as { __interrupt__?: unknown }).__interrupt__))
 }
 
 function validateOptions(options: CreateZebricAgentOptions): void {
@@ -142,6 +193,9 @@ function validateOptions(options: CreateZebricAgentOptions): void {
   }
   if (options.workspaceRoot && options.workspace) {
     throw new TypeError('Configure workspace or workspaceRoot, not both')
+  }
+  if (options.approval === 'human-in-the-loop' && !options.checkpointer) {
+    throw new TypeError('Human-in-the-loop approval requires a checkpointer')
   }
   const names = new Set<string>()
   for (const application of options.applications ?? []) {

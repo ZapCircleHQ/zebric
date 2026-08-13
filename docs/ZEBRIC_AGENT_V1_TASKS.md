@@ -249,7 +249,7 @@ const agent = await createZebricAgent({
       credential: { type: 'env', name: 'ZEBRIC_AGENT_TOKEN' },
     },
   ],
-  approval: 'writes-and-mutations',
+  approval: 'human-in-the-loop',
 });
 ```
 
@@ -450,7 +450,7 @@ apply_blueprint_patch
 - [x] Expose `GET` operations as read tools by default.
 - [x] Keep non-GET operations unavailable unless an explicit mutation approval policy is configured.
 - [ ] Require explicit configuration before any operation is considered destructive or safe for auto-approval.
-- [ ] Show the target application, action, resource, and sanitized arguments in approval requests.
+- [x] Show the target application, semantic operation, HTTP target, and locally validated arguments in callback and human-in-the-loop approval requests.
 
 ### 4.5 Refresh tools safely
 
@@ -651,7 +651,7 @@ Example:
 
 ```toml
 model = "provider:model"
-approval = "writes-and-mutations"
+approval = "human-in-the-loop"
 
 [workspace]
 root = "."
@@ -680,10 +680,10 @@ mode = "project"
 
 ### 9.3 Make approvals understandable
 
-- [ ] Show the application or file target.
-- [ ] Show the semantic action and risk classification.
-- [ ] Show sanitized arguments or a patch preview.
-- [ ] Offer approve, reject, and supported argument-edit decisions.
+- [x] Show the application and HTTP target for runtime mutation approvals.
+- [ ] Show the semantic action and full read/write/destructive/external-effect risk classification.
+- [x] Show locally validated runtime arguments without adding arbitrary headers or URLs.
+- [x] Offer one-time approve and reject decisions for runtime mutations; argument editing remains unsupported.
 - [ ] Distinguish one-time approval from persistent policy changes.
 - [ ] Record the decision without recording secrets.
 
@@ -705,7 +705,7 @@ mode = "project"
 
 ### 10.2 Build deterministic integration tests
 
-- [ ] Use a fake model for tool-routing and policy tests.
+- [x] Use a fake model against the real Deep Agents graph for no-tool, read-tool, mutation-approval, and mutation-rejection paths.
 - [x] Add a no-model deterministic tool-call driver for public-contract E2E tests.
 - [x] Use a mock Agent API server for discovery and generated-tool tests.
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
@@ -715,7 +715,7 @@ mode = "project"
 - [x] Use real `runtime-core` Blueprint fixtures for validation tests.
 - [ ] Test credential redaction across errors, traces, and checkpoints.
 - [x] Test filesystem path traversal and symlink boundary enforcement for existing workspace reads.
-- [ ] Test approval interruption and resume behavior.
+- [x] Test approval interruption, one-time approval/rejection, resume, and prevention of duplicate mutation execution.
 
 ### 10.3 Build scenario evaluations
 
@@ -859,11 +859,11 @@ The current implementation is a library-level technical preview and deterministi
 
 ### First public preview blockers
 
-- [ ] Add a fake-model integration test that invokes the real `createZebricAgent` graph rather than calling generated tools directly.
-- [ ] Prove the graph completes a no-tool prompt and selects a declared read tool without exposing framework-specific state through the Zebric wrapper.
-- [ ] Prove the graph proposes a mutation, stops at the Zebric approval boundary, and resumes exactly once after approval without duplicating the mutation.
-- [ ] Make `CreateZebricAgentOptions.approval` enforce behavior, or remove it until an enforceable policy exists; no accepted public option may be informational only.
-- [ ] Define precedence and validation between top-level approval policy, per-application mutation configuration, and Deep Agents `interruptOn` behavior.
+- [x] Add a fake-model integration test that invokes the real `createZebricAgent` graph rather than calling generated tools directly.
+- [x] Prove the graph completes a no-tool prompt and selects a declared read tool without exposing the Deep Agents graph through the Zebric wrapper.
+- [x] Prove the graph proposes a mutation, stops at the Zebric approval boundary, and resumes exactly once after approval without duplicating the mutation.
+- [x] Make `CreateZebricAgentOptions.approval` enforce callback-only or human-in-the-loop behavior; no accepted public option is informational only.
+- [x] Define precedence and validation: non-GET tools require per-application mutation configuration and its callback remains the final programmatic authorization; human-in-the-loop mode additionally interrupts before that callback and requires a checkpointer.
 - [ ] Support `{ type = "env", name = "..." }` credential references in library and CLI configuration while continuing to support injected providers.
 - [ ] Add negative tests proving resolved model and application credentials never appear in prompts, messages, schemas, descriptions, tool results, errors, checkpoints, deterministic transcripts, telemetry, or CLI output.
 - [ ] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.

@@ -22,12 +22,14 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@langchain/langgraph": "^1.4.9",
     "@zebric/runtime-core": "workspace:*",
     "deepagents": "^1.12.2",
     "langchain": "^1.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@langchain/core": "^1.2.5",
     "@types/node": "^22.19.17",
     "@zebric/runtime-node": "workspace:*",
     "typescript": "^6.0.3",

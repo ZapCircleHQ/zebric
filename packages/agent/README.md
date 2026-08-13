@@ -6,6 +6,8 @@ The first-party Zebric agent library. The initial vertical slice provides determ
 
 Mutation execution state records only generated idempotency keys and outstanding job URLs. The default store is process-local; deployments that need restart or multi-instance recovery should provide a durable `mutationState` implementation. When a stored job is resumed, the agent observes that job directly instead of resubmitting the mutation.
 
+Non-GET tools exist only when an application supplies `mutations.approve`; that callback is always the final programmatic authorization boundary. The default `approval: 'callback'` mode relies on that boundary. `approval: 'human-in-the-loop'` additionally requires a checkpointer, interrupts the Deep Agents graph before calling the callback or sending HTTP, and resumes through `agent.resume(threadId, decision)`. Approval and rejection decisions are one-time: a completed interruption cannot be resumed again.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:

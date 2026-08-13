@@ -30,6 +30,15 @@ describe('createZebricAgent', () => {
     expect(graphInvokeMock).not.toHaveBeenCalled()
   })
 
+  it('requires checkpoint storage for human-in-the-loop approval', async () => {
+    const constructionCount = createDeepAgentMock.mock.calls.length
+    await expect(createZebricAgent({
+      model: 'openai:test-model',
+      approval: 'human-in-the-loop',
+    })).rejects.toThrow('requires a checkpointer')
+    expect(createDeepAgentMock).toHaveBeenCalledTimes(constructionCount)
+  })
+
   it('rejects tool-name collisions across connected applications', async () => {
     const fetcher: typeof fetch = async (input) => {
       const url = String(input)

@@ -96,6 +96,20 @@ export interface RuntimeToolFactoryOptions {
   correlationId?: () => string | undefined
 }
 
+export interface RuntimeToolMetadata {
+  application: string
+  operationId: string
+  method: string
+  path: string
+  risk: 'read' | 'write'
+}
+
+const runtimeToolMetadata = new WeakMap<object, RuntimeToolMetadata>()
+
+export function getRuntimeToolMetadata(runtimeTool: object): RuntimeToolMetadata | undefined {
+  return runtimeToolMetadata.get(runtimeTool)
+}
+
 function parameterSchema(parameter: OpenApiParameter): z.ZodType {
   const schema = parameter.schema ?? {}
   let result: z.ZodType
@@ -155,7 +169,7 @@ export function createRuntimeReadTools(
         shape[name] = parameterSchema({ name, in: 'query', schema, required: requiredBody.has(name) })
       }
 
-      tools.push(tool(
+      const generatedTool = tool(
         async (input: Record<string, unknown>) => {
         if (isMutation) {
           const approved = await options.mutations!.approve({
@@ -247,7 +261,15 @@ export function createRuntimeReadTools(
         description: operation.description ?? `Read ${path} from ${options.applicationName}.`,
         schema: z.object(shape),
       }
-      ))
+      )
+      runtimeToolMetadata.set(generatedTool, {
+        application: options.applicationName,
+        operationId: operation.operationId,
+        method: method.toUpperCase(),
+        path,
+        risk: isMutation ? 'write' : 'read',
+      })
+      tools.push(generatedTool)
     }
   }
 

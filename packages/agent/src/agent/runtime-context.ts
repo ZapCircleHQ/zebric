@@ -10,7 +10,7 @@ export interface ZebricAgentRuntimeContext {
   }
   applications: readonly string[]
   policy: {
-    approval: 'none' | 'writes-and-mutations'
+    approval: 'callback' | 'human-in-the-loop'
   }
 }
 
