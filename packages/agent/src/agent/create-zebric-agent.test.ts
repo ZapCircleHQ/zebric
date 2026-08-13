@@ -39,6 +39,18 @@ describe('createZebricAgent', () => {
     expect(createDeepAgentMock).toHaveBeenCalledTimes(constructionCount)
   })
 
+  it('rejects invalid environment credential references before discovery', async () => {
+    const fetcher = vi.fn() as typeof fetch
+    await expect(createZebricAgent({
+      model: 'openai:test-model', fetch: fetcher,
+      applications: [{
+        name: 'local', baseUrl: 'https://app.example',
+        credential: { type: 'env', name: 'not-valid-name' },
+      }],
+    })).rejects.toThrow('Invalid credential environment variable name')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('rejects tool-name collisions across connected applications', async () => {
     const fetcher: typeof fetch = async (input) => {
       const url = String(input)

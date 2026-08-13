@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeReadTools, InMemoryMutationExecutionStateStore, ZebricApiError } from './action-tool-factory.js'
 import type { ZebricApplicationContract } from './discovery-client.js'
+import { DeterministicAgentDriver } from '../testing/deterministic-driver.js'
 
 const contract: ZebricApplicationContract = {
   baseUrl: 'https://issues.example',
@@ -99,6 +100,41 @@ describe('createRuntimeReadTools', () => {
       requestId: 'req-1', kind: 'conflict', retryable: false,
     })
     expect(JSON.stringify(failure)).not.toContain('must-not-appear')
+  })
+
+  it('redacts the resolved credential from tool results and error messages', async () => {
+    const credential = 'credential-that-must-stay-private'
+    const successTools = createRuntimeReadTools(contract, {
+      applicationName: 'local', credential: () => credential,
+      fetch: async () => Response.json({ note: `never return ${credential}` }),
+    })
+    const output = await successTools[0]!.invoke({})
+    expect(String(output)).toContain('[REDACTED]')
+    expect(String(output)).not.toContain(credential)
+
+    const failureTools = createRuntimeReadTools(contract, {
+      applicationName: 'local', credential: () => credential,
+      fetch: async () => Response.json({
+        error: { message: `upstream echoed ${credential}`, code: 'BAD_REQUEST' },
+      }, { status: 400 }),
+    })
+    const failure = await failureTools[0]!.invoke({}).catch(error => error)
+    expect(failure.message).toContain('[REDACTED]')
+    expect(JSON.stringify(failure)).not.toContain(credential)
+  })
+
+  it('keeps resolved credentials out of deterministic transcripts', async () => {
+    const credential = 'transcript-private-credential'
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', credential: () => credential,
+      fetch: async () => Response.json({ echoed: credential }),
+    })
+    const driver = new DeterministicAgentDriver(tools)
+
+    await driver.invoke({ tool: 'local_issue_board_list_columns', input: {} })
+
+    expect(JSON.stringify(driver.transcript)).toContain('[REDACTED]')
+    expect(JSON.stringify(driver.transcript)).not.toContain(credential)
   })
 
   it('approval-gates mutations and supplies an idempotency key', async () => {

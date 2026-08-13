@@ -235,7 +235,7 @@ export function createRuntimeReadTools(
         })
         const contentLength = Number(response.headers.get('content-length') ?? 0)
         if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
-        const responseBody = await response.text()
+        const responseBody = redactSensitiveText(await response.text(), credential)
         if (new TextEncoder().encode(responseBody).byteLength > maxResponseBytes) {
           throw new Error('Zebric API response exceeds the configured size limit')
         }
@@ -360,7 +360,7 @@ async function observeJob(
     const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
     const contentLength = Number(response.headers.get('content-length') ?? 0)
     if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
-    const body = await response.text()
+    const body = redactSensitiveText(await response.text(), credential)
     if (new TextEncoder().encode(body).byteLength > maxResponseBytes) {
       throw new Error('Zebric API response exceeds the configured size limit')
     }
@@ -370,4 +370,9 @@ async function observeJob(
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
   }
   throw new Error('Timed out waiting for Zebric workflow job')
+}
+
+function redactSensitiveText(value: string, credential: string | undefined): string {
+  if (!credential) return value
+  return value.split(credential).join('[REDACTED]')
 }

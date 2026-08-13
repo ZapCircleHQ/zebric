@@ -257,7 +257,8 @@ const agent = await createZebricAgent({
 
 - [x] Define typed invocation-local runtime context containing workspace, applications, agent run ID, correlation ID, thread ID, and policy.
 - [x] Resolve credentials through non-model-visible providers at request time.
-- [ ] Prove credentials remain absent from prompts, messages, checkpoints, traces, and model-visible tool results.
+- [x] Prove resolved application credentials remain absent from prompts, model messages, checkpoints, returned graph state, and model-visible tool results.
+- [ ] Prove model-provider credentials and resolved application credentials remain absent from provider traces and future Zebric telemetry/CLI output.
 - [x] Generate a unique run ID for each top-level task.
 - [x] Propagate a trusted agent run ID through runtime mutation tools using `X-Agent-Run-ID`.
 - [x] Propagate a unique correlation identifier through runtime API tools and job polling.
@@ -424,11 +425,12 @@ apply_blueprint_patch
 
 ### 4.2 Resolve credentials safely
 
-- [ ] Support environment-variable credential references.
+- [x] Support validated environment-variable credential references in the library while retaining injectable providers for secret managers.
 - [x] Support an injectable credential-provider interface for keychains and hosted secret managers.
 - [x] Resolve credentials only at request execution time.
 - [x] Do not store resolved tokens in generated tool schemas, descriptions, or returned errors.
-- [ ] Test redaction across prompts, traces, checkpoints, and sensitive response fields.
+- [x] Test exact-value application credential redaction across prompts/model calls, checkpoints, returned state, successful response fields, error messages, and deterministic transcripts.
+- [ ] Test application and model-provider credential redaction across provider traces, future Zebric telemetry, encoded/derived secret forms where applicable, and CLI output.
 
 ### 4.3 Generate tools from OpenAPI operations
 
@@ -713,7 +715,8 @@ mode = "project"
 - [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
 - [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.
 - [x] Use real `runtime-core` Blueprint fixtures for validation tests.
-- [ ] Test credential redaction across errors, traces, and checkpoints.
+- [x] Test resolved application credential redaction across errors, model calls, returned state, checkpoints, and deterministic transcripts.
+- [ ] Test model-provider and application credential redaction across provider traces and future Zebric telemetry/CLI output.
 - [x] Test filesystem path traversal and symlink boundary enforcement for existing workspace reads.
 - [x] Test approval interruption, one-time approval/rejection, resume, and prevention of duplicate mutation execution.
 
@@ -864,8 +867,9 @@ The current implementation is a library-level technical preview and deterministi
 - [x] Prove the graph proposes a mutation, stops at the Zebric approval boundary, and resumes exactly once after approval without duplicating the mutation.
 - [x] Make `CreateZebricAgentOptions.approval` enforce callback-only or human-in-the-loop behavior; no accepted public option is informational only.
 - [x] Define precedence and validation: non-GET tools require per-application mutation configuration and its callback remains the final programmatic authorization; human-in-the-loop mode additionally interrupts before that callback and requires a checkpointer.
-- [ ] Support `{ type = "env", name = "..." }` credential references in library and CLI configuration while continuing to support injected providers.
-- [ ] Add negative tests proving resolved model and application credentials never appear in prompts, messages, schemas, descriptions, tool results, errors, checkpoints, deterministic transcripts, telemetry, or CLI output.
+- [x] Support `{ type: "env", name: "..." }` credential references in the library while continuing to support injected providers; CLI/config-file parsing remains tracked with the CLI blocker.
+- [x] Add negative tests proving resolved application credentials never appear in prompts/model calls, schemas, descriptions, tool results, errors, returned graph state, checkpoints, or deterministic transcripts.
+- [ ] Prove model-provider and application credentials never appear in provider traces, future Zebric telemetry, or CLI output once those surfaces exist.
 - [ ] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
 - [ ] Add a minimal `zebric-agent` executable with deterministic `validate` and non-interactive `run` flows before advertising a user-facing agent product.
 - [ ] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.

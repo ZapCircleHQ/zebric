@@ -1,10 +1,12 @@
 import { AIMessage } from '@langchain/core/messages'
 import { fakeModel } from '@langchain/core/testing'
 import { MemorySaver } from '@langchain/langgraph'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createZebricAgent } from './create-zebric-agent.js'
 
 describe('createZebricAgent Deep Agents integration', () => {
+  const credentialVariable = 'ZEBRIC_AGENT_INTEGRATION_CREDENTIAL'
+  afterEach(() => { delete process.env[credentialVariable] })
   it('completes a no-tool prompt through the real graph', async () => {
     const model = fakeModel().respond(new AIMessage('Zebric Agent is ready.'))
     const agent = await createZebricAgent({ model })
@@ -64,6 +66,51 @@ describe('createZebricAgent Deep Agents integration', () => {
     expect(result.messages.at(-1)?.content).toBe('There is one ready item.')
     expect(model.callCount).toBe(2)
     expect(fetcher).toHaveBeenCalledTimes(3)
+  })
+
+  it('keeps an environment credential out of model messages, results, and checkpoints', async () => {
+    const secret = 'integration-secret-never-visible'
+    process.env[credentialVariable] = secret
+    const model = fakeModel()
+      .respondWithTools([{ name: 'local_list_ready_items', args: {}, id: 'secure-read' }])
+      .respond(new AIMessage('The protected item was read.'))
+    const checkpointer = new MemorySaver()
+    const observedAuthorization: string[] = []
+    const fetcher: typeof fetch = async (input, init) => {
+      const url = String(input)
+      if (url.endsWith('/.well-known/zebric-agent.json')) {
+        return Response.json({ name: 'Tasks', openapi: '/api/openapi.json' })
+      }
+      if (url.endsWith('/api/openapi.json')) {
+        return Response.json({
+          openapi: '3.1.0', info: { title: 'Tasks', version: '1.0.0' },
+          paths: { '/api/agent/items': { get: { operationId: 'list_ready_items' } } },
+        })
+      }
+      observedAuthorization.push((init?.headers as Record<string, string>).authorization)
+      return Response.json({ note: `protected response accidentally echoed ${secret}` })
+    }
+    const agent = await createZebricAgent({
+      model, fetch: fetcher, checkpointer,
+      applications: [{
+        name: 'local', baseUrl: 'https://tasks.example',
+        credential: { type: 'env', name: credentialVariable },
+      }],
+    })
+
+    const result = await agent.invoke({
+      messages: [{ role: 'user', content: 'Read protected items.' }],
+    }, { threadId: 'credential-redaction-thread' })
+    const checkpoints = []
+    for await (const checkpoint of checkpointer.list({
+      configurable: { thread_id: 'credential-redaction-thread' },
+    })) checkpoints.push(checkpoint)
+
+    expect(observedAuthorization).toEqual([`Bearer ${secret}`])
+    expect(JSON.stringify(model.calls)).not.toContain(secret)
+    expect(JSON.stringify(result)).not.toContain(secret)
+    expect(JSON.stringify(checkpoints)).not.toContain(secret)
+    expect(JSON.stringify(model.calls)).toContain('[REDACTED]')
   })
 
   it('interrupts before a mutation and executes it exactly once after approval', async () => {

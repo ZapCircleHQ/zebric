@@ -14,6 +14,12 @@ import {
 import type { RuntimeMutationOptions } from '../runtime/action-tool-factory.js'
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import {
+  credentialProvider,
+  validateCredentialReference,
+  type ZebricCredentialProvider,
+  type ZebricCredentialReference,
+} from '../runtime/credential-provider.js'
+import {
   getZebricAgentRuntimeContext,
   runWithZebricAgentRuntimeContext,
   type ZebricAgentRuntimeContext,
@@ -50,7 +56,7 @@ export interface CreateZebricAgentOptions {
   applications?: Array<{
     name: string
     baseUrl: string
-    credential?: () => string | undefined | Promise<string | undefined>
+    credential?: ZebricCredentialReference | ZebricCredentialProvider
     mutations?: RuntimeMutationOptions
   }>
   fetch?: typeof globalThis.fetch
@@ -98,7 +104,7 @@ export async function createZebricAgent(
     const contract = await discoverZebricApplication(application.baseUrl, { fetch: options.fetch })
     runtimeTools.push(...createRuntimeReadTools(contract, {
       applicationName: application.name,
-      credential: application.credential,
+      credential: credentialProvider(application.credential),
       fetch: options.fetch,
       mutations: application.mutations ? {
         ...application.mutations,
@@ -199,6 +205,9 @@ function validateOptions(options: CreateZebricAgentOptions): void {
   }
   const names = new Set<string>()
   for (const application of options.applications ?? []) {
+    if (application.credential && typeof application.credential !== 'function') {
+      validateCredentialReference(application.credential)
+    }
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(application.name)) {
       throw new TypeError(`Invalid Zebric application name: ${application.name}`)
     }

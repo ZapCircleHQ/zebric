@@ -8,6 +8,8 @@ Mutation execution state records only generated idempotency keys and outstanding
 
 Non-GET tools exist only when an application supplies `mutations.approve`; that callback is always the final programmatic authorization boundary. The default `approval: 'callback'` mode relies on that boundary. `approval: 'human-in-the-loop'` additionally requires a checkpointer, interrupts the Deep Agents graph before calling the callback or sending HTTP, and resumes through `agent.resume(threadId, decision)`. Approval and rejection decisions are one-time: a completed interruption cannot be resumed again.
 
+Application credentials may be supplied as `{ type: 'env', name: 'ZEBRIC_AGENT_TOKEN' }`, `{ type: 'provider', resolve }`, or the legacy provider function. Environment values are validated by name and resolved for every request, allowing rotation without rebuilding the agent. Resolved credentials are used only for the Authorization header and are redacted from successful responses and errors before they can enter model-visible results or checkpoints.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:
