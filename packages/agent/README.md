@@ -12,6 +12,10 @@ Application credentials may be supplied as `{ type: 'env', name: 'ZEBRIC_AGENT_T
 
 Generated tools intentionally support a bounded OpenAPI input subset: scalar string, integer, number, and boolean values; enums and defaults; string length, pattern, email, UUID, date, and date-time constraints; numeric bounds; and Zebric's JSON object-or-array field type. Unsupported references, general unions, nested structures, composition, serialization styles, parameter locations, and request-body media types fail during agent construction with application, operation, and schema-path diagnostics. They are never silently converted to weaker tool inputs.
 
+## Preview CLI
+
+The package exposes `zebric-agent`. Validate a Blueprint deterministically with `zebric-agent validate [blueprint] --workspace <root> --json`. Run a non-interactive, read-only agent task with `zebric-agent run --prompt <text> --model <provider:model> [--connect <url> --credential-env <name>] --json`. The preview CLI returns stable categorized exit codes and redacts the configured application credential from success and error output. Interactive sessions, configuration files, and CLI mutation approvals are not implemented yet.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:

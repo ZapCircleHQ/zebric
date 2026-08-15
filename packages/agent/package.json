@@ -11,6 +11,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "zebric-agent": "./dist/cli/index.js"
+  },
   "files": ["dist", "README.md"],
   "publishConfig": { "access": "public" },
   "scripts": {
