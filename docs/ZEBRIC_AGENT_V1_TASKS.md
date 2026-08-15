@@ -438,7 +438,7 @@ apply_blueprint_patch
 - [x] Use `operationId` as the stable operation identity and sanitize generated tool names.
 - [x] Detect sanitized tool-name collisions across operations and connected applications before constructing the agent.
 - [x] Convert the current Zebric scalar, enum, and JSON-field schema subset to runtime-validated tool schemas.
-- [ ] Support or explicitly reject unsupported JSON Schema constructs such as `$ref`, unions, nested objects, and composed schemas.
+- [x] Support the bounded Zebric input-schema subset and explicitly reject `$ref`, general unions, nested objects, arrays, composition, unknown types/formats/keywords, unsupported parameter serialization/locations, path-level parameters, and non-JSON or multi-media request bodies with contract diagnostics.
 - [x] Preserve operation descriptions, enum values, and required fields for the supported schema subset.
 - [ ] Preserve examples and richer schema annotations.
 - [ ] Attach risk, required scopes, HTTP method, application, and operation metadata to each tool.
@@ -870,7 +870,7 @@ The current implementation is a library-level technical preview and deterministi
 - [x] Support `{ type: "env", name: "..." }` credential references in the library while continuing to support injected providers; CLI/config-file parsing remains tracked with the CLI blocker.
 - [x] Add negative tests proving resolved application credentials never appear in prompts/model calls, schemas, descriptions, tool results, errors, returned graph state, checkpoints, or deterministic transcripts.
 - [ ] Prove model-provider and application credentials never appear in provider traces, future Zebric telemetry, or CLI output once those surfaces exist.
-- [ ] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
+- [x] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
 - [ ] Add a minimal `zebric-agent` executable with deterministic `validate` and non-interactive `run` flows before advertising a user-facing agent product.
 - [ ] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.
 - [ ] Test the packed package in a clean temporary consumer project, including ESM imports, declarations, binary execution, and required runtime dependencies.

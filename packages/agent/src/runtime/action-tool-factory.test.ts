@@ -33,6 +33,7 @@ const contract: ZebricApplicationContract = {
           description: 'Claim an issue.',
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
           requestBody: { content: { 'application/json': { schema: {
+            type: 'object',
             properties: { runId: { type: 'string' } }, required: ['runId'],
           } } } },
         },
@@ -84,6 +85,108 @@ describe('createRuntimeReadTools', () => {
     }
     expect(() => createRuntimeReadTools(colliding, { applicationName: 'local' }))
       .toThrow('Zebric tool-name collision: local_issue_board_list_columns')
+  })
+
+  it.each([
+    ['reference', { $ref: '#/components/schemas/Filter' }, 'keyword "$ref"'],
+    ['composition', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, 'keyword "oneOf"'],
+    ['nullable union', { type: ['string', 'null'] }, 'type unions are not supported'],
+    ['nested object', { type: 'object', properties: { value: { type: 'string' } } }, 'keyword "properties"'],
+    ['array', { type: 'array', items: { type: 'string' } }, 'keyword "items"'],
+    ['unknown type', { type: 'file' }, 'type must be one of'],
+    ['unknown format', { type: 'string', format: 'password' }, 'format "password"'],
+  ])('rejects unsupported %s parameter schemas with contract diagnostics', (_label, schema, reason) => {
+    const unsupportedContract = structuredClone(contract)
+    unsupportedContract.openapi.paths['/api/unsupported'] = {
+      get: {
+        operationId: 'unsupported_schema',
+        parameters: [{ name: 'value', in: 'query', schema }],
+      },
+    }
+
+    const failure = captureFailure(() => createRuntimeReadTools(unsupportedContract, { applicationName: 'local' }))
+    expect(failure).toMatchObject({
+      application: 'local',
+      operationId: 'unsupported_schema',
+      schemaPath: 'paths./api/unsupported.get.parameters[0].schema',
+    })
+    expect(failure.message).toContain(reason)
+  })
+
+  it('rejects referenced request bodies rather than dropping their fields', () => {
+    const unsupportedContract = structuredClone(contract)
+    unsupportedContract.openapi.paths['/api/unsupported'] = {
+      post: {
+        operationId: 'referenced_body',
+        requestBody: { content: { 'application/json': { schema: {
+          $ref: '#/components/schemas/Mutation',
+        } } } },
+      },
+    }
+
+    const failure = captureFailure(() => createRuntimeReadTools(unsupportedContract, {
+      applicationName: 'local', mutations: { approve: () => true },
+    }))
+    expect(failure).toMatchObject({
+      operationId: 'referenced_body',
+      schemaPath: 'paths./api/unsupported.post.requestBody.content.application/json.schema',
+    })
+    expect(failure.message).toContain('keyword "$ref"')
+  })
+
+  it('rejects parameter serialization and path-level parameter features it cannot preserve', () => {
+    const serialized = structuredClone(contract)
+    serialized.openapi.paths['/api/serialized'] = {
+      get: {
+        operationId: 'serialized_parameter',
+        parameters: [{ name: 'filter', in: 'query', schema: { type: 'string' }, style: 'deepObject' }],
+      },
+    }
+    expect(() => createRuntimeReadTools(serialized, { applicationName: 'local' }))
+      .toThrow('parameter keyword "style" is not supported')
+
+    const pathLevel = structuredClone(contract)
+    pathLevel.openapi.paths['/api/path-level'] = {
+      parameters: [{ name: 'id', in: 'query', schema: { type: 'string' } }],
+      get: { operationId: 'path_level_parameter' },
+    }
+    expect(() => createRuntimeReadTools(pathLevel, { applicationName: 'local' }))
+      .toThrow('path-level parameters are not supported')
+  })
+
+  it('rejects non-JSON and multi-media request bodies', () => {
+    const unsupportedContract = structuredClone(contract)
+    unsupportedContract.openapi.paths['/api/media'] = {
+      post: {
+        operationId: 'multiple_media',
+        requestBody: { content: {
+          'application/json': { schema: { type: 'object', properties: {} } },
+          'text/plain': { schema: { type: 'string' } },
+        } },
+      },
+    }
+    expect(() => createRuntimeReadTools(unsupportedContract, {
+      applicationName: 'local', mutations: { approve: () => true },
+    })).toThrow('only a single application/json media type is supported')
+  })
+
+  it('enforces supported numeric constraints before making a request', async () => {
+    const fetcher = vi.fn() as typeof fetch
+    const constrained = structuredClone(contract)
+    constrained.openapi.paths['/api/constrained'] = {
+      get: {
+        operationId: 'constrained_list',
+        parameters: [{
+          name: 'limit', in: 'query', required: true,
+          schema: { type: 'integer', minimum: 1, maximum: 10 },
+        }],
+      },
+    }
+    const tools = createRuntimeReadTools(constrained, { applicationName: 'local', fetch: fetcher })
+    const constrainedTool = tools.find(item => item.name === 'local_constrained_list')!
+
+    await expect(constrainedTool.invoke({ limit: 11 })).rejects.toThrow()
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
   it('parses safe Agent API error envelopes into typed failures', async () => {
@@ -240,3 +343,12 @@ describe('createRuntimeReadTools', () => {
     expect(resumedFetcher).toHaveBeenCalledTimes(1)
   })
 })
+
+function captureFailure(callback: () => unknown): any {
+  try {
+    callback()
+  } catch (error) {
+    return error
+  }
+  throw new Error('Expected callback to fail')
+}

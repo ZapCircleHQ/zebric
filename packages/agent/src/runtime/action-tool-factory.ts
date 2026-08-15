@@ -7,15 +7,13 @@ type CredentialProvider = () => string | undefined | Promise<string | undefined>
 
 interface OpenApiParameter {
   name: string
-  in: 'path' | 'query'
+  in: 'path' | 'query' | 'header' | 'cookie'
   required?: boolean
   description?: string
-  schema?: {
-    type?: string | string[]
-    enum?: unknown[]
-    default?: unknown
-  }
+  schema?: OpenApiInputSchema
 }
+
+type OpenApiInputSchema = Record<string, unknown>
 
 interface OpenApiOperation {
   operationId?: string
@@ -25,8 +23,10 @@ interface OpenApiOperation {
     content?: {
       'application/json'?: {
         schema?: {
-          properties?: Record<string, { type?: string | string[]; enum?: unknown[] }>
+          type?: unknown
+          properties?: Record<string, OpenApiInputSchema>
           required?: string[]
+          [key: string]: unknown
         }
       }
     }
@@ -86,6 +86,18 @@ export class ZebricApiError extends Error {
   }
 }
 
+export class UnsupportedOpenApiSchemaError extends Error {
+  constructor(
+    readonly application: string,
+    readonly operationId: string,
+    readonly schemaPath: string,
+    reason: string
+  ) {
+    super(`Unsupported OpenAPI schema for application "${application}", operation "${operationId}", at ${schemaPath}: ${reason}`)
+    this.name = 'UnsupportedOpenApiSchemaError'
+  }
+}
+
 export interface RuntimeToolFactoryOptions {
   applicationName: string
   credential?: CredentialProvider
@@ -110,27 +122,118 @@ export function getRuntimeToolMetadata(runtimeTool: object): RuntimeToolMetadata
   return runtimeToolMetadata.get(runtimeTool)
 }
 
-function parameterSchema(parameter: OpenApiParameter): z.ZodType {
-  const schema = parameter.schema ?? {}
+function parameterSchema(
+  parameter: OpenApiParameter,
+  context: { application: string; operationId: string; schemaPath: string }
+): z.ZodType {
+  const schema = parameter.schema
+  if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+    unsupported(context, 'a schema object is required')
+  }
+  rejectUnsupportedKeywords(schema, context)
+  const type = schema.type
   let result: z.ZodType
-  if (Array.isArray(schema.type) && schema.type.includes('object') && schema.type.includes('array')) {
-    result = z.json()
+  if (Array.isArray(type)) {
+    if (type.length === 2 && type.includes('object') && type.includes('array')) {
+      result = z.union([z.record(z.string(), z.json()), z.array(z.json())])
+    } else {
+      unsupported(context, `type unions are not supported (${JSON.stringify(type)})`)
+    }
   } else {
-  switch (schema.type) {
-    case 'integer': result = z.number().int(); break
-    case 'number': result = z.number(); break
-    case 'boolean': result = z.boolean(); break
-    default: result = z.string()
+    switch (type) {
+      case 'integer': result = numericSchema(schema, true, context); break
+      case 'number': result = numericSchema(schema, false, context); break
+      case 'boolean': result = z.boolean(); break
+      case 'string': result = stringSchema(schema, context); break
+      default: unsupported(context, `type must be one of string, integer, number, boolean, or the Zebric JSON union; received ${JSON.stringify(type)}`)
+    }
   }
-  }
-  if (schema.enum?.length) {
-    result = result.refine(value => schema.enum!.includes(value), {
-      message: `Expected one of: ${schema.enum.join(', ')}`,
+  if (schema.enum !== undefined) {
+    if (!Array.isArray(schema.enum) || schema.enum.length === 0) unsupported(context, 'enum must be a non-empty array')
+    result = result.refine(value => (schema.enum as unknown[]).includes(value), {
+      message: `Expected one of: ${(schema.enum as unknown[]).join(', ')}`,
     })
   }
   if (schema.default !== undefined) result = result.default(schema.default)
   if (!parameter.required) result = result.optional()
   return parameter.description ? result.describe(parameter.description) : result
+}
+
+const COMMON_SCHEMA_KEYWORDS = new Set(['type', 'enum', 'default', 'description'])
+
+function rejectUnsupportedKeywords(
+  schema: OpenApiInputSchema,
+  context: { application: string; operationId: string; schemaPath: string }
+): void {
+  const typeSpecific = schema.type === 'string'
+    ? ['format', 'minLength', 'maxLength', 'pattern']
+    : schema.type === 'number' || schema.type === 'integer'
+      ? ['minimum', 'maximum']
+      : []
+  const supported = new Set([...COMMON_SCHEMA_KEYWORDS, ...typeSpecific])
+  const unsupportedKeyword = Object.keys(schema).find(key => !supported.has(key))
+  if (unsupportedKeyword) unsupported(context, `keyword "${unsupportedKeyword}" is not supported`)
+}
+
+function numericSchema(
+  schema: OpenApiInputSchema,
+  integer: boolean,
+  context: { application: string; operationId: string; schemaPath: string }
+): z.ZodType {
+  let result = integer ? z.number().int() : z.number()
+  if (schema.minimum !== undefined) {
+    if (typeof schema.minimum !== 'number') unsupported(context, 'minimum must be a number')
+    result = result.min(schema.minimum)
+  }
+  if (schema.maximum !== undefined) {
+    if (typeof schema.maximum !== 'number') unsupported(context, 'maximum must be a number')
+    result = result.max(schema.maximum)
+  }
+  return result
+}
+
+function stringSchema(
+  schema: OpenApiInputSchema,
+  context: { application: string; operationId: string; schemaPath: string }
+): z.ZodType {
+  let result = z.string()
+  if (schema.minLength !== undefined) {
+    if (!Number.isInteger(schema.minLength) || (schema.minLength as number) < 0) unsupported(context, 'minLength must be a non-negative integer')
+    result = result.min(schema.minLength as number)
+  }
+  if (schema.maxLength !== undefined) {
+    if (!Number.isInteger(schema.maxLength) || (schema.maxLength as number) < 0) unsupported(context, 'maxLength must be a non-negative integer')
+    result = result.max(schema.maxLength as number)
+  }
+  if (schema.pattern !== undefined) {
+    if (typeof schema.pattern !== 'string') unsupported(context, 'pattern must be a string')
+    try {
+      result = result.regex(new RegExp(schema.pattern))
+    } catch {
+      unsupported(context, 'pattern must be a valid regular expression')
+    }
+  }
+  if (schema.format !== undefined) {
+    let formatValidator: z.ZodType
+    switch (schema.format) {
+      case 'email': formatValidator = z.email(); break
+      case 'uuid': formatValidator = z.uuid(); break
+      case 'date': formatValidator = z.iso.date(); break
+      case 'date-time': formatValidator = z.iso.datetime({ offset: true }); break
+      default: unsupported(context, `format "${String(schema.format)}" is not supported`)
+    }
+    result = result.refine(value => formatValidator.safeParse(value).success, {
+      message: `Expected string format: ${String(schema.format)}`,
+    }) as typeof result
+  }
+  return result
+}
+
+function unsupported(
+  context: { application: string; operationId: string; schemaPath: string },
+  reason: string
+): never {
+  throw new UnsupportedOpenApiSchemaError(context.application, context.operationId, context.schemaPath, reason)
 }
 
 function safeToolName(applicationName: string, operationId: string): string {
@@ -150,6 +253,9 @@ export function createRuntimeReadTools(
   const tools = []
 
   for (const [path, pathItem] of Object.entries(contract.openapi.paths)) {
+    if (Array.isArray((pathItem as Record<string, unknown>).parameters) && ((pathItem as Record<string, unknown>).parameters as unknown[]).length > 0) {
+      throw new Error(`Unsupported OpenAPI contract for application "${options.applicationName}" at paths.${path}.parameters: path-level parameters are not supported`)
+    }
     const methods = options.mutations ? ['get', 'post', 'put', 'delete'] : ['get']
     for (const method of methods) {
       const operation = (pathItem as Record<string, unknown>)[method] as OpenApiOperation | undefined
@@ -157,16 +263,52 @@ export function createRuntimeReadTools(
       const isMutation = method !== 'get'
 
       const parameters = operation.parameters ?? []
+      if (!Array.isArray(parameters)) {
+        unsupported({
+          application: options.applicationName,
+          operationId: operation.operationId,
+          schemaPath: `paths.${path}.${method}.parameters`,
+        }, 'parameters must be an array')
+      }
       const shape: Record<string, z.ZodType> = {}
-      for (const parameter of parameters) {
+      for (const [index, parameter] of parameters.entries()) {
+        validateParameter(parameter, options.applicationName, operation.operationId, path, method, index)
         if (parameter.in === 'path' || parameter.in === 'query') {
-          shape[parameter.name] = parameterSchema(parameter)
+          shape[parameter.name] = parameterSchema(parameter, {
+            application: options.applicationName,
+            operationId: operation.operationId,
+            schemaPath: `paths.${path}.${method}.parameters[${index}].schema`,
+          })
+        } else if (parameter.in === 'header') {
+          if (!['idempotency-key', 'x-agent-run-id'].includes(parameter.name.toLowerCase())) {
+            unsupported({
+              application: options.applicationName,
+              operationId: operation.operationId,
+              schemaPath: `paths.${path}.${method}.parameters[${index}]`,
+            }, `model-supplied header parameter "${parameter.name}" is not supported`)
+          }
+        } else {
+          unsupported({
+            application: options.applicationName,
+            operationId: operation.operationId,
+            schemaPath: `paths.${path}.${method}.parameters[${index}]`,
+          }, `parameter location "${parameter.in}" is not supported`)
         }
       }
-      const bodyProperties = operation.requestBody?.content?.['application/json']?.schema?.properties ?? {}
-      const requiredBody = new Set(operation.requestBody?.content?.['application/json']?.schema?.required ?? [])
+      const bodySchema = operation.requestBody
+        ? validateRequestBody(operation.requestBody, options.applicationName, operation.operationId, path, method)
+        : undefined
+      const bodyProperties = bodySchema?.properties ?? {}
+      const requiredBody = new Set(bodySchema?.required ?? [])
       for (const [name, schema] of Object.entries(bodyProperties)) {
-        shape[name] = parameterSchema({ name, in: 'query', schema, required: requiredBody.has(name) })
+        shape[name] = parameterSchema(
+          { name, in: 'query', schema, required: requiredBody.has(name) },
+          {
+            application: options.applicationName,
+            operationId: operation.operationId,
+            schemaPath: `paths.${path}.${method}.requestBody.content.application/json.schema.properties.${name}`,
+          }
+        )
       }
 
       const generatedTool = tool(
@@ -281,6 +423,60 @@ export function createRuntimeReadTools(
     names.add(generatedTool.name)
   }
   return tools
+}
+
+function validateParameter(
+  parameter: OpenApiParameter,
+  application: string,
+  operationId: string,
+  path: string,
+  method: string,
+  index: number
+): void {
+  const schemaPath = `paths.${path}.${method}.parameters[${index}]`
+  const context = { application, operationId, schemaPath }
+  if (!parameter || typeof parameter !== 'object' || Array.isArray(parameter)) unsupported(context, 'parameter must be an object')
+  const supportedKeys = new Set(['name', 'in', 'required', 'description', 'schema'])
+  const unsupportedKeyword = Object.keys(parameter).find(key => !supportedKeys.has(key))
+  if (unsupportedKeyword) unsupported(context, `parameter keyword "${unsupportedKeyword}" is not supported`)
+  if (typeof parameter.name !== 'string' || !parameter.name) unsupported(context, 'parameter name must be a non-empty string')
+  if (!['path', 'query', 'header', 'cookie'].includes(parameter.in)) unsupported(context, `parameter location "${String(parameter.in)}" is not supported`)
+  if (parameter.required !== undefined && typeof parameter.required !== 'boolean') unsupported(context, 'parameter required must be boolean')
+  if (parameter.in === 'path' && parameter.required !== true) unsupported(context, 'path parameters must be required')
+}
+
+function validateRequestBody(
+  requestBody: NonNullable<OpenApiOperation['requestBody']>,
+  application: string,
+  operationId: string,
+  path: string,
+  method: string
+): { properties: Record<string, OpenApiInputSchema>; required?: string[] } {
+  const schemaPath = `paths.${path}.${method}.requestBody.content.application/json.schema`
+  const requestBodyKeys = new Set(['required', 'description', 'content'])
+  const unsupportedRequestBodyKey = Object.keys(requestBody).find(key => !requestBodyKeys.has(key))
+  if (unsupportedRequestBodyKey) unsupported({ application, operationId, schemaPath }, `request body keyword "${unsupportedRequestBodyKey}" is not supported`)
+  const mediaTypes = Object.keys(requestBody.content ?? {})
+  if (mediaTypes.length !== 1 || mediaTypes[0] !== 'application/json') {
+    unsupported({ application, operationId, schemaPath }, 'only a single application/json media type is supported')
+  }
+  const schema = requestBody.content?.['application/json']?.schema
+  const context = { application, operationId, schemaPath }
+  if (!schema) unsupported(context, 'only application/json request bodies with an inline schema are supported')
+  const supportedKeys = new Set(['type', 'properties', 'required', 'description'])
+  const unsupportedKeyword = Object.keys(schema).find(key => !supportedKeys.has(key))
+  if (unsupportedKeyword) unsupported(context, `keyword "${unsupportedKeyword}" is not supported`)
+  if (schema.type !== 'object') unsupported(context, 'request body schema type must be "object"')
+  if (!schema.properties || typeof schema.properties !== 'object' || Array.isArray(schema.properties)) {
+    unsupported(context, 'request body properties must be an object')
+  }
+  if (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.some(name => typeof name !== 'string'))) {
+    unsupported(context, 'required must be an array of property names')
+  }
+  const propertyNames = new Set(Object.keys(schema.properties))
+  const unknownRequired = schema.required?.find(name => !propertyNames.has(name))
+  if (unknownRequired) unsupported(context, `required property "${unknownRequired}" is not declared`)
+  return { properties: schema.properties, ...(schema.required ? { required: schema.required } : {}) }
 }
 
 function parseApiError(response: Response, body: string): ZebricApiError {

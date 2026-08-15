@@ -10,6 +10,8 @@ Non-GET tools exist only when an application supplies `mutations.approve`; that 
 
 Application credentials may be supplied as `{ type: 'env', name: 'ZEBRIC_AGENT_TOKEN' }`, `{ type: 'provider', resolve }`, or the legacy provider function. Environment values are validated by name and resolved for every request, allowing rotation without rebuilding the agent. Resolved credentials are used only for the Authorization header and are redacted from successful responses and errors before they can enter model-visible results or checkpoints.
 
+Generated tools intentionally support a bounded OpenAPI input subset: scalar string, integer, number, and boolean values; enums and defaults; string length, pattern, email, UUID, date, and date-time constraints; numeric bounds; and Zebric's JSON object-or-array field type. Unsupported references, general unions, nested structures, composition, serialization styles, parameter locations, and request-body media types fail during agent construction with application, operation, and schema-path diagnostics. They are never silently converted to weaker tool inputs.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:
