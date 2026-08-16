@@ -160,6 +160,9 @@ importers:
 
   packages/agent:
     dependencies:
+      '@langchain/core':
+        specifier: ^1.2.5
+        version: 1.2.5(ws@8.20.0)
       '@langchain/langgraph':
         specifier: ^1.4.9
         version: 1.4.9(@langchain/core@1.2.5(ws@8.20.0))(react-dom@19.2.5(react@19.2.5))(react@19.2.5)(zod@4.3.6)
@@ -176,9 +179,6 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
-      '@langchain/core':
-        specifier: ^1.2.5
-        version: 1.2.5(ws@8.20.0)
       '@types/node':
         specifier: ^22.19.17
         version: 22.19.17

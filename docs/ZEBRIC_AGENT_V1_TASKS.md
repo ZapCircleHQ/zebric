@@ -711,6 +711,7 @@ mode = "project"
 - [x] Add a no-model deterministic tool-call driver for public-contract E2E tests.
 - [x] Use a mock Agent API server for discovery and generated-tool tests.
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
+- [x] Drive a real runtime through the compiled CLI using an exact, local scripted-model HTTP transcript with no LLM or external network dependency.
 - [x] Assert authenticated agent, credential, run, request, and correlation attribution in the runtime audit log.
 - [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
 - [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.
@@ -872,6 +873,7 @@ The current implementation is a library-level technical preview and deterministi
 - [ ] Prove model-provider credentials never appear in provider traces or CLI failures, and all credentials remain absent from future Zebric telemetry once those surfaces exist.
 - [x] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
 - [x] Add a minimal `zebric-agent` executable with deterministic `validate` and non-interactive read-only `run` flows.
+- [x] Add a deterministic black-box harness covering compiled CLI model turns, generated read tools, authentication, and a running Zebric application.
 - [x] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.
 - [x] Test cleaned packed artifacts in a fresh temporary consumer project, including production dependency installation, ESM imports, declarations under modern Node/TypeScript libraries, installed binary execution, and rejection of packaged test artifacts.
 - [ ] Make build, type-check, lint, unit, fake-model integration, real-runtime E2E, package-pack, and docs checks runnable in CI.

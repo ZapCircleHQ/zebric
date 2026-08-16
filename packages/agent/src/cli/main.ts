@@ -3,6 +3,7 @@ import { createZebricAgent, type CreateZebricAgentOptions, type ZebricAgent } fr
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import { validateBlueprint, type BlueprintValidationResult } from '../authoring/validate-blueprint.js'
 import { ZebricApiError } from '../runtime/action-tool-factory.js'
+import { scriptedModelFromIdentifier } from '../testing/scripted-http-model.js'
 
 export const ZebricAgentExitCode = {
   success: 0,
@@ -82,7 +83,7 @@ export async function runZebricAgentCli(
       })
     }
     const agent = await dependencies.createAgent({
-      model: parsed.model,
+      model: scriptedModelFromIdentifier(parsed.model) ?? parsed.model,
       workspace: { root: resolve(parsed.workspace ?? io.cwd()), mode: 'read-only' },
       applications,
     })
