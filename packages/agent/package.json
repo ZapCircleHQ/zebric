@@ -17,11 +17,12 @@
   "files": ["dist", "README.md"],
   "publishConfig": { "access": "public" },
   "scripts": {
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "pretest": "pnpm --filter @zebric/runtime-node... build",
     "test": "vitest run",
     "pretest:e2e": "pnpm --filter @zebric/runtime-node... build",
     "test:e2e": "vitest run tests/e2e/issue-board.e2e.test.ts",
+    "test:package": "pnpm --filter @zebric/agent... build && node scripts/verify-package.mjs",
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {

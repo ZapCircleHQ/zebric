@@ -16,6 +16,10 @@ Generated tools intentionally support a bounded OpenAPI input subset: scalar str
 
 The package exposes `zebric-agent`. Validate a Blueprint deterministically with `zebric-agent validate [blueprint] --workspace <root> --json`. Run a non-interactive, read-only agent task with `zebric-agent run --prompt <text> --model <provider:model> [--connect <url> --credential-env <name>] --json`. The preview CLI returns stable categorized exit codes and redacts the configured application credential from success and error output. Interactive sessions, configuration files, and CLI mutation approvals are not implemented yet.
 
+## Package verification
+
+Run `pnpm --filter @zebric/agent test:package` before publishing. It cleans and builds the package, packs both the agent and its workspace runtime dependency, rejects stale compiled tests in the archive, installs the tarballs in a fresh temporary consumer, verifies ESM imports and TypeScript declarations, and executes the installed `zebric-agent` binary. Set `ZEBRIC_PACKAGE_SMOKE_OFFLINE=1` only when the pnpm metadata mirror already contains every transitive dependency.
+
 ## Deterministic end-to-end harness
 
 Run the agent package tests without an LLM or model-provider credentials:

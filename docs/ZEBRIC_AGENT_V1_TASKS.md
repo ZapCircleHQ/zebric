@@ -220,7 +220,7 @@ Runtime authorization remains authoritative even after local approval.
 - [x] Add `packages/agent` to the pnpm workspace.
 - [x] Add TypeScript build, lint, test, and package exports.
 - [x] Add `deepagents` and required LangChain/LangGraph dependencies.
-- [ ] Pin or intentionally bound compatible dependency ranges and document the tested Deep Agents/LangChain versions.
+- [ ] Pin or intentionally bound compatible dependency ranges and document the tested Deep Agents/LangChain versions. (The clean consumer currently resolves LangChain Core 1.2.8, whose declarations require `ESNext.Disposable` with modern TypeScript.)
 - [ ] Re-export only Zebric-owned public types from the package root.
 - [ ] Keep Deep Agents-specific construction details in internal modules.
 - [x] Add a changeset for the new package when it becomes publishable.
@@ -802,7 +802,7 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 ### 11.5 Distribution
 
 - [ ] Publish `@zebric/agent`.
-- [ ] Expose the `zebric-agent` binary.
+- [x] Expose the `zebric-agent` binary and verify it from the installed tarball in a clean consumer.
 - [ ] Decide whether to ship a standalone package, optional CLI dependency, or both.
 - [ ] Keep model-provider integrations optional where practical.
 - [ ] Publish compatibility ranges for Zebric runtime, Agent API, Deep Agents, Node.js, and model providers.
@@ -873,7 +873,7 @@ The current implementation is a library-level technical preview and deterministi
 - [x] Reject unsupported OpenAPI and JSON Schema constructs with application, operation, and schema-path diagnostics; never silently coerce them into weaker string or JSON validation.
 - [x] Add a minimal `zebric-agent` executable with deterministic `validate` and non-interactive read-only `run` flows.
 - [x] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.
-- [ ] Test the packed package in a clean temporary consumer project, including ESM imports, declarations, binary execution, and required runtime dependencies.
+- [x] Test cleaned packed artifacts in a fresh temporary consumer project, including production dependency installation, ESM imports, declarations under modern Node/TypeScript libraries, installed binary execution, and rejection of packaged test artifacts.
 - [ ] Make build, type-check, lint, unit, fake-model integration, real-runtime E2E, package-pack, and docs checks runnable in CI.
 - [ ] Publish getting-started, connection, approvals/security, library API, CLI, testing-harness, compatibility, and current-limitations documentation before the first public preview.
 
