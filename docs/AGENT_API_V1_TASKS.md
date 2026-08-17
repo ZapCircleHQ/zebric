@@ -547,6 +547,7 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 - [ ] Clearly separate Zebric's orchestration responsibilities from browser automation and test-runner responsibilities.
 - [ ] Link the guide to the source Blueprint and deterministic E2E harness.
 - [x] Exercise issue-board discovery and read actions through the compiled Zebric Agent CLI against a real runtime and a no-LLM scripted transcript.
+- [x] Exercise an approved workflow mutation, terminal job observation, repeated idempotent CLI execution, rejected local approval, resulting state, and audit attribution through the public Agent API.
 
 #### Operations and troubleshooting
 

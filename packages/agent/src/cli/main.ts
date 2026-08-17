@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { createHash, randomUUID } from 'node:crypto'
 import { createZebricAgent, type CreateZebricAgentOptions, type ZebricAgent } from '../agent/create-zebric-agent.js'
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import { validateBlueprint, type BlueprintValidationResult } from '../authoring/validate-blueprint.js'
@@ -76,10 +77,18 @@ export async function runZebricAgentCli(
         const value = io.env[parsed.credentialEnv]
         if (value) secretValues.push(value)
       }
+      const runId = parsed.runId ?? randomUUID()
       applications.push({
         name: 'connected',
         baseUrl: parsed.connect,
         ...(parsed.credentialEnv ? { credential: { type: 'env' as const, name: parsed.credentialEnv } } : {}),
+        ...(parsed.approvedOperations.length ? {
+          mutations: {
+            approve: request => parsed.approvedOperations.includes(request.operationId),
+            agentRunId: () => runId,
+            idempotencyKey: (operationId, input) => mutationIdempotencyKey(runId, operationId, input),
+          },
+        } : {}),
       })
     }
     const agent = await dependencies.createAgent({
@@ -101,14 +110,15 @@ export async function runZebricAgentCli(
 
 type ParsedArguments =
   | { command: 'validate'; blueprint: string; workspace?: string; json: boolean }
-  | { command: 'run'; prompt: string; model: string; connect?: string; credentialEnv?: string; workspace?: string; json: boolean }
+  | { command: 'run'; prompt: string; model: string; connect?: string; credentialEnv?: string; workspace?: string; runId?: string; approvedOperations: string[]; json: boolean }
 
 function parseArguments(argv: string[]): ParsedArguments {
   const [command, ...args] = argv
   if (command !== 'validate' && command !== 'run') throw new TypeError('Usage: zebric-agent <validate|run> [options]')
   const options = new Map<string, string | true>()
   const positional: string[] = []
-  const valueOptions = new Set(['--workspace', '--prompt', '--model', '--connect', '--credential-env'])
+  const valueOptions = new Set(['--workspace', '--prompt', '--model', '--connect', '--credential-env', '--approve-operation', '--run-id'])
+  const approvedOperations: string[] = []
   for (let index = 0; index < args.length; index++) {
     const argument = args[index]!
     if (!argument.startsWith('--')) {
@@ -122,6 +132,10 @@ function parseArguments(argv: string[]): ParsedArguments {
     if (!valueOptions.has(argument)) throw new TypeError(`Unknown option: ${argument}`)
     const value = args[++index]
     if (!value || value.startsWith('--')) throw new TypeError(`Option requires a value: ${argument}`)
+    if (argument === '--approve-operation') {
+      approvedOperations.push(value)
+      continue
+    }
     options.set(argument, value)
   }
   const workspace = optionString(options, '--workspace')
@@ -137,12 +151,19 @@ function parseArguments(argv: string[]): ParsedArguments {
   if (!model) throw new TypeError('run requires --model')
   const connect = optionString(options, '--connect')
   const credentialEnv = optionString(options, '--credential-env')
+  const runId = optionString(options, '--run-id')
   if (credentialEnv && !connect) throw new TypeError('--credential-env requires --connect')
+  if (approvedOperations.length && !connect) throw new TypeError('--approve-operation requires --connect')
+  if (runId && !connect) throw new TypeError('--run-id requires --connect')
+  if (runId && !approvedOperations.length) throw new TypeError('--run-id requires --approve-operation')
+  if (new Set(approvedOperations).size !== approvedOperations.length) throw new TypeError('--approve-operation values must be unique')
   return {
     command, prompt, model,
     ...(connect ? { connect } : {}),
     ...(credentialEnv ? { credentialEnv } : {}),
+    ...(runId ? { runId } : {}),
     ...(workspace ? { workspace } : {}),
+    approvedOperations,
     json,
   }
 }
@@ -198,4 +219,20 @@ function redactText(value: string, secrets: string[]): string {
 
 function safeMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error'
+}
+
+function mutationIdempotencyKey(runId: string, operationId: string, input: Record<string, unknown>): string {
+  return createHash('sha256')
+    .update(JSON.stringify([runId, operationId, stableValue(input)]))
+    .digest('hex')
+}
+
+function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableValue(nested)]))
+  }
+  return value
 }

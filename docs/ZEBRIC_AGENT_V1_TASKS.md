@@ -269,6 +269,8 @@ const agent = await createZebricAgent({
 - [x] Add a `zebric-agent` binary.
 - [x] Support deterministic `validate` and non-interactive read-only `run --prompt` commands; interactive prompting remains open.
 - [x] Support `--workspace`, `--connect`, and `--model`; project-local `--config` remains open.
+- [x] Support exact per-operation mutation approval and caller-supplied run IDs for non-interactive CLI automation.
+- [x] Derive stable per-run idempotency keys from the operation and canonicalized arguments so restarted CLI retries do not duplicate mutations.
 - [x] Provide stable exit codes for success, configuration, validation, approval rejection, authentication/authorization, conflict, incomplete execution, and internal failure.
 - [x] Add structured JSON output for automation.
 - [x] Redact the configured application credential from CLI success and error output; model-provider credential and future telemetry tests remain open.
@@ -712,6 +714,7 @@ mode = "project"
 - [x] Use a mock Agent API server for discovery and generated-tool tests.
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
 - [x] Drive a real runtime through the compiled CLI using an exact, local scripted-model HTTP transcript with no LLM or external network dependency.
+- [x] Prove compiled-CLI mutation approval, rejection before dispatch, workflow-job observation, cross-process idempotent retry, state transition, and audit attribution.
 - [x] Assert authenticated agent, credential, run, request, and correlation attribution in the runtime audit log.
 - [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
 - [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.

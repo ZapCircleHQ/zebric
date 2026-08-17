@@ -15,6 +15,9 @@ describe('zebric-agent CLI black-box E2E', () => {
   let tmpRoot = ''
   let zebric: Zebric | undefined
   let baseUrl = ''
+  let auditPath = ''
+  let claimIssueId = ''
+  let rejectedIssueId = ''
   let previousAgentKey: string | undefined
   let previousSeederKey: string | undefined
 
@@ -22,6 +25,7 @@ describe('zebric-agent CLI black-box E2E', () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-cli-e2e-'))
     const blueprintPath = join(tmpRoot, 'blueprint.toml')
     const dbPath = join(tmpRoot, 'app.db')
+    auditPath = join(tmpRoot, 'app.audit.log')
     const sourceBlueprint = fileURLToPath(new URL('../../../../examples/issue-board/blueprint.toml', import.meta.url))
     await writeFile(blueprintPath, await readFile(sourceBlueprint, 'utf8'), 'utf8')
     previousAgentKey = process.env.ISSUE_BOARD_AGENT_API_KEY
@@ -52,6 +56,12 @@ describe('zebric-agent CLI black-box E2E', () => {
       position: 0,
       important: true,
     })
+    claimIssueId = (await postJson('/api/issues', seederKey, {
+      title: 'CLI Mutation Test', qaState: 'ready_to_test', columnId: ready.id, position: 1, important: true,
+    }) as { id: string }).id
+    rejectedIssueId = (await postJson('/api/issues', seederKey, {
+      title: 'CLI Rejected Mutation Test', qaState: 'ready_to_test', columnId: ready.id, position: 2, important: true,
+    }) as { id: string }).id
   }, 45_000)
 
   afterAll(async () => {
@@ -81,11 +91,71 @@ describe('zebric-agent CLI black-box E2E', () => {
       expect(result, `CLI failed: ${result.stderr || result.stdout}`).toMatchObject({ exitCode: 0, stderr: '' })
       const output = JSON.parse(result.stdout) as { ok: boolean }
       expect(output.ok).toBe(true)
-      expect(result.stdout).toContain('Found 1 Ready to Test issue: CLI Black Box Test.')
+      expect(result.stdout).toContain('Found Ready to Test issue: CLI Black Box Test.')
       expect(transcript.completedTurns).toBe(3)
     } finally {
       await modelServer.close()
     }
+  }, 30_000)
+
+  it('approves an exact mutation, observes its job, attributes it, and deduplicates a repeated CLI run', async () => {
+    const runId = 'cli-black-box-claim-run'
+    const firstTranscript = new IssueBoardClaimTranscript(claimIssueId)
+    const firstServer = await startScriptedModelServer(request => firstTranscript.next(request))
+    try {
+      const first = await runCli(firstServer.url, 'Claim the CLI Mutation Test issue.', [
+        '--approve-operation', 'issue_board_claim_issue_for_qa', '--run-id', runId,
+      ])
+      expect(first, `CLI failed: ${first.stderr || first.stdout}`).toMatchObject({ exitCode: 0, stderr: '' })
+      expect(first.stdout).toContain('The issue was claimed for QA.')
+      expect(firstTranscript.completedTurns).toBe(2)
+    } finally {
+      await firstServer.close()
+    }
+
+    expect(await getJson(`/api/agent/issues/${claimIssueId}`)).toEqual(expect.objectContaining({
+      qaState: 'testing', qaRunId: runId, claimedBy: 'zebric-qa-agent',
+    }))
+
+    const retryTranscript = new IssueBoardClaimTranscript(claimIssueId)
+    const retryServer = await startScriptedModelServer(request => retryTranscript.next(request))
+    try {
+      const retry = await runCli(retryServer.url, 'Retry claiming the CLI Mutation Test issue.', [
+        '--approve-operation', 'issue_board_claim_issue_for_qa', '--run-id', runId,
+      ])
+      expect(retry, `CLI retry failed: ${retry.stderr || retry.stdout}`).toMatchObject({ exitCode: 0, stderr: '' })
+      expect(retry.stdout).toContain('The issue was claimed for QA.')
+    } finally {
+      await retryServer.close()
+    }
+
+    const auditEntries = (await readFile(auditPath, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line))
+    expect(auditEntries).toContainEqual(expect.objectContaining({
+      eventType: 'agent.action', actionName: 'issue_board.claim_issue_for_qa',
+      actorType: 'agent', agentId: 'zebric-qa-agent', credentialId: 'issue-board-e2e-key',
+      runId, success: true,
+    }))
+    expect(auditEntries.filter(entry => entry.eventType === 'workflow.completed'
+      && entry.workflowName === 'ClaimIssueForQA' && entry.runId === runId)).toHaveLength(1)
+  }, 30_000)
+
+  it('rejects a mutation not named by the CLI approval allowlist without changing state', async () => {
+    const transcript = new IssueBoardRejectedClaimTranscript(rejectedIssueId)
+    const modelServer = await startScriptedModelServer(request => transcript.next(request))
+    try {
+      const result = await runCli(modelServer.url, 'Claim the rejected mutation issue.', [
+        '--approve-operation', 'issue_board_complete_qa', '--run-id', 'cli-rejected-run',
+      ])
+      expect(result).toMatchObject({ exitCode: 4, stderr: '' })
+      expect(result.stdout).toContain('APPROVAL_REJECTED')
+      expect(result.stdout).toContain('Zebric mutation was not approved')
+      expect(transcript.completedTurns).toBe(1)
+    } finally {
+      await modelServer.close()
+    }
+    expect(await getJson(`/api/agent/issues/${rejectedIssueId}`)).toEqual(expect.objectContaining({
+      qaState: 'ready_to_test', qaRunId: null, claimedBy: null,
+    }))
   }, 30_000)
 
   it('fails closed when the model request does not match its transcript', async () => {
@@ -148,12 +218,71 @@ describe('zebric-agent CLI black-box E2E', () => {
       if (this.completedTurns === 2) {
         expect(last?.type).toBe('tool')
         const issues = JSON.parse(String(last?.content)) as Array<{ title: string }>
-        expect(issues).toEqual([expect.objectContaining({ title: 'CLI Black Box Test' })])
+        expect(issues).toContainEqual(expect.objectContaining({ title: 'CLI Black Box Test' }))
         this.completedTurns++
-        return { content: 'Found 1 Ready to Test issue: CLI Black Box Test.' }
+        return { content: 'Found Ready to Test issue: CLI Black Box Test.' }
       }
       throw new Error(`Unexpected model turn ${this.completedTurns + 1}`)
     }
+  }
+
+  class IssueBoardClaimTranscript {
+    completedTurns = 0
+    constructor(private readonly issueId: string) {}
+
+    next(request: ScriptedModelRequest): ScriptedModelResponse {
+      expect(request.tools.map(tool => tool.name)).toContain('connected_issue_board_claim_issue_for_qa')
+      const last = request.messages.at(-1)
+      if (this.completedTurns === 0) {
+        expect(last?.type).toBe('human')
+        this.completedTurns++
+        return { toolCalls: [{
+          name: 'connected_issue_board_claim_issue_for_qa', args: { id: this.issueId },
+          id: 'claim-ready-issue', type: 'tool_call',
+        }] }
+      }
+      if (this.completedTurns === 1) {
+        expect(last?.type).toBe('tool')
+        expect(JSON.parse(String(last?.content))).toEqual(expect.objectContaining({
+          workflow: 'ClaimIssueForQA', status: 'succeeded',
+        }))
+        this.completedTurns++
+        return { content: 'The issue was claimed for QA.' }
+      }
+      throw new Error(`Unexpected claim model turn ${this.completedTurns + 1}`)
+    }
+  }
+
+  class IssueBoardRejectedClaimTranscript {
+    completedTurns = 0
+    constructor(private readonly issueId: string) {}
+
+    next(request: ScriptedModelRequest): ScriptedModelResponse {
+      expect(request.tools.map(tool => tool.name)).toContain('connected_issue_board_claim_issue_for_qa')
+      if (this.completedTurns === 0) {
+        this.completedTurns++
+        return { toolCalls: [{
+          name: 'connected_issue_board_claim_issue_for_qa', args: { id: this.issueId },
+          id: 'rejected-claim', type: 'tool_call',
+        }] }
+      }
+      throw new Error(`Unexpected rejected-claim model turn ${this.completedTurns + 1}`)
+    }
+  }
+
+  async function runCli(modelUrl: string, prompt: string, extraArguments: string[] = []) {
+    const cliPath = fileURLToPath(new URL('../../dist/cli/index.js', import.meta.url))
+    return runProcess(process.execPath, [
+      cliPath, 'run', '--prompt', prompt, '--model', `scripted+${modelUrl}`,
+      '--connect', baseUrl, '--credential-env', 'CLI_BLACK_BOX_AGENT_KEY',
+      ...extraArguments, '--json',
+    ], { ...process.env, CLI_BLACK_BOX_AGENT_KEY: agentKey })
+  }
+
+  async function getJson(path: string): Promise<unknown> {
+    const response = await fetch(`${baseUrl}${path}`, { headers: { authorization: `Bearer ${agentKey}` } })
+    if (!response.ok) throw new Error(`GET ${path} failed: ${response.status}`)
+    return response.json()
   }
 
   async function postJson(path: string, credential: string, body: Record<string, unknown>): Promise<unknown> {

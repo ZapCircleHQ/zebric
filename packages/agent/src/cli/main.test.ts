@@ -70,6 +70,31 @@ describe('runZebricAgentCli', () => {
     expect(stdout[0]).not.toContain(secret)
   })
 
+  it('configures exact operation approval, run attribution, and stable per-run idempotency', async () => {
+    let receivedOptions: any
+    const dependencies = dependenciesWith({
+      createAgent: async options => {
+        receivedOptions = options
+        return { invoke: async () => ({}), resume: async () => ({}) }
+      },
+    })
+    const exitCode = await runZebricAgentCli([
+      'run', '--prompt', 'Claim work', '--model', 'provider:model',
+      '--connect', 'https://app.example', '--approve-operation', 'issues_claim',
+      '--approve-operation', 'issues_complete', '--run-id', 'cli-run-1', '--json',
+    ], io(), dependencies)
+
+    expect(exitCode).toBe(ZebricAgentExitCode.success)
+    const mutations = receivedOptions.applications[0].mutations
+    expect(await mutations.approve({ operationId: 'issues_claim' })).toBe(true)
+    expect(await mutations.approve({ operationId: 'issues_delete' })).toBe(false)
+    expect(mutations.agentRunId()).toBe('cli-run-1')
+    expect(mutations.idempotencyKey('issues_claim', { id: 'one', nested: { b: 2, a: 1 } }))
+      .toBe(mutations.idempotencyKey('issues_claim', { nested: { a: 1, b: 2 }, id: 'one' }))
+    expect(mutations.idempotencyKey('issues_claim', { id: 'one' }))
+      .not.toBe(mutations.idempotencyKey('issues_claim', { id: 'two' }))
+  })
+
   it('returns stable configuration and authentication errors', async () => {
     const missingPrompt = await runZebricAgentCli(['run', '--model', 'provider:model', '--json'], io(), dependenciesWith())
     expect(missingPrompt).toBe(ZebricAgentExitCode.configuration)
@@ -85,6 +110,17 @@ describe('runZebricAgentCli', () => {
     }))
     expect(authentication).toBe(ZebricAgentExitCode.authentication)
     expect(JSON.parse(stdout.pop()!)).toMatchObject({ error: { code: 'UNAUTHORIZED' } })
+
+    const approvalWithoutConnection = await runZebricAgentCli([
+      'run', '--prompt', 'Act', '--model', 'provider:model', '--approve-operation', 'issues_claim', '--json',
+    ], io(), dependenciesWith())
+    expect(approvalWithoutConnection).toBe(ZebricAgentExitCode.configuration)
+
+    const runWithoutApproval = await runZebricAgentCli([
+      'run', '--prompt', 'Read', '--model', 'provider:model', '--connect', 'https://app.example',
+      '--run-id', 'unused-run', '--json',
+    ], io(), dependenciesWith())
+    expect(runWithoutApproval).toBe(ZebricAgentExitCode.configuration)
   })
 
   it.each([
