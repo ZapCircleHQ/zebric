@@ -6,12 +6,20 @@ const DiscoverySchema = z.object({
   openapi: z.string(),
   skills: z.array(z.string()).optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
+  contract: z.object({
+    version: z.literal('1'),
+    fingerprint: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  }).optional(),
 })
 
 const OpenApiSchema = z.object({
   openapi: z.string(),
   info: z.object({ title: z.string(), version: z.string() }),
   paths: z.record(z.string(), z.record(z.string(), z.unknown())),
+  'x-zebric-contract': z.object({
+    version: z.literal('1'),
+    fingerprint: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  }).optional(),
 })
 
 export interface ZebricApplicationContract {
@@ -74,11 +82,20 @@ export async function discoverZebricApplication(
   if (!openApiResponse.ok) {
     throw new Error(`Zebric OpenAPI discovery failed with HTTP ${openApiResponse.status}`)
   }
+  const openapi = OpenApiSchema.parse(openApiResponse.data)
+  if (discovery?.contract && !openapi['x-zebric-contract']) {
+    throw new Error('Zebric OpenAPI document is missing its advertised contract fingerprint')
+  }
+  if (discovery?.contract && openapi['x-zebric-contract']
+    && (discovery.contract.version !== openapi['x-zebric-contract'].version
+      || discovery.contract.fingerprint !== openapi['x-zebric-contract'].fingerprint)) {
+    throw new Error('Zebric discovery and OpenAPI contract fingerprints do not match')
+  }
 
   return {
     baseUrl: base.origin,
     ...(discovery ? { discovery, discoveryUrl: discoveryUrl.toString() } : {}),
     openApiUrl: openApiUrl.toString(),
-    openapi: OpenApiSchema.parse(openApiResponse.data),
+    openapi,
   }
 }

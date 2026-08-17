@@ -608,6 +608,14 @@ const SkillActionSchema = z.object({
   mapParams: z.record(StringKeySchema, z.string()).optional(),
   workflow: z.string().optional(),
   scopes: z.array(z.string()).optional(),
+  risk: z.enum(['read', 'write', 'destructive', 'external']).optional(),
+}).superRefine((action, ctx) => {
+  if (action.method === 'GET' && action.risk && action.risk !== 'read') {
+    ctx.addIssue({ code: 'custom', path: ['risk'], message: 'GET skill actions must use read risk' })
+  }
+  if (action.method !== 'GET' && action.risk === 'read') {
+    ctx.addIssue({ code: 'custom', path: ['risk'], message: 'Mutating skill actions cannot use read risk' })
+  }
 })
 
 const SkillConfigSchema = z.object({

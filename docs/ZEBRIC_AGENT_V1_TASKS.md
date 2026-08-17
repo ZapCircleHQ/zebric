@@ -443,14 +443,14 @@ apply_blueprint_patch
 - [x] Support the bounded Zebric input-schema subset and explicitly reject `$ref`, general unions, nested objects, arrays, composition, unknown types/formats/keywords, unsupported parameter serialization/locations, path-level parameters, and non-JSON or multi-media request bodies with contract diagnostics.
 - [x] Preserve operation descriptions, enum values, and required fields for the supported schema subset.
 - [ ] Preserve examples and richer schema annotations.
-- [ ] Attach risk, required scopes, HTTP method, application, and operation metadata to each tool.
+- [x] Attach risk, approval, idempotency, async behavior, workflow/preconditions, required scopes, HTTP method, application, and operation metadata to each tool.
 - [x] Do not expose arbitrary URL, header, method, or request-body escape hatches.
 - [x] Reject HTTP and job responses exceeding the configured inline size limit.
 - [ ] Offload supported large results to a configured backend instead of returning them inline.
 
 ### 4.4 Classify action risk
 
-- [ ] Prefer explicit risk metadata from Agent API v1.
+- [x] Prefer and validate explicit Agent API v1 risk metadata, while retaining conservative method-derived fallback for older runtimes.
 - [x] Expose `GET` operations as read tools by default.
 - [x] Keep non-GET operations unavailable unless an explicit mutation approval policy is configured.
 - [ ] Require explicit configuration before any operation is considered destructive or safe for auto-approval.

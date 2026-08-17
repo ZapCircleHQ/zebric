@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createRuntimeReadTools, InMemoryMutationExecutionStateStore, ZebricApiError } from './action-tool-factory.js'
+import { createRuntimeReadTools, getRuntimeToolMetadata, InMemoryMutationExecutionStateStore, ZebricApiError } from './action-tool-factory.js'
 import type { ZebricApplicationContract } from './discovery-client.js'
 import { DeterministicAgentDriver } from '../testing/deterministic-driver.js'
 
@@ -31,6 +31,12 @@ const contract: ZebricApplicationContract = {
         post: {
           operationId: 'issue_board_claim_issue',
           description: 'Claim an issue.',
+          'x-zebric-agent-operation': {
+            risk: 'external', approvalRequired: true, idempotencyRequired: true,
+            asynchronous: true, requiredScopes: ['issues.claim'], workflow: 'ClaimIssue',
+            preconditions: { state: 'ready' },
+          },
+          'x-zebric-required-scopes': ['issues.claim'],
           parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
           requestBody: { content: { 'application/json': { schema: {
             type: 'object',
@@ -43,6 +49,41 @@ const contract: ZebricApplicationContract = {
 }
 
 describe('createRuntimeReadTools', () => {
+  it('preserves authoritative operation risk and execution metadata', () => {
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', mutations: { approve: () => true },
+    })
+    const claim = tools.find(tool => tool.name === 'local_issue_board_claim_issue')!
+    expect(getRuntimeToolMetadata(claim)).toEqual({
+      application: 'local', operationId: 'issue_board_claim_issue', method: 'POST',
+      path: '/api/agent/issues/{id}/claim', risk: 'external', approvalRequired: true,
+      idempotencyRequired: true, asynchronous: true, requiredScopes: ['issues.claim'],
+      workflow: 'ClaimIssue', preconditions: { state: 'ready' },
+    })
+  })
+
+  it('rejects mutation metadata that claims approval is unnecessary', () => {
+    const invalid = structuredClone(contract)
+    ;(invalid.openapi.paths['/api/agent/issues/{id}/claim'].post as any)['x-zebric-agent-operation'].approvalRequired = false
+    expect(() => createRuntimeReadTools(invalid, {
+      applicationName: 'local', mutations: { approve: () => true },
+    })).toThrow('mutations must require approval')
+  })
+
+  it('rejects contradictory scope and idempotency metadata', () => {
+    const invalidScopes = structuredClone(contract)
+    ;(invalidScopes.openapi.paths['/api/agent/issues/{id}/claim'].post as any)['x-zebric-required-scopes'] = ['issues.admin']
+    expect(() => createRuntimeReadTools(invalidScopes, {
+      applicationName: 'local', mutations: { approve: () => true },
+    })).toThrow('required scope metadata does not match')
+
+    const invalidIdempotency = structuredClone(contract)
+    ;(invalidIdempotency.openapi.paths['/api/agent/issues/{id}/claim'].post as any)['x-zebric-agent-operation'].idempotencyRequired = false
+    expect(() => createRuntimeReadTools(invalidIdempotency, {
+      applicationName: 'local', mutations: { approve: () => true },
+    })).toThrow('idempotencyRequired contradicts the HTTP method')
+  })
+
   it('creates only GET tools and executes a validated query request', async () => {
     const fetcher = vi.fn(async () => Response.json([{ id: 'column-1' }])) as typeof fetch
     const credential = vi.fn(async () => 'secret-token')

@@ -211,6 +211,52 @@ describe('generateOpenAPISpec', () => {
 
       expect(op.operationId).toBe('dispatch_get_issue')
       expect(op.tags).toEqual(['dispatch'])
+      expect(op.security).toEqual([{ bearerAuth: [] }])
+      expect(op['x-zebric-agent-operation']).toEqual({
+        risk: 'read',
+        approvalRequired: false,
+        idempotencyRequired: false,
+        asynchronous: false,
+      })
+    })
+
+    it('publishes authoritative mutation risk, scopes, workflow, and preconditions', () => {
+      const bp = minimalBlueprint({
+        workflows: [{
+          name: 'ArchiveIssue',
+          trigger: { manual: true },
+          precondition: { 'variables.data.record.state': 'closed' },
+          steps: [],
+        }],
+        skills: [{
+          name: 'dispatch',
+          actions: [{
+            name: 'archive_issue', method: 'POST', path: '/api/issues/{id}/archive',
+            workflow: 'ArchiveIssue', scopes: ['issues.archive'], risk: 'destructive',
+          }],
+        }],
+      })
+      const op = generateOpenAPISpec(bp).paths['/api/issues/{id}/archive'].post
+
+      expect(op['x-zebric-required-scopes']).toEqual(['issues.archive'])
+      expect(op['x-zebric-agent-operation']).toEqual({
+        risk: 'destructive',
+        approvalRequired: true,
+        idempotencyRequired: true,
+        asynchronous: true,
+        requiredScopes: ['issues.archive'],
+        workflow: 'ArchiveIssue',
+        preconditions: { 'variables.data.record.state': 'closed' },
+      })
+    })
+
+    it('marks unauthenticated skill operations explicitly', () => {
+      const bp = minimalBlueprint({
+        skills: [{ name: 'public', auth: 'none', actions: [
+          { name: 'status', method: 'GET', path: '/api/public/status' },
+        ] }],
+      })
+      expect(generateOpenAPISpec(bp).paths['/api/public/status'].get.security).toEqual([])
     })
 
     it('includes path parameters from {id} patterns', () => {

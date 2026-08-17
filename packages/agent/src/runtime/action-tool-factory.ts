@@ -31,6 +31,16 @@ interface OpenApiOperation {
       }
     }
   }
+  'x-zebric-agent-operation'?: {
+    risk?: unknown
+    approvalRequired?: unknown
+    idempotencyRequired?: unknown
+    asynchronous?: unknown
+    requiredScopes?: unknown
+    workflow?: unknown
+    preconditions?: unknown
+  }
+  'x-zebric-required-scopes'?: unknown
 }
 
 export interface MutationApprovalRequest {
@@ -113,7 +123,13 @@ export interface RuntimeToolMetadata {
   operationId: string
   method: string
   path: string
-  risk: 'read' | 'write'
+  risk: 'read' | 'write' | 'destructive' | 'external'
+  approvalRequired: boolean
+  idempotencyRequired: boolean
+  asynchronous: boolean
+  requiredScopes: string[]
+  workflow?: string
+  preconditions?: Record<string, unknown>
 }
 
 const runtimeToolMetadata = new WeakMap<object, RuntimeToolMetadata>()
@@ -261,6 +277,7 @@ export function createRuntimeReadTools(
       const operation = (pathItem as Record<string, unknown>)[method] as OpenApiOperation | undefined
       if (!operation?.operationId) continue
       const isMutation = method !== 'get'
+      const agentMetadata = parseAgentOperationMetadata(operation, options.applicationName, method)
 
       const parameters = operation.parameters ?? []
       if (!Array.isArray(parameters)) {
@@ -409,7 +426,7 @@ export function createRuntimeReadTools(
         operationId: operation.operationId,
         method: method.toUpperCase(),
         path,
-        risk: isMutation ? 'write' : 'read',
+        ...agentMetadata,
       })
       tools.push(generatedTool)
     }
@@ -423,6 +440,78 @@ export function createRuntimeReadTools(
     names.add(generatedTool.name)
   }
   return tools
+}
+
+function parseAgentOperationMetadata(
+  operation: OpenApiOperation,
+  application: string,
+  method: string
+): Pick<RuntimeToolMetadata, 'risk' | 'approvalRequired' | 'idempotencyRequired' | 'asynchronous' | 'requiredScopes' | 'workflow' | 'preconditions'> {
+  const declared = operation['x-zebric-agent-operation']
+  const fallbackRisk = method === 'get' ? 'read' : method === 'delete' ? 'destructive' : 'write'
+  const legacyScopes = operation['x-zebric-required-scopes']
+  if (legacyScopes !== undefined
+    && (!Array.isArray(legacyScopes) || legacyScopes.some(scope => typeof scope !== 'string'))) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", operation ${operation.operationId}: x-zebric-required-scopes must be strings`)
+  }
+  if (!declared) {
+    return {
+      risk: fallbackRisk,
+      approvalRequired: method !== 'get',
+      idempotencyRequired: method !== 'get',
+      asynchronous: false,
+      requiredScopes: (legacyScopes as string[] | undefined) ?? [],
+    }
+  }
+  const schemaPath = `paths operation ${operation.operationId}.x-zebric-agent-operation`
+  if (!['read', 'write', 'destructive', 'external'].includes(String(declared.risk))) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: unsupported risk`)
+  }
+  for (const key of ['approvalRequired', 'idempotencyRequired', 'asynchronous'] as const) {
+    if (typeof declared[key] !== 'boolean') {
+      throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: ${key} must be boolean`)
+    }
+  }
+  if (declared.requiredScopes !== undefined
+    && (!Array.isArray(declared.requiredScopes) || declared.requiredScopes.some(scope => typeof scope !== 'string'))) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: requiredScopes must be strings`)
+  }
+  if (declared.workflow !== undefined && typeof declared.workflow !== 'string') {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: workflow must be a string`)
+  }
+  if (declared.preconditions !== undefined
+    && (!declared.preconditions || typeof declared.preconditions !== 'object' || Array.isArray(declared.preconditions))) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: preconditions must be an object`)
+  }
+  if (method === 'get' && declared.risk !== 'read') {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: GET operations must be read risk`)
+  }
+  if (method !== 'get' && declared.approvalRequired !== true) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: mutations must require approval`)
+  }
+  if (declared.approvalRequired !== (declared.risk !== 'read')) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: risk and approvalRequired disagree`)
+  }
+  if (declared.idempotencyRequired !== (method !== 'get')) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: idempotencyRequired contradicts the HTTP method`)
+  }
+  if (declared.asynchronous === true && typeof declared.workflow !== 'string') {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: asynchronous operations must identify a workflow`)
+  }
+  const requiredScopes = (declared.requiredScopes as string[] | undefined) ?? []
+  if (Array.isArray(legacyScopes)
+    && JSON.stringify([...legacyScopes].sort()) !== JSON.stringify([...requiredScopes].sort())) {
+    throw new Error(`Invalid Zebric agent metadata for application "${application}", ${schemaPath}: required scope metadata does not match`)
+  }
+  return {
+    risk: declared.risk as RuntimeToolMetadata['risk'],
+    approvalRequired: declared.approvalRequired as boolean,
+    idempotencyRequired: declared.idempotencyRequired as boolean,
+    asynchronous: declared.asynchronous as boolean,
+    requiredScopes,
+    ...(declared.workflow ? { workflow: declared.workflow } : {}),
+    ...(declared.preconditions ? { preconditions: declared.preconditions as Record<string, unknown> } : {}),
+  }
 }
 
 function validateParameter(

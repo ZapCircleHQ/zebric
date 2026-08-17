@@ -34,6 +34,7 @@ describe('agent discovery routes', () => {
     expect(body).toMatchObject({
       name: 'Issue Board',
       openapi: 'http://localhost:3000/api/openapi.json',
+      contract: { version: '1' },
       authentication: [{ type: 'bearer' }],
       skills: ['issue_board'],
       capabilities: {
@@ -44,6 +45,34 @@ describe('agent discovery routes', () => {
         d1BatchWorkflows: false,
       },
     })
+    expect(body.contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/)
+
+    const openapiResponse = await app.request('http://localhost:3000/api/openapi.json')
+    const openapi = await openapiResponse.json() as any
+    expect(openapi['x-zebric-contract']).toEqual(body.contract)
+    expect(openapiResponse.headers.get('etag')).toBe(`"${body.contract.fingerprint}"`)
+  })
+
+  it('keeps the contract fingerprint stable across request origins and changes it with the contract', async () => {
+    const blueprint = {
+      version: '0.1.0',
+      project: { name: 'Stable', version: '1.0.0', runtime: { min_version: '0.1.0' } },
+      entities: [], pages: [],
+      skills: [{ name: 'status', actions: [{ name: 'read', method: 'GET' as const, path: '/api/status' }] }],
+    }
+    const first = new Hono()
+    registerOpenAPIRoute(first, blueprint, { port: 3000 } as any)
+    const firstContract = (await (await first.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
+    const secondContract = (await (await first.request('http://two.example/.well-known/zebric-agent.json')).json() as any).contract
+    expect(firstContract).toEqual(secondContract)
+
+    const changed = new Hono()
+    registerOpenAPIRoute(changed, {
+      ...blueprint,
+      skills: [{ name: 'status', actions: [{ name: 'read_changed', method: 'GET', path: '/api/status' }] }],
+    }, { port: 3000 } as any)
+    const changedContract = (await (await changed.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
+    expect(changedContract.fingerprint).not.toBe(firstContract.fingerprint)
   })
 })
 

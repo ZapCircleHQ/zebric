@@ -30,4 +30,38 @@ describe('discoverZebricApplication', () => {
     await expect(discoverZebricApplication('https://zebric.example', { fetch: fetcher }))
       .rejects.toThrow('Cross-origin OpenAPI discovery is not allowed')
   })
+
+  it('requires the OpenAPI fingerprint to match discovery', async () => {
+    const fingerprint = `sha256:${'a'.repeat(64)}`
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      if (String(input).endsWith('/.well-known/zebric-agent.json')) {
+        return Response.json({
+          name: 'Issue Board', openapi: '/api/openapi.json',
+          contract: { version: '1', fingerprint },
+        })
+      }
+      return Response.json({
+        openapi: '3.1.0', info: { title: 'Issue Board', version: '1.0.0' }, paths: {},
+        'x-zebric-contract': { version: '1', fingerprint: `sha256:${'b'.repeat(64)}` },
+      })
+    }) as typeof fetch
+
+    await expect(discoverZebricApplication('https://zebric.example', { fetch: fetcher }))
+      .rejects.toThrow('discovery and OpenAPI contract fingerprints do not match')
+  })
+
+  it('accepts a matching versioned contract fingerprint', async () => {
+    const fingerprint = `sha256:${'c'.repeat(64)}`
+    const fetcher = vi.fn(async (input: string | URL | Request) => Response.json(
+      String(input).endsWith('/.well-known/zebric-agent.json')
+        ? { name: 'Issue Board', openapi: '/api/openapi.json', contract: { version: '1', fingerprint } }
+        : {
+            openapi: '3.1.0', info: { title: 'Issue Board', version: '1.0.0' }, paths: {},
+            'x-zebric-contract': { version: '1', fingerprint },
+          }
+    )) as typeof fetch
+
+    const result = await discoverZebricApplication('https://zebric.example', { fetch: fetcher })
+    expect(result.discovery?.contract).toEqual({ version: '1', fingerprint })
+  })
 })

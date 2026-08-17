@@ -20,6 +20,7 @@ export interface OpenAPISpec {
     securitySchemes: Record<string, any>
   }
   security: Array<Record<string, any[]>>
+  'x-zebric-contract'?: { version: '1'; fingerprint: string }
 }
 
 const FIELD_TYPE_MAP: Record<string, { type: string | string[]; format?: string }> = {
@@ -227,11 +228,26 @@ function extractPathParams(path: string): string[] {
 function buildOperation(
   skill: SkillConfig,
   action: SkillAction,
-  entityMap: Map<string, Entity>
+  entityMap: Map<string, Entity>,
+  blueprint: Blueprint
 ): Record<string, any> {
+  const risk = action.risk ?? inferredRisk(action.method)
+  const workflow = action.workflow
+    ? blueprint.workflows?.find(candidate => candidate.name === action.workflow)
+    : undefined
   const operation: Record<string, any> = {
     operationId: `${skill.name}_${action.name}`,
     tags: [skill.name],
+    security: skill.auth === 'none' ? [] : [{ bearerAuth: [] }],
+    'x-zebric-agent-operation': {
+      risk,
+      approvalRequired: risk !== 'read',
+      idempotencyRequired: action.method !== 'GET',
+      asynchronous: Boolean(action.workflow),
+      ...(action.scopes?.length ? { requiredScopes: action.scopes } : {}),
+      ...(action.workflow ? { workflow: action.workflow } : {}),
+      ...(workflow?.precondition ? { preconditions: workflow.precondition } : {}),
+    },
   }
 
   if (action.description) {
@@ -314,6 +330,12 @@ function buildOperation(
   return operation
 }
 
+function inferredRisk(method: SkillAction['method']): 'read' | 'write' | 'destructive' {
+  if (method === 'GET') return 'read'
+  if (method === 'DELETE') return 'destructive'
+  return 'write'
+}
+
 export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): OpenAPISpec {
   const entityMap = new Map<string, Entity>()
   for (const entity of blueprint.entities) {
@@ -366,7 +388,7 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         }
 
         const method = action.method.toLowerCase()
-        paths[pathKey][method] = buildOperation(skill, action, entityMap)
+        paths[pathKey][method] = buildOperation(skill, action, entityMap, blueprint)
       }
     }
   }
@@ -376,6 +398,13 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         operationId: 'zebric_get_workflow_job',
         tags: ['zebric'],
         description: 'Observe a workflow job owned by the authenticated caller.',
+        security: [{ bearerAuth: [] }],
+        'x-zebric-agent-operation': {
+          risk: 'read',
+          approvalRequired: false,
+          idempotencyRequired: false,
+          asynchronous: false,
+        },
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Workflow job', content: { 'application/json': { schema: { $ref: '#/components/schemas/WorkflowJob' } } } },

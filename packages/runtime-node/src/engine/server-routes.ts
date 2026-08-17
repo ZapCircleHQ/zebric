@@ -954,10 +954,12 @@ function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
 export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
   app.get('/.well-known/zebric-agent.json', async (c) => {
     const origin = resolveOrigin(c.req.raw, config)
+    const contract = agentContractMetadata(blueprint)
     return Response.json({
       name: blueprint.project.name,
       version: blueprint.project.version,
       openapi: `${origin}/api/openapi.json`,
+      contract,
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
       skills: blueprint.skills?.map(skill => skill.name) ?? [],
       capabilities: {
@@ -978,13 +980,34 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
   app.get('/api/openapi.json', async (c) => {
     const origin = resolveOrigin(c.req.raw, config)
     const spec = generateOpenAPISpec(blueprint, origin)
+    const contract = agentContractMetadata(blueprint)
+    Object.assign(spec, { 'x-zebric-contract': contract })
     return Response.json(spec, {
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Cache-Control': 'public, max-age=300',
+        ETag: `"${contract.fingerprint}"`,
       },
     })
   })
+}
+
+function agentContractMetadata(blueprint: Blueprint): { version: '1'; fingerprint: string } {
+  const canonicalContract = stableJsonValue(generateOpenAPISpec(blueprint))
+  return {
+    version: '1',
+    fingerprint: `sha256:${createHash('sha256').update(JSON.stringify(canonicalContract)).digest('hex')}`,
+  }
+}
+
+function stableJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableJsonValue)
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, stableJsonValue(nested)]))
+  }
+  return value
 }
 
 export function registerWidgetRoutes(

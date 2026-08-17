@@ -626,6 +626,8 @@ export interface SkillAction {
   mapParams?: Record<string, string>
   workflow?: string
   scopes?: string[]
+  /** Agent-facing risk. Omit to derive read/write/destructive from the HTTP method. */
+  risk?: 'read' | 'write' | 'destructive' | 'external'
 }
 
 export interface SkillQueryParameter {

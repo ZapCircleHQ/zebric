@@ -280,7 +280,7 @@ comment.create
 - [x] Generate schemas for workflow job and result responses.
 - [x] Document idempotency headers.
 - [ ] Generate stable error response schemas for `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` where applicable.
-- [ ] Include action preconditions and behavioral guidance in descriptions or extensions.
+- [x] Include action risk, approval, idempotency, asynchronous workflow, required scopes, workflow identity, and preconditions in a structured OpenAPI extension.
 - [ ] Include examples for representative requests and responses.
 - [ ] Represent per-action security requirements and scopes.
 - [ ] Mark unauthenticated skills as having no security requirement.
@@ -592,8 +592,8 @@ These are Agent API-owned prerequisites for safely releasing a generic client. C
 
 - [ ] Publish the common error envelope in OpenAPI for every applicable `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` response.
 - [ ] Give every public error a stable code and explicit retryability; distinguish idempotency-key misuse, stale state/version conflicts, workflow precondition failures, and transient server failures.
-- [ ] Publish per-operation authentication requirements, required scopes, semantic risk/effect metadata, and action preconditions so a generic client can make an informed approval proposal.
-- [ ] Publish a stable contract/runtime version or fingerprint input that clients can record and use to reject incompatible pending calls after refresh.
+- [x] Publish per-operation authentication requirements, required scopes, semantic risk/effect metadata, and action preconditions so a generic client can make an informed approval proposal.
+- [x] Publish a stable versioned contract fingerprint in discovery and OpenAPI, independent of request origin, with a matching ETag.
 - [ ] Add conformance tests proving discovery, OpenAPI, runtime validation, authorization, errors, and job responses agree for the same action.
 - [ ] Add negative conformance cases for undeclared fields, unsupported filters, invalid enums, malformed bodies, missing scopes, stale transitions, duplicate idempotency keys with changed targets/arguments, and inaccessible jobs.
 - [ ] Document which failures a client may retry automatically and require idempotency protection for every retryable mutation path.

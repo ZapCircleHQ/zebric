@@ -125,7 +125,7 @@ export async function createZebricAgent(
     }
     toolNames.add(runtimeTool.name)
     const metadata = getRuntimeToolMetadata(runtimeTool)
-    if (approval === 'human-in-the-loop' && metadata?.risk === 'write') {
+    if (approval === 'human-in-the-loop' && metadata?.approvalRequired) {
       interruptOn[runtimeTool.name] = {
         allowedDecisions: ['approve', 'reject'],
         description: `Approve ${metadata.method} ${metadata.path} on ${metadata.application}.`,

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createZebric, type Zebric } from '@zebric/runtime-node'
-import { createRuntimeReadTools, InMemoryMutationExecutionStateStore } from '../../src/runtime/action-tool-factory.js'
+import { createRuntimeReadTools, getRuntimeToolMetadata, InMemoryMutationExecutionStateStore } from '../../src/runtime/action-tool-factory.js'
 import { discoverZebricApplication } from '../../src/runtime/discovery-client.js'
 import { DeterministicAgentDriver } from '../../src/testing/deterministic-driver.js'
 import {
@@ -70,11 +70,15 @@ describe('Zebric Agent deterministic E2E', () => {
 
   it('discovers and executes the Ready to Test lookup through generated tools', async () => {
     const contract = await discoverZebricApplication(baseUrl)
+    expect(contract.discovery?.contract).toEqual(contract.openapi['x-zebric-contract'])
+    expect(contract.discovery?.contract?.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/)
     const tools = createRuntimeReadTools(contract, {
       applicationName: 'issue_board',
       credential: () => agentKey,
     })
     const driver = new DeterministicAgentDriver(tools)
+    const claimTool = tools.find(tool => tool.name === 'issue_board_issue_board_claim_issue_for_qa')
+    expect(claimTool).toBeUndefined()
 
     const columnsOutput = await driver.invoke({
       tool: 'issue_board_issue_board_list_columns',
@@ -192,6 +196,14 @@ describe('Zebric Agent deterministic E2E', () => {
         pollIntervalMs: 5,
       },
     })
+    const claimMetadata = getRuntimeToolMetadata(
+      tools.find(tool => tool.name === 'issue_board_issue_board_claim_issue_for_qa')!
+    )
+    expect(claimMetadata).toEqual(expect.objectContaining({
+      risk: 'write', approvalRequired: true, idempotencyRequired: true,
+      asynchronous: true, requiredScopes: ['qa.claim'], workflow: 'ClaimIssueForQA',
+      preconditions: { 'variables.data.record.qaState': 'ready_to_test' },
+    }))
     const driver = new DeterministicAgentDriver(tools)
     const call = {
       tool: 'issue_board_issue_board_claim_issue_for_qa',

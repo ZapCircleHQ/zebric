@@ -208,6 +208,36 @@ path = "/api/issues/{id}"
     expect(bp.skills![0].auth).toBeUndefined()
   })
 
+  it('parses declared agent risk and rejects risk that contradicts the HTTP method', () => {
+    const valid = parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "archive_issue"
+method = "POST"
+path = "/api/issues/{id}/archive"
+risk = "destructive"
+`), 'toml')
+    expect(valid.skills![0].actions[0].risk).toBe('destructive')
+
+    expect(() => parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "unsafe_read"
+method = "GET"
+path = "/api/issues"
+risk = "write"
+`), 'toml')).toThrow('GET skill actions must use read risk')
+
+    expect(() => parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "unsafe_write"
+method = "POST"
+path = "/api/issues"
+risk = "read"
+`), 'toml')).toThrow('Mutating skill actions cannot use read risk')
+  })
+
   it('parses multiple skills', () => {
     const toml = blueprintWithSkill(`
 [skill.dispatch]
