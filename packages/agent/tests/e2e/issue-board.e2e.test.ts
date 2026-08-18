@@ -25,7 +25,7 @@ describe('Zebric Agent deterministic E2E', () => {
   const seederKey = 'deterministic-e2e-seeder-key'
   const observerKey = 'deterministic-e2e-observer-key'
   let claimedJobId = ''
-  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string }
+  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string; retry: string }
 
   beforeAll(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
@@ -93,7 +93,7 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { columnId: columns[0]!.id },
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
-    expect(issues).toHaveLength(7)
+    expect(issues).toHaveLength(8)
     const issue = selectIssueBoardQaCandidate(issues as any)!
     expect(issue.title).toBe('Deterministic Agent API Test')
     expect(issue).toEqual(expect.objectContaining({
@@ -270,6 +270,43 @@ describe('Zebric Agent deterministic E2E', () => {
     })
     await expectAgentApiError(conflictingReuse, 409, 'IDEMPOTENCY_KEY_REUSE', false)
     await waitForJob(baseUrl, agentKey, accepted.job.url)
+  })
+
+  it('retries an explicitly transient mutation with one idempotency key and one workflow transition', async () => {
+    const mutationKeys: string[] = []
+    let injectedFailure = false
+    const faultInjectingFetch: typeof fetch = async (input, init) => {
+      if (init?.method === 'POST' && String(input).includes(`/api/agent/issues/${seededIssues.retry}/claim`)) {
+        mutationKeys.push((init.headers as Record<string, string>)['idempotency-key']!)
+        if (!injectedFailure) {
+          injectedFailure = true
+          return Response.json({
+            error: { code: 'TEMPORARY_FAILURE', message: 'Injected transient failure', retryable: true },
+          }, { status: 503, headers: { 'Retry-After': '0' } })
+        }
+      }
+      return fetch(input, init)
+    }
+    const contract = await discoverZebricApplication(baseUrl)
+    const driver = new DeterministicAgentDriver(createRuntimeReadTools(contract, {
+      applicationName: 'issue_board', credential: () => agentKey, fetch: faultInjectingFetch,
+      retry: { maxAttempts: 2, sleep: async () => {} },
+      mutations: {
+        approve: () => true,
+        idempotencyKey: () => 'real-runtime-retry-key',
+        agentRunId: () => 'real-runtime-retry-run',
+        pollIntervalMs: 2,
+      },
+    }))
+
+    const output = JSON.parse(String(await driver.invoke({
+      tool: 'issue_board_issue_board_claim_issue_for_qa', input: { id: seededIssues.retry },
+    })))
+    expect(output.status).toBe('succeeded')
+    expect(mutationKeys).toEqual(['real-runtime-retry-key', 'real-runtime-retry-key'])
+    expect(await getJson(baseUrl, agentKey, `/api/agent/issues/${seededIssues.retry}`)).toEqual(expect.objectContaining({
+      qaState: 'testing', qaRunId: 'real-runtime-retry-run',
+    }))
   })
 
   it('resumes an interrupted workflow job without submitting the mutation twice', async () => {
@@ -537,7 +574,7 @@ describe('Zebric Agent deterministic E2E', () => {
 async function seedIssueBoard(
   baseUrl: string,
   credential: string
-): Promise<{ complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string }> {
+): Promise<{ complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string; retry: string }> {
   const ready = await postJson(baseUrl, credential, '/api/columns', {
     key: 'ready_to_test', name: 'Ready to Test', position: 0,
   }) as { id: string }
@@ -568,9 +605,10 @@ async function seedIssueBoard(
   const identity = await createIssue('Deterministic Identity Test', 4)
   const interrupted = await createIssue('Deterministic Interrupted Job Test', 5)
   const idempotency = await createIssue('Deterministic Idempotency Error Test', 6)
+  const retry = await createIssue('Deterministic Retry Test', 7)
   return {
     complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id,
-    identity: identity.id, interrupted: interrupted.id, idempotency: idempotency.id,
+    identity: identity.id, interrupted: interrupted.id, idempotency: idempotency.id, retry: retry.id,
   }
 }
 

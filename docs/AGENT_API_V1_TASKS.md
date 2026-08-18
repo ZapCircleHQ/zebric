@@ -315,9 +315,9 @@ Example:
 
 ### 5.3 Stabilize error envelopes
 
-- [ ] Define a common machine-readable error schema.
-- [ ] Include a stable error code, safe message, request ID, and optional field details.
-- [ ] Do not expose raw exceptions or secrets in production.
+- [x] Define a common machine-readable error schema.
+- [x] Include a stable error code, safe message, explicit retryability, request ID, and optional bounded field details.
+- [x] Do not expose raw workflow/internal exceptions or secrets in Agent API responses.
 - [ ] Document which failures are retryable.
 
 Suggested shape:

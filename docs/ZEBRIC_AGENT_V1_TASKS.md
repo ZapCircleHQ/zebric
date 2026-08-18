@@ -481,7 +481,7 @@ apply_blueprint_patch
 - [x] Parse stable Agent API error envelopes into safe typed failures without retaining unrecognized response fields.
 - [x] Preserve the runtime-declared retryability and bounded structured details on typed Agent API failures.
 - [x] Distinguish authentication, authorization, validation, missing-resource, conflict, rate-limit, and server failures.
-- [ ] Retry only documented retryable failures.
+- [x] Retry only failures explicitly marked retryable by the Agent API, with bounded attempts, `Retry-After`, and capped exponential backoff.
 - [x] Never automatically retry an unsafe mutation without idempotency protection.
 
 ### 5.2 Add idempotency behavior
@@ -716,6 +716,7 @@ mode = "project"
 - [x] Use a real Zebric runtime and isolated issue-board database for Agent API E2E tests.
 - [x] Drive a real runtime through the compiled CLI using an exact, local scripted-model HTTP transcript with no LLM or external network dependency.
 - [x] Prove compiled-CLI mutation approval, rejection before dispatch, workflow-job observation, cross-process idempotent retry, state transition, and audit attribution.
+- [x] Fault-inject a retryable mutation failure and prove the retry reaches the real runtime with one idempotency key and one workflow transition.
 - [x] Assert authenticated agent, credential, run, request, and correlation attribution in the runtime audit log.
 - [x] Assert terminal workflow success and failure audit events without recording the raw API credential.
 - [x] Prove failed transactions cannot retain a success audit intent or emit a misleading completion audit.

@@ -117,6 +117,16 @@ export interface RuntimeToolFactoryOptions {
   maxResponseBytes?: number
   mutations?: RuntimeMutationOptions
   correlationId?: () => string | undefined
+  retry?: false | {
+    /** Total attempts including the initial request. Defaults to 3. */
+    maxAttempts?: number
+    /** Initial exponential-backoff delay. Defaults to 250ms. */
+    baseDelayMs?: number
+    /** Maximum backoff delay. Defaults to 5s. */
+    maxDelayMs?: number
+    /** Injectable timer for deterministic tests. */
+    sleep?: (delayMs: number) => Promise<void>
+  }
 }
 
 export interface RuntimeToolMetadata {
@@ -265,7 +275,6 @@ export function createRuntimeReadTools(
   options: RuntimeToolFactoryOptions
 ) {
   const fetcher = options.fetch ?? globalThis.fetch
-  const timeoutMs = options.timeoutMs ?? 10_000
   const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
   const tools = []
 
@@ -377,10 +386,9 @@ export function createRuntimeReadTools(
         const requestBody = isMutation
           ? Object.fromEntries(Object.keys(bodyProperties).filter(name => input[name] !== undefined).map(name => [name, input[name]]))
           : undefined
-        const response = await fetcher(url, {
+        const requestInit: RequestInit = {
           method: method.toUpperCase(),
           redirect: 'error',
-          signal: AbortSignal.timeout(timeoutMs),
           headers: {
             accept: 'application/json',
             ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
@@ -392,7 +400,8 @@ export function createRuntimeReadTools(
             ...(credential ? { authorization: `Bearer ${credential}` } : {}),
           },
           ...(requestBody ? { body: JSON.stringify(requestBody) } : {}),
-        })
+        }
+        const response = await fetchWithRetry(fetcher, url, requestInit, options, !isMutation || Boolean(idempotencyKey))
         const contentLength = Number(response.headers.get('content-length') ?? 0)
         if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
         const responseBody = redactSensitiveText(await response.text(), credential)
@@ -640,15 +649,14 @@ async function observeJob(
   const pollIntervalMs = options.mutations?.pollIntervalMs ?? 25
   for (let attempt = 0; attempt < maxPolls; attempt++) {
     const correlationId = options.correlationId?.()
-    const response = await fetcher(jobUrl, {
+    const response = await fetchWithRetry(fetcher, jobUrl, {
       headers: {
         accept: 'application/json',
         ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
         ...(credential ? { authorization: `Bearer ${credential}` } : {}),
       },
       redirect: 'error',
-      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
-    })
+    }, options, true)
     const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
     const contentLength = Number(response.headers.get('content-length') ?? 0)
     if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
@@ -662,6 +670,68 @@ async function observeJob(
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
   }
   throw new Error('Timed out waiting for Zebric workflow job')
+}
+
+async function fetchWithRetry(
+  fetcher: typeof globalThis.fetch,
+  input: URL,
+  init: RequestInit,
+  options: RuntimeToolFactoryOptions,
+  safeToRetry: boolean
+): Promise<Response> {
+  const retry = resolveRetryPolicy(options.retry)
+  for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
+    const response = await fetcher(input, {
+      ...init,
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+    })
+    if (!safeToRetry || attempt === retry.maxAttempts || !await explicitlyRetryable(response)) return response
+    const delayMs = retryAfterDelay(response.headers.get('retry-after'))
+      ?? Math.min(retry.maxDelayMs, retry.baseDelayMs * (2 ** (attempt - 1)))
+    response.body?.cancel().catch(() => {})
+    await retry.sleep(delayMs)
+  }
+  throw new Error('Unreachable retry state')
+}
+
+function resolveRetryPolicy(retry: RuntimeToolFactoryOptions['retry']): {
+  maxAttempts: number
+  baseDelayMs: number
+  maxDelayMs: number
+  sleep(delayMs: number): Promise<void>
+} {
+  if (retry === false) return { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0, sleep: async () => {} }
+  const maxAttempts = retry?.maxAttempts ?? 3
+  const baseDelayMs = retry?.baseDelayMs ?? 250
+  const maxDelayMs = retry?.maxDelayMs ?? 5_000
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) throw new TypeError('Retry maxAttempts must be a positive integer')
+  if (!Number.isFinite(baseDelayMs) || baseDelayMs < 0) throw new TypeError('Retry baseDelayMs must be non-negative')
+  if (!Number.isFinite(maxDelayMs) || maxDelayMs < 0) throw new TypeError('Retry maxDelayMs must be non-negative')
+  return {
+    maxAttempts,
+    baseDelayMs,
+    maxDelayMs,
+    sleep: retry?.sleep ?? (delayMs => new Promise(resolve => setTimeout(resolve, delayMs))),
+  }
+}
+
+async function explicitlyRetryable(response: Response): Promise<boolean> {
+  if (response.ok) return false
+  try {
+    const body = await response.clone().json() as { error?: { retryable?: unknown } }
+    return body.error?.retryable === true
+  } catch {
+    return false
+  }
+}
+
+function retryAfterDelay(value: string | null): number | undefined {
+  if (!value) return undefined
+  const seconds = Number(value)
+  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1_000
+  const date = Date.parse(value)
+  if (!Number.isFinite(date)) return undefined
+  return Math.max(0, date - Date.now())
 }
 
 function redactSensitiveText(value: string, credential: string | undefined): string {

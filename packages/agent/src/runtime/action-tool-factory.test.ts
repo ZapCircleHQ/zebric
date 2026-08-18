@@ -326,6 +326,74 @@ describe('createRuntimeReadTools', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it('retries an explicitly retryable mutation with the same idempotency key and honors Retry-After', async () => {
+    const delays: number[] = []
+    const fetcher = vi.fn(async () => fetcher.mock.calls.length === 1
+      ? Response.json({
+          error: { code: 'RATE_LIMITED', message: 'Slow down', retryable: true },
+        }, { status: 429, headers: { 'Retry-After': '2' } })
+      : Response.json({ claimed: true })) as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher,
+      retry: { maxAttempts: 3, sleep: async delay => { delays.push(delay) } },
+      mutations: {
+        approve: () => true,
+        idempotencyKey: () => 'stable-retry-key',
+        agentRunId: () => 'retry-run',
+      },
+    })
+    const claim = tools.find(item => item.name === 'local_issue_board_claim_issue')!
+
+    expect(await claim.invoke({ id: 'issue-1', runId: 'run-1' })).toBe(JSON.stringify({ claimed: true }))
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(fetcher.mock.calls.map(([, init]) =>
+      (init?.headers as Record<string, string>)['idempotency-key']
+    )).toEqual(['stable-retry-key', 'stable-retry-key'])
+    expect(delays).toEqual([2_000])
+  })
+
+  it('uses bounded exponential backoff and returns the final typed failure after exhaustion', async () => {
+    const delays: number[] = []
+    const fetcher = vi.fn(async () => Response.json({
+      error: { code: 'TEMPORARY_FAILURE', message: 'Try again', retryable: true },
+    }, { status: 503 })) as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher,
+      retry: {
+        maxAttempts: 3, baseDelayMs: 10, maxDelayMs: 15,
+        sleep: async delay => { delays.push(delay) },
+      },
+    })
+
+    const failure = await tools[0]!.invoke({}).catch(error => error)
+    expect(fetcher).toHaveBeenCalledTimes(3)
+    expect(delays).toEqual([10, 15])
+    expect(failure).toMatchObject({ code: 'TEMPORARY_FAILURE', status: 503, retryable: true })
+  })
+
+  it('does not retry failures that the Agent API marks non-retryable', async () => {
+    const sleep = vi.fn(async () => {})
+    const fetcher = vi.fn(async () => Response.json({
+      error: { code: 'STATE_CONFLICT', message: 'No retry', retryable: false },
+    }, { status: 503 })) as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher, retry: { maxAttempts: 3, sleep },
+    })
+
+    await expect(tools[0]!.invoke({})).rejects.toMatchObject({ code: 'STATE_CONFLICT', retryable: false })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(sleep).not.toHaveBeenCalled()
+  })
+
+  it('validates retry configuration before issuing a request', async () => {
+    const fetcher = vi.fn() as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher, retry: { maxAttempts: 0 },
+    })
+    await expect(tools[0]!.invoke({})).rejects.toThrow('positive integer')
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
   it('applies timeout and response-size limits while polling jobs', async () => {
     const fetcher = vi.fn(async (_input, init) => {
       if (fetcher.mock.calls.length === 1) {

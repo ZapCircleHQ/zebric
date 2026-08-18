@@ -12,6 +12,7 @@ import {
   InMemoryMutationExecutionStateStore,
 } from '../runtime/action-tool-factory.js'
 import type { RuntimeMutationOptions } from '../runtime/action-tool-factory.js'
+import type { RuntimeToolFactoryOptions } from '../runtime/action-tool-factory.js'
 import { resolveExistingWorkspacePath } from '../authoring/workspace-path.js'
 import {
   credentialProvider,
@@ -58,6 +59,7 @@ export interface CreateZebricAgentOptions {
     baseUrl: string
     credential?: ZebricCredentialReference | ZebricCredentialProvider
     mutations?: RuntimeMutationOptions
+    retry?: RuntimeToolFactoryOptions['retry']
   }>
   fetch?: typeof globalThis.fetch
   mutationState?: import('../runtime/action-tool-factory.js').MutationExecutionStateStore
@@ -115,6 +117,7 @@ export async function createZebricAgent(
           ?? (() => getZebricAgentRuntimeContext()?.threadId ?? getZebricAgentRuntimeContext()?.runId),
       } : undefined,
       correlationId: () => getZebricAgentRuntimeContext()?.correlationId,
+      retry: application.retry,
     }))
   }
   const toolNames = new Set<string>(['validate_blueprint'])
