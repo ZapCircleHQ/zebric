@@ -232,7 +232,10 @@ describe('createRuntimeReadTools', () => {
 
   it('parses safe Agent API error envelopes into typed failures', async () => {
     const fetcher = vi.fn(async () => Response.json({
-      error: { message: 'Issue state changed', code: 'STATE_CONFLICT', requestId: 'req-1' },
+      error: {
+        message: 'Issue state changed', code: 'STATE_CONFLICT', requestId: 'req-1',
+        retryable: false, details: { currentState: 'testing' },
+      },
       ignoredSecret: 'must-not-appear',
     }, { status: 409 })) as typeof fetch
     const tools = createRuntimeReadTools(contract, { applicationName: 'local', fetch: fetcher })
@@ -242,6 +245,7 @@ describe('createRuntimeReadTools', () => {
     expect(failure).toMatchObject({
       message: 'Issue state changed', status: 409, code: 'STATE_CONFLICT',
       requestId: 'req-1', kind: 'conflict', retryable: false,
+      details: { currentState: 'testing' },
     })
     expect(JSON.stringify(failure)).not.toContain('must-not-appear')
   })

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  applyRateLimiting,
   initApiKeys,
   resolveApiKeySession,
   resolveAgentAttribution,
@@ -7,6 +8,27 @@ import {
   normalizeCsrfToken,
 } from './server-security.js'
 import type { Blueprint } from '@zebric/runtime-core'
+import { Hono } from 'hono'
+
+describe('applyRateLimiting', () => {
+  it('returns the common retryable error envelope and Retry-After header', async () => {
+    const app = new Hono()
+    const store = new Map<string, { count: number; resetAt: number }>()
+    app.use('*', async (c, next) => applyRateLimiting(c, store, { max: 1, windowMs: 60_000 }) ?? next())
+    app.get('/api/agent/test', c => c.json({ ok: true }))
+
+    expect((await app.request('/api/agent/test')).status).toBe(200)
+    const limited = await app.request('/api/agent/test')
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('retry-after')).toMatch(/^\d+$/)
+    expect(await limited.json()).toMatchObject({
+      error: {
+        code: 'RATE_LIMITED', message: 'The request rate limit was exceeded', retryable: true,
+        details: { retryAfterSeconds: expect.any(Number) },
+      },
+    })
+  })
+})
 
 function makeBlueprint(auth?: any): Blueprint {
   return {

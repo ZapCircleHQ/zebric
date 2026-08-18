@@ -162,7 +162,33 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
   return undefined
 }
 
-function buildResponses(action: SkillAction): Record<string, any> {
+function agentApiErrorResponse(description: string, codes: string[]): Record<string, any> {
+  return {
+    description,
+    content: { 'application/json': { schema: { $ref: '#/components/schemas/AgentApiError' } } },
+    'x-zebric-error-codes': codes,
+  }
+}
+
+function errorResponses(action: SkillAction, authenticated: boolean): Record<string, any> {
+  return {
+    '400': agentApiErrorResponse('Invalid request', ['INVALID_REQUEST', 'INVALID_QUERY', 'INVALID_AGENT_ATTRIBUTION']),
+    ...(authenticated ? {
+      '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+      '403': agentApiErrorResponse('Insufficient scope or invalid CSRF protection', ['INSUFFICIENT_SCOPE', 'CSRF_INVALID']),
+    } : {}),
+    '404': agentApiErrorResponse('Resource or workflow not found', ['RESOURCE_NOT_FOUND', 'WORKFLOW_NOT_FOUND']),
+    ...(action.method !== 'GET' ? {
+      '409': agentApiErrorResponse('Idempotency or state conflict', [
+        'IDEMPOTENCY_KEY_REUSE', 'WORKFLOW_PRECONDITION_FAILED', 'STATE_CONFLICT',
+      ]),
+    } : {}),
+    '429': agentApiErrorResponse('Rate limit exceeded', ['RATE_LIMITED']),
+    '500': agentApiErrorResponse('Agent API action failed', ['INTERNAL_ERROR', 'WORKFLOW_UNAVAILABLE']),
+  }
+}
+
+function buildResponses(action: SkillAction, authenticated: boolean): Record<string, any> {
   if (action.workflow) {
     return {
       '202': {
@@ -173,8 +199,7 @@ function buildResponses(action: SkillAction): Record<string, any> {
           },
         },
       },
-      '401': { description: 'Unauthorized' },
-      '409': { description: 'Workflow precondition or state conflict' },
+      ...errorResponses(action, authenticated),
     }
   }
   const statusCode = action.action === 'create' ? '201' : '200'
@@ -203,7 +228,7 @@ function buildResponses(action: SkillAction): Record<string, any> {
 
   const responses: Record<string, any> = {
     [statusCode]: response,
-    '401': { description: 'Unauthorized' },
+    ...errorResponses(action, authenticated),
   }
 
   if (action.entity && (action.action === 'get' || action.action === 'update' || action.action === 'delete')) {
@@ -302,7 +327,7 @@ function buildOperation(
   }
 
   // Responses
-  operation.responses = buildResponses(action)
+  operation.responses = buildResponses(action, skill.auth !== 'none')
   if (action.scopes?.length) {
     operation.responses['403'] = { description: 'Insufficient agent scope' }
   }
@@ -370,6 +395,23 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
       error: { type: ['string', 'null'] },
     },
   }
+  schemas.AgentApiError = {
+    type: 'object',
+    required: ['error'],
+    properties: {
+      error: {
+        type: 'object',
+        required: ['code', 'message', 'retryable'],
+        properties: {
+          code: { type: 'string' },
+          message: { type: 'string' },
+          retryable: { type: 'boolean' },
+          requestId: { type: 'string' },
+          details: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  }
 
   for (const entity of blueprint.entities) {
     schemas[entity.name] = entityToSchema(entity)
@@ -408,8 +450,10 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
         responses: {
           '200': { description: 'Workflow job', content: { 'application/json': { schema: { $ref: '#/components/schemas/WorkflowJob' } } } },
-          '401': { description: 'Unauthorized' },
-          '404': { description: 'Job not found' },
+          '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+          '404': agentApiErrorResponse('Job not found', ['JOB_NOT_FOUND']),
+          '429': agentApiErrorResponse('Rate limit exceeded', ['RATE_LIMITED']),
+          '500': agentApiErrorResponse('Agent API job lookup failed', ['INTERNAL_ERROR']),
         },
       },
     }

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createZebric, type Zebric } from '@zebric/runtime-node'
-import { createRuntimeReadTools, getRuntimeToolMetadata, InMemoryMutationExecutionStateStore } from '../../src/runtime/action-tool-factory.js'
+import { createRuntimeReadTools, getRuntimeToolMetadata, InMemoryMutationExecutionStateStore, ZebricApiError } from '../../src/runtime/action-tool-factory.js'
 import { discoverZebricApplication } from '../../src/runtime/discovery-client.js'
 import { DeterministicAgentDriver } from '../../src/testing/deterministic-driver.js'
 import {
@@ -25,7 +25,7 @@ describe('Zebric Agent deterministic E2E', () => {
   const seederKey = 'deterministic-e2e-seeder-key'
   const observerKey = 'deterministic-e2e-observer-key'
   let claimedJobId = ''
-  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string }
+  let seededIssues: { complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string }
 
   beforeAll(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), 'zebric-agent-e2e-'))
@@ -93,7 +93,7 @@ describe('Zebric Agent deterministic E2E', () => {
       input: { columnId: columns[0]!.id },
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
-    expect(issues).toHaveLength(6)
+    expect(issues).toHaveLength(7)
     const issue = selectIssueBoardQaCandidate(issues as any)!
     expect(issue.title).toBe('Deterministic Agent API Test')
     expect(issue).toEqual(expect.objectContaining({
@@ -136,6 +136,24 @@ describe('Zebric Agent deterministic E2E', () => {
     expect(driver.transcript).toEqual([])
   })
 
+  it('returns stable authentication and scope error envelopes', async () => {
+    const unauthenticated = await fetch(`${baseUrl}/api/agent/columns?key=ready_to_test`)
+    await expectAgentApiError(unauthenticated, 401, 'AUTHENTICATION_REQUIRED', false)
+
+    const insufficientScope = await fetch(`${baseUrl}/api/agent/columns?key=ready_to_test`, {
+      headers: { authorization: `Bearer ${observerKey}` },
+    })
+    const scopeError = await expectAgentApiError(insufficientScope, 403, 'INSUFFICIENT_SCOPE', false)
+    expect(scopeError.error.details).toEqual({ requiredScopes: ['qa.list'] })
+
+    const invalidBearerMutation = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.interrupted}/claim`, {
+      method: 'POST',
+      headers: { authorization: 'Bearer invalid-agent-key', 'content-type': 'application/json' },
+      body: '{}',
+    })
+    await expectAgentApiError(invalidBearerMutation, 403, 'CSRF_INVALID', false)
+  })
+
   it('requires server-bound run attribution and ignores spoofed body identity', async () => {
     const withoutRun = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.identity}/claim`, {
       method: 'POST',
@@ -147,6 +165,7 @@ describe('Zebric Agent deterministic E2E', () => {
       body: JSON.stringify({ runId: 'body-spoof' }),
     })
     expect(withoutRun.status).toBe(400)
+    await expectAgentApiError(withoutRun, 400, 'INVALID_AGENT_ATTRIBUTION', false)
 
     const accepted = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.identity}/claim`, {
       method: 'POST',
@@ -233,6 +252,26 @@ describe('Zebric Agent deterministic E2E', () => {
     }))
   })
 
+  it('distinguishes idempotency-key misuse from state conflicts', async () => {
+    const headers = {
+      authorization: `Bearer ${agentKey}`,
+      'content-type': 'application/json',
+      'idempotency-key': 'e2e-reused-with-different-target',
+      'x-agent-run-id': 'idempotency-error-run',
+    }
+    const first = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.idempotency}/claim`, {
+      method: 'POST', headers, body: '{}',
+    })
+    expect(first.status).toBe(202)
+    const accepted = await first.json() as { job: { url: string } }
+
+    const conflictingReuse = await fetch(`${baseUrl}/api/agent/issues/${seededIssues.interrupted}/claim`, {
+      method: 'POST', headers, body: '{}',
+    })
+    await expectAgentApiError(conflictingReuse, 409, 'IDEMPOTENCY_KEY_REUSE', false)
+    await waitForJob(baseUrl, agentKey, accepted.job.url)
+  })
+
   it('resumes an interrupted workflow job without submitting the mutation twice', async () => {
     const contract = await discoverZebricApplication(baseUrl)
     const state = new InMemoryMutationExecutionStateStore()
@@ -274,7 +313,7 @@ describe('Zebric Agent deterministic E2E', () => {
     const response = await fetch(`${baseUrl}/api/jobs/${claimedJobId}`, {
       headers: { authorization: `Bearer ${observerKey}` },
     })
-    expect(response.status).toBe(404)
+    await expectAgentApiError(response, 404, 'JOB_NOT_FOUND', false)
   })
 
   it('returns a conflict when another run claims the already claimed issue', async () => {
@@ -290,10 +329,14 @@ describe('Zebric Agent deterministic E2E', () => {
     })
     const driver = new DeterministicAgentDriver(tools)
 
-    await expect(driver.invoke({
+    const failure = await driver.invoke({
       tool: 'issue_board_issue_board_claim_issue_for_qa',
       input: { id: seededIssues.complete },
-    })).rejects.toThrow('HTTP 409')
+    }).catch(error => error)
+    expect(failure).toBeInstanceOf(ZebricApiError)
+    expect(failure).toMatchObject({
+      status: 409, code: 'WORKFLOW_PRECONDITION_FAILED', kind: 'conflict', retryable: false,
+    })
     expect(driver.transcript).toEqual([])
   })
 
@@ -494,7 +537,7 @@ describe('Zebric Agent deterministic E2E', () => {
 async function seedIssueBoard(
   baseUrl: string,
   credential: string
-): Promise<{ complete: string; needsWork: string; race: string; rollback: string; identity: string }> {
+): Promise<{ complete: string; needsWork: string; race: string; rollback: string; identity: string; interrupted: string; idempotency: string }> {
   const ready = await postJson(baseUrl, credential, '/api/columns', {
     key: 'ready_to_test', name: 'Ready to Test', position: 0,
   }) as { id: string }
@@ -524,7 +567,11 @@ async function seedIssueBoard(
   const rollback = await createIssue('Deterministic Transaction Rollback Test', 3)
   const identity = await createIssue('Deterministic Identity Test', 4)
   const interrupted = await createIssue('Deterministic Interrupted Job Test', 5)
-  return { complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id, identity: identity.id, interrupted: interrupted.id }
+  const idempotency = await createIssue('Deterministic Idempotency Error Test', 6)
+  return {
+    complete: complete.id, needsWork: needsWork.id, race: race.id, rollback: rollback.id,
+    identity: identity.id, interrupted: interrupted.id, idempotency: idempotency.id,
+  }
 }
 
 async function mutationDriver(baseUrl: string, credential: string, runId: string): Promise<DeterministicAgentDriver> {
@@ -546,6 +593,23 @@ async function getJson(baseUrl: string, credential: string, path: string): Promi
   })
   if (!response.ok) throw new Error(`GET ${path} failed: ${response.status}`)
   return response.json()
+}
+
+async function expectAgentApiError(
+  response: Response,
+  status: number,
+  code: string,
+  retryable: boolean
+): Promise<{ error: { code: string; message: string; retryable: boolean; requestId?: string; details?: Record<string, unknown> } }> {
+  expect(response.status).toBe(status)
+  const body = await response.json() as {
+    error: { code: string; message: string; retryable: boolean; requestId?: string; details?: Record<string, unknown> }
+  }
+  expect(body).toMatchObject({ error: { code, retryable } })
+  expect(body.error.message).toEqual(expect.any(String))
+  expect(body.error.message.length).toBeGreaterThan(0)
+  expect(Object.keys(body)).toEqual(['error'])
+  return body
 }
 
 async function waitForJob(baseUrl: string, credential: string, path: string): Promise<void> {

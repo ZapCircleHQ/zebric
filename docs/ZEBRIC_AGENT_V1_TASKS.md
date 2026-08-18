@@ -479,6 +479,7 @@ apply_blueprint_patch
 - [x] Send idempotency identifiers for mutations.
 - [x] Apply per-request timeouts and cancellation.
 - [x] Parse stable Agent API error envelopes into safe typed failures without retaining unrecognized response fields.
+- [x] Preserve the runtime-declared retryability and bounded structured details on typed Agent API failures.
 - [x] Distinguish authentication, authorization, validation, missing-resource, conflict, rate-limit, and server failures.
 - [ ] Retry only documented retryable failures.
 - [x] Never automatically retry an unsafe mutation without idempotency protection.

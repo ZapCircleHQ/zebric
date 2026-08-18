@@ -15,6 +15,7 @@ import {
   registerWidgetRoutes as registerSharedWidgetRoutes,
   registerSearchRoutes as registerSharedSearchRoutes,
 } from '@zebric/runtime-hono'
+import { agentApiError } from './agent-api-error.js'
 import {
   getMimeType,
   resolveOrigin,
@@ -605,7 +606,7 @@ export function registerSkillRoutes(
             session = await sessionManager.getSession(c.req.raw)
           }
           if (skill.auth !== 'none' && !session) {
-            return Response.json({ error: 'Unauthorized' }, { status: 401 })
+            return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
           }
           if (!agentHasScopes(session, action.scopes ?? [])) {
             auditLogger?.logAccessDenied(action.path, `${skill.name}.${action.name}`, session?.actor?.id ?? session?.user?.id, {
@@ -618,7 +619,9 @@ export function registerSkillRoutes(
               actionName: `${skill.name}.${action.name}`,
               metadata: { requiredScopes: action.scopes },
             })
-            return Response.json({ error: 'Forbidden', requiredScopes: action.scopes }, { status: 403 })
+            return agentApiError(c, 403, 'INSUFFICIENT_SCOPE', 'The credential lacks required scopes', {
+              details: { requiredScopes: action.scopes ?? [] },
+            })
           }
           attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
 
@@ -669,7 +672,7 @@ export function registerSkillRoutes(
           const existing = idempotency.get(scope)
           if (existing) {
             if (existing.fingerprint !== fingerprint) {
-              return Response.json({ error: 'Idempotency key reused with different input' }, { status: 409 })
+              return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different request input')
             }
             return (await existing.response).clone()
           }
@@ -704,13 +707,16 @@ export function registerSkillRoutes(
             correlationId: getCorrelationId(c),
             metadata: { skill: skill.name, method: action.method, workflow: action.workflow, status },
           })
-          return Response.json(
-            {
-              error: 'Skill action failed',
-              details: message
-            },
-            { status }
-          )
+          if (status === 400) {
+            return agentApiError(c, 400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required')
+          }
+          if (status === 409 && message.includes('precondition failed')) {
+            return agentApiError(c, 409, 'WORKFLOW_PRECONDITION_FAILED', 'The workflow precondition was not satisfied')
+          }
+          if (status === 409) {
+            return agentApiError(c, 409, 'STATE_CONFLICT', 'The requested state transition conflicts with current state')
+          }
+          return agentApiError(c, 500, 'INTERNAL_ERROR', 'The Agent API action failed', { retryable: true })
         }
       })
     }
@@ -734,12 +740,12 @@ export function registerWorkflowJobRoutes(
       session = resolveApiKeySession(authHeader.slice(7), apiKeys)
     }
     if (!session) session = await sessionManager.getSession(c.req.raw)
-    if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+    if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
 
     const job = workflowManager.getJob(c.req.param('id'))
     const ownerId = sessionSecurityId(job?.context.session)
     if (!job || !ownerId || ownerId !== sessionSecurityId(session)) {
-      return Response.json({ error: 'Job not found' }, { status: 404 })
+      return agentApiError(c, 404, 'JOB_NOT_FOUND', 'The workflow job was not found')
     }
     return Response.json({
       id: job.id,

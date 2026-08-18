@@ -3,6 +3,7 @@ import type { SkillAction } from '@zebric/runtime-core'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
 import { resolveAgentAttribution } from './server-security.js'
+import { agentApiError } from './agent-api-error.js'
 
 function coerceQueryValue(value: string, type: string): string | number | boolean {
   if (type === 'Integer') {
@@ -91,7 +92,7 @@ export async function handleSkillEntityAction(
     case 'update': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const body = await c.req.json<Record<string, any>>()
       const before = workflowManager
@@ -113,10 +114,9 @@ export async function handleSkillEntityAction(
       try {
         where = parseSkillQuery(c, action)
       } catch (error) {
-        return Response.json({
-          error: 'Invalid query parameters',
-          details: error instanceof Error ? error.message : String(error),
-        }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_QUERY', 'Query parameters are invalid', {
+          details: { reason: error instanceof Error ? error.message : String(error) },
+        })
       }
       if (action.mapParams) {
         for (const [pathParam, entityField] of Object.entries(action.mapParams)) {
@@ -146,11 +146,11 @@ export async function handleSkillEntityAction(
     case 'get': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const result = await queryExecutor.findById(entityName, id, { session })
       if (!result) {
-        return Response.json({ error: 'Not found' }, { status: 404 })
+        return agentApiError(c, 404, 'RESOURCE_NOT_FOUND', 'The requested resource was not found')
       }
       return Response.json(result)
     }
@@ -158,7 +158,7 @@ export async function handleSkillEntityAction(
     case 'delete': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const existing = workflowManager
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
@@ -175,7 +175,7 @@ export async function handleSkillEntityAction(
     }
 
     default:
-      return Response.json({ error: `Unknown action: ${action.action}` }, { status: 400 })
+      return agentApiError(c, 400, 'UNSUPPORTED_ACTION', 'The declared skill action is unsupported')
   }
 }
 
@@ -188,13 +188,13 @@ export async function handleSkillWorkflow(
   const { queryExecutor, workflowManager } = deps
 
   if (!workflowManager) {
-    return Response.json({ error: 'Workflow engine not available' }, { status: 500 })
+    return agentApiError(c, 500, 'WORKFLOW_UNAVAILABLE', 'Workflow execution is unavailable', { retryable: true })
   }
 
   const workflowName = action.workflow!
   const workflow = workflowManager.getWorkflow(workflowName)
   if (!workflow) {
-    return Response.json({ error: `Workflow '${workflowName}' not found` }, { status: 404 })
+    return agentApiError(c, 404, 'WORKFLOW_NOT_FOUND', 'The declared workflow was not found')
   }
 
   let body: Record<string, any> = {}

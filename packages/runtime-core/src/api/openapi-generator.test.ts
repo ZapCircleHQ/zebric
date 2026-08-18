@@ -256,7 +256,10 @@ describe('generateOpenAPISpec', () => {
           { name: 'status', method: 'GET', path: '/api/public/status' },
         ] }],
       })
-      expect(generateOpenAPISpec(bp).paths['/api/public/status'].get.security).toEqual([])
+      const operation = generateOpenAPISpec(bp).paths['/api/public/status'].get
+      expect(operation.security).toEqual([])
+      expect(operation.responses['401']).toBeUndefined()
+      expect(operation.responses['403']).toBeUndefined()
     })
 
     it('includes path parameters from {id} patterns', () => {
@@ -429,7 +432,7 @@ describe('generateOpenAPISpec', () => {
       expect(spec.paths['/api/issues/{id}'].get.responses['404']).toBeDefined()
     })
 
-    it('always includes 401 response', () => {
+    it('publishes the common error envelope and stable authentication code', () => {
       const bp = minimalBlueprint({
         skills: [
           {
@@ -442,9 +445,16 @@ describe('generateOpenAPISpec', () => {
       })
       const spec = generateOpenAPISpec(bp)
 
-      expect(spec.paths['/api/issues'].get.responses['401']).toEqual({
-        description: 'Unauthorized',
+      expect(spec.components.schemas.AgentApiError).toMatchObject({
+        required: ['error'],
+        properties: { error: { required: ['code', 'message', 'retryable'] } },
       })
+      expect(spec.paths['/api/issues'].get.responses['401']).toMatchObject({
+        'x-zebric-error-codes': ['AUTHENTICATION_REQUIRED'],
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/AgentApiError' } } },
+      })
+      expect(spec.paths['/api/issues'].get.responses['429']['x-zebric-error-codes']).toEqual(['RATE_LIMITED'])
+      expect(spec.paths['/api/issues'].get.responses['500']['x-zebric-error-codes']).toContain('INTERNAL_ERROR')
     })
 
     it('handles multiple skills on the same path (different methods)', () => {

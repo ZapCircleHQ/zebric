@@ -1,4 +1,5 @@
 import type { Context } from 'hono'
+import { agentApiError } from './agent-api-error.js'
 import { getCookie, setCookie } from 'hono/cookie'
 import { createHash, randomUUID } from 'node:crypto'
 import { injectCsrfTokenIntoRequest, type Blueprint, type AuthenticatedActor, type UserSession } from '@zebric/runtime-core'
@@ -57,10 +58,12 @@ export function applyRateLimiting(
   }
 
   if (bucket.count >= max) {
-    return Response.json(
-      { error: 'Too Many Requests', retryAfter: Math.ceil((bucket.resetAt - now) / 1000) },
-      { status: 429 }
-    )
+    const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000)
+    return agentApiError(c, 429, 'RATE_LIMITED', 'The request rate limit was exceeded', {
+      retryable: true,
+      details: { retryAfterSeconds },
+      headers: { 'Retry-After': String(retryAfterSeconds) },
+    })
   }
 
   bucket.count += 1
@@ -180,6 +183,11 @@ export async function applyCsrfProtection(
           submittedTokenPreview: submittedToken ? submittedToken.slice(0, 8) : null
         }
       : undefined
+    if (pathname.startsWith('/api/agent/') || pathname.startsWith('/api/jobs/')) {
+      return agentApiError(c, 403, 'CSRF_INVALID', 'A valid CSRF token or agent bearer credential is required', {
+        details: diagnostics,
+      })
+    }
     return Response.json(
       { error: 'Invalid CSRF token', diagnostics },
       { status: 403 }

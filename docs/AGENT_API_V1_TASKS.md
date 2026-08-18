@@ -279,12 +279,12 @@ comment.create
 - [x] Mark required body properties correctly.
 - [x] Generate schemas for workflow job and result responses.
 - [x] Document idempotency headers.
-- [ ] Generate stable error response schemas for `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` where applicable.
+- [x] Generate the common error response schema and stable code lists for `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` where applicable.
 - [x] Include action risk, approval, idempotency, asynchronous workflow, required scopes, workflow identity, and preconditions in a structured OpenAPI extension.
 - [ ] Include examples for representative requests and responses.
-- [ ] Represent per-action security requirements and scopes.
-- [ ] Mark unauthenticated skills as having no security requirement.
-- [ ] Add generator snapshot and conformance tests.
+- [x] Represent per-action security requirements and scopes.
+- [x] Mark unauthenticated skills as having no security requirement.
+- [x] Add generator contract assertions and live-runtime conformance tests.
 
 ### 5.2 Add a well-known discovery document
 
@@ -590,8 +590,8 @@ The first usable vertical slice should include one filtered list action, one ato
 
 These are Agent API-owned prerequisites for safely releasing a generic client. CLI behavior, model orchestration, credential-reference resolution, local approval policy, and client-side schema conversion remain owned by `ZEBRIC_AGENT_V1_TASKS.md`.
 
-- [ ] Publish the common error envelope in OpenAPI for every applicable `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` response.
-- [ ] Give every public error a stable code and explicit retryability; distinguish idempotency-key misuse, stale state/version conflicts, workflow precondition failures, and transient server failures.
+- [x] Publish the common error envelope in OpenAPI for every applicable `400`, `401`, `403`, `404`, `409`, `422`, `429`, and `500` response.
+- [x] Give every Agent API skill/job/rate-limit error a stable code and explicit retryability; distinguish idempotency-key misuse, state conflicts, workflow precondition failures, and transient server failures.
 - [x] Publish per-operation authentication requirements, required scopes, semantic risk/effect metadata, and action preconditions so a generic client can make an informed approval proposal.
 - [x] Publish a stable versioned contract fingerprint in discovery and OpenAPI, independent of request origin, with a matching ETag.
 - [ ] Add conformance tests proving discovery, OpenAPI, runtime validation, authorization, errors, and job responses agree for the same action.

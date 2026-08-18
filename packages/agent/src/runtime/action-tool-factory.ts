@@ -89,7 +89,8 @@ export class ZebricApiError extends Error {
     readonly code: string,
     readonly requestId: string | undefined,
     readonly kind: ZebricApiErrorKind,
-    readonly retryable: boolean
+    readonly retryable: boolean,
+    readonly details?: Record<string, unknown>
   ) {
     super(message)
     this.name = 'ZebricApiError'
@@ -569,7 +570,7 @@ function validateRequestBody(
 }
 
 function parseApiError(response: Response, body: string): ZebricApiError {
-  let envelope: { error?: { message?: unknown; code?: unknown; requestId?: unknown } } = {}
+  let envelope: { error?: { message?: unknown; code?: unknown; requestId?: unknown; retryable?: unknown; details?: unknown } } = {}
   try {
     envelope = JSON.parse(body)
   } catch {
@@ -591,7 +592,13 @@ function parseApiError(response: Response, body: string): ZebricApiError {
   const requestId = typeof envelope.error?.requestId === 'string'
     ? envelope.error.requestId
     : response.headers.get('x-request-id') ?? undefined
-  return new ZebricApiError(message, status, code, requestId, kind, status === 429 || status >= 500)
+  const retryable = typeof envelope.error?.retryable === 'boolean'
+    ? envelope.error.retryable
+    : status === 429 || status >= 500
+  const details = envelope.error?.details && typeof envelope.error.details === 'object' && !Array.isArray(envelope.error.details)
+    ? envelope.error.details as Record<string, unknown>
+    : undefined
+  return new ZebricApiError(message, status, code, requestId, kind, retryable, details)
 }
 
 function mutationStateKey(
