@@ -63,6 +63,40 @@ jobs:
       - name: Lint check
         run: pnpm lint
 
+  agent-release-gate:
+    name: Zebric Agent Release Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and type-check agent dependencies
+        run: pnpm --filter @zebric/agent... build
+
+      - name: Run agent unit, fake-model, and real-runtime tests
+        run: pnpm --filter @zebric/agent test
+
+      - name: Verify packed package in a clean consumer
+        run: pnpm --filter @zebric/agent test:package
+
+      - name: Build documentation
+        run: pnpm --filter zebric-docs build
+
   test:
     name: Tests
     runs-on: ubuntu-latest

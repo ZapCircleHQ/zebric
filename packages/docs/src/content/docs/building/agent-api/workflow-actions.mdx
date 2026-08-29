@@ -1,0 +1,86 @@
+---
+label: Workflow Actions
+slug: building/agent-api/workflow-actions
+title: Safe Workflow Actions for Agents
+description: Design atomic, idempotent, observable mutations for agent clients.
+---
+
+Use a workflow-backed skill action when an agent needs to change application state. The runtime treats these actions as asynchronous mutations: a successful request returns `202 Accepted` and a job URL that the client can observe.
+
+## Guard the transition
+
+Put the current-state requirement in the workflow, not in the prompt:
+
+```toml
+[workflow.ClaimIssueForQA]
+description = "Compare-and-set an issue from ready_to_test to testing."
+trigger = { manual = true }
+
+[workflow.ClaimIssueForQA.precondition]
+"variables.data.record.qaState" = "ready_to_test"
+
+[[workflow.ClaimIssueForQA.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+
+[workflow.ClaimIssueForQA.steps.where]
+id = "{{ variables.data.record.id }}"
+qaState = "ready_to_test"
+
+[workflow.ClaimIssueForQA.steps.data]
+qaState = "testing"
+qaRunId = "{{ variables.data.attribution.runId }}"
+claimedBy = "{{ variables.data.attribution.agentId }}"
+```
+
+The precondition provides an early conflict response, while the conditional update protects against a concurrent state change. Multi-step mutations should set `transactional = true` so their writes commit or roll back together. The Node runtime supports database transactions with SQLite and PostgreSQL. Runtime Worker can identify workflows that could eventually compile to an atomic D1 batch, but it does not execute transactional Agent API workflows yet.
+
+## Submit and observe
+
+Every mutation requires `Idempotency-Key`. Agent clients should also send `X-Agent-Run-Id` so audit records can connect the request to one invocation.
+
+```bash
+curl -i -X POST "$ZEBRIC_URL/api/agent/issues/$ISSUE_ID/claim" \
+  -H "Authorization: Bearer $ISSUE_BOARD_AGENT_API_KEY" \
+  -H "Idempotency-Key: claim-$ISSUE_ID-run-42" \
+  -H "X-Agent-Run-Id: run-42" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+A successful response identifies a job:
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": "01J...",
+    "workflow": "ClaimIssueForQA",
+    "status": "pending",
+    "url": "/api/jobs/01J..."
+  }
+}
+```
+
+Poll the returned `job.url` with the same credential until the job succeeds or fails. Jobs are isolated to their authenticated owner; another credential cannot observe them.
+
+:::caution[Current durability limit]
+Workflow jobs and idempotency records are process-local in the current runtime. A restart can make a prior status URL unavailable, and separate runtime instances do not share these records. Do not rely on them for cross-restart recovery yet.
+:::
+
+## Retry safely
+
+Repeat an uncertain mutation with the **same** idempotency key and identical input. The runtime returns the original accepted result rather than executing it twice. Reusing a key with different input returns `409 IDEMPOTENCY_KEY_REUSE`.
+
+Zebric Agent retries only when the error envelope explicitly sets `retryable: true`. It uses at most three total attempts by default, honors `Retry-After`, and reuses the same idempotency key. Validation, authorization, and state conflicts are not automatically retried.
+
+Common conflict codes are:
+
+| Code | Meaning | Client response |
+|---|---|---|
+| `WORKFLOW_PRECONDITION_FAILED` | The record is no longer in the required state | Refresh the record and reconsider the task |
+| `STATE_CONFLICT` | A conditional state change lost a race | Refresh; do not blindly replay |
+| `IDEMPOTENCY_KEY_REUSE` | The key was used with different input | Treat as a caller bug and generate keys deterministically per intended operation |
+
+See [Workflows & Notifications](/building/workflows) for workflow syntax and [REST API & OpenAPI](/reference/api) for response and error envelopes.

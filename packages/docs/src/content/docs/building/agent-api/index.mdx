@@ -1,0 +1,85 @@
+---
+label: Agent API
+slug: building/agent-api
+title: Build an Agent-Drivable Application
+description: Expose bounded, discoverable Zebric operations that an agent can use safely.
+---
+
+:::caution[Technical preview]
+Agent API v1 is under active development. Its discovery contract and safety behavior are implemented and tested, but durable jobs, managed credential rotation, and MCP transport are not yet available.
+:::
+
+A Zebric application becomes agent-drivable when it publishes a small set of **skills**: named, typed operations that describe what an agent may observe or change. A compatible client discovers those operations from the running application, converts them into tools, and authenticates each request.
+
+This keeps responsibilities clear:
+
+- The **Blueprint** defines the allowed operations, input types, scopes, and workflows.
+- The **runtime** enforces authentication, authorization, preconditions, transactions, idempotency, and audit attribution.
+- The **agent** chooses among the published operations and supplies typed input.
+- External executors such as a browser or test runner perform work outside Zebric, then return bounded evidence through a semantic action.
+
+## Prefer skills over broad CRUD
+
+Generic entity endpoints are useful for application code, but they are usually too broad for an agent. Publish a skill when the operation has a business meaning or a state transition that must be guarded.
+
+For example, an issue board should expose `claim_issue_for_qa` rather than allowing an agent to freely update every `Issue` field. The semantic action can atomically verify that the issue is ready, record who claimed it, and reject stale attempts.
+
+```toml
+[skill.issue_board]
+description = "Inspect and operate the issue-board QA lifecycle."
+
+[[skill.issue_board.actions]]
+name = "list_issues"
+description = "List issues, optionally filtered by QA state."
+method = "GET"
+path = "/api/agent/issues"
+entity = "Issue"
+action = "list"
+scopes = ["qa.list"]
+
+[skill.issue_board.actions.query.qaState]
+type = "Enum"
+values = ["ready_to_test", "testing", "needs_work", "qa_completed"]
+required = false
+
+[[skill.issue_board.actions]]
+name = "claim_issue_for_qa"
+description = "Atomically claim a Ready to Test issue for one QA run."
+method = "POST"
+path = "/api/agent/issues/{id}/claim"
+entity = "Issue"
+workflow = "ClaimIssueForQA"
+scopes = ["qa.claim"]
+body = {}
+```
+
+The generated operation IDs are `<skill>_<action>`, such as `issue_board_claim_issue_for_qa`. Names and descriptions are part of the agent interface: keep them specific, unambiguous, and explicit about preconditions and effects.
+
+## How discovery works
+
+An agent starts with the application base URL and requests:
+
+1. `GET /.well-known/zebric-agent.json` for capabilities and the OpenAPI location.
+2. `GET /api/openapi.json` for the exact operation and input schemas.
+3. Protected skill routes with a bearer credential.
+
+The discovery document and OpenAPI document carry the same versioned SHA-256 contract fingerprint. Clients should reject a mismatch. A capability set to `false` means the client must not assume that behavior exists; for example, `eventStream: false` requires polling instead of subscribing to events.
+
+See the [REST API reference](/reference/api) for the wire contract and [Skills reference](/reference/skills) for Blueprint syntax.
+
+## Authoring for Zebric Agent
+
+Zebric Agent exposes `GET` operations automatically. Mutating tools are created only when the application configuration supplies an approval callback, and every mutation is approval-gated. This means an application author should design the contract so that approval is meaningful.
+
+Use this review checklist:
+
+- Give every action one bounded purpose and a useful description.
+- Prefer typed filters and stable workflow keys over free-form search text.
+- Return only the fields needed for the task; model context is not a data export channel.
+- Use a workflow-backed action for state transitions and declare its preconditions.
+- Make mutations transactional, idempotent, observable, and conflict-aware.
+- Require the narrowest scopes that can perform the action.
+- Keep secrets out of descriptions, request bodies, results, and workflow evidence.
+- Expose revision or environment identifiers when stale external work would be unsafe.
+
+Continue with [workflow actions](/building/agent-api/workflow-actions), [security](/building/security), and the [Zebric Agent overview](/agents/zebric-agent).

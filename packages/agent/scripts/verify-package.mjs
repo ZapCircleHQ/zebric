@@ -109,7 +109,13 @@ function findTarball(directory, prefix) {
 function run(command, args, cwd = repositoryRoot, extraEnv = {}) {
   execFileSync(command, args, {
     cwd,
-    env: { ...process.env, ...extraEnv },
+    env: {
+      ...process.env,
+      // pnpm may spawn a dependency-status install. Keep the explicitly selected
+      // package-manager fallback policy in that child process as well.
+      npm_config_pm_on_fail: 'ignore',
+      ...extraEnv,
+    },
     stdio: 'pipe',
     encoding: 'utf8',
   })
@@ -118,7 +124,7 @@ function run(command, args, cwd = repositoryRoot, extraEnv = {}) {
 function output(command, args, cwd = repositoryRoot) {
   return execFileSync(command, args, {
     cwd,
-    env: process.env,
+    env: { ...process.env, npm_config_pm_on_fail: 'ignore' },
     stdio: 'pipe',
     encoding: 'utf8',
   })

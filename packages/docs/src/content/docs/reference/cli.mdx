@@ -54,3 +54,54 @@ pnpm --filter @zebric/framework-stories test
 ```
 
 Stories validate that blueprint parsing, page routing, form configuration, workflow wiring, and notification setup all remain correct.
+
+## Zebric Agent CLI
+
+:::caution[Technical preview]
+The `zebric-agent` binary is provided by `@zebric/agent`. Only the commands and options below are implemented; interactive sessions and configuration files are not yet available.
+:::
+
+### `zebric-agent validate`
+
+Parse and validate a Blueprint without a model or running application:
+
+```bash
+zebric-agent validate [blueprint] [--workspace <root>] [--json]
+```
+
+The Blueprint defaults to `blueprint.toml`, and the workspace defaults to the current directory. The resolved path must remain inside the workspace.
+
+### `zebric-agent run`
+
+Run one non-interactive agent task:
+
+```bash
+zebric-agent run \
+  --prompt <text> \
+  --model <provider:model> \
+  [--connect <url>] \
+  [--credential-env <name>] \
+  [--workspace <root>] \
+  [--approve-operation <operation-id>] \
+  [--run-id <id>] \
+  [--json]
+```
+
+`--approve-operation` may be repeated and requires `--connect`. Mutations whose exact operation ID is absent are rejected locally. `--run-id` requires an approved operation and contributes to deterministic idempotency keys. `--credential-env` names an environment variable; it never accepts the credential value directly.
+
+With `--json`, success and failure are written as one JSON object. Configured application credentials are redacted from both output paths.
+
+### Exit codes
+
+| Code | Category |
+|---:|---|
+| `0` | Success |
+| `1` | Internal error |
+| `2` | Invalid CLI or agent configuration |
+| `3` | Blueprint validation failure |
+| `4` | Mutation approval rejected |
+| `5` | Authentication or authorization failure |
+| `6` | State or idempotency conflict |
+| `7` | Incomplete execution, such as job observation timeout |
+
+See [Get Started with Zebric Agent](/agents/zebric-agent/getting-started) for a complete read-only invocation.

@@ -1,0 +1,37 @@
+---
+title: Security and Current Limitations
+description: Trust boundaries and operational limits of the Zebric Agent technical preview.
+---
+
+Zebric Agent is a technical preview. The runtime remains authoritative for validation, authorization, workflow preconditions, concurrency, and state changes. The model is not a security boundary.
+
+## Trust boundaries
+
+- Treat application records, OpenAPI descriptions, workflow output, web pages, and test targets as untrusted content. They may contain instructions intended to redirect the model.
+- Expose narrow semantic actions with minimal scopes. Do not expose generic mutation routes merely because an agent may need one field changed.
+- Non-GET tools are generated only with mutation configuration and still require the application callback. Human-in-the-loop mode adds a checkpointed interruption before that callback and the HTTP request.
+- Approve the structured application, operation ID, method, path, and validated arguments—not model-authored prose. `MutationApprovalRequest` does not currently include the OpenAPI risk classification, so applications that need risk-aware policy must maintain their own operation-ID policy table.
+- Keep application and model-provider credentials in environment references or injected providers. Never place secrets in prompts, URLs, Blueprints, tool descriptions, evidence, or transcripts.
+
+## Network safety
+
+The client rejects non-HTTP(S) URLs, redirects, and cross-origin OpenAPI discovery. It does not yet resolve DNS or block loopback, link-local, or private address ranges because local connections are a supported preview workflow. Hosted deployments must supply trusted connection configuration and enforce outbound DNS/IP allowlists at the process or network layer. Do not let an application record or end user choose `baseUrl` without an independent policy check.
+
+## Contract safety
+
+The client supports a bounded OpenAPI subset and rejects unsupported references, compositions, nested inputs, media types, parameter locations, and serialization styles. Discovery and OpenAPI fingerprints must agree when advertised. The contract is built when the agent is created; long-lived sessions do not yet refresh or freeze a version per model turn.
+
+Descriptions and response data are still model-visible untrusted content. Tool selection and approval policy must not depend solely on descriptions supplied by the connected application.
+
+## Persistence and isolation
+
+- Runtime jobs and idempotency records are process-local and disappear on restart.
+- The default agent mutation-state store is process-local. A durable store can preserve the idempotency key and outstanding job URL across an agent-process restart, but it cannot make the runtime job durable or move observation safely to another runtime instance.
+- Human-in-the-loop mode requires a checkpointer. Checkpoint implementations must be isolated by organization and project, encrypted as appropriate, and inspected to ensure they never persist credentials or raw authorization headers.
+- Durable interrupted-run recovery and checkpoint schema migration are not supported claims for this preview.
+
+## Unsupported claims
+
+The preview does not yet promise autonomous production operation, prompt-injection resistance, provider-wide model compatibility, generic Blueprint review, automatic Blueprint patching, shell execution, browser-based QA, telemetry export, or multi-instance durable recovery.
+
+For production evaluation, run the deterministic harness, review every published action and scope, test credential redaction with the chosen model provider and checkpointer, and threat-model the deployment's network boundary.

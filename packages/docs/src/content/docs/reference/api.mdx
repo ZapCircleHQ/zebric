@@ -72,3 +72,85 @@ The spec includes all entities, their fields, and available operations. Use it w
 - Documentation generators (Swagger UI, Redoc)
 - AI agents and code generators
 - Type generation tools
+
+## Agent API discovery
+
+Agent-capable runtimes publish:
+
+```http
+GET /.well-known/zebric-agent.json
+```
+
+The document includes the application `name` and `version`, absolute `openapi` URL, available `skills`, authentication methods, capability flags, and a `contract` object:
+
+```json
+{
+  "name": "Issue Board",
+  "version": "1.0.0",
+  "openapi": "https://issues.example/api/openapi.json",
+  "authentication": [{ "type": "bearer" }],
+  "skills": ["issue_board"],
+  "capabilities": {
+    "workflowJobs": true,
+    "idempotency": true,
+    "eventStream": false,
+    "transactionalWorkflows": true,
+    "d1BatchWorkflows": false
+  },
+  "contract": {
+    "version": "1",
+    "fingerprint": "sha256:..."
+  }
+}
+```
+
+The same contract appears as `x-zebric-contract` in OpenAPI, whose response also has an `ETag`. Clients must not use a capability reported as `false`, and should reject mismatched fingerprints. Discovery falls back to `/api/openapi.json` for older runtimes that return `404` for the well-known route.
+
+Each skill operation has an `operationId`, required scopes, and `x-zebric-agent-operation` metadata describing its risk, approval requirement, idempotency requirement, asynchronous behavior, workflow, and preconditions.
+
+## Workflow mutations and jobs
+
+Workflow-backed actions require these headers:
+
+```http
+Authorization: Bearer <credential>
+Idempotency-Key: <stable-key-for-this-intent>
+X-Agent-Run-Id: <agent-invocation-id>
+Content-Type: application/json
+```
+
+They return `202 Accepted` with `{ "success": true, "job": { "id", "workflow", "status", "url" } }`. Poll the returned `job.url` (`GET /api/jobs/{id}`) using the same credential. Job visibility is ownership-isolated: a different API key cannot observe the job.
+
+Repeating identical input with the same idempotency key returns the original accepted operation. Reusing the key for different input returns `409 IDEMPOTENCY_KEY_REUSE`. Workflow precondition and conditional-update races also return `409` with distinct codes.
+
+:::caution[Process-local state]
+Workflow jobs and idempotency records are currently held by one runtime process. They are not shared between instances and are lost on restart.
+:::
+
+## Agent API errors
+
+Agent routes use a stable envelope:
+
+```json
+{
+  "error": {
+    "code": "WORKFLOW_PRECONDITION_FAILED",
+    "message": "The workflow precondition was not satisfied",
+    "retryable": false,
+    "requestId": "req-...",
+    "details": {}
+  }
+}
+```
+
+| Status | Representative codes | Meaning |
+|---:|---|---|
+| `400` | `INVALID_REQUEST`, `INVALID_QUERY`, `INVALID_AGENT_ATTRIBUTION` | Input or attribution is invalid |
+| `401` | `AUTHENTICATION_REQUIRED` | Bearer credential is absent or invalid |
+| `403` | `INSUFFICIENT_SCOPE`, `CSRF_INVALID` | The actor cannot perform the action |
+| `404` | `RESOURCE_NOT_FOUND`, `WORKFLOW_NOT_FOUND`, `JOB_NOT_FOUND` | Resource is absent or not visible to this actor |
+| `409` | `IDEMPOTENCY_KEY_REUSE`, `WORKFLOW_PRECONDITION_FAILED`, `STATE_CONFLICT` | The intended transition is stale or conflicts |
+| `429` | `RATE_LIMITED` | Back off; honor `Retry-After` when present |
+| `500` | `INTERNAL_ERROR`, `WORKFLOW_UNAVAILABLE` | Runtime or workflow infrastructure failed |
+
+Clients should retry only when `error.retryable` is explicitly `true`, and should retain the same idempotency key for a mutation retry.

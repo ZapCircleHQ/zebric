@@ -139,6 +139,57 @@ Check the [template variable reference](/building/workflows#template-variables).
 
 ---
 
+## Agent API and Zebric Agent
+
+### Discovery fails
+
+- Request `/.well-known/zebric-agent.json` and `/api/openapi.json` directly from the application base URL.
+- Confirm a reverse proxy preserves these paths and the advertised OpenAPI URL has the same origin.
+- A discovery/OpenAPI fingerprint mismatch means the two documents came from different contract versions; refresh caches and avoid using the mixed contract.
+- If tool construction names an unsupported OpenAPI schema path, simplify that action to bounded scalars, enums, or a supported JSON field. Unsupported schemas fail closed instead of becoming weaker tools.
+
+### Model initialization or tool calling fails
+
+- Confirm the provider credential required by the selected `provider:model` is present in the agent process environment.
+- Use a LangChain chat-model integration that supports tool calls and pin the tested model and dependency versions. Provider compatibility is not yet a stable Zebric Agent guarantee.
+- For CI, replace the provider with the deterministic driver or loopback scripted model instead of adding live credentials.
+
+### `401` or `403` from an agent action
+
+- Confirm the environment variable named by `keyEnv` is present **when the runtime starts**. An absent variable causes that key configuration to be skipped.
+- Confirm the agent's `--credential-env` names a populated variable and the bearer key belongs to this application.
+- `401 AUTHENTICATION_REQUIRED` means authentication failed. `403 INSUFFICIENT_SCOPE` means the recognized identity lacks one or more action scopes.
+- Browser session mutations require valid CSRF protection. Bearer-authenticated skill requests bypass CSRF only after the bearer credential is validated.
+
+### A filter is rejected or an expected action is missing
+
+- Check the action and query schema in `/api/openapi.json`; enum values, required fields, and pagination limits are enforced before application logic runs.
+- Only Blueprint skill actions are agent tools. Generic entity routes are not automatically substituted for a missing semantic action.
+- Restart or reload the application after changing the Blueprint, then confirm the discovery and OpenAPI fingerprints agree.
+
+### A mutation is rejected before reaching Zebric
+
+Zebric Agent creates mutation tools only when mutation policy is configured. In the CLI, pass the exact OpenAPI operation ID with `--approve-operation`. In the library, inspect the `MutationApprovalRequest` in the approval callback. Do not approve based only on model-authored text.
+
+### `409` from a workflow action
+
+- `WORKFLOW_PRECONDITION_FAILED` or `STATE_CONFLICT`: refetch the resource. Another actor may have changed its state; do not automatically repeat the same intended transition.
+- `IDEMPOTENCY_KEY_REUSE`: the same key was paired with different input. Fix the caller so one key identifies one canonical operation.
+
+### A workflow job disappears or times out
+
+Jobs and runtime idempotency records are currently process-local. They disappear on restart and are not shared across multiple instances. A different credential also cannot observe another credential's job. For a long-running agent deployment, provide Zebric Agent with a durable mutation execution state store; this preserves its outstanding job reference but does not make the runtime job itself durable.
+
+If the job reaches `failed`, inspect its sanitized error and correlate its request, run, and credential identity with the Zebric audit log. Do not automatically resubmit unless the error envelope explicitly marked the failure retryable.
+
+### Deterministic transcript contains sensitive data
+
+Use a dedicated test credential and bounded fixture responses. The CLI redacts the configured application credential, but transcripts can still contain application response data. Never record production responses or put credentials in prompts, inputs, URLs, operation descriptions, or evidence fields.
+
+See [Deterministic Testing](/agents/zebric-agent/testing) for the no-LLM harness.
+
+---
+
 ## Performance
 
 ### Slow list pages

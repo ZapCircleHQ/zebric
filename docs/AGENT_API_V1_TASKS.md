@@ -523,20 +523,20 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 
 #### Agent API guide
 
-- [ ] Add `building/agent-api/index.mdx` explaining what makes a Zebric application agent-drivable and when to expose a skill instead of generic entity CRUD.
+- [x] Add `building/agent-api/index.mdx` explaining what makes a Zebric application agent-drivable and when to expose a skill instead of generic entity CRUD.
 - [ ] Add `building/agent-api/skills.mdx` with complete Blueprint examples for read actions, typed query filters, entity actions, and workflow-backed semantic mutations.
-- [ ] Add `building/agent-api/workflow-actions.mdx` covering preconditions, atomic conditional updates, `202 Accepted`, job observation, conflicts, and idempotent retries.
+- [x] Add `building/agent-api/workflow-actions.mdx` covering preconditions, atomic conditional updates, `202 Accepted`, job observation, conflicts, and idempotent retries.
 - [ ] Add `building/agent-api/security.mdx` covering API keys, current limitations, least authority, CSRF behavior, credential handling, action descriptions, and unsafe exposure patterns.
-- [ ] Add a design checklist for semantic actions, bounded inputs/results, safe state transitions, and useful descriptions.
+- [x] Add a design checklist for semantic actions, bounded inputs/results, safe state transitions, and useful descriptions.
 
 #### Agent API reference
 
 - [ ] Expand `reference/skills.mdx` with the `query` schema, supported parameter types, `field` mapping, defaults, required values, enum constraints, pagination behavior, and validation errors.
-- [ ] Expand `reference/api.mdx` with `/.well-known/zebric-agent.json`, `/api/openapi.json`, workflow action responses, `/api/jobs/{id}`, `Idempotency-Key`, and `409` behavior.
-- [ ] Document the discovery document fields and capability flags, including how clients must treat a capability reported as `false`.
-- [ ] Document the workflow-job response schema and ownership rules.
-- [ ] Add a status-code and error-behavior table for authentication, authorization, validation, missing resources, stale transitions, and server failures.
-- [ ] Document which Agent API state is currently process-local, especially workflow jobs and idempotency records.
+- [x] Expand `reference/api.mdx` with `/.well-known/zebric-agent.json`, `/api/openapi.json`, workflow action responses, `/api/jobs/{id}`, `Idempotency-Key`, and `409` behavior.
+- [x] Document the discovery document fields and capability flags, including how clients must treat a capability reported as `false`.
+- [x] Document the workflow-job response schema and ownership rules.
+- [x] Add a status-code and error-behavior table for authentication, authorization, validation, missing resources, stale transitions, and server failures.
+- [x] Document which Agent API state is currently process-local, especially workflow jobs and idempotency records.
 
 #### Tutorials and examples
 
@@ -552,18 +552,18 @@ All end-user documentation belongs under `packages/docs/src/content/docs` and mu
 #### Operations and troubleshooting
 
 - [ ] Add Agent API credential provisioning to `building/security.mdx`, clearly separating current environment-backed API keys from planned scoped credentials and rotation support.
-- [ ] Add Agent API diagnostics to `guides/troubleshooting.mdx`: missing key environment variables, `401`, `403`, CSRF mistakes, undiscoverable actions, invalid filters, `409`, failed jobs, and expired process-local job state.
+- [x] Add Agent API diagnostics to `guides/troubleshooting.mdx`: missing key environment variables, `401`, `403`, CSRF mistakes, undiscoverable actions, invalid filters, `409`, failed jobs, and expired process-local job state.
 - [ ] Add runtime deployment notes to `run/runtime.mdx` for trusted origins, HTTPS, secret injection, job retention limitations, and multi-instance limitations.
 - [ ] Document database transaction support: Node SQLite, Node PostgreSQL, D1 atomic batches, and the planned Durable Object path for general Workers workflows.
 - [ ] Add a compatibility note identifying the minimum Zebric runtime version for each Agent API capability.
 
 #### Documentation quality gates
 
-- [ ] Add every new page to the Starlight sidebar under an “Agents” or “Agent API” section.
+- [x] Add every new page to the Starlight sidebar under an “Agents” or “Agent API” section.
 - [ ] Verify all TOML, curl, JSON, routes, and response examples against `examples/issue-board` and the deterministic harness.
-- [ ] Add links among the Blueprint, workflows, security, REST API, and skills reference pages instead of duplicating their foundational material.
+- [x] Add links among the Blueprint, workflows, security, REST API, and skills reference pages instead of duplicating their foundational material.
 - [ ] Run the docs build and link checks in CI.
-- [ ] Mark experimental or incomplete capabilities explicitly; do not document planned scoped credentials, durable jobs, or MCP as currently available.
+- [x] Mark experimental or incomplete capabilities explicitly; do not document planned scoped credentials, durable jobs, or MCP as currently available.
 
 ### Security review
 

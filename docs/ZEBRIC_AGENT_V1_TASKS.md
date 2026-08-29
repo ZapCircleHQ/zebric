@@ -220,7 +220,7 @@ Runtime authorization remains authoritative even after local approval.
 - [x] Add `packages/agent` to the pnpm workspace.
 - [x] Add TypeScript build, lint, test, and package exports.
 - [x] Add `deepagents` and required LangChain/LangGraph dependencies.
-- [ ] Pin or intentionally bound compatible dependency ranges and document the tested Deep Agents/LangChain versions. (The clean consumer currently resolves LangChain Core 1.2.8, whose declarations require `ESNext.Disposable` with modern TypeScript.)
+- [x] Pin or intentionally bound compatible dependency ranges and document the tested Deep Agents/LangChain versions. (The clean consumer currently resolves LangChain Core 1.2.8, whose declarations require `ESNext.Disposable` with modern TypeScript.)
 - [ ] Re-export only Zebric-owned public types from the package root.
 - [ ] Keep Deep Agents-specific construction details in internal modules.
 - [x] Add a changeset for the new package when it becomes publishable.
@@ -764,46 +764,46 @@ Evaluate:
 
 All end-user documentation belongs under `packages/docs/src/content/docs` and must be added to the Starlight sidebar in `packages/docs/astro.config.mjs`.
 
-- [ ] Add `agents/zebric-agent/index.mdx` introducing Zebric Agent, its current maturity, supported use cases, and the boundary between Agent API and Zebric Agent.
-- [ ] Add `agents/zebric-agent/getting-started.mdx` covering installation, model-provider setup, local configuration, and a first no-mutation session.
-- [ ] Add `agents/zebric-agent/connect.mdx` covering discovery, local and remote application connections, credential references, multiple applications, and TLS expectations.
+- [x] Add `agents/zebric-agent/index.mdx` introducing Zebric Agent, its current maturity, supported use cases, and the boundary between Agent API and Zebric Agent.
+- [x] Add `agents/zebric-agent/getting-started.mdx` covering installation, model-provider setup, local configuration, and a first no-mutation session.
+- [x] Add `agents/zebric-agent/connect.mdx` covering discovery, local and remote application connections, credential references, multiple applications, and TLS expectations.
 - [ ] Add `agents/zebric-agent/author-mode.mdx` covering deterministic Blueprint validation, workspace roots, read-only defaults, filesystem safety, and the planned review/patch workflow.
-- [ ] Add `agents/zebric-agent/approvals.mdx` explaining read tools, mutation opt-in, approval requests, idempotency, rejection, retries, conflicts, and job observation.
+- [x] Add `agents/zebric-agent/approvals.mdx` explaining read tools, mutation opt-in, approval requests, idempotency, rejection, retries, conflicts, and job observation.
 - [ ] Add an application-extension/reference-scenario guide using issue-board QA to explain executor boundaries, evidence handling, revision safety, and interrupted runs without presenting QA vocabulary as core agent behavior.
-- [ ] Add `agents/zebric-agent/testing.mdx` explaining the no-model deterministic driver, mock contract tests, real-runtime harness, and how integrators can add scripted scenarios.
-- [ ] Add `reference/agent-library.mdx` for `createZebricAgent`, application configuration, credential providers, generated tools, mutation approval callbacks, and `DeterministicAgentDriver`.
-- [ ] Document model/provider compatibility separately from the stable Zebric Agent API.
+- [x] Add `agents/zebric-agent/testing.mdx` explaining the no-model deterministic driver, mock contract tests, real-runtime harness, and how integrators can add scripted scenarios.
+- [x] Add `reference/agent-library.mdx` for `createZebricAgent`, application configuration, credential providers, generated tools, mutation approval callbacks, and `DeterministicAgentDriver`.
+- [x] Document model/provider compatibility separately from the stable Zebric Agent API.
 - [ ] Document credential issuance, rotation, and scopes only as they become available in Agent API; label environment-backed keys accurately in the meantime.
 
 ### 11.2 Application-author guidance
 
-- [ ] Add an “Authoring for Zebric Agent” section to `building/agent-api/index.mdx`, linking to the canonical skills and workflow reference rather than duplicating it.
-- [ ] Explain how action names and descriptions influence safe tool selection.
-- [ ] Show how to design useful semantic skills instead of exposing broad CRUD operations.
-- [ ] Explain current GET-only defaults and explicit mutation approval behavior.
-- [ ] Document how to return bounded, structured results suitable for model context.
+- [x] Add an “Authoring for Zebric Agent” section to `building/agent-api/index.mdx`, linking to the canonical skills and workflow reference rather than duplicating it.
+- [x] Explain how action names and descriptions influence safe tool selection.
+- [x] Show how to design useful semantic skills instead of exposing broad CRUD operations.
+- [x] Explain current GET-only defaults and explicit mutation approval behavior.
+- [x] Document how to return bounded, structured results suitable for model context.
 - [ ] Document how to expose acceptance criteria, test targets, and revision context without exposing secrets.
-- [ ] Document how to make workflow actions atomic, idempotent, observable, and conflict-aware.
-- [ ] Add an application-author checklist that can be applied to Blueprints during review.
+- [x] Document how to make workflow actions atomic, idempotent, observable, and conflict-aware.
+- [x] Add an application-author checklist that can be applied to Blueprints during review.
 
 ### 11.3 CLI and troubleshooting documentation
 
-- [ ] Expand `reference/cli.mdx` as each `zebric-agent` command ships; avoid publishing planned command syntax as available behavior.
-- [ ] Add Zebric Agent diagnostics to `guides/troubleshooting.mdx`: model credentials, application credentials, discovery failures, schema incompatibility, approval rejection, tool validation, timeouts, job failures, and conflicts.
-- [ ] Document exit codes and structured JSON output once the CLI implements them.
-- [ ] Document how to inspect a deterministic transcript without exposing application credentials or sensitive response bodies.
-- [ ] Document current process-local limitations for job and idempotency observation.
+- [x] Expand `reference/cli.mdx` as each `zebric-agent` command ships; avoid publishing planned command syntax as available behavior.
+- [x] Add Zebric Agent diagnostics to `guides/troubleshooting.mdx`: model credentials, application credentials, discovery failures, schema incompatibility, approval rejection, tool validation, timeouts, job failures, and conflicts.
+- [x] Document exit codes and structured JSON output once the CLI implements them.
+- [x] Document how to inspect a deterministic transcript without exposing application credentials or sensitive response bodies.
+- [x] Document current process-local limitations for job and idempotency observation.
 
 ### 11.4 Documentation examples and quality gates
 
-- [ ] Use `examples/issue-board` as the canonical end-to-end example throughout the Agent API and Zebric Agent guides.
+- [x] Use `examples/issue-board` as the canonical end-to-end example throughout the Agent API and Zebric Agent guides.
 - [ ] Keep examples synchronized with the deterministic harness so published requests and responses remain executable.
 - [ ] Add screenshots or terminal transcripts only after the corresponding interface is stable.
-- [ ] Cross-link Zebric Agent pages with `reference/skills.mdx`, `reference/api.mdx`, `building/workflows.mdx`, and `building/security.mdx`.
-- [ ] Add an “Agents” group to the Starlight sidebar with a clear reading order.
+- [x] Cross-link Zebric Agent pages with `reference/skills.mdx`, `reference/api.mdx`, `building/workflows.mdx`, and `building/security.mdx`.
+- [x] Add an “Agents” group to the Starlight sidebar with a clear reading order.
 - [ ] Run the docs build and link checks before release.
 - [ ] Add a documentation review gate to the Zebric Agent release checklist.
-- [ ] Clearly label experimental APIs and distinguish implemented behavior from roadmap items.
+- [x] Clearly label experimental APIs and distinguish implemented behavior from roadmap items.
 
 ### 11.5 Distribution
 
@@ -881,7 +881,7 @@ The current implementation is a library-level technical preview and deterministi
 - [x] Add a deterministic black-box harness covering compiled CLI model turns, generated read tools, authentication, and a running Zebric application.
 - [x] Add stable CLI exit codes and structured JSON output for validation failure, configuration failure, approval rejection, authentication/authorization failure, conflict, incomplete job observation, and internal failure.
 - [x] Test cleaned packed artifacts in a fresh temporary consumer project, including production dependency installation, ESM imports, declarations under modern Node/TypeScript libraries, installed binary execution, and rejection of packaged test artifacts.
-- [ ] Make build, type-check, lint, unit, fake-model integration, real-runtime E2E, package-pack, and docs checks runnable in CI.
+- [x] Make build, type-check, lint, unit, fake-model integration, real-runtime E2E, package-pack, and docs checks runnable in CI.
 - [ ] Publish getting-started, connection, approvals/security, library API, CLI, testing-harness, compatibility, and current-limitations documentation before the first public preview.
 
 ### Full v1 blockers beyond the first preview

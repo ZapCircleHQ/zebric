@@ -1,0 +1,50 @@
+---
+title: Connect to Applications
+description: Discover a Zebric application and configure credentials without exposing them to the model.
+---
+
+Zebric Agent discovers tools from the application rather than assuming its entities or workflows. A connection has an application name, an HTTP(S) base URL, and an optional credential reference.
+
+## CLI connection
+
+```bash
+export ZEBRIC_AGENT_TOKEN='development-key'
+# Replace this with an installed LangChain provider and tool-capable model.
+export ZEBRIC_AGENT_MODEL='provider:model'
+
+zebric-agent run \
+  --prompt "Summarize the work ready for review" \
+  --model "$ZEBRIC_AGENT_MODEL" \
+  --connect http://127.0.0.1:3000 \
+  --credential-env ZEBRIC_AGENT_TOKEN \
+  --json
+```
+
+`--credential-env` accepts an environment-variable name, never the secret value. The CLI supports one connection in the current preview. Use the library for multiple named applications.
+
+See [Getting Started](/agents/zebric-agent/getting-started#connect-to-a-running-application) for an illustrative provider installation and credential setup. Provider integrations are consumer dependencies and are not bundled with Zebric Agent.
+
+## Library connection
+
+```ts
+import { createZebricAgent } from '@zebric/agent'
+
+const agent = await createZebricAgent({
+  model, // A tool-capable LangChain chat-model instance supplied by the caller.
+  applications: [{
+    name: 'roadmap',
+    baseUrl: 'https://roadmap.example',
+    credential: { type: 'env', name: 'ROADMAP_AGENT_TOKEN' },
+  }],
+})
+```
+
+Each application name must be unique. Credentials are resolved at request time, allowing rotation without rebuilding the agent. A provider callback can integrate a secret manager; it must return the credential only when called and must not place it in prompts, URLs, or tool descriptions.
+
+## Discovery contract
+
+The client requests `/.well-known/zebric-agent.json`, then the advertised OpenAPI document. A runtime without the well-known endpoint may fall back to `/api/openapi.json`. Cross-origin OpenAPI URLs, redirects, mismatched contract fingerprints, unsupported schemas, and non-HTTP(S) base URLs are rejected.
+
+Use HTTPS outside local development. The current client accepts user-configured private-network and loopback destinations so local Zebric applications work; do not pass untrusted base URLs in a hosted service. Enforce an outbound host allowlist and network egress policy around the process until a configurable in-library network policy ships.
+
+Connecting does not grant workspace access. Likewise, configuring a workspace does not create an application connection.
