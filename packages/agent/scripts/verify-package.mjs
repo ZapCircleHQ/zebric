@@ -16,8 +16,8 @@ const agentPackage = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 
 try {
   mkdirSync(artifactsRoot)
   mkdirSync(consumerRoot)
-  run('pnpm', ['--pm-on-fail=ignore', 'pack', '--pack-destination', artifactsRoot], packageRoot)
-  run('pnpm', ['--pm-on-fail=ignore', 'pack', '--pack-destination', artifactsRoot], runtimeCoreRoot)
+  runPnpm(['pack', '--pack-destination', artifactsRoot], packageRoot)
+  runPnpm(['pack', '--pack-destination', artifactsRoot], runtimeCoreRoot)
 
   const agentTarball = findTarball(artifactsRoot, `zebric-agent-${agentPackage.version}`)
   const runtimeCoreTarball = findTarball(artifactsRoot, 'zebric-runtime-core-')
@@ -78,9 +78,9 @@ fields = [{ name = "id", type = "ULID", primary_key = true }]
 title = "Package Smoke Test"
 `)
 
-  const installArguments = ['--pm-on-fail=ignore', 'install', '--frozen-lockfile=false', '--ignore-scripts']
+  const installArguments = ['install', '--frozen-lockfile=false', '--ignore-scripts']
   if (process.env.ZEBRIC_PACKAGE_SMOKE_OFFLINE === '1') installArguments.push('--offline')
-  run('pnpm', installArguments, consumerRoot, {
+  runPnpm(installArguments, consumerRoot, {
     CI: 'true',
   })
   run('node', ['consumer.mjs'], consumerRoot)
@@ -113,7 +113,7 @@ function run(command, args, cwd = repositoryRoot, extraEnv = {}) {
       ...process.env,
       // pnpm may spawn a dependency-status install. Keep the explicitly selected
       // package-manager fallback policy in that child process as well.
-      npm_config_pm_on_fail: 'ignore',
+      pnpm_config_pm_on_fail: 'ignore',
       ...extraEnv,
     },
     stdio: 'pipe',
@@ -121,10 +121,25 @@ function run(command, args, cwd = repositoryRoot, extraEnv = {}) {
   })
 }
 
+function runPnpm(args, cwd = repositoryRoot, extraEnv = {}) {
+  try {
+    run('pnpm', args, cwd, extraEnv)
+  } catch (error) {
+    const stderr = String(error?.stderr ?? '')
+    if (!stderr.includes('PNPM_ENGINE_IDENTITY_') && !stderr.includes('registry signature could not be verified')) {
+      throw error
+    }
+    // Newer pnpm versions can manage the packageManager version themselves and
+    // may need this global fallback when the registry is unavailable. Pinned
+    // pnpm versions that do not recognize the option never see this retry.
+    run('pnpm', ['--pm-on-fail=ignore', ...args], cwd, extraEnv)
+  }
+}
+
 function output(command, args, cwd = repositoryRoot) {
   return execFileSync(command, args, {
     cwd,
-    env: { ...process.env, npm_config_pm_on_fail: 'ignore' },
+    env: { ...process.env, pnpm_config_pm_on_fail: 'ignore' },
     stdio: 'pipe',
     encoding: 'utf8',
   })
