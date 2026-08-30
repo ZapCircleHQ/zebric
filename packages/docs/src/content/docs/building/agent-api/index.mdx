@@ -6,7 +6,7 @@ description: Expose bounded, discoverable Zebric operations that an agent can us
 ---
 
 :::caution[Technical preview]
-Agent API v1 is under active development. Its discovery contract and safety behavior are implemented and tested, but durable jobs, managed credential rotation, and MCP transport are not yet available.
+Agent API v1 is under active development. Its discovery contract, safety behavior, and stdio MCP adapter are implemented and tested, but durable jobs and managed credential rotation are not yet available.
 :::
 
 A Zebric application becomes agent-drivable when it publishes a small set of **skills**: named, typed operations that describe what an agent may observe or change. A compatible client discovers those operations from the running application, converts them into tools, and authenticates each request.

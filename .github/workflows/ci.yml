@@ -97,6 +97,34 @@ jobs:
       - name: Build documentation
         run: pnpm --filter zebric-docs build
 
+  mcp-release-gate:
+    name: MCP Server Release Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and type-check MCP server dependencies
+        run: pnpm --filter @zebric/mcp-server... build
+
+      - name: Verify stdio server with the official MCP client
+        run: pnpm --filter @zebric/mcp-server test:mcp
+
   test:
     name: Tests
     runs-on: ubuntu-latest

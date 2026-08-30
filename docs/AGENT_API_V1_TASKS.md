@@ -501,11 +501,11 @@ workflow.failed
 
 ### 9.2 Generated MCP server
 
-- [ ] Map Blueprint skill actions to MCP tools.
-- [ ] Reuse the same authentication, authorization, validation, idempotency, and audit paths as HTTP actions.
-- [ ] Generate tool descriptions and schemas from the canonical capability metadata.
-- [ ] Keep OpenAPI and MCP behavior contract-equivalent.
-- [ ] Do not create a second workflow execution implementation.
+- [x] Map Blueprint skill actions to MCP tools through the stdio adapter.
+- [x] Reuse the same authentication, authorization, validation, idempotency, and audit paths as HTTP actions.
+- [x] Generate tool descriptions and schemas from the canonical capability metadata.
+- [x] Keep OpenAPI and MCP behavior contract-equivalent.
+- [x] Do not create a second workflow execution implementation.
 
 ## Cross-Cutting Engineering Tasks
 
