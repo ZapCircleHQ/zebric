@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { ServerNotification } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 import {
   createRuntimeReadTools,
@@ -94,7 +95,7 @@ export class ZebricMcpServer extends McpServer {
           ...(event.subject ? { subject: event.subject } : {}),
         },
       },
-    } as any)
+    } as unknown as ServerNotification)
   }
 }
 
