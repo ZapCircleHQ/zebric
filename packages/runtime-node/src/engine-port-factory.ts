@@ -9,12 +9,27 @@ import type { QueryExecutor } from './database/index.js'
 import type { SessionManager } from '@zebric/runtime-core'
 import type { AuditLogger } from './security/index.js'
 
-export function createQueryExecutorPort(queryExecutor: QueryExecutor): QueryExecutorPort {
+export function createQueryExecutorPort(
+  queryExecutor: QueryExecutor,
+  onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void,
+): QueryExecutorPort {
   return {
     execute: (query, context) => queryExecutor.execute(query, context),
-    create: (entity, data, context) => queryExecutor.create(entity, data, context),
-    update: (entity, id, data, context) => queryExecutor.update(entity, id, data, context),
-    delete: (entity, id, context) => queryExecutor.delete(entity, id, context),
+    create: async (entity, data, context) => {
+      const result = await queryExecutor.create(entity, data, context)
+      onEntityChanged?.({ entity, event: 'create', id: result?.id, session: context.session })
+      return result
+    },
+    update: async (entity, id, data, context) => {
+      const result = await queryExecutor.update(entity, id, data, context)
+      onEntityChanged?.({ entity, event: 'update', id, session: context.session })
+      return result
+    },
+    delete: async (entity, id, context) => {
+      const result = await queryExecutor.delete(entity, id, context)
+      onEntityChanged?.({ entity, event: 'delete', id, session: context.session })
+      return result
+    },
     findById: (entity, id) => queryExecutor.findById(entity, id),
     search: (entity, fields, query, options) => queryExecutor.search(entity, fields, query, options)
   }

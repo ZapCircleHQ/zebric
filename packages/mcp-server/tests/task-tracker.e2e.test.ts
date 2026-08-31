@@ -102,6 +102,24 @@ describe('Task Tracker flagship MCP example', () => {
         arguments: { id: created.id, status: 'in_progress' },
       })) as { id: string; status: string }
       expect(updated).toEqual(expect.objectContaining({ id: created.id, status: 'in_progress' }))
+
+      const uiEventCount = channelEvents.length
+      const pageResponse = await fetch(`${applicationUrl}/tasks/new`)
+      expect(pageResponse.status).toBe(200)
+      const csrfCookie = pageResponse.headers.get('set-cookie')?.match(/csrf-token=([^;]+)/)?.[1]
+      expect(csrfCookie).toBeTruthy()
+      const uiCreateResponse = await fetch(`${applicationUrl}/tasks/new`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          'content-type': 'application/x-www-form-urlencoded',
+          cookie: `csrf-token=${csrfCookie}`,
+          'x-csrf-token': decodeURIComponent(csrfCookie!),
+        },
+        body: new URLSearchParams({ title: 'Created through the Zebric UI', priority: 'high' }),
+      })
+      expect(uiCreateResponse.ok).toBe(true)
+      await waitFor(() => channelEvents.slice(uiEventCount).some(event => event.meta?.event_type === 'entity.create'))
     } finally {
       await client.close()
       await server.close()

@@ -63,6 +63,7 @@ export interface ServerManagerDependencies {
   notificationManager?: NotificationManager
   auditLogger?: AuditLogger
   getHealthStatus?: () => Promise<any>
+  agentEventBus?: AgentEventBus
 }
 
 function getCorrelationId(c: Context): string | undefined {
@@ -106,7 +107,7 @@ export class ServerManager {
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
   private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
-  private readonly agentEventBus = new AgentEventBus()
+  private readonly agentEventBus: AgentEventBus
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -125,6 +126,7 @@ export class ServerManager {
     this.notificationManager = deps.notificationManager
     this.auditLogger = deps.auditLogger
     this.getHealthStatusFn = deps.getHealthStatus
+    this.agentEventBus = deps.agentEventBus ?? new AgentEventBus()
     this.bindAgentEvents(this.workflowManager)
   }
 
@@ -144,7 +146,6 @@ export class ServerManager {
     workflowManager.on('entity:changed', (change: any) => this.agentEventBus.publish({
       type: `entity.${change.event}`,
       subject: `${change.entity}:${change.id ?? 'unknown'}`,
-      audienceId: change.audienceId,
       data: { entity: change.entity, action: change.event, id: change.id },
     }))
   }
@@ -319,7 +320,6 @@ export class ServerManager {
       onEntityChanged: change => this.agentEventBus.publish({
         type: `entity.${change.event}`,
         subject: `${change.entity}:${change.id ?? 'unknown'}`,
-        audienceId: change.session?.actor?.credentialId ?? change.session?.user?.id,
         data: { entity: change.entity, action: change.event, id: change.id },
       }),
     })
