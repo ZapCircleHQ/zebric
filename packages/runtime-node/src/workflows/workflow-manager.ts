@@ -55,10 +55,11 @@ export class WorkflowManager extends EventEmitter {
       httpClient: options.httpClient,
       notificationService: options.notificationService,
       logger: options.logger,
-      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, trace, session, attribution }) => {
+      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, workflowPath, trace, session, attribution }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
           sourceWorkflow,
           depth: depth + 1,
+          workflowPath,
           trace: trace
             ? {
                 correlationId: trace.correlationId,
@@ -193,6 +194,7 @@ export class WorkflowManager extends EventEmitter {
       }
       initiatingSession?: WorkflowContext['session']
       attribution?: any
+      workflowPath?: string[]
     }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
@@ -220,9 +222,19 @@ export class WorkflowManager extends EventEmitter {
 
     const workflows = this.queue.getAllWorkflows()
     const jobs: WorkflowJob[] = []
+    const workflowPath = options?.workflowPath ?? []
 
     for (const workflow of workflows) {
       if (this.matchesEntityTrigger(workflow.trigger, entity, event, normalizedData)) {
+        if (workflowPath.includes(workflow.name)) {
+          this.logger?.warn('Skipping entity trigger because it would create a workflow cycle', {
+            entity,
+            event,
+            workflow: workflow.name,
+            workflowPath,
+          })
+          continue
+        }
         const context: WorkflowContext = {
           trace: {
             correlationId: options?.trace?.correlationId,
@@ -244,6 +256,7 @@ export class WorkflowManager extends EventEmitter {
             __zebric: {
               sourceWorkflow: options?.sourceWorkflow,
               depth,
+              workflowPath: [...workflowPath, workflow.name],
             },
             ...(options?.attribution ? { data: { attribution: options.attribution } } : {}),
           },

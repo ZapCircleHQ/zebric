@@ -568,20 +568,22 @@ describe('WorkflowExecutor', () => {
           __zebric: {
             sourceWorkflow: 'upstream-workflow',
             depth: 2,
+            workflowPath: ['upstream-workflow', 'propagate-update-event'],
           },
         },
       }
 
       await executor.execute(workflow, context)
 
-      expect(mockEntityEventHandler).toHaveBeenCalledWith({
+      expect(mockEntityEventHandler).toHaveBeenCalledWith(expect.objectContaining({
         entity: 'user',
         event: 'update',
         before: { id: '123', status: 'triage' },
         after: { id: '123', updated: true },
-        sourceWorkflow: 'upstream-workflow',
+        sourceWorkflow: 'propagate-update-event',
         depth: 2,
-      })
+        workflowPath: ['upstream-workflow', 'propagate-update-event'],
+      }))
     })
 
     it('should execute update query', async () => {

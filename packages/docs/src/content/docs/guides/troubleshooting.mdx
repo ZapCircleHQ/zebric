@@ -91,6 +91,7 @@ If a page queries or displays a field that isn't defined on the entity, the runt
    name = "debug"
    type = "console"
    ```
+4. Check runtime warnings for `workflow cycle` or `propagation depth`. Zebric skips a repeated workflow in the same entity-event chain and stops nested propagation beyond depth `5`. See [Entity Event Loop Protection](/building/workflows#entity-event-loop-protection).
 
 ### `Workflow step failed: template variable not resolved`
 

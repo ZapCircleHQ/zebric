@@ -43,6 +43,7 @@ export interface WorkflowExecutorOptions {
     after?: any
     sourceWorkflow: string
     depth: number
+    workflowPath: string[]
     trace?: WorkflowContext['trace']
     session?: WorkflowContext['session']
     attribution?: any
@@ -125,6 +126,8 @@ export class WorkflowExecutor {
       if (!context.variables) {
         context.variables = {}
       }
+      const propagation = ((context.variables as any).__zebric ??= {})
+      propagation.currentWorkflow = workflow.name
 
       const executeSteps = async () => {
         for (let i = 0; i < workflow.steps.length; i++) {
@@ -682,7 +685,10 @@ export class WorkflowExecutor {
     }
 
     const depth = Number((context.variables as any)?.__zebric?.depth || 0)
-    const sourceWorkflow = String((context.variables as any)?.__zebric?.sourceWorkflow || 'unknown')
+    const sourceWorkflow = String((context.variables as any)?.__zebric?.currentWorkflow || 'unknown')
+    const workflowPath = Array.isArray((context.variables as any)?.__zebric?.workflowPath)
+      ? [...(context.variables as any).__zebric.workflowPath]
+      : []
 
     const entityEvent = {
       entity,
@@ -691,6 +697,7 @@ export class WorkflowExecutor {
       after,
       sourceWorkflow,
       depth,
+      workflowPath,
       trace: context.trace,
       session: context.session,
       attribution: context.variables?.data?.attribution,
