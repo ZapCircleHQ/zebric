@@ -8,6 +8,15 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { createZebric, type Zebric } from '@zebric/runtime-node'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createZebricMcpServer } from '../src/server.js'
+import { z } from 'zod'
+
+const ClaudeChannelNotificationSchema = z.object({
+  method: z.literal('notifications/claude/channel'),
+  params: z.object({
+    content: z.string(),
+    meta: z.record(z.string(), z.string()).optional(),
+  }),
+})
 
 describe('Task Tracker flagship MCP example', () => {
   const apiKey = 'task-tracker-mcp-e2e-key'
@@ -50,6 +59,10 @@ describe('Task Tracker flagship MCP example', () => {
       allowedMutations: ['task_tracker_create_task', 'task_tracker_set_task_status'],
     })
     const client = new Client({ name: 'task-tracker-e2e', version: '1.0.0' })
+    const channelEvents: Array<z.infer<typeof ClaudeChannelNotificationSchema>['params']> = []
+    client.setNotificationHandler(ClaudeChannelNotificationSchema, notification => {
+      channelEvents.push(notification.params)
+    })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
     await client.connect(clientTransport)
@@ -70,6 +83,8 @@ describe('Task Tracker flagship MCP example', () => {
       expect(created).toEqual(expect.objectContaining({
         title: 'Ship the flagship MCP example', status: 'not_started', priority: 'normal',
       }))
+      await waitFor(() => channelEvents.some(event => event.meta?.event_type === 'entity.create'))
+      expect(client.getServerCapabilities()?.experimental).toHaveProperty('claude/channel')
 
       const tasks = parseToolJson(await client.callTool({
         name: 'task_tracker_task_tracker_list_tasks',
@@ -128,4 +143,12 @@ async function waitForHttp(url: string, timeoutMs: number): Promise<void> {
     await new Promise(resolvePromise => setTimeout(resolvePromise, 100))
   }
   throw new Error(`Timed out waiting for ${url}`)
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const started = Date.now()
+  while (!predicate()) {
+    if (Date.now() - started >= timeoutMs) throw new Error('Timed out waiting for MCP channel event')
+    await new Promise(resolvePromise => setTimeout(resolvePromise, 20))
+  }
 }

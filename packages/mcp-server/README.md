@@ -1,6 +1,6 @@
 # @zebric/mcp-server
 
-Expose a running Zebric application's Agent API as an MCP server over stdio.
+Expose a running Zebric application's Agent API as an MCP server over stdio. When the application advertises its authenticated Agent API event stream, the adapter also declares Claude Code's experimental `claude/channel` capability and forwards redacted entity and workflow notifications into the session.
 
 ```sh
 zebric-mcp-server --connect http://127.0.0.1:3000

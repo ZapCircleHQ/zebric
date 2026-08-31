@@ -4,6 +4,7 @@ const DiscoverySchema = z.object({
   name: z.string(),
   version: z.string().optional(),
   openapi: z.string(),
+  events: z.string().optional(),
   skills: z.array(z.string()).optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
   contract: z.object({
@@ -26,6 +27,7 @@ export interface ZebricApplicationContract {
   baseUrl: string
   discoveryUrl?: string
   openApiUrl: string
+  eventStreamUrl?: string
   discovery?: z.infer<typeof DiscoverySchema>
   openapi: z.infer<typeof OpenApiSchema>
 }
@@ -74,6 +76,9 @@ export async function discoverZebricApplication(
     if (openApiUrl.origin !== base.origin) {
       throw new Error('Cross-origin OpenAPI discovery is not allowed')
     }
+    if (discovery.events && new URL(discovery.events, base).origin !== base.origin) {
+      throw new Error('Cross-origin event stream discovery is not allowed')
+    }
   } else if (discoveryResponse.status !== 404) {
     throw new Error(`Zebric discovery failed with HTTP ${discoveryResponse.status}`)
   }
@@ -96,6 +101,7 @@ export async function discoverZebricApplication(
     baseUrl: base.origin,
     ...(discovery ? { discovery, discoveryUrl: discoveryUrl.toString() } : {}),
     openApiUrl: openApiUrl.toString(),
+    ...(discovery?.events ? { eventStreamUrl: new URL(discovery.events, base).toString() } : {}),
     openapi,
   }
 }

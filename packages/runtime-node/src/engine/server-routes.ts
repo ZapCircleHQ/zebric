@@ -16,6 +16,7 @@ import {
   registerSearchRoutes as registerSharedSearchRoutes,
 } from '@zebric/runtime-hono'
 import { agentApiError } from './agent-api-error.js'
+import type { AgentEventBus } from './agent-event-bus.js'
 import {
   getMimeType,
   resolveOrigin,
@@ -565,6 +566,7 @@ export function registerSkillRoutes(
     workflowManager?: WorkflowManager
     apiKeys: ReadonlyMap<string, { name: string }>
     auditLogger?: AuditLogger
+    onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void
   }
 ): void {
   const { blueprint, sessionManager, queryExecutor, workflowManager, apiKeys, auditLogger } = deps
@@ -625,7 +627,7 @@ export function registerSkillRoutes(
           }
           attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
 
-          const actionDeps = { queryExecutor, workflowManager }
+          const actionDeps = { queryExecutor, workflowManager, onEntityChanged: deps.onEntityChanged }
 
           const executeAction = async (): Promise<Response> => {
             const response = action.workflow
@@ -756,6 +758,52 @@ export function registerWorkflowJobRoutes(
       completedAt: job.completedAt,
       result: job.result,
       error: job.status === 'failed' ? 'Workflow execution failed' : null,
+    })
+  })
+}
+
+export function registerAgentEventStreamRoute(
+  app: Hono,
+  deps: {
+    sessionManager: SessionManager
+    apiKeys: ReadonlyMap<string, { name: string }>
+    eventBus: AgentEventBus
+  }
+): void {
+  app.get('/api/agent/events', async (c) => {
+    const session = await resolveEntityApiSession(c, deps.sessionManager, deps.apiKeys)
+    if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+    const audienceId = sessionSecurityId(session)
+    const encoder = new TextEncoder()
+    let unsubscribe = () => {}
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(': connected\n\n'))
+        unsubscribe = deps.eventBus.subscribe(event => {
+          if (event.audienceId && event.audienceId !== audienceId) return
+          const publicEvent = { ...event, audienceId: undefined }
+          controller.enqueue(encoder.encode(`id: ${event.id}\nevent: ${event.type}\ndata: ${JSON.stringify(publicEvent)}\n\n`))
+        })
+        heartbeat = setInterval(() => controller.enqueue(encoder.encode(': heartbeat\n\n')), 15_000)
+      },
+      cancel() {
+        unsubscribe()
+        if (heartbeat) clearInterval(heartbeat)
+      },
+    })
+    c.req.raw.signal.addEventListener('abort', () => {
+      unsubscribe()
+      if (heartbeat) clearInterval(heartbeat)
+    }, { once: true })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+      },
     })
   })
 }
@@ -957,7 +1005,7 @@ function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
   return 500
 }
 
-export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: EngineConfig): void {
+export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: EngineConfig, eventStream = false): void {
   app.get('/.well-known/zebric-agent.json', async (c) => {
     const origin = resolveOrigin(c.req.raw, config)
     const contract = agentContractMetadata(blueprint)
@@ -965,13 +1013,14 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
       name: blueprint.project.name,
       version: blueprint.project.version,
       openapi: `${origin}/api/openapi.json`,
+      ...(eventStream ? { events: `${origin}/api/agent/events` } : {}),
       contract,
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
       skills: blueprint.skills?.map(skill => skill.name) ?? [],
       capabilities: {
         workflowJobs: Boolean(blueprint.workflows?.length),
         idempotency: true,
-        eventStream: false,
+        eventStream,
         transactionalWorkflows: true,
         d1BatchWorkflows: false,
       },

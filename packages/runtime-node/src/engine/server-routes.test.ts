@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
 import { createApiKeyRegistry } from './server-security.js'
+import { AgentEventBus } from './agent-event-bus.js'
 
 function testApiKeys(scopes: string[], name = 'roadmap-agent') {
   return createApiKeyRegistry([{ token: 'secret-key', credential: {
@@ -73,6 +74,40 @@ describe('agent discovery routes', () => {
     }, { port: 3000 } as any)
     const changedContract = (await (await changed.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
     expect(changedContract.fingerprint).not.toBe(firstContract.fingerprint)
+  })
+})
+
+describe('agent event stream', () => {
+  it('requires authentication and streams public event envelopes', async () => {
+    const app = new Hono()
+    const eventBus = new AgentEventBus()
+    registerAgentEventStreamRoute(app, {
+      sessionManager: { getSession: async () => null } as any,
+      apiKeys: testApiKeys(['entity.item.list']),
+      eventBus,
+    })
+
+    expect((await app.request('/api/agent/events')).status).toBe(401)
+    const response = await app.request('/api/agent/events', {
+      headers: { authorization: 'Bearer secret-key' },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+
+    const reader = response.body!.getReader()
+    await reader.read() // connected comment
+    const published = eventBus.publish({
+      type: 'entity.update',
+      subject: 'Item:item-1',
+      audienceId: 'roadmap-agent-credential',
+      data: { entity: 'Item', action: 'update', id: 'item-1' },
+    })
+    const frame = new TextDecoder().decode((await reader.read()).value)
+    expect(frame).toContain(`id: ${published.id}`)
+    expect(frame).toContain('event: entity.update')
+    expect(frame).toContain('"id":"item-1"')
+    expect(frame).not.toContain('audienceId')
+    await reader.cancel()
   })
 })
 

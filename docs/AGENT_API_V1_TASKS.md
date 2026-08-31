@@ -484,7 +484,7 @@ These are follow-on capabilities and are not required to ship the core Agent API
 - [ ] Define versioned domain event envelopes.
 - [ ] Support authenticated outbound webhooks first.
 - [ ] Add delivery IDs, signatures, retries, and replay protection.
-- [ ] Consider server-sent events or queue adapters for long-running agents.
+- [x] Add an authenticated server-sent event adapter for in-process agent and MCP consumers.
 - [ ] Support cursor-based replay where event retention permits it.
 - [ ] Treat events as notifications; require agents to fetch authoritative state before mutating it.
 

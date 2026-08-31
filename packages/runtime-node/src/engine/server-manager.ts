@@ -36,12 +36,14 @@ import {
   registerActionRoutes,
   registerSkillRoutes,
   registerWorkflowJobRoutes,
+  registerAgentEventStreamRoute,
   registerAPIRoutes,
   registerOpenAPIRoute,
   registerPageRoutes,
   registerWidgetRoutes,
   registerSearchRoutes,
 } from './server-routes.js'
+import { AgentEventBus } from './agent-event-bus.js'
 
 export interface ServerManagerDependencies {
   blueprint: Blueprint
@@ -104,6 +106,7 @@ export class ServerManager {
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
   private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
+  private readonly agentEventBus = new AgentEventBus()
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -122,6 +125,28 @@ export class ServerManager {
     this.notificationManager = deps.notificationManager
     this.auditLogger = deps.auditLogger
     this.getHealthStatusFn = deps.getHealthStatus
+    this.bindAgentEvents(this.workflowManager)
+  }
+
+  private bindAgentEvents(workflowManager?: WorkflowManager): void {
+    if (!workflowManager || typeof workflowManager.on !== 'function') return
+    const publishJob = (status: string) => (job: any) => this.agentEventBus.publish({
+      type: `workflow.${status}`,
+      subject: `workflow-job:${job.id}`,
+      audienceId: job.context?.session?.actor?.credentialId ?? job.context?.session?.user?.id,
+      data: { jobId: job.id, workflow: job.workflowName, status },
+    })
+    workflowManager.on('job:enqueued', publishJob('enqueued'))
+    workflowManager.on('job:started', publishJob('started'))
+    workflowManager.on('job:completed', publishJob('completed'))
+    workflowManager.on('job:failed', publishJob('failed'))
+    workflowManager.on('job:cancelled', publishJob('cancelled'))
+    workflowManager.on('entity:changed', (change: any) => this.agentEventBus.publish({
+      type: `entity.${change.event}`,
+      subject: `${change.entity}:${change.id ?? 'unknown'}`,
+      audienceId: change.audienceId,
+      data: { entity: change.entity, action: change.event, id: change.id },
+    }))
   }
 
   updateDependencies(updates: Partial<ServerManagerDependencies>): void {
@@ -279,6 +304,11 @@ export class ServerManager {
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,
     })
+    registerAgentEventStreamRoute(this.app, {
+      sessionManager: this.sessionManager,
+      apiKeys: this.apiKeys,
+      eventBus: this.agentEventBus,
+    })
     registerSkillRoutes(this.app, {
       blueprint: this.blueprint,
       sessionManager: this.sessionManager,
@@ -286,6 +316,12 @@ export class ServerManager {
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,
       auditLogger: this.auditLogger,
+      onEntityChanged: change => this.agentEventBus.publish({
+        type: `entity.${change.event}`,
+        subject: `${change.entity}:${change.id ?? 'unknown'}`,
+        audienceId: change.session?.actor?.credentialId ?? change.session?.user?.id,
+        data: { entity: change.entity, action: change.event, id: change.id },
+      }),
     })
     registerAPIRoutes(this.app, {
       blueprint: this.blueprint,
@@ -305,7 +341,7 @@ export class ServerManager {
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
     })
-    registerOpenAPIRoute(this.app, this.blueprint, this.config)
+    registerOpenAPIRoute(this.app, this.blueprint, this.config, true)
     registerPageRoutes(this.app, this.blueprintAdapter)
 
     this.app.notFound(() => {

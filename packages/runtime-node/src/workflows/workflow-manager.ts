@@ -196,6 +196,13 @@ export class WorkflowManager extends EventEmitter {
     }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
+    const changed = normalizedData.after ?? normalizedData.before
+    this.emit('entity:changed', {
+      entity,
+      event,
+      id: changed?.id,
+      audienceId: options?.initiatingSession?.actor?.credentialId ?? options?.initiatingSession?.user?.id,
+    })
     const depth = options?.depth ?? 0
     if (depth > this.maxEntityTriggerDepth) {
       if (this.logger) {

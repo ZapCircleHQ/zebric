@@ -44,6 +44,7 @@ function parseSkillQuery(c: Context, action: SkillAction): Record<string, any> {
 export interface ActionHandlerDeps {
   queryExecutor: QueryExecutor
   workflowManager?: WorkflowManager
+  onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void
 }
 
 function getCorrelationId(c: Context): string | undefined {
@@ -79,6 +80,7 @@ export async function handleSkillEntityAction(
         }
       }
       const result = await queryExecutor.create(entityName, body, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'create', id: result?.id, session })
       const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'create', undefined, result, workflowManager, {
         correlationId: getCorrelationId(c),
@@ -99,6 +101,7 @@ export async function handleSkillEntityAction(
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       const result = await queryExecutor.update(entityName, id, body, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'update', id, session })
       const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'update', before, result, workflowManager, {
         correlationId: getCorrelationId(c),
@@ -164,6 +167,7 @@ export async function handleSkillEntityAction(
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       await queryExecutor.delete(entityName, id, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'delete', id, session })
       const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined, workflowManager, {
         correlationId: getCorrelationId(c),
