@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { randomUUID } from 'node:crypto'
 import {
   createRuntimeReadTools,
   discoverZebricApplication,
@@ -27,6 +28,7 @@ export async function createZebricMcpServer(options: CreateZebricMcpServerOption
     ...(allowedMutations.size > 0 ? {
       mutations: {
         approve: request => allowedMutations.has(request.operationId),
+        agentRunId: () => randomUUID(),
         state: new InMemoryMutationExecutionStateStore(),
       },
     } : {}),

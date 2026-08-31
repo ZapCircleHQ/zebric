@@ -94,5 +94,67 @@ layout = "detail"
 entity = "Task"
 where = { id = "$params.id" }
 
+# Agent API — flagship MCP example
+[skill.task_tracker]
+description = "Inspect and manage tasks in the Task Tracker application."
+
+[[skill.task_tracker.actions]]
+name = "list_tasks"
+description = "List tasks, optionally filtered by status or priority."
+method = "GET"
+path = "/api/agent/tasks"
+entity = "Task"
+action = "list"
+scopes = ["tasks.read"]
+
+[skill.task_tracker.actions.query.status]
+type = "Enum"
+values = ["not_started", "in_progress", "done"]
+required = false
+description = "Only return tasks in this workflow state."
+
+[skill.task_tracker.actions.query.priority]
+type = "Enum"
+values = ["low", "normal", "high"]
+required = false
+description = "Only return tasks with this priority."
+
+[[skill.task_tracker.actions]]
+name = "get_task"
+description = "Get one task by its ID."
+method = "GET"
+path = "/api/agent/tasks/{id}"
+entity = "Task"
+action = "get"
+scopes = ["tasks.read"]
+
+[[skill.task_tracker.actions]]
+name = "create_task"
+description = "Create a task with the default not-started status and normal priority."
+method = "POST"
+path = "/api/agent/tasks"
+entity = "Task"
+action = "create"
+scopes = ["tasks.write"]
+body = { title = "Text" }
+
+[[skill.task_tracker.actions]]
+name = "set_task_status"
+description = "Set a task's workflow status."
+method = "PUT"
+path = "/api/agent/tasks/{id}/status"
+entity = "Task"
+action = "update"
+scopes = ["tasks.write"]
+body = { status = "Enum" }
+
 [auth]
 providers = ["email"]
+
+[[auth.apiKeys]]
+name = "task-tracker-mcp"
+keyEnv = "TASK_TRACKER_API_KEY"
+agentId = "task-tracker-mcp-agent"
+credentialId = "task-tracker-mcp-key"
+displayName = "Task Tracker MCP Agent"
+scopes = ["tasks.read", "tasks.write"]
