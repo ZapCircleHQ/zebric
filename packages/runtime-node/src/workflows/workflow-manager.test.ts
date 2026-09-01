@@ -104,6 +104,71 @@ describe('WorkflowManager entity triggers', () => {
     expect(jobs[0]?.context.session).toBe(SYSTEM_SESSION)
   })
 
+  it('preserves an initiating agent and attribution through entity-triggered workflows', async () => {
+    const manager = new WorkflowManager({ dataLayer: {} as any })
+    manager.registerWorkflow({
+      name: 'on-agent-update',
+      trigger: { entity: 'Request', event: 'update' },
+      steps: [],
+    })
+    const session = {
+      id: 'apikey-credential-1',
+      userId: 'qa-agent',
+      user: { id: 'qa-agent', email: '' },
+      actor: { type: 'agent', id: 'qa-agent', credentialId: 'credential-1', scopes: ['qa.transition'] },
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60_000),
+    }
+    const attribution = {
+      actorType: 'agent', agentId: 'qa-agent', credentialId: 'credential-1', runId: 'run-1',
+    }
+
+    const jobs = await manager.triggerEntityEvent('Request', 'update', {
+      before: { id: 'req_1' }, after: { id: 'req_1' },
+    }, { initiatingSession: session, attribution })
+
+    expect(jobs[0]?.context.session).toBe(session)
+    expect(jobs[0]?.context.variables.data.attribution).toEqual(attribution)
+  })
+
+  it('halts a workflow cycle before the same workflow is enqueued again', async () => {
+    const manager = new WorkflowManager({ dataLayer: {} as any })
+    manager.registerWorkflow({
+      name: 'normalize-request',
+      trigger: { entity: 'Request', event: 'update' },
+      steps: [],
+    })
+
+    const first = await manager.triggerEntityEvent('Request', 'update', {
+      before: { id: 'req_1', status: 'new' },
+      after: { id: 'req_1', status: 'normalized' },
+    })
+    expect(first).toHaveLength(1)
+    expect(first[0]?.context.variables.__zebric.workflowPath).toEqual(['normalize-request'])
+
+    const repeated = await manager.triggerEntityEvent('Request', 'update', {
+      before: { id: 'req_1', status: 'normalized' },
+      after: { id: 'req_1', status: 'normalized' },
+    }, {
+      sourceWorkflow: 'normalize-request',
+      depth: 1,
+      workflowPath: ['normalize-request'],
+    })
+    expect(repeated).toEqual([])
+  })
+
+  it('halts an indirect A to B to A workflow cycle', async () => {
+    const manager = new WorkflowManager({ dataLayer: {} as any })
+    manager.registerWorkflow({ name: 'workflow-a', trigger: { entity: 'Request', event: 'update' }, steps: [] })
+    manager.registerWorkflow({ name: 'workflow-b', trigger: { entity: 'Request', event: 'update' }, steps: [] })
+
+    const jobs = await manager.triggerEntityEvent('Request', 'update', {
+      before: { id: 'req_1' }, after: { id: 'req_1' },
+    }, { depth: 2, workflowPath: ['workflow-a', 'workflow-b'] })
+
+    expect(jobs).toEqual([])
+  })
+
   it('runs webhook- and schedule-triggered workflows as SYSTEM_SESSION', async () => {
     const manager = new WorkflowManager({
       dataLayer: {} as any

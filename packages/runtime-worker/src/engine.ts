@@ -4,7 +4,7 @@
  * CloudFlare Workers adapter for Zebric runtime.
  */
 
-import { BlueprintParser, detectFormat, HTMLRenderer, defaultTheme } from '@zebric/runtime-core'
+import { BlueprintParser, detectFormat, HTMLRenderer, defaultTheme, analyzeTransactionalWorkflow } from '@zebric/runtime-core'
 import type { Blueprint, Theme } from '@zebric/runtime-core'
 import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
@@ -60,6 +60,17 @@ export class ZebricWorkersEngine {
       this.blueprint = parser.parse(config.env.BLUEPRINT, 'json', 'env:BLUEPRINT')
     } else {
       throw new Error('Blueprint must be provided via config.blueprint, config.blueprintContent, or env.BLUEPRINT')
+    }
+
+    const transactionalWorkflows = (this.blueprint.workflows ?? []).filter(workflow => workflow.transactional)
+    if (transactionalWorkflows.length > 0) {
+      const details = transactionalWorkflows.map(workflow => {
+        const analysis = analyzeTransactionalWorkflow(workflow)
+        return `${workflow.name} (${analysis.d1BatchEligible ? 'D1-batch eligible but not yet executable' : analysis.reasons.join('; ')})`
+      })
+      throw new Error(
+        `Cloudflare Workers transactional workflows are not yet supported: ${details.join(', ')}`
+      )
     }
 
     // Initialize session manager if SESSION_KV is provided

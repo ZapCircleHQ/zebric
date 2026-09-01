@@ -9,6 +9,7 @@ A task management application demonstrating the Zebric Framework's **behavior-dr
 - **Intent Preservation**: Natural language requirements stored alongside generated code
 - **Status Cycling**: Click task indicators to cycle through states
 - **Standard Forms**: CRUD operations using Blueprint's built-in forms
+- **Flagship MCP Example**: Discover and manage tasks through typed MCP tools
 
 ## Architecture
 
@@ -42,6 +43,22 @@ pnpm --filter @zebric/cli dev examples/task-tracker/blueprint.toml
 ```
 
 Visit http://localhost:3000 to see the task dashboard.
+
+## Running the MCP server
+
+The Blueprint publishes `list_tasks`, `get_task`, `create_task`, and `set_task_status` as agent-facing skill actions. Start the application with its scoped API key:
+
+```bash
+TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker dev
+```
+
+Then configure an MCP client to launch the stdio adapter with the same environment variable:
+
+```bash
+TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker mcp
+```
+
+Read tools are available automatically. Each mutation is exposed only when its exact OpenAPI operation ID is allowlisted.
 
 ## How It Works
 

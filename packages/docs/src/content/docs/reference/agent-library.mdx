@@ -1,0 +1,62 @@
+---
+title: Agent Library
+description: Technical-preview API for creating and invoking Zebric Agent.
+---
+
+Install `@zebric/agent` on Node.js 22 or newer. The package is currently tested in CI on Node.js 24 with TypeScript 6, Deep Agents 1.12, LangChain 1.5, LangGraph 1.4, and LangChain Core 1.2. These are preview compatibility targets rather than a long-term guarantee.
+
+Provider integrations are optional consumer dependencies. The following is an illustrative OpenAI setup; pin and verify the provider/model combination you choose:
+
+```bash
+pnpm add @zebric/agent @langchain/openai
+```
+
+```ts
+import { ChatOpenAI } from '@langchain/openai'
+import { createZebricAgent } from '@zebric/agent'
+
+const agent = await createZebricAgent({
+  model: new ChatOpenAI({ model: process.env.OPENAI_MODEL ?? 'gpt-4.1-mini' }),
+  workspace: { root: process.cwd(), mode: 'read-only' },
+  applications: [{
+    name: 'local',
+    baseUrl: 'http://127.0.0.1:3000',
+    credential: { type: 'env', name: 'ZEBRIC_AGENT_TOKEN' },
+  }],
+})
+
+const result = await agent.invoke(
+  { messages: [{ role: 'user', content: 'Summarize ready work.' }] },
+  { threadId: 'review-42' },
+)
+```
+
+## Stable Zebric wrapper
+
+`createZebricAgent` returns `ZebricAgent`, which exposes `invoke` and `resume`; it does not expose the underlying Deep Agents graph. Invocation input and output are currently `unknown` because provider message-state shapes have not been standardized as Zebric-owned public types.
+
+Applications accept `name`, `baseUrl`, credential configuration, mutation configuration, and retry configuration. Workspace and application authorities are independent.
+
+The CLI instead accepts LangChain's `provider:model` identifier form and requires the corresponding provider integration package to be installed in the consuming project.
+
+## Credentials
+
+Use `{ type: 'env', name }` or `{ type: 'provider', resolve }`. Resolution occurs at request time, and generated schemas do not contain the secret. Provider callbacks should be side-effect-free apart from retrieving the secret and should return a fresh value after rotation.
+
+## Mutations and approvals
+
+Read tools are available by default. A non-GET operation requires `applications[].mutations.approve`. The callback receives a `MutationApprovalRequest` containing structured operation metadata and arguments. `approval: 'human-in-the-loop'` additionally requires a checkpointer and uses `resume(threadId, decision)` after interruption.
+
+Mutation retries reuse the generated idempotency key. Automatic HTTP retries occur only for safe reads, job observation, or idempotent mutations, and only when the server error envelope explicitly sets `retryable: true`. Configure retry attempts and backoff through `applications[].retry`, or set it to `false`.
+
+## Compatibility and limitations
+
+The package declares caret dependency ranges while the preview compatibility suite tracks the concrete versions above. Run package verification after dependency updates. Consumers compiling declarations need modern TypeScript libraries including `ESNext.Disposable` until upstream declaration requirements change.
+
+Zebric Agent currently targets the Node runtime Agent API. Worker parity, durable runtime jobs, configuration files, interactive chat, broad Blueprint inspection/linting, patch application, and provider-specific compatibility guarantees are not available yet.
+
+See [Security and Current Limitations](/agents/zebric-agent/security) before connecting to production data.
+
+## Deterministic contract harness
+
+`DeterministicAgentDriver` executes an explicit sequence of generated tools without an LLM. Use it in application integration tests to prove discovery, argument validation, authentication, workflow invocation, idempotency, and job observation against a real runtime. `ScriptedHttpChatModel` is exported for tests that need to exercise the real orchestration graph and tool-selection loop. These testing helpers must receive fixture credentials and bounded fixture responses, never production secrets or data.

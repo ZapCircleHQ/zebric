@@ -15,6 +15,7 @@ import type { QueryExecutor } from '../database/query-executor.js'
 import type { NotificationManager } from '@zebric/notifications'
 import { createWorkflowLogger, type Logger } from '@zebric/observability'
 import { evaluateCondition as evaluateWorkflowCondition } from '@zebric/runtime-core'
+import { AsyncLocalStorage } from 'node:async_hooks'
 
 export interface EmailService {
   send(to: string, subject: string, body: string, template?: string): Promise<void>
@@ -42,7 +43,10 @@ export interface WorkflowExecutorOptions {
     after?: any
     sourceWorkflow: string
     depth: number
+    workflowPath: string[]
     trace?: WorkflowContext['trace']
+    session?: WorkflowContext['session']
+    attribution?: any
   }) => Promise<void>
 }
 
@@ -54,6 +58,7 @@ export class WorkflowExecutor {
   private notificationService?: NotificationManager
   private logger?: Logger
   private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
+  private readonly deferredEntityEvents = new AsyncLocalStorage<Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]>>()
 
   constructor(options: WorkflowExecutorOptions) {
     this.dataLayer = options.dataLayer
@@ -68,7 +73,11 @@ export class WorkflowExecutor {
   /**
    * Execute a workflow
    */
-  async execute(workflow: Workflow, context: WorkflowContext): Promise<WorkflowExecutionResult> {
+  async execute(
+    workflow: Workflow,
+    context: WorkflowContext,
+    options?: { beforeTransactionalCommit?: () => Promise<void> }
+  ): Promise<WorkflowExecutionResult> {
     const logs: WorkflowLog[] = []
     const workflowLogger = this.logger
       ? createWorkflowLogger(this.logger, workflow.name, {
@@ -117,27 +126,47 @@ export class WorkflowExecutor {
       if (!context.variables) {
         context.variables = {}
       }
+      const propagation = ((context.variables as any).__zebric ??= {})
+      propagation.currentWorkflow = workflow.name
 
-      // Execute steps sequentially
-      for (let i = 0; i < workflow.steps.length; i++) {
-        const step = workflow.steps[i]
-        if (!step) continue
+      const executeSteps = async () => {
+        for (let i = 0; i < workflow.steps.length; i++) {
+          const step = workflow.steps[i]
+          if (!step) continue
 
-        log('debug', `Executing step ${i + 1}/${workflow.steps.length}: ${step.type}`)
+          log('debug', `Executing step ${i + 1}/${workflow.steps.length}: ${step.type}`)
 
-        try {
-          const result = await this.executeStep(step, context)
+          try {
+            const result = await this.executeStep(step, context)
 
-          // Assign result to context variable if specified
-          if (step.assignTo && result !== undefined) {
-            context.variables[step.assignTo] = result
-            log('debug', `Assigned result to variable: ${step.assignTo}`, result)
+            if (step.assignTo && result !== undefined) {
+              context.variables[step.assignTo] = result
+              log('debug', `Assigned result to variable: ${step.assignTo}`, result)
+            }
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            log('error', `Step ${i + 1} failed: ${errorMessage}`, error)
+            throw error
           }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error)
-          log('error', `Step ${i + 1} failed: ${errorMessage}`, error)
-          throw error
         }
+      }
+
+      if (workflow.transactional) {
+        if (typeof this.dataLayer.transaction !== 'function') {
+          throw new Error(`Transactional workflow ${workflow.name} requires transaction support`)
+        }
+        const deferredEvents: Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]> = []
+        await this.deferredEntityEvents.run(deferredEvents, () =>
+          this.dataLayer.transaction(async () => {
+            await executeSteps()
+            await options?.beforeTransactionalCommit?.()
+          })
+        )
+        for (const event of deferredEvents) {
+          await this.onEntityEvent?.(event)
+        }
+      } else {
+        await executeSteps()
       }
 
       log('info', `Workflow completed: ${workflow.name}`)
@@ -235,9 +264,14 @@ export class WorkflowExecutor {
           const before = queryContext
             ? await this.dataLayer.findById(step.entity, targetId, queryContext)
             : await this.dataLayer.findById(step.entity, targetId)
-          const updated = queryContext
-            ? await this.dataLayer.update(step.entity, targetId, data, queryContext)
-            : await this.dataLayer.update(step.entity, targetId, data)
+          const updateWhere = this.dataLayer.updateWhere?.bind(this.dataLayer)
+          const updated = updateWhere
+            ? (queryContext
+                ? await updateWhere(step.entity, targetId, this.withoutId(where), data, queryContext)
+                : await updateWhere(step.entity, targetId, this.withoutId(where), data))
+            : (queryContext
+                ? await this.dataLayer.update(step.entity, targetId, data, queryContext)
+                : await this.dataLayer.update(step.entity, targetId, data))
           await this.emitEntityEvent(step.entity, 'update', before, updated, context)
           return updated
         }
@@ -633,6 +667,12 @@ export class WorkflowExecutor {
     return undefined
   }
 
+  private withoutId(where: any): Record<string, any> {
+    if (!where || typeof where !== 'object') return {}
+    const { id: _id, ...expected } = where
+    return expected
+  }
+
   private async emitEntityEvent(
     entity: string,
     event: 'create' | 'update' | 'delete',
@@ -645,17 +685,29 @@ export class WorkflowExecutor {
     }
 
     const depth = Number((context.variables as any)?.__zebric?.depth || 0)
-    const sourceWorkflow = String((context.variables as any)?.__zebric?.sourceWorkflow || 'unknown')
+    const sourceWorkflow = String((context.variables as any)?.__zebric?.currentWorkflow || 'unknown')
+    const workflowPath = Array.isArray((context.variables as any)?.__zebric?.workflowPath)
+      ? [...(context.variables as any).__zebric.workflowPath]
+      : []
 
-    await this.onEntityEvent({
+    const entityEvent = {
       entity,
       event,
       before,
       after,
       sourceWorkflow,
       depth,
+      workflowPath,
       trace: context.trace,
-    })
+      session: context.session,
+      attribution: context.variables?.data?.attribution,
+    }
+    const deferred = this.deferredEntityEvents.getStore()
+    if (deferred) {
+      deferred.push(entityEvent)
+      return
+    }
+    await this.onEntityEvent(entityEvent)
   }
 
   /**

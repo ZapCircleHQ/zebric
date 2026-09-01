@@ -54,33 +54,18 @@ describe('D1Adapter', () => {
   })
 
   describe('transaction', () => {
-    it('should execute transaction with multiple operations', async () => {
-      await db.exec('CREATE TABLE users (id TEXT, name TEXT)')
-
-      const result = await adapter.transaction(async (tx) => {
-        await tx.query('INSERT INTO users VALUES (?, ?)', ['1', 'Alice'])
-        await tx.query('INSERT INTO users VALUES (?, ?)', ['2', 'Bob'])
-        return 'success'
-      })
-
-      expect(result).toBe('success')
-
-      const users = await adapter.query('SELECT * FROM users')
-      expect(users.rows).toHaveLength(2)
+    it('rejects callback transactions instead of providing a false atomicity guarantee', async () => {
+      await expect(adapter.transaction(async () => 'unreachable'))
+        .rejects.toThrow('D1 does not support callback transactions')
     })
 
-    it('should rollback transaction on error', async () => {
+    it('executes fixed statements through D1 batch', async () => {
       await db.exec('CREATE TABLE users (id TEXT, name TEXT)')
-
-      await expect(
-        adapter.transaction(async (tx) => {
-          await tx.query('INSERT INTO users VALUES (?, ?)', ['1', 'Alice'])
-          throw new Error('Rollback!')
-        })
-      ).rejects.toThrow('Rollback!')
-
-      // In a real D1 database, this would be empty due to rollback
-      // In our mock, we don't fully implement transactions
+      await adapter.batch([
+        { sql: 'INSERT INTO users VALUES (?, ?)', params: ['1', 'Alice'] },
+        { sql: 'INSERT INTO users VALUES (?, ?)', params: ['2', 'Bob'] },
+      ])
+      expect((await adapter.query('SELECT * FROM users')).rows).toHaveLength(2)
     })
   })
 

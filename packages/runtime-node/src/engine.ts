@@ -35,6 +35,7 @@ import type {
 } from './types/index.js'
 import { createQueryExecutorPort, createSessionManagerPort, createAuditLoggerPort } from './engine-port-factory.js'
 import { setupGracefulShutdown, setupHotReload as setupHotReloadFn, loadPlugins as loadPluginsFn, initializePluginAPIProvider } from './engine-lifecycle.js'
+import { AgentEventBus } from './engine/agent-event-bus.js'
 
 const require = createRequire(import.meta.url)
 const { version: ENGINE_VERSION } = require('../package.json') as { version: string }
@@ -70,6 +71,7 @@ export class ZebricEngine extends EventEmitter {
   private notificationManager?: NotificationManager
   private pendingSchemaDiff: SchemaDiffResult | null = null
   private isShuttingDown = false
+  private readonly agentEventBus = new AgentEventBus()
   private shutdownTimeout = 30000 // 30 seconds
 
   constructor(config: EngineConfig) {
@@ -199,7 +201,7 @@ export class ZebricEngine extends EventEmitter {
 
       this.blueprintAdapter = new BlueprintHttpAdapter({
         blueprint: this.blueprint,
-        queryExecutor: createQueryExecutorPort(this.queryExecutor),
+        queryExecutor: createQueryExecutorPort(this.queryExecutor, change => this.publishEntityEvent(change)),
         sessionManager: createSessionManagerPort(this.sessionManager),
         renderer: rendererPort,
         auditLogger: createAuditLoggerPort(this.auditLogger),
@@ -223,8 +225,10 @@ export class ZebricEngine extends EventEmitter {
         logger: this.logger,
         errorHandler: this.errorHandler,
         pendingSchemaDiff: this.pendingSchemaDiff,
+        auditLogger: this.auditLogger,
         notificationManager: this.notificationManager,
         getHealthStatus: () => this.getHealth(),
+        agentEventBus: this.agentEventBus,
       })
 
       this.server = await this.serverManager.start()
@@ -313,6 +317,14 @@ export class ZebricEngine extends EventEmitter {
       this.state.status = 'stopped'
       throw error
     }
+  }
+
+  private publishEntityEvent(change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }): void {
+    this.agentEventBus.publish({
+      type: `entity.${change.event}`,
+      subject: `${change.entity}:${change.id ?? 'unknown'}`,
+      data: { entity: change.entity, action: change.event, id: change.id },
+    })
   }
 
   /**

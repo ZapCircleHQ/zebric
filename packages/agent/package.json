@@ -1,0 +1,43 @@
+{
+  "name": "@zebric/agent",
+  "version": "0.0.1",
+  "description": "First-party agent for operating and authoring Zebric applications",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "zebric-agent": "./dist/cli/index.js"
+  },
+  "files": ["dist", "README.md"],
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "pretest": "pnpm --filter @zebric/runtime-node... build",
+    "test": "vitest run",
+    "pretest:e2e": "pnpm --filter @zebric/runtime-node... build",
+    "test:e2e": "vitest run tests/e2e/*.e2e.test.ts",
+    "test:package": "pnpm --filter @zebric/agent... build && node scripts/verify-package.mjs",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.5",
+    "@langchain/langgraph": "^1.4.9",
+    "@zebric/runtime-core": "workspace:*",
+    "deepagents": "^1.12.2",
+    "langchain": "^1.5.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "@zebric/runtime-node": "workspace:*",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "engines": { "node": ">=22.0.0" }
+}

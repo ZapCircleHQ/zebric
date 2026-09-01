@@ -4,7 +4,7 @@
 FROM node:24-alpine AS base
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN corepack enable && corepack prepare pnpm@11.23.0 --activate
 
 # Set working directory
 WORKDIR /app

@@ -2,7 +2,114 @@ import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAPIRoutes, registerActionRoutes, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { createApiKeyRegistry } from './server-security.js'
+import { AgentEventBus } from './agent-event-bus.js'
+
+function testApiKeys(scopes: string[], name = 'roadmap-agent') {
+  return createApiKeyRegistry([{ token: 'secret-key', credential: {
+    name,
+    agentId: name,
+    credentialId: `${name}-credential`,
+    displayName: name,
+    scopes,
+  } }])
+}
+
+describe('agent discovery routes', () => {
+  it('publishes application skills and current runtime capabilities', async () => {
+    const app = new Hono()
+    registerOpenAPIRoute(app, {
+      version: '0.1.0',
+      project: { name: 'Issue Board', version: '1.0.0', runtime: { min_version: '0.1.0' } },
+      entities: [],
+      pages: [],
+      skills: [{ name: 'issue_board', actions: [] }],
+      auth: { providers: ['email'], apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY' }] },
+    }, { port: 3000 } as any)
+
+    const response = await app.request('http://localhost:3000/.well-known/zebric-agent.json')
+    const body = await response.json() as any
+
+    expect(response.status).toBe(200)
+    expect(body).toMatchObject({
+      name: 'Issue Board',
+      openapi: 'http://localhost:3000/api/openapi.json',
+      contract: { version: '1' },
+      authentication: [{ type: 'bearer' }],
+      skills: ['issue_board'],
+      capabilities: {
+        workflowJobs: false,
+        idempotency: true,
+        eventStream: false,
+        transactionalWorkflows: true,
+        d1BatchWorkflows: false,
+      },
+    })
+    expect(body.contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/)
+
+    const openapiResponse = await app.request('http://localhost:3000/api/openapi.json')
+    const openapi = await openapiResponse.json() as any
+    expect(openapi['x-zebric-contract']).toEqual(body.contract)
+    expect(openapiResponse.headers.get('etag')).toBe(`"${body.contract.fingerprint}"`)
+  })
+
+  it('keeps the contract fingerprint stable across request origins and changes it with the contract', async () => {
+    const blueprint = {
+      version: '0.1.0',
+      project: { name: 'Stable', version: '1.0.0', runtime: { min_version: '0.1.0' } },
+      entities: [], pages: [],
+      skills: [{ name: 'status', actions: [{ name: 'read', method: 'GET' as const, path: '/api/status' }] }],
+    }
+    const first = new Hono()
+    registerOpenAPIRoute(first, blueprint, { port: 3000 } as any)
+    const firstContract = (await (await first.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
+    const secondContract = (await (await first.request('http://two.example/.well-known/zebric-agent.json')).json() as any).contract
+    expect(firstContract).toEqual(secondContract)
+
+    const changed = new Hono()
+    registerOpenAPIRoute(changed, {
+      ...blueprint,
+      skills: [{ name: 'status', actions: [{ name: 'read_changed', method: 'GET', path: '/api/status' }] }],
+    }, { port: 3000 } as any)
+    const changedContract = (await (await changed.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
+    expect(changedContract.fingerprint).not.toBe(firstContract.fingerprint)
+  })
+})
+
+describe('agent event stream', () => {
+  it('requires authentication and streams public event envelopes', async () => {
+    const app = new Hono()
+    const eventBus = new AgentEventBus()
+    registerAgentEventStreamRoute(app, {
+      sessionManager: { getSession: async () => null } as any,
+      apiKeys: testApiKeys(['entity.item.list']),
+      eventBus,
+    })
+
+    expect((await app.request('/api/agent/events')).status).toBe(401)
+    const response = await app.request('/api/agent/events', {
+      headers: { authorization: 'Bearer secret-key' },
+    })
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toContain('text/event-stream')
+
+    const reader = response.body!.getReader()
+    await reader.read() // connected comment
+    const published = eventBus.publish({
+      type: 'entity.update',
+      subject: 'Item:item-1',
+      audienceId: 'roadmap-agent-credential',
+      data: { entity: 'Item', action: 'update', id: 'item-1' },
+    })
+    const frame = new TextDecoder().decode((await reader.read()).value)
+    expect(frame).toContain(`id: ${published.id}`)
+    expect(frame).toContain('event: entity.update')
+    expect(frame).toContain('"id":"item-1"')
+    expect(frame).not.toContain('audienceId')
+    await reader.cancel()
+  })
+})
 
 describe('registerPageRoutes', () => {
   it('sets a CSRF cookie when a safe page request generated a token', async () => {
@@ -67,7 +174,7 @@ describe('registerAPIRoutes access context', () => {
       blueprint,
       sessionManager: { getSession: async () => null } as any,
       queryExecutor: { execute } as any,
-      apiKeys: new Map([['secret-key', { name: 'roadmap-agent' }]]),
+      apiKeys: testApiKeys(['entity.item.list']),
     })
 
     const response = await app.request('/api/items', {
@@ -85,7 +192,7 @@ describe('registerAPIRoutes access context', () => {
       blueprint,
       sessionManager: { getSession: async () => null } as any,
       queryExecutor: { create } as any,
-      apiKeys: new Map([['secret-key', { name: 'roadmap-agent' }]]),
+      apiKeys: testApiKeys(['entity.item.create']),
     })
 
     const response = await app.request('/api/items', {
@@ -93,12 +200,28 @@ describe('registerAPIRoutes access context', () => {
       headers: {
         authorization: 'Bearer secret-key',
         'content-type': 'application/json',
+        'x-agent-run-id': 'entity-create-run',
       },
       body: JSON.stringify({ title: 'Agent item' }),
     })
 
     expect(response.status).toBe(201)
     expect(create.mock.calls[0]?.[2]?.session.user.id).toBe('roadmap-agent')
+  })
+
+  it('prevents API keys from bypassing skills through unscoped entity routes', async () => {
+    const app = new Hono()
+    registerAPIRoutes(app, {
+      blueprint,
+      sessionManager: { getSession: async () => null } as any,
+      queryExecutor: { delete: vi.fn() } as any,
+      apiKeys: testApiKeys(['qa.read'], 'qa-agent'),
+    })
+    const response = await app.request('/api/items/item-1', {
+      method: 'DELETE',
+      headers: { authorization: 'Bearer secret-key' },
+    })
+    expect(response.status).toBe(403)
   })
 
   it('returns forbidden when query access is denied', async () => {

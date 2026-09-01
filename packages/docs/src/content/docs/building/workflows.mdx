@@ -63,6 +63,29 @@ event = "update"
 
 The condition uses `before.*` and `after.*` to compare the record's state before and after the change. The `$ne` operator means "not equal".
 
+### Entity Event Loop Protection
+
+A workflow can write an entity that triggers another workflow. Zebric carries propagation metadata through these nested entity events and applies two automatic safeguards:
+
+- **Cycle break:** Zebric records the workflows already visited in the current propagation chain. If a matching workflow appears in that path again, Zebric does not enqueue it. This stops direct cycles such as `A → A` and indirect cycles such as `A → B → A`.
+- **Depth break:** Zebric allows a maximum nested entity-event propagation depth of `5`. If a chain would continue beyond that depth, Zebric skips the next trigger even when no workflow name has repeated.
+
+The workflow step that produced the entity change has already completed when either safeguard is evaluated. The safeguard prevents the next workflow from being enqueued; it does not roll back the write that reached the limit.
+
+Skipped triggers produce a runtime warning. Cycle warnings include the entity, event, workflow name, and workflow path. Depth warnings include the current and maximum depth. Use these warnings to correct the workflow design rather than relying on the limits as normal control flow.
+
+You should still make entity-triggered workflows converge naturally. Use `before.*` and `after.*` conditions so a transition runs only when the relevant value actually changes:
+
+```toml
+[workflow.MarkIssueDone.trigger]
+entity = "Issue"
+event = "update"
+
+[workflow.MarkIssueDone.trigger.condition]
+"after.status" = "done"
+"before.status" = { "$ne" = "done" }
+```
+
 ### Webhook Triggers
 
 Receive events from external systems:

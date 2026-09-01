@@ -1,0 +1,36 @@
+---
+label: Overview
+slug: agents/zebric-agent
+title: Zebric Agent
+description: Operate and validate any Zebric application through its published contract.
+---
+
+:::caution[Technical preview]
+`@zebric/agent` is not yet a stable v1 release. The public surface and deterministic harness are implemented, but distribution, compatibility policy, and some operational capabilities remain in progress.
+:::
+
+Zebric Agent is a generic agent for Zebric applications. It discovers the skills published by a running application, turns supported OpenAPI operations into typed tools, and can deterministically validate Blueprints inside a configured workspace.
+
+It does not contain issue-tracker, QA, or browser-automation business logic. The issue board is the reference scenario: its Blueprint publishes the QA vocabulary and workflows, while an external executor performs the actual tests.
+
+## Agent API and Zebric Agent
+
+The two components are complementary:
+
+| Component | Responsibility |
+|---|---|
+| Agent API | Application-owned contract, authentication, scopes, state transitions, jobs, idempotency, and audit events |
+| Zebric Agent | Model orchestration, contract discovery, typed tool creation, local approval policy, retries, and Blueprint validation |
+
+Zebric Agent builds on LangChain Deep Agents internally, but Deep Agents types are not the stable Zebric-facing contract.
+
+## Supported preview use cases
+
+- Validate a TOML or JSON Blueprint without a model.
+- Connect to one or more running Zebric applications.
+- Discover and call bounded read operations.
+- Opt into exact semantic mutations through a callback or human-in-the-loop approval.
+- Observe asynchronous workflow jobs and resume an interrupted mutation safely.
+- Run deterministic contract, real-runtime, and compiled-CLI tests without a real LLM.
+
+Read [Getting started](/agents/zebric-agent/getting-started), then [Approvals and mutations](/agents/zebric-agent/approvals). Application authors should begin with [Build an Agent-Drivable Application](/building/agent-api).

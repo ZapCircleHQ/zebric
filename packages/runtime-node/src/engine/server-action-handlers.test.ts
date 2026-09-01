@@ -24,6 +24,50 @@ function makeContext(overrides: {
 }
 
 describe('handleSkillEntityAction — session forwarding to findById', () => {
+  describe('list action — declared query filters', () => {
+    it('coerces declared query parameters into the where clause', async () => {
+      const execute = vi.fn(async () => [])
+      const c = makeContext({ query: { status: 'ready_to_test', important: 'true' } })
+
+      const response = await handleSkillEntityAction(
+        c,
+        {
+          name: 'list_items', action: 'list', entity: 'Item', path: '/agent/items', method: 'GET',
+          query: {
+            status: { type: 'Enum', values: ['ready_to_test'] },
+            important: { type: 'Boolean' },
+          },
+        },
+        session,
+        { queryExecutor: { execute } as any }
+      )
+
+      expect(response.status).toBe(200)
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: 'ready_to_test', important: true } }),
+        { session }
+      )
+    })
+
+    it('rejects invalid declared query values', async () => {
+      const execute = vi.fn(async () => [])
+      const c = makeContext({ query: { status: 'done' } })
+
+      const response = await handleSkillEntityAction(
+        c,
+        {
+          name: 'list_items', action: 'list', entity: 'Item', path: '/agent/items', method: 'GET',
+          query: { status: { type: 'Enum', values: ['ready_to_test'] } },
+        },
+        session,
+        { queryExecutor: { execute } as any }
+      )
+
+      expect(response.status).toBe(400)
+      expect(execute).not.toHaveBeenCalled()
+    })
+  })
+
   describe('get action', () => {
     it('passes session to findById', async () => {
       const findById = vi.fn(async () => record)

@@ -1,10 +1,34 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
+  applyRateLimiting,
   initApiKeys,
   resolveApiKeySession,
+  resolveAgentAttribution,
+  createApiKeyRegistry,
   normalizeCsrfToken,
 } from './server-security.js'
 import type { Blueprint } from '@zebric/runtime-core'
+import { Hono } from 'hono'
+
+describe('applyRateLimiting', () => {
+  it('returns the common retryable error envelope and Retry-After header', async () => {
+    const app = new Hono()
+    const store = new Map<string, { count: number; resetAt: number }>()
+    app.use('*', async (c, next) => applyRateLimiting(c, store, { max: 1, windowMs: 60_000 }) ?? next())
+    app.get('/api/agent/test', c => c.json({ ok: true }))
+
+    expect((await app.request('/api/agent/test')).status).toBe(200)
+    const limited = await app.request('/api/agent/test')
+    expect(limited.status).toBe(429)
+    expect(limited.headers.get('retry-after')).toMatch(/^\d+$/)
+    expect(await limited.json()).toMatchObject({
+      error: {
+        code: 'RATE_LIMITED', message: 'The request rate limit was exceeded', retryable: true,
+        details: { retryAfterSeconds: expect.any(Number) },
+      },
+    })
+  })
+})
 
 function makeBlueprint(auth?: any): Blueprint {
   return {
@@ -26,7 +50,14 @@ describe('initApiKeys', () => {
     }))
 
     expect(apiKeys.size).toBe(1)
-    expect(apiKeys.get('secret-key-123')).toEqual({ name: 'test-agent' })
+    expect([...apiKeys.values()]).toEqual([{
+      name: 'test-agent',
+      agentId: 'test-agent',
+      credentialId: 'test-agent',
+      displayName: 'test-agent',
+      scopes: [],
+    }])
+    expect([...apiKeys.keys()][0]).not.toContain('secret-key-123')
 
     delete process.env.TEST_AGENT_KEY
   })
@@ -65,22 +96,59 @@ describe('initApiKeys', () => {
 
 describe('resolveApiKeySession', () => {
   it('returns a synthetic session for a valid API key', () => {
-    const apiKeys = new Map([['secret-key-123', { name: 'test-agent' }]])
+    const apiKeys = registry('secret-key-123', 'test-agent')
 
     const session = resolveApiKeySession('secret-key-123', apiKeys)
     expect(session).not.toBeNull()
     expect(session.user.id).toBe('test-agent')
     expect(session.user.name).toBe('test-agent')
     expect(session.userId).toBe('test-agent')
+    expect(session.actor).toEqual({
+      type: 'agent',
+      id: 'test-agent',
+      credentialId: 'test-agent',
+      displayName: 'test-agent',
+      scopes: [],
+    })
   })
 
   it('returns null for an unknown token', () => {
-    const apiKeys = new Map([['secret-key-123', { name: 'test-agent' }]])
+    const apiKeys = registry('secret-key-123', 'test-agent')
 
     const session = resolveApiKeySession('wrong-key', apiKeys)
     expect(session).toBeNull()
   })
 })
+
+describe('resolveAgentAttribution', () => {
+  const session = resolveApiKeySession('key', createApiKeyRegistry([{ token: 'key', credential: {
+    name: 'qa-key', agentId: 'qa-agent', credentialId: 'credential-7',
+    displayName: 'QA Agent', scopes: [],
+  } }]))!
+
+  it('binds the authenticated agent and credential to a bounded run ID', () => {
+    const c = { req: { header: (name: string) => name === 'x-agent-run-id' ? 'run_123:retry-2' : undefined } } as any
+    expect(resolveAgentAttribution(c, session)).toEqual({
+      actorType: 'agent',
+      agentId: 'qa-agent',
+      credentialId: 'credential-7',
+      runId: 'run_123:retry-2',
+    })
+  })
+
+  it('rejects missing and unsafe run IDs', () => {
+    expect(() => resolveAgentAttribution({ req: { header: () => undefined } } as any, session))
+      .toThrow('X-Agent-Run-ID is required')
+    expect(() => resolveAgentAttribution({ req: { header: () => 'run id with spaces' } } as any, session))
+      .toThrow('must be 1-128 safe characters')
+  })
+})
+
+function registry(token: string, name: string) {
+  return createApiKeyRegistry([{ token, credential: {
+    name, agentId: name, credentialId: name, displayName: name, scopes: [],
+  } }])
+}
 
 describe('normalizeCsrfToken', () => {
   it('returns undefined for empty/null values', () => {

@@ -46,6 +46,13 @@ export default defineConfig({
 					items: [
 						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
 						{
+							label: 'Agent API',
+							items: [
+								{ label: 'Overview', slug: 'building/agent-api' },
+								{ label: 'Workflow Actions', slug: 'building/agent-api/workflow-actions' },
+							],
+						},
+						{
 							label: 'Widgets',
 							items: [
 								{ label: 'Overview', slug: 'building/widgets' },
@@ -56,6 +63,22 @@ export default defineConfig({
 						{ label: 'Workflows & Notifications', slug: 'building/workflows' },
 						{ label: 'Security & Auth', slug: 'building/security' },
 						{ label: 'File Uploads', slug: 'building/file-uploads' },
+					],
+				},
+				{
+					label: 'Agents',
+					items: [
+						{
+							label: 'Zebric Agent',
+							items: [
+								{ label: 'Overview', slug: 'agents/zebric-agent' },
+								{ label: 'Getting Started', slug: 'agents/zebric-agent/getting-started' },
+								{ label: 'Connect to Applications', slug: 'agents/zebric-agent/connect' },
+								{ label: 'Approvals & Mutations', slug: 'agents/zebric-agent/approvals' },
+								{ label: 'Security & Limitations', slug: 'agents/zebric-agent/security' },
+								{ label: 'Deterministic Testing', slug: 'agents/zebric-agent/testing' },
+							],
+						},
 					],
 				},
 				{
@@ -124,7 +147,8 @@ export default defineConfig({
 					items: [
 						{ label: 'CLI', slug: 'reference/cli' },
 						{ label: 'REST API & OpenAPI', slug: 'reference/api' },
-						{ label: 'Skills', slug: 'reference/skills' },
+					{ label: 'Skills', slug: 'reference/skills' },
+					{ label: 'Agent Library', slug: 'reference/agent-library' },
 					],
 				},
 			],

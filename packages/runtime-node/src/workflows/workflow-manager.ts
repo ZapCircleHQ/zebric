@@ -20,17 +20,23 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   httpClient?: any
   notificationService?: NotificationManager
   logger?: Logger
+  enqueueTransactionalAudit?: (job: WorkflowJob, workflow: Workflow) => Promise<void>
+  deliverAuditOutbox?: () => Promise<void>
 }
 
 export class WorkflowManager extends EventEmitter {
   private queue: WorkflowQueue
   private executor: WorkflowExecutor
   private logger?: Logger
+  private enqueueTransactionalAudit?: WorkflowManagerOptions['enqueueTransactionalAudit']
+  private deliverAuditOutbox?: WorkflowManagerOptions['deliverAuditOutbox']
   private readonly maxEntityTriggerDepth = 5
 
   constructor(options: WorkflowManagerOptions) {
     super()
     this.logger = options.logger
+    this.enqueueTransactionalAudit = options.enqueueTransactionalAudit
+    this.deliverAuditOutbox = options.deliverAuditOutbox
 
     // Initialize queue
     this.queue = new WorkflowQueue({
@@ -49,16 +55,19 @@ export class WorkflowManager extends EventEmitter {
       httpClient: options.httpClient,
       notificationService: options.notificationService,
       logger: options.logger,
-      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, trace }) => {
+      onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, workflowPath, trace, session, attribution }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
           sourceWorkflow,
           depth: depth + 1,
+          workflowPath,
           trace: trace
             ? {
                 correlationId: trace.correlationId,
                 requestId: trace.requestId,
               }
             : undefined,
+          initiatingSession: session,
+          attribution,
         })
       }
     })
@@ -74,9 +83,20 @@ export class WorkflowManager extends EventEmitter {
     // Execute jobs when they're ready
     this.queue.on('job:execute', async (job: WorkflowJob, workflow: Workflow) => {
       try {
-        const result = await this.executor.execute(workflow, job.context)
+        const result = await this.executor.execute(workflow, job.context, {
+          beforeTransactionalCommit: workflow.transactional && this.enqueueTransactionalAudit
+            ? () => this.enqueueTransactionalAudit!(job, workflow)
+            : undefined,
+        })
 
         if (result.success) {
+          if (workflow.transactional) {
+            try {
+              await this.deliverAuditOutbox?.()
+            } catch (error) {
+              this.logger?.error('Audit outbox delivery failed; intent remains pending', { error })
+            }
+          }
           this.queue.completeJob(job.id, result.result)
         } else {
           this.queue.failJob(job.id, new Error(result.error || 'Unknown error'))
@@ -172,9 +192,19 @@ export class WorkflowManager extends EventEmitter {
         correlationId?: string
         requestId?: string
       }
+      initiatingSession?: WorkflowContext['session']
+      attribution?: any
+      workflowPath?: string[]
     }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
+    const changed = normalizedData.after ?? normalizedData.before
+    this.emit('entity:changed', {
+      entity,
+      event,
+      id: changed?.id,
+      audienceId: options?.initiatingSession?.actor?.credentialId ?? options?.initiatingSession?.user?.id,
+    })
     const depth = options?.depth ?? 0
     if (depth > this.maxEntityTriggerDepth) {
       if (this.logger) {
@@ -192,9 +222,19 @@ export class WorkflowManager extends EventEmitter {
 
     const workflows = this.queue.getAllWorkflows()
     const jobs: WorkflowJob[] = []
+    const workflowPath = options?.workflowPath ?? []
 
     for (const workflow of workflows) {
       if (this.matchesEntityTrigger(workflow.trigger, entity, event, normalizedData)) {
+        if (workflowPath.includes(workflow.name)) {
+          this.logger?.warn('Skipping entity trigger because it would create a workflow cycle', {
+            entity,
+            event,
+            workflow: workflow.name,
+            workflowPath,
+          })
+          continue
+        }
         const context: WorkflowContext = {
           trace: {
             correlationId: options?.trace?.correlationId,
@@ -216,12 +256,13 @@ export class WorkflowManager extends EventEmitter {
             __zebric: {
               sourceWorkflow: options?.sourceWorkflow,
               depth,
+              workflowPath: [...workflowPath, workflow.name],
             },
+            ...(options?.attribution ? { data: { attribution: options.attribution } } : {}),
           },
-          // Entity-triggered workflows have no attributable HTTP caller - they run as
-          // trusted background automation, not as the (often anonymous) request that
-          // happened to cause the underlying entity write.
-          session: SYSTEM_SESSION,
+          // Execute as trusted automation when no actor is known, but preserve the
+          // initiating principal when this event came from an attributable mutation.
+          session: options?.initiatingSession ?? SYSTEM_SESSION,
         }
 
         const job = this.queue.enqueue(workflow.name, context)

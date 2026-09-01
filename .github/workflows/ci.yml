@@ -21,7 +21,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,7 +46,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,8 +63,8 @@ jobs:
       - name: Lint check
         run: pnpm lint
 
-  test:
-    name: Tests
+  agent-release-gate:
+    name: Zebric Agent Release Gate
     runs-on: ubuntu-latest
 
     steps:
@@ -74,7 +74,85 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and type-check agent dependencies
+        run: pnpm --filter @zebric/agent... build
+
+      - name: Run agent unit, fake-model, and real-runtime tests
+        run: pnpm --filter @zebric/agent test
+
+      - name: Verify packed package in a clean consumer
+        run: pnpm --filter @zebric/agent test:package
+
+      - name: Build documentation
+        run: pnpm --filter zebric-docs build
+
+  mcp-release-gate:
+    name: MCP Server Release Gate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and type-check MCP server dependencies
+        run: pnpm --filter @zebric/mcp-server... build
+
+      - name: Verify stdio server with the official MCP client
+        run: pnpm --filter @zebric/mcp-server test:mcp
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: zebric_test
+          POSTGRES_PASSWORD: zebric_test_password
+          POSTGRES_DB: zebric_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U zebric_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ZEBRIC_TEST_POSTGRES_URL: postgres://zebric_test:zebric_test_password@127.0.0.1:5432/zebric_test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -225,7 +303,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -256,7 +334,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -292,7 +370,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -318,7 +396,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.30.0
+          version: 11.23.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

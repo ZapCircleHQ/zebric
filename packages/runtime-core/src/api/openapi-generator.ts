@@ -20,9 +20,10 @@ export interface OpenAPISpec {
     securitySchemes: Record<string, any>
   }
   security: Array<Record<string, any[]>>
+  'x-zebric-contract'?: { version: '1'; fingerprint: string }
 }
 
-const FIELD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
+const FIELD_TYPE_MAP: Record<string, { type: string | string[]; format?: string }> = {
   Text: { type: 'string' },
   LongText: { type: 'string' },
   Email: { type: 'string', format: 'email' },
@@ -31,7 +32,7 @@ const FIELD_TYPE_MAP: Record<string, { type: string; format?: string }> = {
   Boolean: { type: 'boolean' },
   DateTime: { type: 'string', format: 'date-time' },
   Date: { type: 'string', format: 'date' },
-  JSON: { type: 'object' },
+  JSON: { type: ['object', 'array'] },
   Ref: { type: 'string' },
   ULID: { type: 'string' },
   UUID: { type: 'string', format: 'uuid' },
@@ -127,6 +128,7 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
           schema: {
             type: 'object',
             properties,
+            required: Object.keys(action.body),
           },
         },
       },
@@ -160,7 +162,46 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
   return undefined
 }
 
-function buildResponses(action: SkillAction): Record<string, any> {
+function agentApiErrorResponse(description: string, codes: string[]): Record<string, any> {
+  return {
+    description,
+    content: { 'application/json': { schema: { $ref: '#/components/schemas/AgentApiError' } } },
+    'x-zebric-error-codes': codes,
+  }
+}
+
+function errorResponses(action: SkillAction, authenticated: boolean): Record<string, any> {
+  return {
+    '400': agentApiErrorResponse('Invalid request', ['INVALID_REQUEST', 'INVALID_QUERY', 'INVALID_AGENT_ATTRIBUTION']),
+    ...(authenticated ? {
+      '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+      '403': agentApiErrorResponse('Insufficient scope or invalid CSRF protection', ['INSUFFICIENT_SCOPE', 'CSRF_INVALID']),
+    } : {}),
+    '404': agentApiErrorResponse('Resource or workflow not found', ['RESOURCE_NOT_FOUND', 'WORKFLOW_NOT_FOUND']),
+    ...(action.method !== 'GET' ? {
+      '409': agentApiErrorResponse('Idempotency or state conflict', [
+        'IDEMPOTENCY_KEY_REUSE', 'WORKFLOW_PRECONDITION_FAILED', 'STATE_CONFLICT',
+      ]),
+    } : {}),
+    '429': agentApiErrorResponse('Rate limit exceeded', ['RATE_LIMITED']),
+    '500': agentApiErrorResponse('Agent API action failed', ['INTERNAL_ERROR', 'WORKFLOW_UNAVAILABLE']),
+  }
+}
+
+function buildResponses(action: SkillAction, authenticated: boolean): Record<string, any> {
+  if (action.workflow) {
+    return {
+      '202': {
+        description: 'Workflow accepted',
+        content: {
+          'application/json': {
+            schema: { $ref: '#/components/schemas/WorkflowAccepted' },
+          },
+        },
+      },
+      ...errorResponses(action, authenticated),
+    }
+  }
   const statusCode = action.action === 'create' ? '201' : '200'
   const description = action.action === 'create' ? 'Created' : 'Success'
 
@@ -187,7 +228,7 @@ function buildResponses(action: SkillAction): Record<string, any> {
 
   const responses: Record<string, any> = {
     [statusCode]: response,
-    '401': { description: 'Unauthorized' },
+    ...errorResponses(action, authenticated),
   }
 
   if (action.entity && (action.action === 'get' || action.action === 'update' || action.action === 'delete')) {
@@ -212,15 +253,33 @@ function extractPathParams(path: string): string[] {
 function buildOperation(
   skill: SkillConfig,
   action: SkillAction,
-  entityMap: Map<string, Entity>
+  entityMap: Map<string, Entity>,
+  blueprint: Blueprint
 ): Record<string, any> {
+  const risk = action.risk ?? inferredRisk(action.method)
+  const workflow = action.workflow
+    ? blueprint.workflows?.find(candidate => candidate.name === action.workflow)
+    : undefined
   const operation: Record<string, any> = {
     operationId: `${skill.name}_${action.name}`,
     tags: [skill.name],
+    security: skill.auth === 'none' ? [] : [{ bearerAuth: [] }],
+    'x-zebric-agent-operation': {
+      risk,
+      approvalRequired: risk !== 'read',
+      idempotencyRequired: action.method !== 'GET',
+      asynchronous: Boolean(action.workflow),
+      ...(action.scopes?.length ? { requiredScopes: action.scopes } : {}),
+      ...(action.workflow ? { workflow: action.workflow } : {}),
+      ...(workflow?.precondition ? { preconditions: workflow.precondition } : {}),
+    },
   }
 
   if (action.description) {
     operation.description = action.description
+  }
+  if (action.scopes?.length) {
+    operation['x-zebric-required-scopes'] = action.scopes
   }
 
   // Path parameters
@@ -234,12 +293,30 @@ function buildOperation(
     }))
   }
 
+  if (action.query) {
+    const queryParameters = Object.entries(action.query).map(([name, config]) => {
+      const mapped = FIELD_TYPE_MAP[config.type] || { type: 'string' }
+      const schema: Record<string, any> = { ...mapped }
+      if (config.values?.length) schema.enum = config.values
+      if (config.default !== undefined) schema.default = config.default
+      return {
+        name,
+        in: 'query',
+        required: config.required === true,
+        schema,
+        ...(config.description ? { description: config.description } : {}),
+      }
+    })
+    operation.parameters = [...(operation.parameters || []), ...queryParameters]
+  }
+
   // Pagination query params for list actions
   if (action.action === 'list') {
+    const declaredQueryParams = new Set(Object.keys(action.query || {}))
     operation.parameters = [
       ...(operation.parameters || []),
-      { name: 'limit', in: 'query', schema: { type: 'integer', default: 100, maximum: 1000 }, description: 'Maximum number of records to return (default 100, max 1000).' },
-      { name: 'offset', in: 'query', schema: { type: 'integer', default: 0 }, description: 'Number of records to skip.' },
+      ...(!declaredQueryParams.has('limit') ? [{ name: 'limit', in: 'query', schema: { type: 'integer', default: 100, maximum: 1000 }, description: 'Maximum number of records to return (default 100, max 1000).' }] : []),
+      ...(!declaredQueryParams.has('offset') ? [{ name: 'offset', in: 'query', schema: { type: 'integer', default: 0 }, description: 'Number of records to skip.' }] : []),
     ]
   }
 
@@ -250,9 +327,38 @@ function buildOperation(
   }
 
   // Responses
-  operation.responses = buildResponses(action)
+  operation.responses = buildResponses(action, skill.auth !== 'none')
+  if (action.scopes?.length) {
+    operation.responses['403'] = { description: 'Insufficient agent scope' }
+  }
+
+  if (action.method !== 'GET') {
+    operation.parameters = [
+      ...(operation.parameters || []),
+      {
+        name: 'Idempotency-Key',
+        in: 'header',
+        required: false,
+        schema: { type: 'string' },
+        description: 'Stable key used to safely retry this logical mutation.',
+      },
+      {
+        name: 'X-Agent-Run-ID',
+        in: 'header',
+        required: false,
+        schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' },
+        description: 'Required for agent-principal mutations; binds the request to an attributable agent run.',
+      },
+    ]
+  }
 
   return operation
+}
+
+function inferredRisk(method: SkillAction['method']): 'read' | 'write' | 'destructive' {
+  if (method === 'GET') return 'read'
+  if (method === 'DELETE') return 'destructive'
+  return 'write'
 }
 
 export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): OpenAPISpec {
@@ -260,9 +366,53 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
   for (const entity of blueprint.entities) {
     entityMap.set(entity.name, entity)
   }
-
-  // Build component schemas from entities
+  // Build component schemas from entities and workflow contracts
   const schemas: Record<string, any> = {}
+  schemas.WorkflowAccepted = {
+    type: 'object',
+    required: ['success', 'job'],
+    properties: {
+      success: { type: 'boolean' },
+      job: {
+        type: 'object',
+        required: ['id', 'workflow', 'status', 'url'],
+        properties: {
+          id: { type: 'string' },
+          workflow: { type: 'string' },
+          status: { type: 'string' },
+          url: { type: 'string' },
+        },
+      },
+    },
+  }
+  schemas.WorkflowJob = {
+    type: 'object',
+    properties: {
+      id: { type: 'string' },
+      workflow: { type: 'string' },
+      status: { type: 'string', enum: ['pending', 'running', 'succeeded', 'failed', 'cancelled'] },
+      result: {},
+      error: { type: ['string', 'null'] },
+    },
+  }
+  schemas.AgentApiError = {
+    type: 'object',
+    required: ['error'],
+    properties: {
+      error: {
+        type: 'object',
+        required: ['code', 'message', 'retryable'],
+        properties: {
+          code: { type: 'string' },
+          message: { type: 'string' },
+          retryable: { type: 'boolean' },
+          requestId: { type: 'string' },
+          details: { type: 'object', additionalProperties: true },
+        },
+      },
+    },
+  }
+
   for (const entity of blueprint.entities) {
     schemas[entity.name] = entityToSchema(entity)
     schemas[`${entity.name}Create`] = entityToCreateSchema(entity)
@@ -280,8 +430,32 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         }
 
         const method = action.method.toLowerCase()
-        paths[pathKey][method] = buildOperation(skill, action, entityMap)
+        paths[pathKey][method] = buildOperation(skill, action, entityMap, blueprint)
       }
+    }
+  }
+  if (blueprint.workflows?.length) {
+    paths['/api/jobs/{id}'] = {
+      get: {
+        operationId: 'zebric_get_workflow_job',
+        tags: ['zebric'],
+        description: 'Observe a workflow job owned by the authenticated caller.',
+        security: [{ bearerAuth: [] }],
+        'x-zebric-agent-operation': {
+          risk: 'read',
+          approvalRequired: false,
+          idempotencyRequired: false,
+          asynchronous: false,
+        },
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: {
+          '200': { description: 'Workflow job', content: { 'application/json': { schema: { $ref: '#/components/schemas/WorkflowJob' } } } },
+          '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+          '404': agentApiErrorResponse('Job not found', ['JOB_NOT_FOUND']),
+          '429': agentApiErrorResponse('Rate limit exceeded', ['RATE_LIMITED']),
+          '500': agentApiErrorResponse('Agent API job lookup failed', ['INTERNAL_ERROR']),
+        },
+      },
     }
   }
 

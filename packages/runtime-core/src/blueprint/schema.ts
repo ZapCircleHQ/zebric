@@ -464,6 +464,8 @@ const WorkflowSchema = z.object({
   name: z.string(),
   trigger: WorkflowTriggerSchema,
   precondition: AnyRecordSchema.optional(),
+  transactional: z.boolean().optional(),
+  retries: z.number().int().min(1).optional(),
   steps: z.array(WorkflowStepSchema),
 })
 
@@ -485,6 +487,11 @@ const PermissionRuleSchema = z.object({
 const ApiKeyConfigSchema = z.object({
   name: z.string(),
   keyEnv: z.string(),
+  agentId: z.string().optional(),
+  credentialId: z.string().optional(),
+  displayName: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  constraints: z.record(z.string(), z.array(z.string())).optional(),
 })
 
 const AuthConfigSchema = z.object({
@@ -588,10 +595,27 @@ const SkillActionSchema = z.object({
   method: z.enum(['GET', 'POST', 'PUT', 'DELETE']),
   path: z.string(),
   body: z.record(StringKeySchema, z.string()).optional(),
+  query: z.record(StringKeySchema, z.object({
+    type: FieldTypeSchema,
+    field: z.string().optional(),
+    values: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+    default: z.union([z.string(), z.number(), z.boolean()]).optional(),
+    description: z.string().optional(),
+  })).optional(),
   entity: z.string().optional(),
   action: z.enum(['create', 'list', 'get', 'update', 'delete']).optional(),
   mapParams: z.record(StringKeySchema, z.string()).optional(),
   workflow: z.string().optional(),
+  scopes: z.array(z.string()).optional(),
+  risk: z.enum(['read', 'write', 'destructive', 'external']).optional(),
+}).superRefine((action, ctx) => {
+  if (action.method === 'GET' && action.risk && action.risk !== 'read') {
+    ctx.addIssue({ code: 'custom', path: ['risk'], message: 'GET skill actions must use read risk' })
+  }
+  if (action.method !== 'GET' && action.risk === 'read') {
+    ctx.addIssue({ code: 'custom', path: ['risk'], message: 'Mutating skill actions cannot use read risk' })
+  }
 })
 
 const SkillConfigSchema = z.object({

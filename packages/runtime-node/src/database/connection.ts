@@ -56,6 +56,7 @@ export class DatabaseConnection {
 
     // Run migrations (create tables if they don't exist)
     await this.migrate()
+    await this.ensureAuditOutboxTable()
   }
 
   /**
@@ -341,6 +342,20 @@ export class DatabaseConnection {
     }
 
     this.migrationsInitialized = true
+  }
+
+  private async ensureAuditOutboxTable(): Promise<void> {
+    const statement = sql`
+      CREATE TABLE IF NOT EXISTS __zbl_audit_outbox (
+        id TEXT PRIMARY KEY,
+        topic TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        delivered_at BIGINT
+      )
+    `
+    if (this.config.type === 'postgres') await this.getSession().execute(statement)
+    else this.getSession().run(statement)
   }
 
   private async migrationAlreadyApplied(hash: string): Promise<boolean> {

@@ -25,10 +25,25 @@ export class D1Adapter implements StoragePort {
   }
 
   async transaction<T>(fn: (tx: StoragePort) => Promise<T>): Promise<T> {
-    // D1 doesn't support explicit transactions via Workers API yet
-    // We execute the function with the current adapter
-    // In the future, this could use D1 batch operations
-    return fn(this)
+    void fn
+    throw new Error(
+      'D1 does not support callback transactions. Use batch() for a fixed set of atomic statements, or a SQLite-backed Durable Object for interactive transactions.'
+    )
+  }
+
+  /** Execute a fixed set of statements as one atomic D1 batch. */
+  async batch<T = unknown>(queries: Array<{ sql: string; params?: unknown[] }>): Promise<Array<{ rows: T[] }>> {
+    const statements = queries.map(({ sql, params }) => {
+      const statement = this.db.prepare(sql)
+      return params ? statement.bind(...params) : statement
+    })
+    const results = await this.db.batch<T>(statements)
+    return results.map((result) => {
+      if (!result.success) {
+        throw new Error(`D1 batch failed: ${result.error || 'Unknown error'}`)
+      }
+      return { rows: result.results || [] }
+    })
   }
 
   async migrate(statements: string[]): Promise<void> {

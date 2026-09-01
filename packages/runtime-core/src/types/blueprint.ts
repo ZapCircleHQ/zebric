@@ -508,6 +508,8 @@ export interface Workflow {
   name: string
   trigger: WorkflowTrigger
   precondition?: Record<string, any>
+  transactional?: boolean
+  retries?: number
   steps: WorkflowStep[]
 }
 
@@ -532,6 +534,11 @@ export interface WorkflowStep {
 export interface ApiKeyConfig {
   name: string
   keyEnv: string
+  agentId?: string
+  credentialId?: string
+  displayName?: string
+  scopes?: string[]
+  constraints?: Record<string, string[]>
 }
 
 export interface AuthConfig {
@@ -613,10 +620,23 @@ export interface SkillAction {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   path: string
   body?: Record<string, string>
+  query?: Record<string, SkillQueryParameter>
   entity?: string
   action?: 'create' | 'list' | 'get' | 'update' | 'delete'
   mapParams?: Record<string, string>
   workflow?: string
+  scopes?: string[]
+  /** Agent-facing risk. Omit to derive read/write/destructive from the HTTP method. */
+  risk?: 'read' | 'write' | 'destructive' | 'external'
+}
+
+export interface SkillQueryParameter {
+  type: FieldType
+  field?: string
+  values?: string[]
+  required?: boolean
+  default?: string | number | boolean
+  description?: string
 }
 
 export interface SkillConfig {

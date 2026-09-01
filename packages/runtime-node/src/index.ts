@@ -53,3 +53,4 @@ export * from './renderer/index.js'
 
 // Errors
 export * from './errors/index.js'
+export * from './engine/agent-event-bus.js'

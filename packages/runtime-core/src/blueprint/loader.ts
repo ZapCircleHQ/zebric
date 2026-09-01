@@ -15,6 +15,7 @@ import {
   createParseError,
   createVersionError,
 } from './validation-error.js'
+import { analyzeTransactionalWorkflow } from './workflow-analysis.js'
 
 // Re-export for backwards compatibility
 export { BlueprintValidationError }
@@ -357,6 +358,14 @@ export class BlueprintParser {
           errors.push(
             `Workflow "${workflow.name}" trigger references unknown entity "${triggerEntity}"`
           )
+        }
+        if (workflow.transactional) {
+          const analysis = analyzeTransactionalWorkflow(workflow)
+          if (!analysis.databaseOnly) {
+            errors.push(
+              `Transactional workflow "${workflow.name}" must contain only database query steps: ${analysis.reasons.join('; ')}`
+            )
+          }
         }
       }
     }

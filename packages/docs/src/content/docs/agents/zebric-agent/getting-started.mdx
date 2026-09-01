@@ -1,0 +1,57 @@
+---
+label: Getting Started
+slug: agents/zebric-agent/getting-started
+title: Get Started with Zebric Agent
+description: Validate a Blueprint and run a read-only task against a local Zebric application.
+---
+
+Zebric Agent currently requires Node.js 22 or later. Until the technical-preview package is published, run it from this repository after installing and building the workspace.
+
+## Validate without a model
+
+Blueprint validation is deterministic and does not need a model provider or a running application:
+
+```bash
+zebric-agent validate blueprint.toml --workspace . --json
+```
+
+The path is resolved inside the workspace root. Paths that escape the workspace are rejected. The CLI workspace is read-only; author-mode patching is not implemented yet.
+
+## Connect to a running application
+
+Start a Zebric application with its API-key environment variable set. For the reference issue board:
+
+```bash
+export ISSUE_BOARD_AGENT_API_KEY="replace-with-a-secret"
+pnpm --filter issue-board-example dev
+```
+
+In another terminal, install the LangChain integration for the provider you intend to use and configure its credential. Provider packages are deliberately not bundled with `@zebric/agent`. For example, an OpenAI experiment can use:
+
+```bash
+pnpm add @langchain/openai
+export OPENAI_API_KEY="replace-with-a-provider-key"
+export ZEBRIC_AGENT_MODEL="openai:gpt-4.1-mini"
+```
+
+The concrete provider and model above are illustrative, not a compatibility guarantee. Then run a read-only task:
+
+```bash
+zebric-agent run \
+  --prompt "Find the issues that are Ready to Test." \
+  --model "$ZEBRIC_AGENT_MODEL" \
+  --connect "http://127.0.0.1:3000" \
+  --credential-env ISSUE_BOARD_AGENT_API_KEY \
+  --workspace . \
+  --json
+```
+
+The credential is resolved from the named environment variable for requests and is redacted from CLI success and error output. Do not put a token in the URL, prompt, or command-line option value.
+
+Without `--approve-operation`, the connected application contributes read tools only. This is the safest first session. Mutation flags and their guarantees are covered in [Approvals and mutations](/agents/zebric-agent/approvals).
+
+## Model compatibility
+
+Model/provider compatibility is still a preview concern rather than part of the stable Zebric Agent API. The CLI model identifier uses LangChain's `provider:model` form and requires that provider's integration package to be installed in the consuming project. Use a chat model that supports tool calls, pin the provider package and model in production experiments, and verify the combination with your own smoke scenario. Zebric CI uses the deterministic harness instead of live provider credentials.
+
+See the [CLI reference](/reference/cli) for exit codes and automation output.

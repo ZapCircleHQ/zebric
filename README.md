@@ -102,6 +102,57 @@ npx zebric dev blueprint.toml
 
 For the quickest path to a first app, start with the docs and examples above.
 
+## MCP Server (Agent API)
+
+> Technical preview. The discovery contract and stdio MCP adapter are implemented and tested; see [Agent API](https://docs.zebric.dev/building/agent-api).
+
+`@zebric/mcp-server` exposes a running Zebric application's Agent API to any MCP client (Claude Code, Claude Desktop, etc.) over stdio. Read operations are available automatically; each mutation must be opted in by its exact OpenAPI operation ID with a repeatable `--allow-mutation` flag. Zebric's existing HTTP authorization, validation, idempotency, workflow, and audit paths stay authoritative. The adapter also supports Claude Code's experimental Channels capability, forwarding authenticated, redacted entity and workflow events from the application's Agent API event stream.
+
+Start your Zebric app first, then point the adapter at it with `--connect`.
+
+### Claude Code
+
+```bash
+# Read-only tools
+claude mcp add zebric -- npx -y @zebric/mcp-server \
+  --connect http://127.0.0.1:3000
+
+# With bearer auth and a specific mutation allowed
+claude mcp add zebric \
+  --env ZEBRIC_API_KEY=your-secret \
+  -- npx -y @zebric/mcp-server \
+  --connect http://127.0.0.1:3000 \
+  --credential-env ZEBRIC_API_KEY \
+  --allow-mutation task_tracker_create_task
+```
+
+The credential is read from the environment (`--credential-env`) so it never appears on the command line or in shell history.
+
+### Claude Desktop
+
+Add an entry to `claude_desktop_config.json` (Settings → Developer → Edit Config):
+
+```json
+{
+  "mcpServers": {
+    "zebric": {
+      "command": "npx",
+      "args": [
+        "-y", "@zebric/mcp-server",
+        "--connect", "http://127.0.0.1:3000",
+        "--credential-env", "ZEBRIC_API_KEY",
+        "--allow-mutation", "task_tracker_create_task"
+      ],
+      "env": { "ZEBRIC_API_KEY": "your-secret" }
+    }
+  }
+}
+```
+
+Restart Claude Desktop to load the server.
+
+See [`examples/task-tracker`](examples/task-tracker/README.md) for a working end-to-end setup.
+
 ## Technology Stack
 
 - **Runtime**: Node.js 22+

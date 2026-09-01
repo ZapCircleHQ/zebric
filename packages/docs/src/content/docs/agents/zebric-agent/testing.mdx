@@ -1,0 +1,55 @@
+---
+label: Deterministic Testing
+slug: agents/zebric-agent/testing
+title: Test Zebric Agents Without an LLM
+description: Exercise tool contracts, a real runtime, and the compiled CLI with scripted behavior.
+---
+
+Agent tests should not depend on model availability, credentials, latency, or nondeterministic choices. Zebric uses three complementary deterministic layers.
+
+## Explicit tool scripts
+
+`DeterministicAgentDriver` invokes the same generated LangChain tools as Zebric Agent, but tool selection is an exact test script:
+
+```ts
+import {
+  DeterministicAgentDriver,
+  createRuntimeReadTools,
+  discoverZebricApplication,
+} from '@zebric/agent'
+
+const contract = await discoverZebricApplication('http://127.0.0.1:3000')
+const tools = createRuntimeReadTools(contract, { applicationName: 'issue_board' })
+const driver = new DeterministicAgentDriver(tools)
+const columns = await driver.invoke({
+  // Generated names are <applicationName>_<OpenAPI operationId>.
+  tool: 'issue_board_issue_board_list_columns',
+  input: { key: 'ready_to_test' },
+})
+
+expect(driver.transcript).toHaveLength(1)
+```
+
+Pass a credential provider and mutation approval configuration to `createRuntimeReadTools` when the scenario exercises protected or mutating operations. Keep those values fixture-only.
+
+Use this layer to prove request serialization, authentication, approval rejection, idempotency, retries, job observation, response limits, and error classification without involving orchestration.
+
+## Fake-model graph tests
+
+A scripted chat model can return predetermined tool calls through the real Deep Agents graph. This verifies tool registration, model-visible schemas, invocation context, interrupt/resume behavior, and final output while remaining offline and reproducible.
+
+## Runtime and CLI black-box tests
+
+The canonical issue-board harness starts a real Zebric runtime with a temporary Blueprint and SQLite database. It seeds records through authenticated HTTP, discovers the published contract, performs reads and approved workflow mutations, observes jobs, verifies conflicts and audit attribution, and cleans up the isolated application.
+
+The outermost test spawns the compiled `zebric-agent` binary. It connects the CLI to the real runtime and to a loopback-only scripted HTTP model server with an exact request/response transcript. No actual LLM is used. The harness proves argument parsing, environment credential resolution, JSON output, exit codes, stable idempotency across repeated runs, and secret redaction.
+
+Run the package suite with:
+
+```bash
+pnpm --filter @zebric/agent test
+pnpm --filter @zebric/agent test:e2e
+pnpm --filter @zebric/agent test:package
+```
+
+When adding an application scenario, keep business-specific scripts in the fixture, publish the behavior through Blueprint skills, and assert both positive and negative outcomes. Never weaken the generic agent with scenario-specific vocabulary.

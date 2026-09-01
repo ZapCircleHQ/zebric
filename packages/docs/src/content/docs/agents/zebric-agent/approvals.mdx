@@ -1,0 +1,58 @@
+---
+label: Approvals & Mutations
+slug: agents/zebric-agent/approvals
+title: Approvals, Mutations, and Recovery
+description: Opt into state changes with explicit approvals, stable idempotency, and observable jobs.
+---
+
+Zebric Agent is read-only unless the caller deliberately configures mutations. A model cannot grant itself mutation access: the final boundary is application code or an explicit human decision.
+
+## CLI allowlist
+
+The CLI approves exact OpenAPI operation IDs. The flag is repeatable:
+
+```bash
+zebric-agent run \
+  --prompt "Claim the selected issue for QA." \
+  --model "provider:model" \
+  --connect "$ZEBRIC_URL" \
+  --credential-env ISSUE_BOARD_AGENT_API_KEY \
+  --approve-operation issue_board_claim_issue_for_qa \
+  --run-id qa-run-42 \
+  --json
+```
+
+An unlisted mutation is rejected locally before HTTP is sent. `--run-id` requires at least one approved operation. For a repeated invocation, reuse the run ID only when it represents the same intended operation: the CLI derives a stable idempotency key from the run ID, operation ID, and canonical input.
+
+## Library callback
+
+Library callers provide the final authorization policy:
+
+```ts
+import { createZebricAgent } from '@zebric/agent'
+
+const agent = await createZebricAgent({
+  model,
+  applications: [{
+    name: 'project',
+    baseUrl: process.env.ZEBRIC_URL!,
+    credential: { type: 'env', name: 'ZEBRIC_AGENT_TOKEN' },
+    mutations: {
+      approve: request => request.operationId === 'issue_board_claim_issue_for_qa',
+      idempotencyKey: (operationId, input) => stableKey(operationId, input),
+    },
+  }],
+})
+```
+
+The callback receives the application, operation ID, method, path, and typed input. Keep the decision independent of model-authored prose.
+
+For interactive review, set `approval: 'human-in-the-loop'` and provide a LangGraph checkpointer. Invoke with a `threadId`; when the graph interrupts, call `agent.resume(threadId, { type: 'approve' })` or reject it with a message. Decisions are one-time, and resuming a completed interruption is rejected.
+
+## Jobs, retries, and recovery
+
+Workflow mutations return a job that Zebric Agent observes by default. The mutation execution store remembers only the idempotency key and outstanding job URL. Its default implementation is process-local. A durable `MutationExecutionStateStore` can restore that client-side state after an agent-process restart, but the current runtime's job and idempotency records are also process-local. It therefore does not provide runtime restart or multi-instance recovery by itself.
+
+Retries happen only for errors explicitly marked `retryable: true`. The default is three total attempts with exponential backoff capped at five seconds, while respecting `Retry-After`. Mutation retries use the same idempotency key. Set `retry: false` per application to disable them.
+
+Authentication failures, approval rejection, invalid input, and conflicts require operator or agent reconsideration rather than blind retry. See [Safe Workflow Actions](/building/agent-api/workflow-actions) and [Troubleshooting](/guides/troubleshooting).

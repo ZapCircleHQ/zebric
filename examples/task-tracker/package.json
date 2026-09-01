@@ -5,11 +5,13 @@
   "description": "Example task tracker built with Zebric and custom behaviors",
   "scripts": {
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "mcp": "zebric-mcp-server --connect http://127.0.0.1:3000 --application-name task_tracker --credential-env TASK_TRACKER_API_KEY --allow-mutation task_tracker_create_task --allow-mutation task_tracker_set_task_status",
     "build": "echo 'No build step needed - runtime engine'",
     "deploy": "zebric deploy --provider=railway"
   },
   "dependencies": {
     "@zebric/runtime-node": "workspace:*",
-    "@zebric/cli": "workspace:*"
+    "@zebric/cli": "workspace:*",
+    "@zebric/mcp-server": "workspace:*"
   }
 }

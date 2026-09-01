@@ -15,6 +15,7 @@ min_version = "0.1.0"
 [entity.Column]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
+  { name = "key", type = "Enum", values = ["backlog", "in_progress", "ready_to_test", "needs_work", "qa_completed"], required = true, unique = true },
   { name = "name", type = "Text", required = true },
   { name = "position", type = "Integer", default = 0 },
   { name = "createdAt", type = "DateTime", default = "now" },
@@ -25,6 +26,18 @@ fields = [
 fields = [
   { name = "id", type = "ULID", primary_key = true },
   { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "acceptanceCriteria", type = "LongText" },
+  { name = "testUrl", type = "Text" },
+  { name = "revision", type = "Text" },
+  { name = "featureFlags", type = "JSON" },
+  { name = "testFixtureRef", type = "Text" },
+  { name = "requiredTestSuites", type = "JSON" },
+  { name = "knownLimitations", type = "LongText" },
+  { name = "destructiveTestingBoundaries", type = "LongText" },
+  { name = "qaState", type = "Enum", values = ["ready_to_test", "testing", "needs_work", "qa_completed"] },
+  { name = "qaRunId", type = "Text" },
+  { name = "claimedBy", type = "Text" },
   { name = "columnId", type = "Ref", ref = "Column.id", index = true, required = true },
   { name = "position", type = "Integer", default = 0 },
   { name = "important", type = "Boolean", default = false },
@@ -34,6 +47,25 @@ fields = [
 
 [entity.Issue.relations]
 column = { type = "belongsTo", entity = "Column", foreign_key = "columnId" }
+
+[entity.QAResult]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "issueId", type = "Ref", ref = "Issue.id", index = true, required = true },
+  { name = "outcome", type = "Enum", values = ["qa_completed", "needs_work"], required = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "checks", type = "JSON" },
+  { name = "evidence", type = "JSON" },
+  { name = "testedRevision", type = "Text", required = true },
+  { name = "testedEnvironment", type = "Text", required = true },
+  { name = "agentRunId", type = "Text", required = true },
+  { name = "agentId", type = "Text", required = true },
+  { name = "credentialId", type = "Text", required = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.QAResult.relations]
+issue = { type = "belongsTo", entity = "Issue", foreign_key = "issueId" }
 
 # ==========================================
 # Board page — the widget
@@ -120,6 +152,19 @@ entity = "Column"
 method = "create"
 
 [[page."/columns/new".form.fields]]
+name = "key"
+type = "select"
+required = true
+label = "Workflow key"
+options = [
+  { value = "backlog", label = "Backlog" },
+  { value = "in_progress", label = "In Progress" },
+  { value = "ready_to_test", label = "Ready to Test" },
+  { value = "needs_work", label = "Needs Work" },
+  { value = "qa_completed", label = "QA Completed" }
+]
+
+[[page."/columns/new".form.fields]]
 name = "name"
 type = "text"
 required = true
@@ -134,3 +179,247 @@ label = "Position"
 [page."/columns/new".form.onSuccess]
 redirect = "/"
 message = "Column created"
+
+# ==========================================
+# Agent API — read-only vertical slice
+# ==========================================
+
+[skill.issue_board]
+description = "Inspect issue-board workflow columns and issues."
+
+[[skill.issue_board.actions]]
+name = "list_columns"
+description = "List workflow columns, optionally filtering by their stable workflow key."
+method = "GET"
+path = "/api/agent/columns"
+entity = "Column"
+action = "list"
+scopes = ["qa.list"]
+
+[skill.issue_board.actions.query.key]
+type = "Enum"
+values = ["backlog", "in_progress", "ready_to_test", "needs_work", "qa_completed"]
+required = false
+description = "Stable workflow key. Use ready_to_test to locate the QA queue column."
+
+[[skill.issue_board.actions]]
+name = "list_issues"
+description = "List issues, optionally filtering by column id and importance."
+method = "GET"
+path = "/api/agent/issues"
+entity = "Issue"
+action = "list"
+scopes = ["qa.list"]
+
+[skill.issue_board.actions.query.columnId]
+type = "Ref"
+required = false
+description = "Filter issues by the id returned from list_columns."
+
+[skill.issue_board.actions.query.important]
+type = "Boolean"
+required = false
+description = "Filter issues by importance."
+
+[skill.issue_board.actions.query.qaState]
+type = "Enum"
+values = ["ready_to_test", "testing", "needs_work", "qa_completed"]
+required = false
+description = "Filter by the issue's QA lifecycle state."
+
+[[skill.issue_board.actions]]
+name = "get_issue"
+description = "Fetch one issue and its QA context by id."
+method = "GET"
+path = "/api/agent/issues/{id}"
+entity = "Issue"
+action = "get"
+scopes = ["qa.read"]
+
+[[skill.issue_board.actions]]
+name = "claim_issue_for_qa"
+description = "Atomically claim a Ready to Test issue for one QA run."
+method = "POST"
+path = "/api/agent/issues/{id}/claim"
+entity = "Issue"
+workflow = "ClaimIssueForQA"
+scopes = ["qa.claim"]
+body = {}
+
+[workflow.ClaimIssueForQA]
+description = "Compare-and-set an issue from ready_to_test to testing."
+trigger = { manual = true }
+
+[workflow.ClaimIssueForQA.precondition]
+"variables.data.record.qaState" = "ready_to_test"
+
+[[workflow.ClaimIssueForQA.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+assignTo = "claimedIssue"
+
+[workflow.ClaimIssueForQA.steps.where]
+id = "{{ variables.data.record.id }}"
+qaState = "ready_to_test"
+
+[workflow.ClaimIssueForQA.steps.data]
+qaState = "testing"
+qaRunId = "{{ variables.data.attribution.runId }}"
+claimedBy = "{{ variables.data.attribution.agentId }}"
+
+[[skill.issue_board.actions]]
+name = "complete_qa"
+description = "Record passing QA evidence and atomically move the claimed issue to QA Completed."
+method = "POST"
+path = "/api/agent/issues/{id}/qa-complete"
+entity = "Issue"
+workflow = "CompleteQA"
+scopes = ["qa.report", "qa.transition"]
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text", testedEnvironment = "Text" }
+
+[workflow.CompleteQA]
+description = "Complete a claimed QA run and persist its structured result."
+trigger = { manual = true }
+transactional = true
+retries = 1
+
+[workflow.CompleteQA.precondition]
+"variables.data.record.qaState" = "testing"
+
+[[workflow.CompleteQA.steps]]
+type = "query"
+entity = "Column"
+action = "find"
+assignTo = "targetColumn"
+[workflow.CompleteQA.steps.where]
+key = "qa_completed"
+
+[[workflow.CompleteQA.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+assignTo = "completedIssue"
+[workflow.CompleteQA.steps.where]
+id = "{{ variables.data.record.id }}"
+qaState = "testing"
+qaRunId = "{{ variables.data.attribution.runId }}"
+[workflow.CompleteQA.steps.data]
+qaState = "qa_completed"
+columnId = "{{ variables.targetColumn.id }}"
+
+[[workflow.CompleteQA.steps]]
+type = "query"
+entity = "QAResult"
+action = "create"
+assignTo = "qaResult"
+[workflow.CompleteQA.steps.data]
+id = "{{ variables.data.payload.resultId }}"
+issueId = "{{ variables.data.record.id }}"
+outcome = "qa_completed"
+summary = "{{ variables.data.payload.summary }}"
+checks = "{{ variables.data.payload.checks }}"
+evidence = "{{ variables.data.payload.evidence }}"
+testedRevision = "{{ variables.data.payload.testedRevision }}"
+testedEnvironment = "{{ variables.data.payload.testedEnvironment }}"
+agentRunId = "{{ variables.data.attribution.runId }}"
+agentId = "{{ variables.data.attribution.agentId }}"
+credentialId = "{{ variables.data.attribution.credentialId }}"
+
+[[skill.issue_board.actions]]
+name = "mark_qa_needs_work"
+description = "Record failing QA evidence and atomically move the claimed issue to Needs Work."
+method = "POST"
+path = "/api/agent/issues/{id}/qa-needs-work"
+entity = "Issue"
+workflow = "MarkQANeedsWork"
+scopes = ["qa.report", "qa.transition"]
+body = { resultId = "Text", summary = "LongText", checks = "JSON", evidence = "JSON", testedRevision = "Text", testedEnvironment = "Text" }
+
+[[skill.issue_board.actions]]
+name = "list_qa_results"
+description = "List structured QA results for an issue."
+method = "GET"
+path = "/api/agent/qa-results"
+entity = "QAResult"
+action = "list"
+scopes = ["qa.read"]
+
+[skill.issue_board.actions.query.issueId]
+type = "Ref"
+required = false
+description = "Filter results by issue id."
+
+[workflow.MarkQANeedsWork]
+description = "Return a claimed issue for rework and persist its structured QA result."
+trigger = { manual = true }
+transactional = true
+
+[workflow.MarkQANeedsWork.precondition]
+"variables.data.record.qaState" = "testing"
+
+[[workflow.MarkQANeedsWork.steps]]
+type = "query"
+entity = "Column"
+action = "find"
+assignTo = "targetColumn"
+[workflow.MarkQANeedsWork.steps.where]
+key = "needs_work"
+
+[[workflow.MarkQANeedsWork.steps]]
+type = "query"
+entity = "Issue"
+action = "update"
+assignTo = "completedIssue"
+[workflow.MarkQANeedsWork.steps.where]
+id = "{{ variables.data.record.id }}"
+qaState = "testing"
+qaRunId = "{{ variables.data.attribution.runId }}"
+[workflow.MarkQANeedsWork.steps.data]
+qaState = "needs_work"
+columnId = "{{ variables.targetColumn.id }}"
+
+[[workflow.MarkQANeedsWork.steps]]
+type = "query"
+entity = "QAResult"
+action = "create"
+assignTo = "qaResult"
+[workflow.MarkQANeedsWork.steps.data]
+id = "{{ variables.data.payload.resultId }}"
+issueId = "{{ variables.data.record.id }}"
+outcome = "needs_work"
+summary = "{{ variables.data.payload.summary }}"
+checks = "{{ variables.data.payload.checks }}"
+evidence = "{{ variables.data.payload.evidence }}"
+testedRevision = "{{ variables.data.payload.testedRevision }}"
+testedEnvironment = "{{ variables.data.payload.testedEnvironment }}"
+agentRunId = "{{ variables.data.attribution.runId }}"
+agentId = "{{ variables.data.attribution.agentId }}"
+credentialId = "{{ variables.data.attribution.credentialId }}"
+
+[auth]
+providers = ["email"]
+
+[[auth.apiKeys]]
+name = "issue-board-agent"
+keyEnv = "ISSUE_BOARD_AGENT_API_KEY"
+agentId = "zebric-qa-agent"
+credentialId = "issue-board-e2e-key"
+displayName = "Zebric QA Agent"
+scopes = ["qa.list", "qa.read", "qa.claim", "qa.report", "qa.transition"]
+
+[[auth.apiKeys]]
+name = "issue-board-seeder"
+keyEnv = "ISSUE_BOARD_SEEDER_API_KEY"
+agentId = "issue-board-test-fixture"
+credentialId = "issue-board-seeder-key"
+displayName = "Issue Board Test Seeder"
+scopes = ["entity.column.create", "entity.issue.create"]
+
+[[auth.apiKeys]]
+name = "issue-board-observer"
+keyEnv = "ISSUE_BOARD_OBSERVER_API_KEY"
+agentId = "zebric-qa-agent"
+credentialId = "issue-board-observer-key"
+displayName = "Zebric QA Agent Observer Credential"
+scopes = ["qa.read"]

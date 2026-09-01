@@ -129,6 +129,36 @@ id = "issueId"
     expect(action.mapParams).toEqual({ id: 'issueId' })
   })
 
+  it('parses typed skill query parameters', () => {
+    const toml = blueprintWithSkill(`
+[skill.dispatch]
+description = "Manage issues."
+
+[[skill.dispatch.actions]]
+name = "list_issues"
+method = "GET"
+path = "/api/issues"
+entity = "Issue"
+action = "list"
+
+[skill.dispatch.actions.query.status]
+type = "Enum"
+values = ["ready", "done"]
+required = false
+description = "Filter by status."
+`)
+    const action = parser.parse(toml, 'toml').skills![0].actions[0]
+
+    expect(action.query).toEqual({
+      status: {
+        type: 'Enum',
+        values: ['ready', 'done'],
+        required: false,
+        description: 'Filter by status.',
+      },
+    })
+  })
+
   it('parses skill actions with workflow reference', () => {
     const toml = blueprintWithSkill(`
 [skill.dispatch]
@@ -176,6 +206,36 @@ path = "/api/issues/{id}"
     const bp = parser.parse(toml, 'toml')
 
     expect(bp.skills![0].auth).toBeUndefined()
+  })
+
+  it('parses declared agent risk and rejects risk that contradicts the HTTP method', () => {
+    const valid = parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "archive_issue"
+method = "POST"
+path = "/api/issues/{id}/archive"
+risk = "destructive"
+`), 'toml')
+    expect(valid.skills![0].actions[0].risk).toBe('destructive')
+
+    expect(() => parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "unsafe_read"
+method = "GET"
+path = "/api/issues"
+risk = "write"
+`), 'toml')).toThrow('GET skill actions must use read risk')
+
+    expect(() => parser.parse(blueprintWithSkill(`
+[skill.dispatch]
+[[skill.dispatch.actions]]
+name = "unsafe_write"
+method = "POST"
+path = "/api/issues"
+risk = "read"
+`), 'toml')).toThrow('Mutating skill actions cannot use read risk')
   })
 
   it('parses multiple skills', () => {

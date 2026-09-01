@@ -2,10 +2,49 @@ import type { Context } from 'hono'
 import type { SkillAction } from '@zebric/runtime-core'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
+import { resolveAgentAttribution } from './server-security.js'
+import { agentApiError } from './agent-api-error.js'
+
+function coerceQueryValue(value: string, type: string): string | number | boolean {
+  if (type === 'Integer') {
+    if (!/^-?\d+$/.test(value)) throw new Error(`Expected an integer, received "${value}"`)
+    return Number.parseInt(value, 10)
+  }
+  if (type === 'Float') {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) throw new Error(`Expected a number, received "${value}"`)
+    return parsed
+  }
+  if (type === 'Boolean') {
+    if (value === 'true') return true
+    if (value === 'false') return false
+    throw new Error(`Expected true or false, received "${value}"`)
+  }
+  return value
+}
+
+function parseSkillQuery(c: Context, action: SkillAction): Record<string, any> {
+  const where: Record<string, any> = {}
+  for (const [name, config] of Object.entries(action.query || {})) {
+    const rawValue = c.req.query(name)
+    const value = rawValue ?? config.default
+    if (value === undefined) {
+      if (config.required) throw new Error(`Missing required query parameter "${name}"`)
+      continue
+    }
+    const coerced = typeof value === 'string' ? coerceQueryValue(value, config.type) : value
+    if (config.values?.length && !config.values.includes(String(coerced))) {
+      throw new Error(`Invalid value for query parameter "${name}"`)
+    }
+    if (name !== 'limit' && name !== 'offset') where[config.field || name] = coerced
+  }
+  return where
+}
 
 export interface ActionHandlerDeps {
   queryExecutor: QueryExecutor
   workflowManager?: WorkflowManager
+  onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void
 }
 
 function getCorrelationId(c: Context): string | undefined {
@@ -41,9 +80,13 @@ export async function handleSkillEntityAction(
         }
       }
       const result = await queryExecutor.create(entityName, body, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'create', id: result?.id, session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'create', undefined, result, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json(result, { status: 201 })
     }
@@ -51,22 +94,33 @@ export async function handleSkillEntityAction(
     case 'update': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const body = await c.req.json<Record<string, any>>()
       const before = workflowManager
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       const result = await queryExecutor.update(entityName, id, body, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'update', id, session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'update', before, result, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json(result)
     }
 
     case 'list': {
-      const where: Record<string, any> = {}
+      let where: Record<string, any>
+      try {
+        where = parseSkillQuery(c, action)
+      } catch (error) {
+        return agentApiError(c, 400, 'INVALID_QUERY', 'Query parameters are invalid', {
+          details: { reason: error instanceof Error ? error.message : String(error) },
+        })
+      }
       if (action.mapParams) {
         for (const [pathParam, entityField] of Object.entries(action.mapParams)) {
           const value = c.req.param(pathParam)
@@ -95,11 +149,11 @@ export async function handleSkillEntityAction(
     case 'get': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const result = await queryExecutor.findById(entityName, id, { session })
       if (!result) {
-        return Response.json({ error: 'Not found' }, { status: 404 })
+        return agentApiError(c, 404, 'RESOURCE_NOT_FOUND', 'The requested resource was not found')
       }
       return Response.json(result)
     }
@@ -107,21 +161,25 @@ export async function handleSkillEntityAction(
     case 'delete': {
       const id = c.req.param('id')
       if (!id) {
-        return Response.json({ error: 'Missing id parameter' }, { status: 400 })
+        return agentApiError(c, 400, 'INVALID_REQUEST', 'Missing required path parameter: id')
       }
       const existing = workflowManager
         ? await queryExecutor.findById(entityName, id, { session }).catch(() => null)
         : null
       await queryExecutor.delete(entityName, id, { session })
+      if (!workflowManager) deps.onEntityChanged?.({ entity: entityName, event: 'delete', id, session })
+      const attribution = resolveAgentAttribution(c, session)
       await triggerEntityWorkflows(entityName, 'delete', existing || { id }, undefined, workflowManager, {
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
+        session,
+        attribution,
       })
       return Response.json({ success: true })
     }
 
     default:
-      return Response.json({ error: `Unknown action: ${action.action}` }, { status: 400 })
+      return agentApiError(c, 400, 'UNSUPPORTED_ACTION', 'The declared skill action is unsupported')
   }
 }
 
@@ -134,13 +192,13 @@ export async function handleSkillWorkflow(
   const { queryExecutor, workflowManager } = deps
 
   if (!workflowManager) {
-    return Response.json({ error: 'Workflow engine not available' }, { status: 500 })
+    return agentApiError(c, 500, 'WORKFLOW_UNAVAILABLE', 'Workflow execution is unavailable', { retryable: true })
   }
 
   const workflowName = action.workflow!
   const workflow = workflowManager.getWorkflow(workflowName)
   if (!workflow) {
-    return Response.json({ error: `Workflow '${workflowName}' not found` }, { status: 404 })
+    return agentApiError(c, 404, 'WORKFLOW_NOT_FOUND', 'The declared workflow was not found')
   }
 
   let body: Record<string, any> = {}
@@ -149,7 +207,7 @@ export async function handleSkillWorkflow(
     // If the action declares a body schema, only keep declared fields.
     // This prevents user-injected keys from reaching workflow templates
     // (e.g. an attacker adding a "url" field that a webhook step resolves).
-    if (action.body && Object.keys(action.body).length > 0) {
+    if (action.body !== undefined) {
       const allowed = new Set(Object.keys(action.body))
       for (const key of Object.keys(rawBody)) {
         if (allowed.has(key)) {
@@ -186,6 +244,7 @@ export async function handleSkillWorkflow(
     record,
     user: session?.user,
     session,
+    attribution: resolveAgentAttribution(c, session),
   }
 
   const job = workflowManager.trigger(workflowName, data, {
@@ -195,7 +254,15 @@ export async function handleSkillWorkflow(
 
   return Response.json({
     success: true,
-    job: { id: job.id, workflow: workflowName },
+    job: {
+      id: job.id,
+      workflow: workflowName,
+      status: job.status,
+      url: `/api/jobs/${job.id}`,
+    },
+  }, {
+    status: 202,
+    headers: { Location: `/api/jobs/${job.id}` },
   })
 }
 
@@ -208,6 +275,8 @@ export async function triggerEntityWorkflows(
   trace?: {
     correlationId?: string
     requestId?: string
+    session?: any
+    attribution?: any
   }
 ): Promise<void> {
   if (!workflowManager) {
@@ -215,7 +284,11 @@ export async function triggerEntityWorkflows(
   }
 
   try {
-    await workflowManager.triggerEntityEvent(entity, event, { before, after }, { trace })
+    await workflowManager.triggerEntityEvent(entity, event, { before, after }, {
+      trace,
+      initiatingSession: trace?.session,
+      attribution: trace?.attribution,
+    })
   } catch (error) {
     console.error(`Failed to trigger ${event} workflows for ${entity}:`, error)
   }

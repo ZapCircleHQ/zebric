@@ -24,6 +24,7 @@ function stubDeps(overrides: Record<string, any> = {}) {
       pages: overrides.pages ?? [],
       auth: overrides.auth ?? undefined,
       skills: overrides.skills ?? undefined,
+      workflows: overrides.workflows ?? undefined,
     },
     config: { port: 0, host: '127.0.0.1', ...overrides.config },
     state: { status: 'running' },
@@ -496,6 +497,144 @@ describe('security: workflow body field filtering', () => {
     expect(capturedData).toHaveLength(1)
     expect(capturedData[0].payload.foo).toBe('bar')
     expect(capturedData[0].payload.baz).toBe(123)
+  })
+})
+
+describe('agent workflow jobs and idempotency', () => {
+  function workflowApp(overrides: Record<string, any> = {}) {
+    let triggerCount = 0
+    const owner = { id: 's1', user: { id: 'u1', name: 'Agent' } }
+    const job = {
+      id: 'job-claim-1', workflowName: 'ClaimIssue', status: 'completed',
+      context: { session: owner }, createdAt: new Date(), completedAt: new Date(),
+      attempts: 1, result: { claimedIssue: { id: 'issue-1', qaState: 'testing' } },
+    }
+    const sm = new ServerManager(stubDeps({
+      skills: [{ name: 'qa', actions: [{
+        name: 'claim', method: 'POST', path: '/api/qa/{id}/claim',
+        body: { runId: 'Text' }, entity: 'Issue', workflow: 'ClaimIssue',
+      }] }],
+      entities: [{ name: 'Issue', fields: [{ name: 'id', type: 'ULID', primary_key: true }] }],
+      workflowManager: {
+        getWorkflow: () => ({ name: 'ClaimIssue', steps: [] }),
+        trigger: () => { triggerCount++; return job },
+        getJob: () => overrides.job ?? job,
+      },
+      sessionManager: { getSession: async () => overrides.session ?? owner },
+      queryExecutor: { findById: async () => ({ id: 'issue-1', qaState: 'ready_to_test' }) },
+      auth: { providers: ['email'] },
+    }))
+    return { app: initApp(sm), job, getTriggerCount: () => triggerCount }
+  }
+
+  it('returns the original workflow job for an identical idempotent retry', async () => {
+    const { app, getTriggerCount } = workflowApp()
+    const request = () => app.request('/api/qa/issue-1/claim', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json', 'idempotency-key': 'claim-1',
+        cookie: 'csrf-token=x', 'x-csrf-token': 'x',
+      },
+      body: JSON.stringify({ runId: 'run-1' }),
+    })
+
+    const first = await request()
+    const retry = await request()
+
+    expect(first.status).toBe(202)
+    expect(retry.status).toBe(202)
+    expect(await retry.json()).toMatchObject({ job: { id: 'job-claim-1' } })
+    expect(getTriggerCount()).toBe(1)
+  })
+
+  it('rejects an idempotency key reused with different input', async () => {
+    const { app } = workflowApp()
+    const headers = {
+      'content-type': 'application/json', 'idempotency-key': 'claim-1',
+      cookie: 'csrf-token=x', 'x-csrf-token': 'x',
+    }
+    await app.request('/api/qa/issue-1/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-1' }),
+    })
+    const response = await app.request('/api/qa/issue-1/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-2' }),
+    })
+    expect(response.status).toBe(409)
+  })
+
+  it('rejects an idempotency key reused for a different resource path', async () => {
+    const { app, getTriggerCount } = workflowApp()
+    const headers = {
+      'content-type': 'application/json', 'idempotency-key': 'claim-1',
+      cookie: 'csrf-token=x', 'x-csrf-token': 'x',
+    }
+    await app.request('/api/qa/issue-1/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-1' }),
+    })
+    const response = await app.request('/api/qa/issue-2/claim', {
+      method: 'POST', headers, body: JSON.stringify({ runId: 'run-1' }),
+    })
+    expect(response.status).toBe(409)
+    expect(getTriggerCount()).toBe(1)
+  })
+
+  it('audits a workflow precondition exception as a failed agent action', async () => {
+    const log = vi.fn(() => true)
+    const sm = new ServerManager(stubDeps({
+      skills: [{ name: 'qa', actions: [{
+        name: 'claim', method: 'POST', path: '/api/qa/{id}/claim',
+        entity: 'Issue', workflow: 'ClaimIssue',
+      }] }],
+      entities: [{ name: 'Issue', fields: [{ name: 'id', type: 'ULID', primary_key: true }] }],
+      workflowManager: {
+        getWorkflow: () => ({ name: 'ClaimIssue', steps: [] }),
+        trigger: () => { throw new Error('Workflow precondition failed: ClaimIssue') },
+        getJob: () => undefined,
+      },
+      sessionManager: { getSession: async () => ({ id: 's1', user: { id: 'u1', name: 'User' } }) },
+      queryExecutor: { findById: async () => ({ id: 'issue-1' }) },
+      auth: { providers: ['email'] },
+      auditLogger: { log },
+    }))
+    const response = await initApp(sm).request('/api/qa/issue-1/claim', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: 'csrf-token=x', 'x-csrf-token': 'x' },
+      body: '{}',
+    })
+
+    expect(response.status).toBe(409)
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'agent.action', actionName: 'qa.claim', success: false,
+    }))
+  })
+
+  it('returns only jobs owned by the authenticated caller', async () => {
+    const owned = workflowApp()
+    expect((await owned.app.request('/api/jobs/job-claim-1')).status).toBe(200)
+
+    const foreign = workflowApp({
+      job: {
+        ...owned.job,
+        context: { session: { user: { id: 'another-agent' } } },
+      },
+    })
+    expect((await foreign.app.request('/api/jobs/job-claim-1')).status).toBe(404)
+  })
+
+  it('registers job observation for workflow-only applications without skills', async () => {
+    const owner = { id: 's1', user: { id: 'u1', name: 'User' } }
+    const sm = new ServerManager(stubDeps({
+      workflows: [{ name: 'BackgroundTask', trigger: { manual: true }, steps: [] }],
+      workflowManager: {
+        getJob: () => ({
+          id: 'job-1', workflowName: 'BackgroundTask', status: 'completed',
+          context: { session: owner }, createdAt: new Date(), completedAt: new Date(),
+        }),
+      },
+      sessionManager: { getSession: async () => owner },
+    }))
+
+    expect((await initApp(sm).request('/api/jobs/job-1')).status).toBe(200)
   })
 })
 

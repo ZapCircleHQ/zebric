@@ -64,6 +64,7 @@ export interface Workflow {
   description?: string
   trigger: WorkflowTrigger
   precondition?: Record<string, any>
+  transactional?: boolean
   steps: WorkflowStep[]
   enabled?: boolean
   timeout?: number  // Timeout in milliseconds

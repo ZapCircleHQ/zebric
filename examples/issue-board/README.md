@@ -2,6 +2,8 @@
 
 A Kanban-style issue tracker demonstrating the Zebric **widget system**: a declarative primitive for interactive views described entirely in blueprint TOML, with no custom client JavaScript per blueprint.
 
+This is also the reference development application for Agent API v1 and Zebric Agent v1. The board model remains intact; stable workflow keys and optional QA context extend it for agent use.
+
 ## What this shows
 
 - **Drag-and-drop** cards between columns and reorder within a column
@@ -14,6 +16,7 @@ Every user interaction is a typed event (`on_move`, `on_column_rename`, `on_togg
 
 ```bash
 pnpm install
+export ISSUE_BOARD_AGENT_API_KEY="local-issue-board-agent"
 pnpm --filter issue-board-example dev
 ```
 
@@ -24,6 +27,8 @@ pnpm --filter issue-board-example seed
 ```
 
 Then open http://localhost:3000.
+
+The read-only agent contract is published at `/api/openapi.json`. To find Ready to Test work, call `issue_board_list_columns` with `key=ready_to_test`, then call `issue_board_list_issues` with the returned `columnId`.
 
 ## Blueprint shape
 

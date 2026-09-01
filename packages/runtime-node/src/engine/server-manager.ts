@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import type { Context } from 'hono'
 import type { NotificationManager } from '@zebric/notifications'
+import type { AuditLogger } from '../security/index.js'
 import { createRequestId, type Logger } from '@zebric/observability'
 import {
   createHonoLoggerMiddleware,
@@ -24,6 +25,7 @@ import {
   applyCsrfProtection,
   applySecurityHeaders,
   initApiKeys,
+  type ApiKeyCredential,
 } from './server-security.js'
 import {
   registerStaticUploads,
@@ -33,12 +35,15 @@ import {
   registerNotificationRoutes,
   registerActionRoutes,
   registerSkillRoutes,
+  registerWorkflowJobRoutes,
+  registerAgentEventStreamRoute,
   registerAPIRoutes,
   registerOpenAPIRoute,
   registerPageRoutes,
   registerWidgetRoutes,
   registerSearchRoutes,
 } from './server-routes.js'
+import { AgentEventBus } from './agent-event-bus.js'
 
 export interface ServerManagerDependencies {
   blueprint: Blueprint
@@ -56,7 +61,9 @@ export interface ServerManagerDependencies {
   errorHandler: ErrorHandler
   pendingSchemaDiff: SchemaDiffResult | null
   notificationManager?: NotificationManager
+  auditLogger?: AuditLogger
   getHealthStatus?: () => Promise<any>
+  agentEventBus?: AgentEventBus
 }
 
 function getCorrelationId(c: Context): string | undefined {
@@ -96,9 +103,11 @@ export class ServerManager {
   private errorHandler: ErrorHandler
   private getHealthStatusFn?: () => Promise<any>
   private notificationManager?: NotificationManager
+  private auditLogger?: AuditLogger
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
-  private apiKeys = new Map<string, { name: string }>()
+  private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
+  private readonly agentEventBus: AgentEventBus
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -115,7 +124,30 @@ export class ServerManager {
     this.logger = deps.logger
     this.errorHandler = deps.errorHandler
     this.notificationManager = deps.notificationManager
+    this.auditLogger = deps.auditLogger
     this.getHealthStatusFn = deps.getHealthStatus
+    this.agentEventBus = deps.agentEventBus ?? new AgentEventBus()
+    this.bindAgentEvents(this.workflowManager)
+  }
+
+  private bindAgentEvents(workflowManager?: WorkflowManager): void {
+    if (!workflowManager || typeof workflowManager.on !== 'function') return
+    const publishJob = (status: string) => (job: any) => this.agentEventBus.publish({
+      type: `workflow.${status}`,
+      subject: `workflow-job:${job.id}`,
+      audienceId: job.context?.session?.actor?.credentialId ?? job.context?.session?.user?.id,
+      data: { jobId: job.id, workflow: job.workflowName, status },
+    })
+    workflowManager.on('job:enqueued', publishJob('enqueued'))
+    workflowManager.on('job:started', publishJob('started'))
+    workflowManager.on('job:completed', publishJob('completed'))
+    workflowManager.on('job:failed', publishJob('failed'))
+    workflowManager.on('job:cancelled', publishJob('cancelled'))
+    workflowManager.on('entity:changed', (change: any) => this.agentEventBus.publish({
+      type: `entity.${change.event}`,
+      subject: `${change.entity}:${change.id ?? 'unknown'}`,
+      data: { entity: change.entity, action: change.event, id: change.id },
+    }))
   }
 
   updateDependencies(updates: Partial<ServerManagerDependencies>): void {
@@ -268,12 +300,28 @@ export class ServerManager {
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
     })
+    registerWorkflowJobRoutes(this.app, {
+      sessionManager: this.sessionManager,
+      workflowManager: this.workflowManager,
+      apiKeys: this.apiKeys,
+    })
+    registerAgentEventStreamRoute(this.app, {
+      sessionManager: this.sessionManager,
+      apiKeys: this.apiKeys,
+      eventBus: this.agentEventBus,
+    })
     registerSkillRoutes(this.app, {
       blueprint: this.blueprint,
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,
+      auditLogger: this.auditLogger,
+      onEntityChanged: change => this.agentEventBus.publish({
+        type: `entity.${change.event}`,
+        subject: `${change.entity}:${change.id ?? 'unknown'}`,
+        data: { entity: change.entity, action: change.event, id: change.id },
+      }),
     })
     registerAPIRoutes(this.app, {
       blueprint: this.blueprint,
@@ -293,7 +341,7 @@ export class ServerManager {
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
     })
-    registerOpenAPIRoute(this.app, this.blueprint, this.config)
+    registerOpenAPIRoute(this.app, this.blueprint, this.config, true)
     registerPageRoutes(this.app, this.blueprintAdapter)
 
     this.app.notFound(() => {

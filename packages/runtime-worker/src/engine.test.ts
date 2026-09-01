@@ -47,6 +47,21 @@ describe('ZebricWorkersEngine', () => {
         new ZebricWorkersEngine({ env: {} })
       }).toThrow('Blueprint must be provided')
     })
+
+    it('rejects transactional workflows until Workers has an atomic workflow executor', () => {
+      expect(() => new ZebricWorkersEngine({
+        env,
+        blueprint: {
+          ...simpleBlueprint,
+          workflows: [{
+            name: 'AtomicUpdate',
+            trigger: { manual: true },
+            transactional: true,
+            steps: [{ type: 'query', entity: 'post', action: 'update' }],
+          }],
+        } as any,
+      })).toThrow('D1-batch eligible but not yet executable')
+    })
   })
 
   describe('health check', () => {
