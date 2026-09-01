@@ -1,5 +1,14 @@
 # @zebric/runtime-hono
 
+## 0.4.0
+
+### Patch Changes
+
+- Updated dependencies [48bcb96]
+- Updated dependencies [9aa29c3]
+- Updated dependencies [1df1c9a]
+  - @zebric/runtime-core@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@zebric/mcp-server",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "MCP server adapter for Zebric applications",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,8 +14,13 @@
   "bin": {
     "zebric-mcp-server": "./dist/cli.js"
   },
-  "files": ["dist", "README.md"],
-  "publishConfig": { "access": "public" },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "test": "vitest run",
@@ -33,5 +38,7 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },
-  "engines": { "node": ">=22.0.0" }
+  "engines": {
+    "node": ">=22.0.0"
+  }
 }

@@ -18,7 +18,7 @@
     "card-grid"
   ],
   "peerDependencies": {
-    "@zebric/runtime-node": "^0.3.1"
+    "@zebric/runtime-node": "^0.4.0"
   },
   "devDependencies": {
     "@zebric/runtime-node": "workspace:*",
