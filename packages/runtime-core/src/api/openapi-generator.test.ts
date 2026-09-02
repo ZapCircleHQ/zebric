@@ -98,6 +98,35 @@ describe('generateOpenAPISpec', () => {
       expect(createSchema.properties.title).toBeDefined()
     })
 
+    it('omits write-protected fields from Create and Update but keeps them readable', () => {
+      const bp = minimalBlueprint({
+        entities: [{
+          name: 'Account',
+          fields: [
+            { name: 'accountId', type: 'ULID', primary_key: true },
+            { name: 'name', type: 'Text', required: true },
+            { name: 'ownerId', type: 'Ref', ref: 'User.id', required: true, access: { write: false } },
+            { name: 'plan', type: 'Enum', values: ['free', 'pro'], access: { write: false } },
+            { name: 'nickname', type: 'Text' },
+          ],
+        }],
+      })
+      const spec = generateOpenAPISpec(bp)
+
+      for (const schemaName of ['AccountCreate', 'AccountUpdate'] as const) {
+        const schema = spec.components.schemas[schemaName]
+        expect(schema.properties.accountId).toBeUndefined()
+        expect(schema.properties.ownerId).toBeUndefined()
+        expect(schema.properties.plan).toBeUndefined()
+        expect(schema.properties.nickname).toBeDefined()
+        expect(schema.required ?? []).not.toContain('ownerId')
+      }
+      expect(spec.components.schemas.AccountCreate.required).toEqual(['name'])
+      // The read model still exposes protected fields.
+      expect(spec.components.schemas.Account.properties.ownerId).toBeDefined()
+      expect(spec.components.schemas.Account.properties.plan).toBeDefined()
+    })
+
     it('generates Update schemas with every mutable field optional', () => {
       const spec = generateOpenAPISpec(minimalBlueprint())
       const updateSchema = spec.components.schemas.IssueUpdate

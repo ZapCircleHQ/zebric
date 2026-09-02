@@ -74,13 +74,29 @@ function entityToSchema(entity: Entity): Record<string, any> {
   return schema
 }
 
+// Fields the runtime always manages itself; a client may never supply them.
+const AUTO_MANAGED_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
+
+/**
+ * A field is protected from client writes when it is the primary key, a runtime-managed
+ * timestamp, or the blueprint explicitly denies write access (`access = { write = false }`).
+ * Protected fields are omitted from the generated Create and Update request bodies so an
+ * agent is never invited to set them and cannot smuggle them past schema validation.
+ */
+function isWriteProtectedField(field: Field): boolean {
+  return (
+    field.primary_key === true ||
+    AUTO_MANAGED_FIELDS.has(field.name) ||
+    field.access?.write === false
+  )
+}
+
 function entityToCreateSchema(entity: Entity): Record<string, any> {
-  const autoFields = new Set(['id', 'createdAt', 'updatedAt'])
   const properties: Record<string, any> = {}
   const required: string[] = []
 
   for (const field of entity.fields) {
-    if (autoFields.has(field.name)) continue
+    if (isWriteProtectedField(field)) continue
 
     properties[field.name] = fieldToJsonSchema(field)
 
@@ -102,6 +118,7 @@ function entityToCreateSchema(entity: Entity): Record<string, any> {
 }
 
 function entityToUpdateSchema(entity: Entity): Record<string, any> {
+  // Same writable field set as Create, but every field optional (partial update).
   const createSchema = entityToCreateSchema(entity)
   return {
     type: 'object',
