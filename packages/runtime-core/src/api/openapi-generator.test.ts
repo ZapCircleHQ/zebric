@@ -98,6 +98,17 @@ describe('generateOpenAPISpec', () => {
       expect(createSchema.properties.title).toBeDefined()
     })
 
+    it('generates Update schemas with every mutable field optional', () => {
+      const spec = generateOpenAPISpec(minimalBlueprint())
+      const updateSchema = spec.components.schemas.IssueUpdate
+
+      expect(updateSchema.properties.id).toBeUndefined()
+      expect(updateSchema.properties.createdAt).toBeUndefined()
+      expect(updateSchema.properties.updatedAt).toBeUndefined()
+      expect(updateSchema.properties.title).toBeDefined()
+      expect(updateSchema.required).toBeUndefined()
+    })
+
     it('maps field types correctly', () => {
       const spec = generateOpenAPISpec(minimalBlueprint())
       const props = spec.components.schemas.Issue.properties
@@ -364,6 +375,24 @@ describe('generateOpenAPISpec', () => {
       expect(op.requestBody.content['application/json'].schema).toEqual({
         $ref: '#/components/schemas/IssueCreate',
       })
+    })
+
+    it('uses an all-optional entity Update schema for update actions without an explicit body', () => {
+      const bp = minimalBlueprint({
+        skills: [{
+          name: 'dispatch',
+          actions: [{
+            name: 'update_issue', method: 'PUT', path: '/api/issues/{id}',
+            entity: 'Issue', action: 'update',
+          }],
+        }],
+      })
+      const spec = generateOpenAPISpec(bp)
+
+      expect(spec.paths['/api/issues/{id}'].put.requestBody.content['application/json'].schema).toEqual({
+        $ref: '#/components/schemas/IssueUpdate',
+      })
+      expect(spec.components.schemas.IssueUpdate.required).toBeUndefined()
     })
 
     it('returns 201 for create actions', () => {

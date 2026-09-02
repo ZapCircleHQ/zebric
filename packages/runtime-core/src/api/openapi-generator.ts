@@ -101,6 +101,14 @@ function entityToCreateSchema(entity: Entity): Record<string, any> {
   return schema
 }
 
+function entityToUpdateSchema(entity: Entity): Record<string, any> {
+  const createSchema = entityToCreateSchema(entity)
+  return {
+    type: 'object',
+    properties: createSchema.properties,
+  }
+}
+
 function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): Record<string, any> | undefined {
   // If action has explicit body definition, use that
   if (action.body && Object.keys(action.body).length > 0) {
@@ -153,7 +161,7 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
       required: true,
       content: {
         'application/json': {
-          schema: { $ref: `#/components/schemas/${action.entity}Create` },
+          schema: { $ref: `#/components/schemas/${action.entity}Update` },
         },
       },
     }
@@ -416,6 +424,7 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
   for (const entity of blueprint.entities) {
     schemas[entity.name] = entityToSchema(entity)
     schemas[`${entity.name}Create`] = entityToCreateSchema(entity)
+    schemas[`${entity.name}Update`] = entityToUpdateSchema(entity)
   }
 
   // Build paths from skills

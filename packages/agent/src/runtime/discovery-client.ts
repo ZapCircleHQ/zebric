@@ -17,6 +17,9 @@ const OpenApiSchema = z.object({
   openapi: z.string(),
   info: z.object({ title: z.string(), version: z.string() }),
   paths: z.record(z.string(), z.record(z.string(), z.unknown())),
+  components: z.object({
+    schemas: z.record(z.string(), z.record(z.string(), z.unknown())),
+  }).optional(),
   'x-zebric-contract': z.object({
     version: z.literal('1'),
     fingerprint: z.string().regex(/^sha256:[a-f0-9]{64}$/),

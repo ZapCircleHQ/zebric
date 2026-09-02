@@ -130,13 +130,21 @@ scopes = ["tasks.read"]
 
 [[skill.task_tracker.actions]]
 name = "create_task"
-description = "Create a task with the default not-started status and normal priority."
+description = "Create a task, optionally setting its description, status, priority, and due date."
 method = "POST"
 path = "/api/agent/tasks"
 entity = "Task"
 action = "create"
 scopes = ["tasks.write"]
-body = { title = "Text" }
+
+[[skill.task_tracker.actions]]
+name = "update_task"
+description = "Update a task's title, description, priority, due date, or status."
+method = "PUT"
+path = "/api/agent/tasks/{id}"
+entity = "Task"
+action = "update"
+scopes = ["tasks.write"]
 
 [[skill.task_tracker.actions]]
 name = "set_task_status"
@@ -148,6 +156,16 @@ action = "update"
 scopes = ["tasks.write"]
 body = { status = "Enum" }
 
+[[skill.task_tracker.actions]]
+name = "delete_task"
+description = "Permanently delete a task. This cannot be undone."
+method = "DELETE"
+path = "/api/agent/tasks/{id}"
+entity = "Task"
+action = "delete"
+scopes = ["tasks.delete"]
+risk = "destructive"
+
 [auth]
 providers = ["email"]
 
@@ -157,4 +175,4 @@ keyEnv = "TASK_TRACKER_API_KEY"
 agentId = "task-tracker-mcp-agent"
 credentialId = "task-tracker-mcp-key"
 displayName = "Task Tracker MCP Agent"
-scopes = ["tasks.read", "tasks.write"]
+scopes = ["tasks.read", "tasks.write", "tasks.delete"]

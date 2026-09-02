@@ -154,25 +154,46 @@ describe('createRuntimeReadTools', () => {
     expect(failure.message).toContain(reason)
   })
 
-  it('rejects referenced request bodies rather than dropping their fields', () => {
-    const unsupportedContract = structuredClone(contract)
-    unsupportedContract.openapi.paths['/api/unsupported'] = {
+  it('resolves local component request-body schemas without weakening their fields', async () => {
+    const referencedContract = structuredClone(contract)
+    referencedContract.openapi.components = { schemas: {
+      Mutation: {
+        type: 'object',
+        properties: { title: { type: 'string' }, priority: { type: 'string', enum: ['low', 'high'] } },
+        required: ['title'],
+      },
+    } }
+    referencedContract.openapi.paths['/api/referenced'] = {
       post: {
         operationId: 'referenced_body',
-        requestBody: { content: { 'application/json': { schema: {
-          $ref: '#/components/schemas/Mutation',
-        } } } },
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Mutation' } } } },
       },
     }
-
-    const failure = captureFailure(() => createRuntimeReadTools(unsupportedContract, {
-      applicationName: 'local', mutations: { approve: () => true },
-    }))
-    expect(failure).toMatchObject({
-      operationId: 'referenced_body',
-      schemaPath: 'paths./api/unsupported.post.requestBody.content.application/json.schema',
+    const fetcher = vi.fn(async () => Response.json({ id: 'created' })) as typeof fetch
+    const tools = createRuntimeReadTools(referencedContract, {
+      applicationName: 'local', fetch: fetcher, mutations: { approve: () => true },
     })
-    expect(failure.message).toContain('keyword "$ref"')
+    const referenced = tools.find(item => item.name === 'local_referenced_body')!
+
+    await expect(referenced.invoke({ priority: 'low' })).rejects.toThrow()
+    await referenced.invoke({ title: 'Example', priority: 'high' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ title: 'Example', priority: 'high' })
+  })
+
+  it('rejects remote and unresolved request-body schema references', () => {
+    for (const reference of ['https://example.test/schema.json', '#/components/schemas/Missing']) {
+      const unsupportedContract = structuredClone(contract)
+      unsupportedContract.openapi.paths['/api/unsupported'] = {
+        post: {
+          operationId: 'referenced_body',
+          requestBody: { content: { 'application/json': { schema: { $ref: reference } } } },
+        },
+      }
+      expect(() => createRuntimeReadTools(unsupportedContract, {
+        applicationName: 'local', mutations: { approve: () => true },
+      })).toThrow(reference.startsWith('https:') ? 'only local component' : 'was not found')
+    }
   })
 
   it('rejects parameter serialization and path-level parameter features it cannot preserve', () => {

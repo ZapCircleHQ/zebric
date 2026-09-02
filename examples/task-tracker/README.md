@@ -46,7 +46,7 @@ Visit http://localhost:3000 to see the task dashboard.
 
 ## Running the MCP server
 
-The Blueprint publishes `list_tasks`, `get_task`, `create_task`, and `set_task_status` as agent-facing skill actions. Start the application with its scoped API key:
+The Blueprint publishes `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, and `delete_task` as agent-facing skill actions. Create and update inputs are derived automatically from the `Task` entity, while destructive deletion remains separately scoped and explicitly allowlisted. Start the application with its scoped API key:
 
 ```bash
 TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker dev

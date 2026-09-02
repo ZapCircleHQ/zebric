@@ -14,6 +14,11 @@ interface OpenApiParameter {
 }
 
 type OpenApiInputSchema = Record<string, unknown>
+type OpenApiObjectSchema = Record<string, unknown> & {
+  type?: unknown
+  properties?: Record<string, OpenApiInputSchema>
+  required?: unknown
+}
 
 interface OpenApiOperation {
   operationId?: string
@@ -323,7 +328,7 @@ export function createRuntimeReadTools(
         }
       }
       const bodySchema = operation.requestBody
-        ? validateRequestBody(operation.requestBody, options.applicationName, operation.operationId, path, method)
+        ? validateRequestBody(operation.requestBody, contract.openapi, options.applicationName, operation.operationId, path, method)
         : undefined
       const bodyProperties = bodySchema?.properties ?? {}
       const requiredBody = new Set(bodySchema?.required ?? [])
@@ -546,6 +551,7 @@ function validateParameter(
 
 function validateRequestBody(
   requestBody: NonNullable<OpenApiOperation['requestBody']>,
+  openapi: ZebricApplicationContract['openapi'],
   application: string,
   operationId: string,
   path: string,
@@ -559,9 +565,10 @@ function validateRequestBody(
   if (mediaTypes.length !== 1 || mediaTypes[0] !== 'application/json') {
     unsupported({ application, operationId, schemaPath }, 'only a single application/json media type is supported')
   }
-  const schema = requestBody.content?.['application/json']?.schema
+  const declaredSchema = requestBody.content?.['application/json']?.schema
   const context = { application, operationId, schemaPath }
-  if (!schema) unsupported(context, 'only application/json request bodies with an inline schema are supported')
+  if (!declaredSchema) unsupported(context, 'an application/json request body schema is required')
+  const schema = resolveLocalSchema(declaredSchema, openapi, context)
   const supportedKeys = new Set(['type', 'properties', 'required', 'description'])
   const unsupportedKeyword = Object.keys(schema).find(key => !supportedKeys.has(key))
   if (unsupportedKeyword) unsupported(context, `keyword "${unsupportedKeyword}" is not supported`)
@@ -569,13 +576,37 @@ function validateRequestBody(
   if (!schema.properties || typeof schema.properties !== 'object' || Array.isArray(schema.properties)) {
     unsupported(context, 'request body properties must be an object')
   }
-  if (schema.required !== undefined && (!Array.isArray(schema.required) || schema.required.some(name => typeof name !== 'string'))) {
+  const declaredRequired = schema.required as unknown
+  if (declaredRequired !== undefined && (!Array.isArray(declaredRequired) || declaredRequired.some(name => typeof name !== 'string'))) {
     unsupported(context, 'required must be an array of property names')
   }
+  const required = declaredRequired as string[] | undefined
   const propertyNames = new Set(Object.keys(schema.properties))
-  const unknownRequired = schema.required?.find(name => !propertyNames.has(name))
+  const unknownRequired = required?.find(name => !propertyNames.has(name))
   if (unknownRequired) unsupported(context, `required property "${unknownRequired}" is not declared`)
-  return { properties: schema.properties, ...(schema.required ? { required: schema.required } : {}) }
+  return { properties: schema.properties, ...(required ? { required } : {}) }
+}
+
+function resolveLocalSchema(
+  schema: Record<string, unknown>,
+  openapi: ZebricApplicationContract['openapi'],
+  context: { application: string; operationId: string; schemaPath: string },
+): OpenApiObjectSchema {
+  if (!('$ref' in schema)) return schema as OpenApiObjectSchema
+  if (Object.keys(schema).length !== 1 || typeof schema.$ref !== 'string') {
+    unsupported(context, 'a schema reference cannot have sibling keywords')
+  }
+  const prefix = '#/components/schemas/'
+  if (!schema.$ref.startsWith(prefix)) unsupported(context, 'only local component schema references are supported')
+  const encodedName = schema.$ref.slice(prefix.length)
+  if (!encodedName || encodedName.includes('/')) unsupported(context, 'component schema reference is invalid')
+  const name = encodedName.replace(/~1/g, '/').replace(/~0/g, '~')
+  const resolved = openapi.components?.schemas[name]
+  if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) {
+    unsupported(context, `component schema "${name}" was not found`)
+  }
+  if ('$ref' in resolved) unsupported(context, 'nested schema references are not supported')
+  return resolved as OpenApiObjectSchema
 }
 
 function parseApiError(response: Response, body: string): ZebricApiError {
