@@ -224,6 +224,45 @@ function numericSchema(
   return result
 }
 
+const MAX_PATTERN_LENGTH = 1_000
+
+/**
+ * Heuristic guard against catastrophic-backtracking regular expressions supplied by a
+ * remote OpenAPI contract. Flags the classic exponential shape: a group repeated by an
+ * unbounded quantifier that itself contains an unbounded quantifier, e.g. `(a+)+`,
+ * `(a*)*`, `(.*,)*`. It is deliberately conservative and does not claim completeness.
+ */
+function hasNestedUnboundedQuantifier(pattern: string): boolean {
+  const stack: { unbounded: boolean }[] = []
+  let escaped = false
+  let inClass = false
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index]
+    if (escaped) { escaped = false; continue }
+    if (char === '\\') { escaped = true; continue }
+    if (inClass) { if (char === ']') inClass = false; continue }
+    if (char === '[') { inClass = true; continue }
+    if (char === '(') { stack.push({ unbounded: false }); continue }
+    if (char === ')') {
+      const group = stack.pop()
+      if (!group) continue
+      const rest = pattern.slice(index + 1)
+      const repeatedUnbounded = rest.startsWith('*') || rest.startsWith('+') || /^\{\d*,\}/.test(rest)
+      if (repeatedUnbounded && group.unbounded) return true
+      if (group.unbounded && stack.length > 0) stack[stack.length - 1]!.unbounded = true
+      continue
+    }
+    if (char === '*' || char === '+') {
+      if (stack.length > 0) stack[stack.length - 1]!.unbounded = true
+      continue
+    }
+    if (char === '{' && /^\{\d*,\}/.test(pattern.slice(index)) && stack.length > 0) {
+      stack[stack.length - 1]!.unbounded = true
+    }
+  }
+  return false
+}
+
 function stringSchema(
   schema: OpenApiInputSchema,
   context: { application: string; operationId: string; schemaPath: string }
@@ -239,8 +278,13 @@ function stringSchema(
   }
   if (schema.pattern !== undefined) {
     if (typeof schema.pattern !== 'string') unsupported(context, 'pattern must be a string')
+    const pattern = schema.pattern as string
+    if (pattern.length > MAX_PATTERN_LENGTH) unsupported(context, `pattern must be at most ${MAX_PATTERN_LENGTH} characters`)
+    if (hasNestedUnboundedQuantifier(pattern)) {
+      unsupported(context, 'pattern nests unbounded quantifiers, which risks catastrophic backtracking (ReDoS)')
+    }
     try {
-      result = result.regex(new RegExp(schema.pattern))
+      result = result.regex(new RegExp(pattern))
     } catch {
       unsupported(context, 'pattern must be a valid regular expression')
     }
@@ -407,12 +451,7 @@ export function createRuntimeReadTools(
           ...(requestBody ? { body: JSON.stringify(requestBody) } : {}),
         }
         const response = await fetchWithRetry(fetcher, url, requestInit, options, !isMutation || Boolean(idempotencyKey))
-        const contentLength = Number(response.headers.get('content-length') ?? 0)
-        if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
-        const responseBody = redactSensitiveText(await response.text(), credential)
-        if (new TextEncoder().encode(responseBody).byteLength > maxResponseBytes) {
-          throw new Error('Zebric API response exceeds the configured size limit')
-        }
+        const responseBody = redactSensitiveText(await readBodyWithLimit(response, maxResponseBytes), credential)
         if (!response.ok) {
           if (stateKey && response.status < 500 && response.status !== 429) {
             await options.mutations?.state?.delete(stateKey)
@@ -689,12 +728,7 @@ async function observeJob(
       redirect: 'error',
     }, options, true)
     const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
-    const contentLength = Number(response.headers.get('content-length') ?? 0)
-    if (contentLength > maxResponseBytes) throw new Error('Zebric API response exceeds the configured size limit')
-    const body = redactSensitiveText(await response.text(), credential)
-    if (new TextEncoder().encode(body).byteLength > maxResponseBytes) {
-      throw new Error('Zebric API response exceeds the configured size limit')
-    }
+    const body = redactSensitiveText(await readBodyWithLimit(response, maxResponseBytes), credential)
     if (!response.ok) throw parseApiError(response, body)
     const job = JSON.parse(body)
     if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return body
@@ -768,4 +802,39 @@ function retryAfterDelay(value: string | null): number | undefined {
 function redactSensitiveText(value: string, credential: string | undefined): string {
   if (!credential) return value
   return value.split(credential).join('[REDACTED]')
+}
+
+/**
+ * Read a response body as text while enforcing the byte cap incrementally, so an
+ * upstream that omits (or lies about) content-length and streams an oversized body
+ * cannot force the whole payload into memory before the size check runs.
+ */
+async function readBodyWithLimit(response: Response, maxBytes: number): Promise<string> {
+  const declaredLength = Number(response.headers.get('content-length') ?? 0)
+  if (declaredLength > maxBytes) {
+    response.body?.cancel().catch(() => undefined)
+    throw new Error('Zebric API response exceeds the configured size limit')
+  }
+  if (!response.body) return ''
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      total += value.byteLength
+      if (total > maxBytes) throw new Error('Zebric API response exceeds the configured size limit')
+      chunks.push(value)
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined)
+  }
+  const merged = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    merged.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(merged)
 }
