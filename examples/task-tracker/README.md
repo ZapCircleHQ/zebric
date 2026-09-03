@@ -1,210 +1,100 @@
 # Task Tracker Example
 
-A task management application demonstrating the Zebric Framework's **behavior-driven UI** capabilities.
+A task management app built on the Zebric **board widget** — a declarative drag-and-drop
+kanban described entirely in `blueprint.toml`, with no custom client JavaScript.
 
-## Features
+It doubles as the flagship **MCP example**: the same tasks are discoverable and
+manageable through typed agent tools.
 
-- **Kanban Board**: Custom dashboard with three columns (Urgent, In Progress, Backlog)
-- **Custom Rendering**: JavaScript behaviors for full control over UI
-- **Intent Preservation**: Natural language requirements stored alongside generated code
-- **Status Cycling**: Click task indicators to cycle through states
-- **Standard Forms**: CRUD operations using Blueprint's built-in forms
-- **Flagship MCP Example**: Discover and manage tasks through typed MCP tools
+## What this shows
 
-## Architecture
+- **Drag-and-drop** task cards between the Not Started / In Progress / Done columns —
+  each drop sets the task's `status` and its rank within the column
+- **Card toggle** — click the star to flip an `important` flag on the task
+- **Cards with context** — title links to the task, plus a description line and
+  priority / due-date chips (`card.subtitle`, `card.meta`, `card.href`)
+- **Standard forms** for creating and editing tasks
+- **Agent API** — `list_tasks`, `get_task`, `create_task`, `update_task`,
+  `set_task_status`, and `delete_task` exposed as MCP tools
 
-This example showcases the **behavior bridge** - connecting natural language intent to runtime execution:
-
-1. **Intent (English)**: Stored in `blueprint.toml` under `[page."/".behavior].intent`
-2. **Implementation (JavaScript)**: Separate files in `behaviors/` directory
-3. **Execution**: BehaviorExecutor runs JavaScript in sandboxed context
-4. **Rendering**: Returns full HTML (no framework lock-in)
-
-## Files
-
-```
-task-tracker/
-├── blueprint.toml              # Blueprint configuration
-└── behaviors/
-    ├── dashboard-render.js     # Kanban board render function
-    └── status-click.js         # Status update handler
-```
+Every interaction is a typed event (`on_move`, `on_toggle`) that the blueprint maps to a
+data update. The runtime's shared client bundle handles all the DOM wiring.
 
 ## Running
 
-From the `zebric` root directory:
-
 ```bash
-# Build the runtime
-pnpm --filter @zebric/runtime build
-
-# Run the CLI dev server
-pnpm --filter @zebric/cli dev examples/task-tracker/blueprint.toml
+# From the zebric root
+pnpm install
+pnpm --filter task-tracker dev
 ```
 
-Visit http://localhost:3000 to see the task dashboard.
+The board renders immediately with three empty columns. To populate it with a few
+sample tasks:
+
+```bash
+pnpm --filter task-tracker seed
+```
+
+Then open http://localhost:3000.
+
+## Blueprint shape
+
+The columns are fixed in the blueprint — one per `Task.status` value — so there is no
+`Column` entity and nothing to seed for them.
+
+```toml
+[page."/".widget]
+kind      = "board"
+entity    = "Task"
+group_by  = "status"
+rank_field = "position"
+
+[[page."/".widget.columns]]
+value = "not_started"
+label = "Not Started"
+# ...in_progress, done
+
+[page."/".widget.card]
+title    = "title"
+subtitle = "description"
+meta     = ["priority", "dueDate"]
+href     = "/tasks/{id}"
+toggles  = [{ field = "important", label_on = "★", label_off = "☆" }]
+
+[page."/".widget.on_move]
+update = { status = "$to.id", position = "$index", updatedAt = "$now" }
+
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field", updatedAt = "$now" }
+```
 
 ## Running the MCP server
 
-The Blueprint publishes `list_tasks`, `get_task`, `create_task`, `update_task`, `set_task_status`, and `delete_task` as agent-facing skill actions. Create and update inputs are derived automatically from the `Task` entity, while destructive deletion remains separately scoped and explicitly allowlisted. Start the application with its scoped API key:
+The Blueprint publishes `list_tasks`, `get_task`, `create_task`, `update_task`,
+`set_task_status`, and `delete_task` as agent-facing skill actions. Create and update
+inputs are derived automatically from the `Task` entity; destructive deletion is
+separately scoped and explicitly allowlisted. Start the application with its scoped API
+key:
 
 ```bash
 TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker dev
 ```
 
-Then configure an MCP client to launch the stdio adapter with the same environment variable:
+Then configure an MCP client to launch the stdio adapter with the same environment
+variable:
 
 ```bash
 TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker mcp
 ```
 
-Read tools are available automatically. Each mutation is exposed only when its exact OpenAPI operation ID is allowlisted.
+Read tools are available automatically. Each mutation is exposed only when its exact
+OpenAPI operation ID is allowlisted (see the `--allow-mutation` flags in `package.json`).
 
-## How It Works
+## Limitations of this slice
 
-### Dashboard Rendering
-
-The dashboard page specifies a custom `render` behavior:
-
-```toml
-[page."/"]
-title = "Task Dashboard"
-
-[page."/".behavior]
-intent = """
-The home screen should show all tasks past due or due today in the left column,
-all tasks in progress in the middle column, and all remaining tasks in the right column.
-...
-"""
-render = "./behaviors/dashboard-render.js"
-```
-
-The `dashboard-render.js` file exports a function:
-
-```javascript
-function render(ctx) {
-  const { data, helpers } = ctx
-
-  // Query data
-  const urgent = data.Task.where(t => ...)
-  const inProgress = data.Task.where(t => ...)
-  const backlog = data.Task.where(t => ...)
-
-  // Return full HTML
-  return `<!DOCTYPE html>...`
-}
-
-render  // Export via last statement
-```
-
-### Status Cycling
-
-Click handlers call API endpoints that trigger behavior handlers:
-
-```javascript
-// In dashboard HTML
-<button onclick="handleStatusClick('${task.id}', '${task.status}')">
-  ${getStatusIcon(task.status)}
-</button>
-
-<script>
-  async function handleStatusClick(taskId, currentStatus) {
-    await fetch(`/api/tasks/${taskId}`, {
-      method: 'PUT',
-      body: JSON.stringify({ status: nextStatus })
-    })
-    window.location.reload()
-  }
-</script>
-```
-
-## Key Concepts
-
-### Intent Preservation
-
-The original natural language requirement is stored in the Blueprint:
-
-```toml
-[page."/".behavior]
-intent = """
-The home screen should show all tasks past due or due today...
-"""
-```
-
-This allows:
-- **Regeneration**: AI can update implementation while preserving intent
-- **Documentation**: Human-readable description of page behavior
-- **Evolution**: Easy to modify intent and regenerate code
-
-### Behavior Context
-
-Behaviors receive a controlled context:
-
-```javascript
-{
-  data: {
-    Task: {
-      where: (fn) => [...],
-      orderBy: (field, order) => [...],
-      // ... query methods
-    }
-  },
-  helpers: {
-    today: () => '2025-10-10',
-    formatDate: (date) => 'Oct 10, 2025',
-    escapeHtml: (str) => '&lt;script&gt;',
-    // ... utility functions
-  },
-  params: { id: '...' },
-  session: { user: { ... } }
-}
-```
-
-### Sandboxing
-
-Behaviors run in VM sandbox (similar to limited plugins):
-- ✅ No filesystem access
-- ✅ No network access
-- ✅ No environment variables
-- ✅ 5 second timeout
-- ✅ Only provided APIs available
-
-### Hot Reload
-
-Changes to behavior files reload instantly during development:
-
-```bash
-# Edit behaviors/dashboard-render.js
-# Save file
-# Refresh browser - changes appear immediately
-```
-
-## Comparison to Standard Pages
-
-| Feature | Standard Page | Behavior-Driven Page |
-|---------|--------------|---------------------|
-| Definition | Blueprint TOML | Blueprint + JavaScript |
-| Rendering | Built-in layouts | Custom HTML |
-| Flexibility | Limited | Full control |
-| Learning Curve | Low | Medium |
-| Use Case | CRUD screens | Enhanced UX |
-
-## When to Use Behaviors
-
-**Use standard pages when:**
-- Simple CRUD operations
-- List/detail/form layouts sufficient
-- Rapid prototyping
-
-**Use behaviors when:**
-- Custom layouts (kanban, calendar, dashboard)
-- Complex interactions
-- Unique UX requirements
-- Integration with existing HTML/CSS
-
-## Next Steps
-
-1. **Add more behaviors**: Try creating a calendar view or chart
-2. **Modify intent**: Update the natural language description
-3. **Regenerate code**: Use AI to implement updated intent
-4. **Mix approaches**: Some pages standard, some custom
+- A move updates only the dragged card's `position`. Peer cards keep their positions, so
+  after many moves the sort can drift — a production board would re-rank the column on
+  drop.
+- No optimistic reconciliation: if the server rejects a move the card stays where it was
+  dropped (the error is logged to the console).
+- Single-user. Concurrent edits are last-write-wins.

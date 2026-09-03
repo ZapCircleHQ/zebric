@@ -408,13 +408,21 @@ const WidgetCardSchema = z.object({
   title: z.string().optional(),
   subtitle: z.string().optional(),
   meta: z.array(z.string()).optional(),
+  href: z.string().optional(),
   toggles: z.array(WidgetCardToggleSchema).optional(),
+})
+
+const WidgetColumnSchema = z.object({
+  value: z.string(),
+  label: z.string(),
+  description: z.string().optional(),
 })
 
 const WidgetSchema = z.object({
   kind: z.string(),
   entity: z.string(),
   group_by: z.string().optional(),
+  columns: z.array(WidgetColumnSchema).optional(),
   column_entity: z.string().optional(),
   column_label: z.string().optional(),
   column_order: z.string().optional(),

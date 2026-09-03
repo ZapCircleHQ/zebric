@@ -158,10 +158,17 @@ export interface BoardMoveConfig {
 // Widgets
 // ============================================================================
 
+export interface WidgetColumn {
+  value: string
+  label: string
+  description?: string
+}
+
 export interface Widget {
   kind: string
   entity: string
   group_by?: string
+  columns?: WidgetColumn[]
   column_entity?: string
   column_label?: string
   column_order?: string
@@ -178,6 +185,7 @@ export interface WidgetCard {
   title?: string
   subtitle?: string
   meta?: string[]
+  href?: string
   toggles?: WidgetCardToggle[]
 }
 

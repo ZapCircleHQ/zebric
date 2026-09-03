@@ -2,9 +2,10 @@
   "name": "task-tracker",
   "version": "1.0.1",
   "private": true,
-  "description": "Example task tracker built with Zebric and custom behaviors",
+  "description": "Example task tracker built with Zebric's declarative kanban board widget",
   "scripts": {
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "seed": "bash seed.sh",
     "mcp": "zebric-mcp-server --connect http://127.0.0.1:3000 --application-name task_tracker --credential-env TASK_TRACKER_API_KEY --allow-mutation task_tracker_create_task --allow-mutation task_tracker_update_task --allow-mutation task_tracker_set_task_status --allow-mutation task_tracker_delete_task",
     "build": "echo 'No build step needed - runtime engine'",
     "deploy": "zebric deploy --provider=railway"

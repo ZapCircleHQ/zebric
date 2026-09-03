@@ -23,9 +23,9 @@ export const stories: StoryDefinition[] = [
   },
   {
     id: 'task-tracker-kanban',
-    title: 'Internal teams manage tasks via custom kanban board',
+    title: 'Internal teams manage tasks via a drag-and-drop kanban board',
     blueprintPath: 'examples/task-tracker/blueprint.toml',
-    description: 'Ensures the dashboard behavior, status transitions, and form success paths for the kanban experience remain intact.',
+    description: 'Ensures the board widget wiring, status/rank move events, and form success paths for the kanban experience remain intact.',
     tests: ['src/stories/task-tracker.story.test.ts']
   },
   {

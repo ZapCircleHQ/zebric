@@ -3,12 +3,15 @@ version = "0.1.0"
 [project]
 name = "Task Tracker"
 version = "1.0.0"
-description = "A task management application with custom kanban board"
+description = "A task management application with a drag-and-drop kanban board"
 
 [project.runtime]
 min_version = "0.1.0"
 
-# Task entity
+# ==========================================
+# Entities
+# ==========================================
+
 [entity.Task]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
@@ -17,37 +20,65 @@ fields = [
   { name = "status", type = "Enum", values = ["not_started", "in_progress", "done"], default = "not_started" },
   { name = "priority", type = "Enum", values = ["low", "normal", "high"], default = "normal" },
   { name = "dueDate", type = "Date" },
-  { name = "createdAt", type = "DateTime" },
-  { name = "updatedAt", type = "DateTime" }
+  { name = "important", type = "Boolean", default = false },
+  { name = "position", type = "Integer", default = 0 },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
 ]
 
-# Dashboard with custom behavior
-[page."/dashboard"]
-title = "Task Dashboard"
+# ==========================================
+# Kanban board — the widget
+# ==========================================
+
+[page."/"]
+title = "Task Board"
 auth = "optional"
-layout = "custom"
 
-[page."/dashboard".query.tasks]
+[page."/".query.tasks]
 entity = "Task"
+orderBy = { position = "asc" }
 
-[page."/dashboard".behavior]
-# Original user intent - preserved for AI regeneration
-intent = """
-The home screen should show all tasks past due or due today in the left column,
-all tasks in progress in the middle column, and all remaining tasks in the right column.
+[page."/".widget]
+kind = "board"
+entity = "Task"
+group_by = "status"
+rank_field = "position"
 
-The past due tasks should be italicized, and in dark blue, while in progress tasks
-should be in bold and medium blue. Tasks that haven't been started should be in light blue.
+# Fixed columns — one per Task.status value. The card's status is set to the
+# target column's `value` on drop (on_move: status = "$to.id").
+[[page."/".widget.columns]]
+value = "not_started"
+label = "Not Started"
 
-To the left of every task name is a status indicator I can click to go from not started
-to in progress to done, and it cycles through.
-"""
+[[page."/".widget.columns]]
+value = "in_progress"
+label = "In Progress"
 
-# Generated JavaScript behavior
-render = "./behaviors/dashboard-render.js"
-on_status_click = "./behaviors/status-click.js"
+[[page."/".widget.columns]]
+value = "done"
+label = "Done"
 
-# Standard form for creating tasks
+[page."/".widget.card]
+title = "title"
+subtitle = "description"
+meta = ["priority", "dueDate"]
+href = "/tasks/{id}"
+toggles = [
+  { field = "important", label_on = "★", label_off = "☆" }
+]
+
+# Drag a card to another column → set its status and rank.
+[page."/".widget.on_move]
+update = { status = "$to.id", position = "$index", updatedAt = "$now" }
+
+# Click the star → flip the `important` flag on the task.
+[page."/".widget.on_toggle]
+update = { "$field" = "!$row.$field", updatedAt = "$now" }
+
+# ==========================================
+# Supporting forms
+# ==========================================
+
 [page."/tasks/new"]
 title = "New Task"
 auth = "optional"
@@ -84,17 +115,68 @@ type = "date"
 redirect = "/"
 message = "Task created successfully"
 
-# Standard detail page for editing
 [page."/tasks/:id"]
-title = "Edit Task"
+title = "Task"
 auth = "optional"
 layout = "detail"
 
-[page."/tasks/:id".queries.task]
+[page."/tasks/:id".query.task]
 entity = "Task"
 where = { id = "$params.id" }
 
+[page."/tasks/:id/edit"]
+title = "Edit Task"
+auth = "optional"
+layout = "form"
+
+[page."/tasks/:id/edit".query.task]
+entity = "Task"
+where = { id = "$params.id" }
+
+[page."/tasks/:id/edit".form]
+entity = "Task"
+method = "update"
+
+[[page."/tasks/:id/edit".form.fields]]
+name = "title"
+type = "text"
+required = true
+
+[[page."/tasks/:id/edit".form.fields]]
+name = "description"
+type = "textarea"
+rows = 4
+
+[[page."/tasks/:id/edit".form.fields]]
+name = "status"
+type = "select"
+options = [
+  { value = "not_started", label = "Not Started" },
+  { value = "in_progress", label = "In Progress" },
+  { value = "done", label = "Done" }
+]
+
+[[page."/tasks/:id/edit".form.fields]]
+name = "priority"
+type = "select"
+options = [
+  { value = "low", label = "Low" },
+  { value = "normal", label = "Normal" },
+  { value = "high", label = "High" }
+]
+
+[[page."/tasks/:id/edit".form.fields]]
+name = "dueDate"
+type = "date"
+
+[page."/tasks/:id/edit".form.onSuccess]
+redirect = "/"
+message = "Task updated"
+
+# ==========================================
 # Agent API — flagship MCP example
+# ==========================================
+
 [skill.task_tracker]
 description = "Inspect and manage tasks in the Task Tracker application."
 
