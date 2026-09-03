@@ -6,10 +6,10 @@
  */
 
 import { eq, and, or, gt, gte, lt, lte, like, ilike, asc, desc, sql, SQL } from 'drizzle-orm'
-import type { Query } from '@zebric/runtime-core'
+import type { Query, Entity } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
 import type { UserSession, PermissionManager } from '@zebric/runtime-core'
-import { AccessControl } from '@zebric/runtime-core'
+import { AccessControl, isSystemSession } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -332,6 +332,23 @@ export class QueryExecutor {
   }
 
   /**
+   * Drop any fields the caller is not permitted to write, per the blueprint's
+   * field-level `access.write` rules. Trusted system / workflow sessions bypass
+   * this the same way they bypass entity-level access checks - background workflow
+   * logic is authored by the blueprint, not supplied by an end user or agent.
+   */
+  private applyWriteFieldAccess(
+    entity: Entity | undefined,
+    data: Record<string, any>,
+    session?: UserSession | null
+  ): Record<string, any> {
+    if (!entity || isSystemSession(session)) {
+      return data
+    }
+    return AccessControl.filterFields(entity, 'write', data, session)
+  }
+
+  /**
    * Create a new record
    */
   async create(entityName: string, data: Record<string, any>, context?: QueryContext): Promise<any> {
@@ -343,6 +360,9 @@ export class QueryExecutor {
     if (!table) {
       throw new Error(`Entity ${entityName} not found`)
     }
+
+    // Strip fields the caller cannot write before any access or default handling.
+    data = this.applyWriteFieldAccess(entity, data, context?.session)
 
     // Check create access
     if (entity) {
@@ -442,6 +462,9 @@ export class QueryExecutor {
       throw new Error(`${entityName} with id ${id} not found`)
     }
 
+    // Strip fields the caller cannot write before merge / access / default handling.
+    data = this.applyWriteFieldAccess(entity, data, context?.session)
+
     // Check update access with merged data (existing + new)
     // This allows access control rules to reference existing fields like authorId
     if (entity) {
@@ -457,6 +480,11 @@ export class QueryExecutor {
       if (!hasAccess) {
         throw new Error(`Access denied: Cannot update ${entityName}`)
       }
+    }
+
+    // Every supplied field was stripped as unwritable - nothing to persist.
+    if (Object.keys(data).length === 0) {
+      return existingRecord
     }
 
     // Update timestamp

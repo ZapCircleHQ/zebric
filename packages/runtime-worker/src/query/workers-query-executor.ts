@@ -5,8 +5,9 @@
  * Translates Blueprint Query definitions into SQL and executes them via D1Adapter.
  */
 
-import type { Query, Entity, Blueprint } from '@zebric/runtime-core'
+import type { Query, Entity, Blueprint, UserSession } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext } from '@zebric/runtime-core'
+import { AccessControl, isSystemSession } from '@zebric/runtime-core'
 import type { D1Adapter } from '../database/d1-adapter.js'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
@@ -42,8 +43,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entity}`)
     }
 
+    // Drop fields the caller may not write, then check entity-level create access.
+    const writable = this.applyWriteFieldAccess(entityDef, data, context.session)
+    await this.assertAccess(entityDef, 'create', writable, context.session)
+
     // Filter data to only include defined fields
-    const filteredData = this.filterFields(entityDef, data)
+    const filteredData = this.filterFields(entityDef, writable)
 
     // Build INSERT query
     const fields = Object.keys(filteredData)
@@ -75,8 +80,25 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entity}`)
     }
 
+    const existing = await this.findById(entity, id)
+
+    // Drop fields the caller may not write, then check update access against the
+    // merged record so ownership rules can reference existing values.
+    const writable = this.applyWriteFieldAccess(entityDef, data, context.session)
+    await this.assertAccess(
+      entityDef,
+      'update',
+      existing ? { ...existing, ...writable } : writable,
+      context.session
+    )
+
     // Filter data to only include defined fields
-    const filteredData = this.filterFields(entityDef, data)
+    const filteredData = this.filterFields(entityDef, writable)
+
+    // Every supplied field was stripped as unwritable - nothing to persist.
+    if (Object.keys(filteredData).length === 0) {
+      return existing ?? { id }
+    }
 
     // Build UPDATE query
     const fields = Object.keys(filteredData)
@@ -91,7 +113,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
-    return result.rows[0] || { id, ...filteredData }
+    return result.rows[0] || { ...(existing ?? {}), ...filteredData, id }
   }
 
   /**
@@ -101,6 +123,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
+    }
+
+    // Missing row: nothing to authorize against, DELETE is a harmless no-op.
+    const existing = await this.findById(entity, id)
+    if (existing) {
+      await this.assertAccess(entityDef, 'delete', existing, context.session)
     }
 
     const sql = `
@@ -180,6 +208,39 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   private getEntity(name: string): Entity | undefined {
     return this.blueprint.entities?.find((e: Entity) => e.name === name)
+  }
+
+  /**
+   * Throw unless the session may perform `action` on the entity. Mirrors the
+   * Node executor: entity-level `access` rules plus RBAC when a permission
+   * manager is available (the Workers executor has none today).
+   */
+  private async assertAccess(
+    entity: Entity,
+    action: 'create' | 'update' | 'delete',
+    data: Record<string, any>,
+    session?: UserSession | null
+  ): Promise<void> {
+    const allowed = await AccessControl.checkAccess({ session, action, entity, data })
+    if (!allowed) {
+      throw new Error(`Access denied: Cannot ${action} ${entity.name}`)
+    }
+  }
+
+  /**
+   * Drop fields the caller is not permitted to write, per blueprint field-level
+   * `access.write` rules. Trusted system / workflow sessions bypass this, the
+   * same way they bypass entity-level access checks.
+   */
+  private applyWriteFieldAccess(
+    entity: Entity,
+    data: Record<string, any>,
+    session?: UserSession | null
+  ): Record<string, any> {
+    if (isSystemSession(session)) {
+      return data
+    }
+    return AccessControl.filterFields(entity, 'write', data, session)
   }
 
   private filterFields(entity: Entity, data: Record<string, any>): Record<string, any> {
