@@ -53,6 +53,9 @@ label = "Not Started"
 [[page."/".widget.columns]]
 value = "in_progress"
 label = "In Progress"
+# Work-in-progress cap: the board flags this column once it holds more than
+# this many cards (a warning, not a hard block on the drop).
+wip_limit = 3
 
 [[page."/".widget.columns]]
 value = "done"
