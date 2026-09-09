@@ -98,6 +98,46 @@ describe('generateOpenAPISpec', () => {
       expect(createSchema.properties.title).toBeDefined()
     })
 
+    it('omits write-protected fields from Create and Update but keeps them readable', () => {
+      const bp = minimalBlueprint({
+        entities: [{
+          name: 'Account',
+          fields: [
+            { name: 'accountId', type: 'ULID', primary_key: true },
+            { name: 'name', type: 'Text', required: true },
+            { name: 'ownerId', type: 'Ref', ref: 'User.id', required: true, access: { write: false } },
+            { name: 'plan', type: 'Enum', values: ['free', 'pro'], access: { write: false } },
+            { name: 'nickname', type: 'Text' },
+          ],
+        }],
+      })
+      const spec = generateOpenAPISpec(bp)
+
+      for (const schemaName of ['AccountCreate', 'AccountUpdate'] as const) {
+        const schema = spec.components.schemas[schemaName]
+        expect(schema.properties.accountId).toBeUndefined()
+        expect(schema.properties.ownerId).toBeUndefined()
+        expect(schema.properties.plan).toBeUndefined()
+        expect(schema.properties.nickname).toBeDefined()
+        expect(schema.required ?? []).not.toContain('ownerId')
+      }
+      expect(spec.components.schemas.AccountCreate.required).toEqual(['name'])
+      // The read model still exposes protected fields.
+      expect(spec.components.schemas.Account.properties.ownerId).toBeDefined()
+      expect(spec.components.schemas.Account.properties.plan).toBeDefined()
+    })
+
+    it('generates Update schemas with every mutable field optional', () => {
+      const spec = generateOpenAPISpec(minimalBlueprint())
+      const updateSchema = spec.components.schemas.IssueUpdate
+
+      expect(updateSchema.properties.id).toBeUndefined()
+      expect(updateSchema.properties.createdAt).toBeUndefined()
+      expect(updateSchema.properties.updatedAt).toBeUndefined()
+      expect(updateSchema.properties.title).toBeDefined()
+      expect(updateSchema.required).toBeUndefined()
+    })
+
     it('maps field types correctly', () => {
       const spec = generateOpenAPISpec(minimalBlueprint())
       const props = spec.components.schemas.Issue.properties
@@ -364,6 +404,24 @@ describe('generateOpenAPISpec', () => {
       expect(op.requestBody.content['application/json'].schema).toEqual({
         $ref: '#/components/schemas/IssueCreate',
       })
+    })
+
+    it('uses an all-optional entity Update schema for update actions without an explicit body', () => {
+      const bp = minimalBlueprint({
+        skills: [{
+          name: 'dispatch',
+          actions: [{
+            name: 'update_issue', method: 'PUT', path: '/api/issues/{id}',
+            entity: 'Issue', action: 'update',
+          }],
+        }],
+      })
+      const spec = generateOpenAPISpec(bp)
+
+      expect(spec.paths['/api/issues/{id}'].put.requestBody.content['application/json'].schema).toEqual({
+        $ref: '#/components/schemas/IssueUpdate',
+      })
+      expect(spec.components.schemas.IssueUpdate.required).toBeUndefined()
     })
 
     it('returns 201 for create actions', () => {

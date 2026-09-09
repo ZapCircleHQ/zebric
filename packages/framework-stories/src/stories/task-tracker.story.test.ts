@@ -19,11 +19,24 @@ describe('Story: task-tracker-kanban', () => {
     expect(statusField?.values).toEqual(['not_started', 'in_progress', 'done'])
   })
 
-  it('includes a dashboard page with custom behaviors for rendering and status clicks', () => {
-    const dashboard = blueprint.pages.find((page) => page.path === '/dashboard')
-    expect(dashboard?.layout).toBe('custom')
-    expect(dashboard?.behavior?.render).toBe('./behaviors/dashboard-render.js')
-    expect(dashboard?.behavior?.on_status_click).toBe('./behaviors/status-click.js')
+  it('renders the home page as a board widget grouped by status', () => {
+    const home = blueprint.pages.find((page) => page.path === '/')
+    expect(home?.widget?.kind).toBe('board')
+    expect(home?.widget?.entity).toBe('Task')
+    expect(home?.widget?.group_by).toBe('status')
+    expect(home?.widget?.columns?.map((column) => column.value)).toEqual([
+      'not_started',
+      'in_progress',
+      'done',
+    ])
+  })
+
+  it('maps a card move to a status + rank update', () => {
+    const home = blueprint.pages.find((page) => page.path === '/')
+    expect(home?.widget?.on_move?.update).toMatchObject({
+      status: '$to.id',
+      position: '$index',
+    })
   })
 
   it('provides a task creation form that redirects home with a success message', () => {

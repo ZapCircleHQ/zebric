@@ -56,7 +56,12 @@ describe('Task Tracker flagship MCP example', () => {
       applicationUrl,
       applicationName: 'task_tracker',
       credential: () => apiKey,
-      allowedMutations: ['task_tracker_create_task', 'task_tracker_set_task_status'],
+      allowedMutations: [
+        'task_tracker_create_task',
+        'task_tracker_update_task',
+        'task_tracker_set_task_status',
+        'task_tracker_delete_task',
+      ],
     })
     const client = new Client({ name: 'task-tracker-e2e', version: '1.0.0' })
     const channelEvents: Array<z.infer<typeof ClaudeChannelNotificationSchema>['params']> = []
@@ -71,17 +76,33 @@ describe('Task Tracker flagship MCP example', () => {
       const listedTools = await client.listTools()
       expect(listedTools.tools.map(tool => tool.name).sort()).toEqual([
         'task_tracker_task_tracker_create_task',
+        'task_tracker_task_tracker_delete_task',
         'task_tracker_task_tracker_get_task',
         'task_tracker_task_tracker_list_tasks',
         'task_tracker_task_tracker_set_task_status',
+        'task_tracker_task_tracker_update_task',
       ])
+
+      const createTool = listedTools.tools.find(tool => tool.name === 'task_tracker_task_tracker_create_task')!
+      expect(createTool.inputSchema).toEqual(expect.objectContaining({
+        required: ['title'],
+        properties: expect.objectContaining({
+          title: expect.any(Object), description: expect.any(Object), status: expect.any(Object),
+          priority: expect.any(Object), dueDate: expect.any(Object),
+        }),
+      }))
 
       const created = parseToolJson(await client.callTool({
         name: 'task_tracker_task_tracker_create_task',
-        arguments: { title: 'Ship the flagship MCP example' },
+        arguments: {
+          title: 'Ship the flagship MCP example',
+          description: 'Exercise the complete declared task lifecycle.',
+          priority: 'high',
+          dueDate: '2026-09-30',
+        },
       })) as { id: string; title: string; status: string; priority: string }
       expect(created).toEqual(expect.objectContaining({
-        title: 'Ship the flagship MCP example', status: 'not_started', priority: 'normal',
+        title: 'Ship the flagship MCP example', status: 'not_started', priority: 'high',
       }))
       await waitFor(() => channelEvents.some(event => event.meta?.event_type === 'entity.create'))
       expect(client.getServerCapabilities()?.experimental).toHaveProperty('claude/channel')
@@ -97,11 +118,28 @@ describe('Task Tracker flagship MCP example', () => {
       })) as { id: string; title: string }
       expect(fetched).toEqual(expect.objectContaining({ id: created.id, title: created.title }))
 
+      const detailsUpdated = parseToolJson(await client.callTool({
+        name: 'task_tracker_task_tracker_update_task',
+        arguments: { id: created.id, title: 'Ship the polished MCP example', priority: 'normal' },
+      })) as { id: string; title: string; priority: string }
+      expect(detailsUpdated).toEqual(expect.objectContaining({
+        id: created.id, title: 'Ship the polished MCP example', priority: 'normal',
+      }))
+
       const updated = parseToolJson(await client.callTool({
         name: 'task_tracker_task_tracker_set_task_status',
         arguments: { id: created.id, status: 'in_progress' },
       })) as { id: string; status: string }
       expect(updated).toEqual(expect.objectContaining({ id: created.id, status: 'in_progress' }))
+
+      const deleted = parseToolJson(await client.callTool({
+        name: 'task_tracker_task_tracker_delete_task', arguments: { id: created.id },
+      }))
+      expect(deleted).toEqual({ success: true })
+      const missing = await client.callTool({
+        name: 'task_tracker_task_tracker_get_task', arguments: { id: created.id },
+      })
+      expect(missing.isError).toBe(true)
 
       const uiEventCount = channelEvents.length
       const pageResponse = await fetch(`${applicationUrl}/tasks/new`)

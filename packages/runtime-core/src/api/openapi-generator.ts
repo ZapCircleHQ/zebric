@@ -74,13 +74,29 @@ function entityToSchema(entity: Entity): Record<string, any> {
   return schema
 }
 
+// Fields the runtime always manages itself; a client may never supply them.
+const AUTO_MANAGED_FIELDS = new Set(['id', 'createdAt', 'updatedAt'])
+
+/**
+ * A field is protected from client writes when it is the primary key, a runtime-managed
+ * timestamp, or the blueprint explicitly denies write access (`access = { write = false }`).
+ * Protected fields are omitted from the generated Create and Update request bodies so an
+ * agent is never invited to set them and cannot smuggle them past schema validation.
+ */
+function isWriteProtectedField(field: Field): boolean {
+  return (
+    field.primary_key === true ||
+    AUTO_MANAGED_FIELDS.has(field.name) ||
+    field.access?.write === false
+  )
+}
+
 function entityToCreateSchema(entity: Entity): Record<string, any> {
-  const autoFields = new Set(['id', 'createdAt', 'updatedAt'])
   const properties: Record<string, any> = {}
   const required: string[] = []
 
   for (const field of entity.fields) {
-    if (autoFields.has(field.name)) continue
+    if (isWriteProtectedField(field)) continue
 
     properties[field.name] = fieldToJsonSchema(field)
 
@@ -99,6 +115,15 @@ function entityToCreateSchema(entity: Entity): Record<string, any> {
   }
 
   return schema
+}
+
+function entityToUpdateSchema(entity: Entity): Record<string, any> {
+  // Same writable field set as Create, but every field optional (partial update).
+  const createSchema = entityToCreateSchema(entity)
+  return {
+    type: 'object',
+    properties: createSchema.properties,
+  }
 }
 
 function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): Record<string, any> | undefined {
@@ -153,7 +178,7 @@ function buildRequestBody(action: SkillAction, entityMap: Map<string, Entity>): 
       required: true,
       content: {
         'application/json': {
-          schema: { $ref: `#/components/schemas/${action.entity}Create` },
+          schema: { $ref: `#/components/schemas/${action.entity}Update` },
         },
       },
     }
@@ -416,6 +441,7 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
   for (const entity of blueprint.entities) {
     schemas[entity.name] = entityToSchema(entity)
     schemas[`${entity.name}Create`] = entityToCreateSchema(entity)
+    schemas[`${entity.name}Update`] = entityToUpdateSchema(entity)
   }
 
   // Build paths from skills

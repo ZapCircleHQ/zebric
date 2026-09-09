@@ -8,7 +8,7 @@ import {
   InMemoryMutationExecutionStateStore,
   type RuntimeToolFactoryOptions,
 } from '@zebric/agent'
-import type { z } from 'zod'
+import { z } from 'zod'
 
 export interface CreateZebricMcpServerOptions {
   applicationUrl: string
@@ -16,15 +16,26 @@ export interface CreateZebricMcpServerOptions {
   credential?: () => string | undefined | Promise<string | undefined>
   allowedMutations?: Iterable<string>
   fetch?: typeof globalThis.fetch
+  /** Timeout for discovery requests and for establishing the event-stream connection. Defaults to 15s. */
+  timeoutMs?: number
 }
 
-interface ZebricAgentEvent {
-  id: string
-  type: string
-  occurredAt: string
-  subject?: string
-  data: Record<string, unknown>
-}
+type EventStreamOptions = Pick<CreateZebricMcpServerOptions, 'credential' | 'fetch' | 'timeoutMs'>
+
+/** Abort a stalled event-stream connection instead of blocking server startup forever. */
+const EVENT_STREAM_CONNECT_TIMEOUT_MS = 15_000
+/** Cap on unparsed bytes buffered between SSE record boundaries, to bound memory use. */
+const MAX_EVENT_STREAM_BUFFER_BYTES = 262_144
+
+const ZebricAgentEventSchema = z.object({
+  id: z.string().max(200),
+  type: z.string().max(200),
+  occurredAt: z.string().max(64),
+  subject: z.string().max(1_024).optional(),
+  data: z.record(z.string(), z.unknown()),
+})
+
+type ZebricAgentEvent = z.infer<typeof ZebricAgentEventSchema>
 
 export class ZebricMcpServer extends McpServer {
   private eventStreamAbort?: AbortController
@@ -50,7 +61,7 @@ export class ZebricMcpServer extends McpServer {
 
   private async consumeEventStream(
     url: string,
-    options: Pick<CreateZebricMcpServerOptions, 'credential' | 'fetch'>,
+    options: EventStreamOptions,
     signal: AbortSignal,
     onConnected: () => void,
     onInitialError: (error: unknown) => void,
@@ -60,13 +71,7 @@ export class ZebricMcpServer extends McpServer {
     while (!signal.aborted) {
       try {
         const credential = await options.credential?.()
-        const response = await fetcher(url, {
-          headers: {
-            accept: 'text/event-stream',
-            ...(credential ? { authorization: `Bearer ${credential}` } : {}),
-          },
-          signal,
-        })
+        const response = await connectEventStream(fetcher, url, credential, signal, options.timeoutMs ?? EVENT_STREAM_CONNECT_TIMEOUT_MS)
         if (!response.ok || !response.body) throw new Error(`Zebric event stream failed with HTTP ${response.status}`)
         hasConnected = true
         onConnected()
@@ -100,7 +105,10 @@ export class ZebricMcpServer extends McpServer {
 }
 
 export async function createZebricMcpServer(options: CreateZebricMcpServerOptions): Promise<ZebricMcpServer> {
-  const contract = await discoverZebricApplication(options.applicationUrl, { fetch: options.fetch })
+  const contract = await discoverZebricApplication(options.applicationUrl, {
+    fetch: options.fetch,
+    ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+  })
   const allowedMutations = new Set(options.allowedMutations ?? [])
   const applicationName = options.applicationName ?? 'zebric'
   const toolOptions: RuntimeToolFactoryOptions = {
@@ -157,6 +165,38 @@ export async function createZebricMcpServer(options: CreateZebricMcpServerOption
   return server
 }
 
+async function connectEventStream(
+  fetcher: typeof globalThis.fetch,
+  url: string,
+  credential: string | undefined,
+  signal: AbortSignal,
+  connectTimeoutMs: number,
+): Promise<Response> {
+  const expectedOrigin = new URL(url).origin
+  const connectAbort = new AbortController()
+  const timeout = setTimeout(
+    () => connectAbort.abort(new Error('Zebric event stream connection timed out')),
+    connectTimeoutMs,
+  )
+  try {
+    const response = await fetcher(url, {
+      headers: {
+        accept: 'text/event-stream',
+        ...(credential ? { authorization: `Bearer ${credential}` } : {}),
+      },
+      redirect: 'error',
+      signal: AbortSignal.any([signal, connectAbort.signal]),
+    })
+    if (new URL(response.url || url).origin !== expectedOrigin) {
+      await response.body?.cancel().catch(() => undefined)
+      throw new Error('Zebric event stream redirected off the application origin')
+    }
+    return response
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 async function readServerSentEvents(
   body: ReadableStream<Uint8Array>,
   onEvent: (event: ZebricAgentEvent) => Promise<void>,
@@ -175,13 +215,33 @@ async function readServerSentEvents(
         const block = buffer.slice(0, boundary)
         buffer = buffer.slice(boundary + 2)
         const data = block.split('\n').filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
-        if (data) await onEvent(JSON.parse(data) as ZebricAgentEvent)
+        if (data) {
+          const event = parseAgentEvent(data)
+          if (event) await onEvent(event)
+        }
         boundary = buffer.indexOf('\n\n')
+      }
+      if (Buffer.byteLength(buffer) > MAX_EVENT_STREAM_BUFFER_BYTES) {
+        throw new Error('Zebric event stream sent an oversized record without a boundary')
       }
     }
   } finally {
     await reader.cancel().catch(() => undefined)
   }
+}
+
+function parseAgentEvent(data: string): ZebricAgentEvent | undefined {
+  let raw: unknown
+  try {
+    raw = JSON.parse(data)
+  } catch {
+    console.error('Discarding Zebric agent event with malformed JSON')
+    return undefined
+  }
+  const parsed = ZebricAgentEventSchema.safeParse(raw)
+  if (parsed.success) return parsed.data
+  console.error(`Discarding malformed Zebric agent event: ${parsed.error.message}`)
+  return undefined
 }
 
 async function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {

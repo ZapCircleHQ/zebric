@@ -119,6 +119,40 @@ describe('createRuntimeReadTools', () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 
+  it.each([
+    ['(a+)+$', 'nests unbounded quantifiers'],
+    ['(.*,)*x', 'nests unbounded quantifiers'],
+    ['(a{1,})+', 'nests unbounded quantifiers'],
+    [`^(${'a'.repeat(1_100)})$`, 'at most 1000 characters'],
+  ])('rejects catastrophic-backtracking string patterns from the contract (%s)', (pattern, reason) => {
+    const unsupportedContract = structuredClone(contract)
+    unsupportedContract.openapi.paths['/api/unsupported'] = {
+      get: { operationId: 'patterned', parameters: [{ name: 'value', in: 'query', schema: { type: 'string', pattern } }] },
+    }
+    const failure = captureFailure(() => createRuntimeReadTools(unsupportedContract, { applicationName: 'local' }))
+    expect(failure.message).toContain(reason)
+  })
+
+  it('accepts a bounded string pattern and enforces it on tool input', async () => {
+    const patternedContract = structuredClone(contract)
+    patternedContract.openapi.paths['/api/agent/tokens/{token}'] = {
+      get: {
+        operationId: 'get_token',
+        parameters: [{
+          name: 'token', in: 'path', required: true,
+          schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' },
+        }],
+      },
+    }
+    const fetcher = vi.fn(async () => Response.json({ ok: true })) as typeof fetch
+    const tokenTool = createRuntimeReadTools(patternedContract, { applicationName: 'local', fetch: fetcher })
+      .find(item => item.name === 'local_get_token')!
+
+    await expect(tokenTool.invoke({ token: 'not a valid token!' })).rejects.toThrow()
+    await tokenTool.invoke({ token: 'valid.token-1' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects sanitized tool-name collisions', () => {
     const colliding = structuredClone(contract)
     colliding.openapi.paths['/api/collision'] = {
@@ -154,25 +188,46 @@ describe('createRuntimeReadTools', () => {
     expect(failure.message).toContain(reason)
   })
 
-  it('rejects referenced request bodies rather than dropping their fields', () => {
-    const unsupportedContract = structuredClone(contract)
-    unsupportedContract.openapi.paths['/api/unsupported'] = {
+  it('resolves local component request-body schemas without weakening their fields', async () => {
+    const referencedContract = structuredClone(contract)
+    referencedContract.openapi.components = { schemas: {
+      Mutation: {
+        type: 'object',
+        properties: { title: { type: 'string' }, priority: { type: 'string', enum: ['low', 'high'] } },
+        required: ['title'],
+      },
+    } }
+    referencedContract.openapi.paths['/api/referenced'] = {
       post: {
         operationId: 'referenced_body',
-        requestBody: { content: { 'application/json': { schema: {
-          $ref: '#/components/schemas/Mutation',
-        } } } },
+        requestBody: { content: { 'application/json': { schema: { $ref: '#/components/schemas/Mutation' } } } },
       },
     }
-
-    const failure = captureFailure(() => createRuntimeReadTools(unsupportedContract, {
-      applicationName: 'local', mutations: { approve: () => true },
-    }))
-    expect(failure).toMatchObject({
-      operationId: 'referenced_body',
-      schemaPath: 'paths./api/unsupported.post.requestBody.content.application/json.schema',
+    const fetcher = vi.fn(async () => Response.json({ id: 'created' })) as typeof fetch
+    const tools = createRuntimeReadTools(referencedContract, {
+      applicationName: 'local', fetch: fetcher, mutations: { approve: () => true },
     })
-    expect(failure.message).toContain('keyword "$ref"')
+    const referenced = tools.find(item => item.name === 'local_referenced_body')!
+
+    await expect(referenced.invoke({ priority: 'low' })).rejects.toThrow()
+    await referenced.invoke({ title: 'Example', priority: 'high' })
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({ title: 'Example', priority: 'high' })
+  })
+
+  it('rejects remote and unresolved request-body schema references', () => {
+    for (const reference of ['https://example.test/schema.json', '#/components/schemas/Missing']) {
+      const unsupportedContract = structuredClone(contract)
+      unsupportedContract.openapi.paths['/api/unsupported'] = {
+        post: {
+          operationId: 'referenced_body',
+          requestBody: { content: { 'application/json': { schema: { $ref: reference } } } },
+        },
+      }
+      expect(() => createRuntimeReadTools(unsupportedContract, {
+        applicationName: 'local', mutations: { approve: () => true },
+      })).toThrow(reference.startsWith('https:') ? 'only local component' : 'was not found')
+    }
   })
 
   it('rejects parameter serialization and path-level parameter features it cannot preserve', () => {
@@ -416,6 +471,19 @@ describe('createRuntimeReadTools', () => {
 
     await expect(claim.invoke({ id: 'issue-1', runId: 'run-1' }))
       .rejects.toThrow('exceeds the configured size limit')
+  })
+
+  it('enforces the response-size limit when the body is streamed without a content-length', async () => {
+    const fetcher = vi.fn(() => Promise.resolve(new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64_000))
+      },
+    })))) as unknown as typeof fetch
+    const tools = createRuntimeReadTools(contract, {
+      applicationName: 'local', fetch: fetcher, maxResponseBytes: 200_000,
+    })
+
+    await expect(tools[0]!.invoke({})).rejects.toThrow('exceeds the configured size limit')
   })
 
   it('resumes a checkpointed job without resubmitting its mutation', async () => {

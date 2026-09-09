@@ -1,9 +1,11 @@
 /**
  * Board (Kanban) widget renderer.
  *
- * Reads a row entity and a column entity from the page's queries, groups rows
- * by the foreign-key field, and emits HTML with data attributes the client
- * runtime hooks for drag-and-drop, inline column rename, and card toggles.
+ * Groups a row entity into columns and emits HTML with data attributes the
+ * client runtime hooks for drag-and-drop, inline column rename, and card
+ * toggles. Columns come from either an inline `columns` list (fixed values,
+ * e.g. a status enum) or a `column_entity` whose rows are read from the page's
+ * queries.
  */
 
 import type { Widget, WidgetCardToggle, Page } from '../types/blueprint.js'
@@ -13,13 +15,22 @@ import { safe, escapeHtml, escapeHtmlAttr } from '../security/html-escape.js'
 export function renderBoardWidget(ctx: WidgetRenderContext) {
   const { page, widget, data } = ctx
 
-  const columns = findByEntity(data, page, widget.column_entity)
   const items = findByEntity(data, page, widget.entity)
 
   const columnOrder = widget.column_order || 'position'
-  const sortedColumns = [...columns].sort(
-    (a, b) => (a?.[columnOrder] ?? 0) - (b?.[columnOrder] ?? 0)
-  )
+  const labelField = widget.column_label || 'name'
+
+  // Inline columns (fixed values) take precedence over a column entity.
+  const sortedColumns = widget.columns?.length
+    ? widget.columns.map((col, index) => ({
+        id: col.value,
+        [labelField]: col.label,
+        [columnOrder]: index,
+        description: col.description,
+      }))
+    : [...findByEntity(data, page, widget.column_entity)].sort(
+        (a, b) => (a?.[columnOrder] ?? 0) - (b?.[columnOrder] ?? 0)
+      )
 
   const groupBy = widget.group_by || 'columnId'
   const rankField = widget.rank_field || 'position'
@@ -36,10 +47,6 @@ export function renderBoardWidget(ctx: WidgetRenderContext) {
     bucket.sort((a, b) => (a?.[rankField] ?? 0) - (b?.[rankField] ?? 0))
   }
 
-  const labelField = widget.column_label || 'name'
-  const titleField = widget.card?.title || 'title'
-  const toggles = widget.card?.toggles || []
-
   const config = {
     pagePath: page.path,
     entity: widget.entity,
@@ -52,7 +59,7 @@ export function renderBoardWidget(ctx: WidgetRenderContext) {
   }
 
   const columnsHtml = sortedColumns
-    .map((col) => renderColumn(col, labelField, byColumn.get(col.id) || [], titleField, toggles, widget))
+    .map((col) => renderColumn(col, labelField, byColumn.get(col.id) || [], widget))
     .join('')
 
   return safe(`
@@ -72,12 +79,10 @@ function renderColumn(
   col: any,
   labelField: string,
   cards: any[],
-  titleField: string,
-  toggles: WidgetCardToggle[],
   widget: Widget
 ): string {
   const editable = Boolean(widget.on_column_rename)
-  const cardsHtml = cards.map((c) => renderCard(c, titleField, toggles, widget)).join('')
+  const cardsHtml = cards.map((c) => renderCard(c, widget)).join('')
   return `
     <section class="widget-board-column" data-column-id="${escapeHtmlAttr(col.id)}">
       <header class="widget-board-column-header">
@@ -93,24 +98,62 @@ function renderColumn(
   `
 }
 
-function renderCard(
-  item: any,
-  titleField: string,
-  toggles: WidgetCardToggle[],
-  widget: Widget
-): string {
+function renderCard(item: any, widget: Widget): string {
+  const card = widget.card
+  const titleField = card?.title || 'title'
   const draggable = Boolean(widget.on_move)
-  const togglesHtml = toggles
+  const togglesHtml = (card?.toggles || [])
     .map((t) => renderToggle(item, t, Boolean(widget.on_toggle)))
     .join('')
+
+  const titleText = escapeHtml(getPath(item, titleField) ?? '')
+  const href = card?.href ? interpolate(card.href, item) : undefined
+  const titleHtml = href
+    ? `<a class="widget-board-card-title" href="${escapeHtmlAttr(href)}">${titleText}</a>`
+    : `<span class="widget-board-card-title">${titleText}</span>`
+
+  const subtitleVal = card?.subtitle ? getPath(item, card.subtitle) : undefined
+  const subtitleHtml = isPresent(subtitleVal)
+    ? `<span class="widget-board-card-subtitle">${escapeHtml(String(subtitleVal))}</span>`
+    : ''
+
+  const metaChips = (card?.meta || [])
+    .map((field) => getPath(item, field))
+    .filter(isPresent)
+    .map((value) => `<span class="widget-board-card-meta-item">${escapeHtml(String(value))}</span>`)
+    .join('')
+  const metaHtml = metaChips ? `<div class="widget-board-card-meta">${metaChips}</div>` : ''
+
   return `
     <li class="widget-board-card"
         data-card-id="${escapeHtmlAttr(item.id)}"
         ${draggable ? 'draggable="true"' : ''}>
-      <span class="widget-board-card-title">${escapeHtml(item?.[titleField] ?? '')}</span>
+      <div class="widget-board-card-body">
+        ${titleHtml}
+        ${subtitleHtml}
+        ${metaHtml}
+      </div>
       ${togglesHtml}
     </li>
   `
+}
+
+function isPresent(value: any): boolean {
+  return value !== undefined && value !== null && value !== ''
+}
+
+/** Read a possibly-dotted path (`theme.title`) off a record. */
+function getPath(obj: any, path: string): any {
+  if (!path) return undefined
+  return path.split('.').reduce((acc, key) => (acc == null ? undefined : acc[key]), obj)
+}
+
+/** Fill `{field}` / `{a.b}` tokens in a template from a record. */
+function interpolate(template: string, item: any): string {
+  return template.replace(/\{([\w.]+)\}/g, (_match, path) => {
+    const value = getPath(item, path)
+    return isPresent(value) ? String(value) : ''
+  })
 }
 
 function renderToggle(item: any, toggle: WidgetCardToggle, enabled: boolean): string {
@@ -155,7 +198,13 @@ const BOARD_STYLES = `<style>
   .widget-board-card:active { cursor: grabbing; }
   .widget-board-card.widget-dragging { opacity: 0.4; }
   .widget-board-column-cards.widget-drop-active { background: #e5e7eb; border-radius: 6px; }
-  .widget-board-card-title { flex: 1; font-size: 0.875rem; color: #111827; line-height: 1.4; }
+  .widget-board-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .widget-board-card-title { font-size: 0.875rem; color: #111827; line-height: 1.4; font-weight: 500; }
+  a.widget-board-card-title { color: inherit; text-decoration: none; }
+  a.widget-board-card-title:hover { text-decoration: underline; }
+  .widget-board-card-subtitle { font-size: 0.75rem; color: #6b7280; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .widget-board-card-meta { display: flex; flex-wrap: wrap; gap: 0.25rem; margin-top: 0.125rem; }
+  .widget-board-card-meta-item { font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: #6b7280; background: #f3f4f6; border-radius: 4px; padding: 0.0625rem 0.375rem; }
   .widget-board-card-toggle { background: none; border: none; cursor: pointer; font-size: 1.125rem; padding: 0; line-height: 1; color: #9ca3af; transition: color 0.15s, transform 0.1s; }
   .widget-board-card-toggle:hover { transform: scale(1.15); }
   .widget-board-card-toggle.widget-toggle-on { color: #f59e0b; }
