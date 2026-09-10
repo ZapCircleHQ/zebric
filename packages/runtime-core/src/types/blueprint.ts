@@ -526,6 +526,7 @@ export interface WorkflowTrigger {
   event?: 'create' | 'update' | 'delete'
   condition?: Record<string, any>
   webhook?: string
+  webhookSecretEnv?: string
   schedule?: string
   manual?: boolean
 }

@@ -93,7 +93,15 @@ Receive events from external systems:
 ```toml
 [workflow.HandleSlackCommand.trigger]
 webhook = "/webhooks/slack"
+webhookSecretEnv = "SLACK_WORKFLOW_WEBHOOK_SECRET"
 ```
+
+Inbound workflow webhooks require authentication. Set `webhookSecretEnv` to the
+environment variable containing the webhook secret, or use the default
+`ZEBRIC_WEBHOOK_SECRET`. Send the secret as `Authorization: Bearer <secret>`, or
+send `X-Zebric-Webhook-Timestamp` plus `X-Zebric-Webhook-Signature`, where the
+signature is `sha256=` followed by the hex HMAC-SHA256 of
+`<unix timestamp>.<raw request body>`. Signed requests expire after five minutes.
 
 ## Step Types
 

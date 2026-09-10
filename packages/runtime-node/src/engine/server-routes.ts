@@ -1,7 +1,7 @@
 import type { Hono } from 'hono'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
 import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
@@ -310,13 +310,40 @@ export function registerWebhookRoutes(app: Hono, workflowManager?: WorkflowManag
   app.all('/webhooks/*', async (c) => {
     try {
       const webhookPath = new URL(c.req.url).pathname
+      const matchingWorkflows = workflowManager.getAllWorkflows()
+        .filter(workflow => workflow.trigger.webhook === webhookPath)
+      if (matchingWorkflows.length === 0) {
+        return Response.json(
+          { error: 'No workflow found for this webhook', path: webhookPath },
+          { status: 404 }
+        )
+      }
+
+      const rawBody = await c.req.raw.clone().text()
+      const authorizedWorkflows = new Set<(typeof matchingWorkflows)[number]>()
+      let hasConfiguredSecret = false
+      for (const workflow of matchingWorkflows) {
+        const secretEnv = workflow.trigger.webhookSecretEnv || 'ZEBRIC_WEBHOOK_SECRET'
+        const secret = process.env[secretEnv]
+        if (!secret) continue
+        hasConfiguredSecret = true
+        if (verifyWebhookRequest(c.req.raw, rawBody, secret)) authorizedWorkflows.add(workflow)
+      }
+      if (!hasConfiguredSecret) {
+        console.error(`Webhook ${webhookPath} has no configured signing secret`)
+        return Response.json({ error: 'Webhook is not configured securely' }, { status: 503 })
+      }
+      if (authorizedWorkflows.size === 0) {
+        return Response.json({ error: 'Invalid webhook credentials' }, { status: 401 })
+      }
+
       const jobs = await workflowManager.triggerWebhook(webhookPath, {
         headers: Object.fromEntries(c.req.raw.headers),
         body: await tryParseBody(c.req.raw),
         query: Object.fromEntries(new URL(c.req.url).searchParams),
         correlationId: getCorrelationId(c),
         requestId: getRequestId(c),
-      })
+      }, workflow => authorizedWorkflows.has(workflow))
 
       if (jobs.length === 0) {
         return Response.json(
@@ -345,6 +372,32 @@ export function registerWebhookRoutes(app: Hono, workflowManager?: WorkflowManag
       )
     }
   })
+}
+
+/**
+ * Authenticate an inbound workflow webhook. Integrations may use a bearer
+ * secret, or a replay-resistant HMAC over `<unix timestamp>.<raw body>`.
+ */
+export function verifyWebhookRequest(request: Request, rawBody: string, secret: string): boolean {
+  const authorization = request.headers.get('authorization') || ''
+  if (authorization.toLowerCase().startsWith('bearer ')
+    && constantTimeEqual(authorization.slice(7), secret)) {
+    return true
+  }
+
+  const timestampRaw = request.headers.get('x-zebric-webhook-timestamp') || ''
+  const signature = request.headers.get('x-zebric-webhook-signature') || ''
+  if (!/^\d+$/.test(timestampRaw) || !signature.startsWith('sha256=')) return false
+  const timestamp = Number(timestampRaw)
+  if (!Number.isSafeInteger(timestamp) || Math.abs(Date.now() / 1000 - timestamp) > 300) return false
+  const expected = `sha256=${createHmac('sha256', secret).update(`${timestampRaw}.${rawBody}`).digest('hex')}`
+  return constantTimeEqual(signature, expected)
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left)
+  const rightBuffer = Buffer.from(right)
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
 }
 
 export function registerNotificationRoutes(

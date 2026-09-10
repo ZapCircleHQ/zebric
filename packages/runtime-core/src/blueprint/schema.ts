@@ -460,6 +460,7 @@ const WorkflowTriggerSchema = z.object({
   event: z.enum(['create', 'update', 'delete']).optional(),
   condition: AnyRecordSchema.optional(),
   webhook: z.string().optional(),
+  webhookSecretEnv: z.string().min(1).optional(),
   schedule: z.string().optional(),
   manual: z.boolean().optional(),
 })

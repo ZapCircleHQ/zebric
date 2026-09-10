@@ -9,6 +9,7 @@ export interface WorkflowTrigger {
   event?: 'create' | 'update' | 'delete'
   condition?: Record<string, any>
   webhook?: string  // Webhook path like "/webhooks/github"
+  webhookSecretEnv?: string // Defaults to ZEBRIC_WEBHOOK_SECRET
   schedule?: string  // Cron expression
   manual?: boolean
 }
