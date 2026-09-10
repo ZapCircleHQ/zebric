@@ -9,7 +9,7 @@ import { eq, and, or, gt, gte, lt, lte, like, ilike, asc, desc, sql, SQL } from 
 import type { Query, Entity } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
 import type { UserSession, PermissionManager } from '@zebric/runtime-core'
-import { AccessControl, isSystemSession } from '@zebric/runtime-core'
+import { AccessControl, SYSTEM_SESSION, isSystemSession } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -228,7 +228,9 @@ export class QueryExecutor {
     try {
       const results = await query
       // Convert snake_case to camelCase for consistency with findById/create/update.
-      return Array.isArray(results) ? results.map((r) => this.toCamelCase(r)) : results
+      return Array.isArray(results)
+        ? results.map((r) => this.applyReadFieldAccess(entity, this.toCamelCase(r), context.session))
+        : results
     } finally {
       this.metrics?.recordQuery(queryDef.entity, 'read', performance.now() - start)
     }
@@ -312,7 +314,9 @@ export class QueryExecutor {
         .where(where)
         .limit(limit)
 
-      return Array.isArray(results) ? results.map((r) => this.toCamelCase(r)) : []
+      return Array.isArray(results)
+        ? results.map((r) => this.applyReadFieldAccess(entity, this.toCamelCase(r), options.context?.session))
+        : []
     } finally {
       this.metrics?.recordQuery(entityName, 'search', performance.now() - start)
     }
@@ -346,6 +350,15 @@ export class QueryExecutor {
       return data
     }
     return AccessControl.filterFields(entity, 'write', data, session)
+  }
+
+  private applyReadFieldAccess(
+    entity: Entity | undefined,
+    data: Record<string, any>,
+    session?: UserSession | null
+  ): Record<string, any> {
+    if (!entity || isSystemSession(session)) return data
+    return AccessControl.filterFields(entity, 'read', data, session)
   }
 
   /**
@@ -415,7 +428,7 @@ export class QueryExecutor {
       const inserted = await (db as any).insert(table).values(dbData).returning()
       const record = inserted?.[0]
       if (record) {
-        return this.toCamelCase(record)
+        return this.applyReadFieldAccess(entity, this.toCamelCase(record), context?.session)
       }
 
       return await this.findById(entityName, data.id, context)
@@ -457,7 +470,7 @@ export class QueryExecutor {
     }
 
     // Fetch existing record first for access control check
-    const existingRecord = await this.findById(entityName, id, context)
+    const existingRecord = await this.findById(entityName, id, { ...context, session: SYSTEM_SESSION })
     if (!existingRecord) {
       throw new Error(`${entityName} with id ${id} not found`)
     }
@@ -465,15 +478,16 @@ export class QueryExecutor {
     // Strip fields the caller cannot write before merge / access / default handling.
     data = this.applyWriteFieldAccess(entity, data, context?.session)
 
-    // Check update access with merged data (existing + new)
-    // This allows access control rules to reference existing fields like authorId
+    // Check update access against the stored resource so owner and state rules
+    // cannot be satisfied by values introduced in the patch itself.
     if (entity) {
-      const mergedData = { ...existingRecord, ...data }
       const hasAccess = await AccessControl.checkAccess({
         session: context?.session,
         action: 'update',
         entity,
-        data: mergedData,
+        // Authorize the resource as it exists. Checking the proposed row lets a
+        // caller satisfy an owner rule by changing userId in the same request.
+        data: existingRecord,
         permissionManager: this.permissionManager,
       })
 
@@ -512,7 +526,7 @@ export class QueryExecutor {
       }
 
       // Return updated record
-      return this.toCamelCase(updated[0])
+      return this.applyReadFieldAccess(entity, this.toCamelCase(updated[0]), context?.session)
     } finally {
       this.metrics?.recordQuery(entityName, 'update', performance.now() - start)
     }
@@ -531,7 +545,7 @@ export class QueryExecutor {
       throw new Error(`Entity ${entityName} not found`)
     }
 
-    const existingRecord = await this.findById(entityName, id, context)
+    const existingRecord = await this.findById(entityName, id, { ...context, session: SYSTEM_SESSION })
     if (!existingRecord) {
       throw new Error(`${entityName} with id ${id} not found`)
     }

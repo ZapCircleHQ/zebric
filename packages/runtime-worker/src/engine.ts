@@ -4,7 +4,7 @@
  * CloudFlare Workers adapter for Zebric runtime.
  */
 
-import { BlueprintParser, detectFormat, HTMLRenderer, defaultTheme, analyzeTransactionalWorkflow } from '@zebric/runtime-core'
+import { BlueprintParser, detectFormat, ErrorSanitizer, HTMLRenderer, defaultTheme, analyzeTransactionalWorkflow } from '@zebric/runtime-core'
 import type { Blueprint, Theme } from '@zebric/runtime-core'
 import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
@@ -97,7 +97,8 @@ export class ZebricWorkersEngine {
       blueprint: this.blueprint,
       queryExecutor,
       sessionManager,
-      renderer: rendererPort
+      renderer: rendererPort,
+      errorSanitizer: new ErrorSanitizer(false),
     })
 
     this.app = new Hono()
@@ -184,7 +185,7 @@ export class ZebricWorkersEngine {
  */
 export function createWorkerHandler(config: Omit<WorkersEngineConfig, 'env'>) {
   return {
-    async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
+    async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
       const engine = new ZebricWorkersEngine({ ...config, env })
       return engine.fetch(request)
     }

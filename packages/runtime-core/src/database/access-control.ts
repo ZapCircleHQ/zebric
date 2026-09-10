@@ -91,7 +91,7 @@ export class AccessControl {
       return null
     }
 
-    return this.conditionToFilter(entity.access.read, session)
+    return this.conditionToFilter(entity.access.read, session, new Set(entity.fields.map(field => field.name)))
   }
 
   static isImpossibleFilter(filter: Record<string, any> | null): boolean {
@@ -100,7 +100,8 @@ export class AccessControl {
 
   private static conditionToFilter(
     condition: AccessCondition,
-    session?: UserSession | null
+    session?: UserSession | null,
+    entityFields?: ReadonlySet<string>
   ): Record<string, any> | null {
     if (typeof condition === 'boolean') {
       return condition ? null : { _impossible: true }
@@ -122,7 +123,7 @@ export class AccessControl {
     }
 
     if ('or' in condition && Array.isArray(condition.or)) {
-      const branches = condition.or.map(c => this.conditionToFilter(c, session))
+      const branches = condition.or.map(c => this.conditionToFilter(c, session, entityFields))
       if (branches.some(branch => branch === null)) {
         return null
       }
@@ -133,7 +134,7 @@ export class AccessControl {
     }
 
     if ('and' in condition && Array.isArray(condition.and)) {
-      const branches = condition.and.map(c => this.conditionToFilter(c, session))
+      const branches = condition.and.map(c => this.conditionToFilter(c, session, entityFields))
       if (branches.some(branch => this.isImpossibleFilter(branch))) {
         return { _impossible: true }
       }
@@ -150,6 +151,11 @@ export class AccessControl {
           return { _impossible: true }
         }
         continue
+      }
+      // Access rules are a security boundary. A misspelled or removed field must
+      // deny the query instead of being silently dropped by a database adapter.
+      if (entityFields && !entityFields.has(key)) {
+        return { _impossible: true }
       }
       const resolved = this.resolveValue(value, session)
       if (resolved === undefined) {

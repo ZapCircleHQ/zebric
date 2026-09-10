@@ -7,14 +7,18 @@
 
 import type { Query, Entity, Blueprint, UserSession } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext } from '@zebric/runtime-core'
-import { AccessControl, isSystemSession } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, isSystemSession } from '@zebric/runtime-core'
 import type { D1Adapter } from '../database/d1-adapter.js'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
+  private permissionManager: PermissionManager
+
   constructor(
     private adapter: D1Adapter,
     private blueprint: Blueprint
-  ) {}
+  ) {
+    this.permissionManager = new PermissionManager(blueprint.auth)
+  }
 
   /**
    * Execute a Blueprint Query definition
@@ -25,13 +29,23 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${query.entity}`)
     }
 
-    // Build SQL query
-    const sql = this.buildSelectQuery(entity, query, context)
-    const params = this.buildQueryParams(query, context)
+    await this.assertAccess(entity, 'read', undefined, context.session)
+    const accessFilter = AccessControl.getFilterConditions(entity, context.session)
+    if (AccessControl.isImpossibleFilter(accessFilter)) {
+      throw new Error(`Access denied: Cannot read ${entity.name}`)
+    }
+
+    // Build SQL query with caller filters and row-level access filters.
+    const combinedWhere = query.where && accessFilter
+      ? { and: [query.where, accessFilter] }
+      : query.where || accessFilter || undefined
+    const securedQuery = { ...query, where: combinedWhere }
+    const sql = this.buildSelectQuery(entity, securedQuery, context)
+    const params = this.buildQueryParams(securedQuery, context)
 
     // Execute query
     const result = await this.adapter.query(sql, params)
-    return result.rows
+    return this.applyReadFieldAccess(entity, result.rows, context.session)
   }
 
   /**
@@ -63,7 +77,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, values)
-    return result.rows[0] || { ...filteredData }
+    return this.applyReadFieldAccess(entityDef, result.rows[0] || { ...filteredData }, context.session)
   }
 
   /**
@@ -80,15 +94,18 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entity}`)
     }
 
-    const existing = await this.findById(entity, id)
+    const existing = await this.findByIdUnrestricted(entity, id)
+    if (!existing) {
+      throw new Error(`${entity} with id ${id} not found`)
+    }
 
-    // Drop fields the caller may not write, then check update access against the
-    // merged record so ownership rules can reference existing values.
+    // Drop fields the caller may not write, then authorize the stored resource.
+    // Proposed ownership values must not grant access to the update itself.
     const writable = this.applyWriteFieldAccess(entityDef, data, context.session)
     await this.assertAccess(
       entityDef,
       'update',
-      existing ? { ...existing, ...writable } : writable,
+      existing,
       context.session
     )
 
@@ -113,7 +130,11 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
-    return result.rows[0] || { ...(existing ?? {}), ...filteredData, id }
+    return this.applyReadFieldAccess(
+      entityDef,
+      result.rows[0] || { ...(existing ?? {}), ...filteredData, id },
+      context.session
+    )
   }
 
   /**
@@ -126,7 +147,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     }
 
     // Missing row: nothing to authorize against, DELETE is a harmless no-op.
-    const existing = await this.findById(entity, id)
+    const existing = await this.findByIdUnrestricted(entity, id)
     if (existing) {
       await this.assertAccess(entityDef, 'delete', existing, context.session)
     }
@@ -142,7 +163,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Find a record by ID
    */
-  async findById(entity: string, id: string, _context?: Record<string, any>): Promise<any> {
+  async findById(entity: string, id: string, context: RequestContext = {}): Promise<any> {
+    const rows = await this.execute({ entity, where: { id }, limit: 1 }, context)
+    return rows[0] || null
+  }
+
+  private async findByIdUnrestricted(entity: string, id: string): Promise<any> {
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -174,6 +200,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entityName}`)
     }
 
+    await this.assertAccess(entityDef, 'read', undefined, options.context?.session)
+    const accessFilter = AccessControl.getFilterConditions(entityDef, options.context?.session)
+    if (AccessControl.isImpossibleFilter(accessFilter)) {
+      throw new Error(`Access denied: Cannot read ${entityName}`)
+    }
+
     const trimmed = String(query ?? '').trim()
     if (!trimmed) return []
 
@@ -194,12 +226,19 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
         params.push(...this.buildQueryParams({ entity: entityName, where: options.filter }, options.context ?? {}))
       }
     }
+    if (accessFilter) {
+      const accessClause = this.buildWhereClause(accessFilter, options.context ?? {})
+      if (accessClause) {
+        whereSql = `${whereSql} AND (${accessClause})`
+        params.push(...this.buildQueryParams({ entity: entityName, where: accessFilter }, options.context ?? {}))
+      }
+    }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
     const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql} LIMIT ${limit}`
 
     const result = await this.adapter.query(sql, params)
-    return result.rows || []
+    return this.applyReadFieldAccess(entityDef, result.rows || [], options.context?.session)
   }
 
   // ==========================================================================
@@ -213,15 +252,17 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Throw unless the session may perform `action` on the entity. Mirrors the
    * Node executor: entity-level `access` rules plus RBAC when a permission
-   * manager is available (the Workers executor has none today).
+   * manager is available.
    */
   private async assertAccess(
     entity: Entity,
-    action: 'create' | 'update' | 'delete',
-    data: Record<string, any>,
+    action: 'read' | 'create' | 'update' | 'delete',
+    data: Record<string, any> | undefined,
     session?: UserSession | null
   ): Promise<void> {
-    const allowed = await AccessControl.checkAccess({ session, action, entity, data })
+    const allowed = await AccessControl.checkAccess({
+      session, action, entity, data, permissionManager: this.permissionManager,
+    })
     if (!allowed) {
       throw new Error(`Access denied: Cannot ${action} ${entity.name}`)
     }
@@ -241,6 +282,17 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       return data
     }
     return AccessControl.filterFields(entity, 'write', data, session)
+  }
+
+  private applyReadFieldAccess(
+    entity: Entity,
+    data: Record<string, any> | Record<string, any>[],
+    session?: UserSession | null
+  ): any {
+    if (isSystemSession(session)) return data
+    return Array.isArray(data)
+      ? AccessControl.filterFieldsArray(entity, 'read', data, session)
+      : AccessControl.filterFields(entity, 'read', data, session)
   }
 
   private filterFields(entity: Entity, data: Record<string, any>): Record<string, any> {
@@ -306,9 +358,18 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   }
 
   private buildWhereClause(where: Record<string, any>, context: RequestContext): string {
+    if (Array.isArray(where.and)) {
+      return where.and.map((branch: Record<string, any>) => this.buildWhereClause(branch, context))
+        .filter(Boolean).map((clause: string) => `(${clause})`).join(' AND ')
+    }
+    if (Array.isArray(where.or)) {
+      return where.or.map((branch: Record<string, any>) => this.buildWhereClause(branch, context))
+        .filter(Boolean).map((clause: string) => `(${clause})`).join(' OR ')
+    }
     const conditions: string[] = []
 
     for (const [field, value] of Object.entries(where)) {
+      if (field === 'and' || field === 'or') continue
       // Handle parameter references like {user_id}
       if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
         const paramName = value.slice(1, -1)
@@ -376,9 +437,16 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       return []
     }
 
+    return this.buildWhereParams(query.where, context)
+  }
+
+  private buildWhereParams(where: Record<string, any>, context: RequestContext): any[] {
+    if (Array.isArray(where.and)) return where.and.flatMap((branch: Record<string, any>) => this.buildWhereParams(branch, context))
+    if (Array.isArray(where.or)) return where.or.flatMap((branch: Record<string, any>) => this.buildWhereParams(branch, context))
     const params: any[] = []
 
-    for (const [field, value] of Object.entries(query.where)) {
+    for (const [field, value] of Object.entries(where)) {
+      if (field === 'and' || field === 'or') continue
       // Handle parameter references like {user_id}
       if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
         const paramName = value.slice(1, -1)

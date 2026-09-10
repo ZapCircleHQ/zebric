@@ -30,6 +30,7 @@ const blueprint: Blueprint = {
         { name: 'userId', type: 'Text', access: { write: false } },
         { name: 'assigneeId', type: 'Text', access: { write: false } },
         { name: 'region', type: 'Text', access: { write: 'authenticated' } },
+        { name: 'secret', type: 'Text', access: { read: false, write: false } },
       ],
       access: {
         read: true,
@@ -60,7 +61,7 @@ describe('WorkersQueryExecutor access control', () => {
     await adapter.migrate([
       `CREATE TABLE IF NOT EXISTS Doc (
         id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT,
-        userId TEXT, assigneeId TEXT, region TEXT
+        userId TEXT, assigneeId TEXT, region TEXT, secret TEXT
       )`,
       `CREATE TABLE IF NOT EXISTS Note (id TEXT PRIMARY KEY, text TEXT)`,
     ])
@@ -75,6 +76,34 @@ describe('WorkersQueryExecutor access control', () => {
     )
 
   describe('entity-level checks', () => {
+    it('applies read rules and strips unreadable fields', async () => {
+      await adapter.query(
+        'INSERT INTO Doc (id, title, userId, secret) VALUES (?, ?, ?, ?)',
+        ['doc-read', 'Readable', 'user-1', 'server-only'],
+      )
+      const rows = await executor.execute({ entity: 'Doc' }, member)
+      expect(rows).toHaveLength(1)
+      expect(rows[0]).not.toHaveProperty('secret')
+    })
+
+    it('applies row-level filters to reads', async () => {
+      const ownedBlueprint = structuredClone(blueprint)
+      ownedBlueprint.entities[0]!.access!.read = 'owner'
+      const ownedExecutor = new WorkersQueryExecutor(adapter, ownedBlueprint)
+      await seedDoc({ id: 'mine', userId: 'user-1' })
+      await seedDoc({ id: 'theirs', userId: 'user-2' })
+      const rows = await ownedExecutor.execute({ entity: 'Doc' }, member)
+      expect(rows.map(row => row.id)).toEqual(['mine'])
+      await expect(ownedExecutor.findById('Doc', 'theirs', member)).resolves.toBeNull()
+    })
+
+    it('enforces blueprint RBAC', async () => {
+      const deniedBlueprint = structuredClone(blueprint)
+      deniedBlueprint.auth = { providers: ['email'], permissions: { member: { allow: [] } } }
+      const deniedExecutor = new WorkersQueryExecutor(adapter, deniedBlueprint)
+      await expect(deniedExecutor.execute({ entity: 'Doc' }, member)).rejects.toThrow('Access denied')
+      await expect(deniedExecutor.create('Doc', { id: 'blocked', title: 'No' }, member)).rejects.toThrow('Access denied')
+    })
     it('rejects create when the create rule is not satisfied', async () => {
       await expect(executor.create('Doc', { title: 'Nope' }, anon))
         .rejects.toThrow('Access denied: Cannot create Doc')
@@ -97,6 +126,15 @@ describe('WorkersQueryExecutor access control', () => {
       expect(updated.title).toBe('Owned edit')
     })
 
+    it('does not allow ownership to be acquired in the update payload', async () => {
+      const ownerWritable = structuredClone(blueprint)
+      ownerWritable.entities[0]!.fields.find(field => field.name === 'userId')!.access = undefined
+      const ownerExecutor = new WorkersQueryExecutor(adapter, ownerWritable)
+      await seedDoc({ id: 'doc-takeover', userId: 'user-2' })
+      await expect(ownerExecutor.update('Doc', 'doc-takeover', { userId: 'user-1' }, member))
+        .rejects.toThrow('Access denied')
+    })
+
     it('rejects delete without the admin role and allows it with it', async () => {
       await seedDoc({ id: 'doc-1', userId: 'user-1' })
 
@@ -108,11 +146,9 @@ describe('WorkersQueryExecutor access control', () => {
       expect(rows.rows).toHaveLength(0)
     })
 
-    it('still authorizes an update whose target row does not exist', async () => {
-      // 'owner' cannot be satisfied without an existing userId, so this is denied
-      // rather than silently fabricating a row.
+    it('rejects an update whose target row does not exist', async () => {
       await expect(executor.update('Doc', 'ghost', { title: 'x' }, member))
-        .rejects.toThrow('Access denied: Cannot update Doc')
+        .rejects.toThrow('Doc with id ghost not found')
     })
 
     it('treats delete of a missing row as an idempotent no-op', async () => {

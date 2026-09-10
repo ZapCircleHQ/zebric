@@ -144,7 +144,7 @@ describe('AccessControl', () => {
     it('filters anonymous reads to public rows but allows all rows when authenticated', () => {
       const entity = makeEntity({
         read: { or: [{ visibility: 'public' }, 'authenticated'] }
-      })
+      }, [{ name: 'visibility', type: 'Text' }])
 
       expect(AccessControl.getFilterConditions(entity, null)).toEqual({ visibility: 'public' })
       expect(AccessControl.getFilterConditions(entity, authenticatedSession)).toBeNull()
