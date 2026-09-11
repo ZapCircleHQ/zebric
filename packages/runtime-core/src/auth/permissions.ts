@@ -45,7 +45,16 @@ export class PermissionManager {
       return this.checkAnonymousPermission(context)
     }
 
-    // Check each role's permissions
+    // An explicit deny in any assigned role wins globally. Checking allow and
+    // deny one role at a time lets a second role override a deny accidentally.
+    for (const role of roles) {
+      const rule = this.permissions[role]
+      if (rule?.deny?.some(pattern => this.matchesPattern(pattern, context.entity, context.action))) {
+        return false
+      }
+    }
+
+    // No role denied the operation; any matching allow may grant it.
     for (const role of roles) {
       const hasPermission = await this.checkRolePermission(role, context)
       if (hasPermission) {
@@ -67,15 +76,6 @@ export class PermissionManager {
 
     if (!permissionRule) {
       return false
-    }
-
-    // Check deny rules first (deny takes precedence)
-    if (permissionRule.deny) {
-      for (const denyPattern of permissionRule.deny) {
-        if (this.matchesPattern(denyPattern, context.entity, context.action)) {
-          return false
-        }
-      }
     }
 
     // Check allow rules
@@ -124,6 +124,8 @@ export class PermissionManager {
           if (this.matchesPattern(allowRule, context.entity, context.action)) {
             return true
           }
+        } else if (this.matchesCondition(allowRule, context)) {
+          return true
         }
       }
     }
@@ -135,12 +137,13 @@ export class PermissionManager {
    * Match permission pattern (e.g., "Post.*", "*.read", "*.*")
    */
   private matchesPattern(pattern: string, entity: string, action: string): boolean {
-    const [entityPattern, actionPattern] = pattern.split('.')
+    const parts = pattern.split('.')
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return false
+    const [entityPattern, actionPattern] = parts
+    if (entityPattern !== '*' && entityPattern !== entity) return false
+    if (!['*', 'read', 'create', 'update', 'delete'].includes(actionPattern)) return false
 
-    const entityMatches = entityPattern === '*' || entityPattern === entity
-    const actionMatches = actionPattern === '*' || actionPattern === action
-
-    return entityMatches && actionMatches
+    return actionPattern === '*' || actionPattern === action
   }
 
   /**
@@ -193,7 +196,8 @@ export class PermissionManager {
 
     // AND condition
     if ('and' in condition && Array.isArray(condition.and)) {
-      return condition.and.every(c => this.evaluateAccessCondition(c, context))
+      return condition.and.length > 0
+        && condition.and.every(c => this.evaluateAccessCondition(c, context))
     }
 
     // OR condition
@@ -203,11 +207,23 @@ export class PermissionManager {
 
     // Object condition - check field values
     if (typeof condition === 'object') {
-      for (const [key, value] of Object.entries(condition)) {
-        const actualValue = this.resolveValue(value, context.session)
-        const dataValue = context.data?.[key]
+      const entries = Object.entries(condition)
+      if (entries.length === 0) return false
+      for (const [key, value] of entries) {
+        const expectedValue = this.resolveValue(value, context.session)
+        if (expectedValue === undefined) return false
+        let actualValue: unknown
+        if (key.startsWith('$currentUser.')) {
+          const sessionKey = key.substring(13)
+          if (!context.session?.user
+            || !Object.prototype.hasOwnProperty.call(context.session.user, sessionKey)) return false
+          actualValue = context.session.user[sessionKey]
+        } else {
+          if (!context.data || !Object.prototype.hasOwnProperty.call(context.data, key)) return false
+          actualValue = context.data[key]
+        }
 
-        if (dataValue !== actualValue) {
+        if (actualValue !== expectedValue) {
           return false
         }
       }
@@ -243,13 +259,13 @@ export class PermissionManager {
     const user = session.user as any
 
     // From user.role (single role)
-    if (user?.role && typeof user.role === 'string') {
+    if (typeof user?.role === 'string' && user.role.length > 0) {
       roles.push(user.role)
     }
 
     // From user.roles (array)
     if (user?.roles && Array.isArray(user.roles)) {
-      roles.push(...user.roles)
+      roles.push(...user.roles.filter((role: unknown): role is string => typeof role === 'string' && role.length > 0))
     }
 
     // Default role if none specified
@@ -257,7 +273,7 @@ export class PermissionManager {
       roles.push('user') // Default authenticated user role
     }
 
-    return roles
+    return [...new Set(roles)]
   }
 
   /**

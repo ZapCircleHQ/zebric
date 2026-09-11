@@ -2,6 +2,29 @@ import { describe, expect, it } from 'vitest'
 import { BlueprintParser } from './loader.js'
 
 describe('access condition parsing', () => {
+  it('rejects malformed RBAC permission patterns', () => {
+    expect(() => new BlueprintParser().parse(`
+version = "0.1.0"
+[project]
+name = "RBAC test"
+version = "0.1.0"
+[project.runtime]
+min_version = "0.1.0"
+
+[entity.Item]
+fields = [{ name = "id", type = "ULID", primary_key = true }]
+
+[page."/"]
+title = "Items"
+layout = "list"
+
+[auth]
+providers = ["email"]
+[auth.permissions]
+member = { allow = ["Item.update.extra"] }
+`, 'toml')).toThrow('Permission patterns must use Entity.action')
+  })
+
   it('accepts shorthand conditions inside entity rules and compound row access', () => {
     const blueprint = new BlueprintParser().parse(`
 version = "0.1.0"

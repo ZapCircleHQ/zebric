@@ -154,4 +154,36 @@ describe('QueryExecutor row access', () => {
     }, { session: authenticatedSession }))
       .rejects.toThrow('Invalid DateTime value for RoadmapItem.publishedAt')
   })
+
+  it('fails closed when a row access rule references an unknown field', async () => {
+    const typoBlueprint = structuredClone(blueprint)
+    typoBlueprint.entities[0]!.access!.read = { ownerId: '$currentUser.id' }
+    const typoConnection = new DatabaseConnection({ type: 'sqlite', filename: ':memory:' }, typoBlueprint)
+    await typoConnection.connect()
+    const typoExecutor = new QueryExecutor(typoConnection)
+    await typoExecutor.create('RoadmapItem', {
+      id: 'hidden', title: 'Hidden', visibility: 'internal',
+    }, { session: authenticatedSession })
+
+    await expect(typoExecutor.execute({ entity: 'RoadmapItem' }, { session: authenticatedSession }))
+      .rejects.toThrow('Access denied')
+    await typoConnection.close()
+  })
+
+  it('checks owner updates against the stored row', async () => {
+    const ownerBlueprint = structuredClone(blueprint)
+    ownerBlueprint.entities[0]!.fields.push({ name: 'userId', type: 'Text' })
+    ownerBlueprint.entities[0]!.access!.update = 'owner'
+    const ownerConnection = new DatabaseConnection({ type: 'sqlite', filename: ':memory:' }, ownerBlueprint)
+    await ownerConnection.connect()
+    const ownerExecutor = new QueryExecutor(ownerConnection)
+    await ownerExecutor.create('RoadmapItem', {
+      id: 'owned', title: 'Victim row', visibility: 'internal', userId: 'victim',
+    }, { session: authenticatedSession })
+
+    await expect(ownerExecutor.update('RoadmapItem', 'owned', {
+      userId: authenticatedSession.user.id, title: 'Taken over',
+    }, { session: authenticatedSession })).rejects.toThrow('Access denied')
+    await ownerConnection.close()
+  })
 })

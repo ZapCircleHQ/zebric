@@ -95,6 +95,32 @@ fields = [
 ]
 ```
 
+### Role-Based Permissions
+
+Role policies add a second authorization layer across entities:
+
+```toml
+[auth]
+providers = ["email"]
+
+[auth.permissions]
+member = { allow = ["Post.read", "Post.update"] }
+suspended = { allow = [], deny = ["*.*"] }
+admin = { allow = ["*.*"] }
+anonymous = { allow = ["Post.read"] }
+```
+
+Permission patterns use exactly `Entity.action`. Actions are `read`, `create`,
+`update`, `delete`, or `*`. An explicit deny in any role overrides allows from
+all of the user's other roles. Conditional permissions evaluate record fields
+and `$currentUser.*` values only when those values exist; empty or incomplete
+conditions deny access.
+
+When RBAC is configured, manual workflow requests must identify a blueprint page
+that exposes that workflow. Zebric checks the caller against every entity action
+the workflow can perform before starting it. Workflows with no query steps use
+the page's primary entity and require update permission.
+
 ## API Keys
 
 For agents, REST API clients, or external integrations. API keys apply to **skill routes only** (routes registered from `[skill.*]` actions) — standard page routes and `/api/auth/*` are unaffected.

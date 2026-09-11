@@ -158,4 +158,15 @@ describe('QueryExecutor field-level write access', () => {
       expect(updated.assigneeId).toBe('user-3')
     })
   })
+
+  describe('read', () => {
+    it('removes fields the caller is not allowed to read', async () => {
+      const created = await executor.create('Doc', {
+        title: 'Classified', secret: 'server-only',
+      }, { session: SYSTEM_SESSION })
+
+      const row = await executor.findById('Doc', created.id, { session: admin })
+      expect(row).not.toHaveProperty('secret')
+    })
+  })
 })

@@ -282,12 +282,12 @@ export class WorkflowManager extends EventEmitter {
     query?: Record<string, string>
     correlationId?: string
     requestId?: string
-  }): Promise<WorkflowJob[]> {
+  }, authorize: (workflow: Workflow) => boolean = () => true): Promise<WorkflowJob[]> {
     const workflows = this.queue.getAllWorkflows()
     const jobs: WorkflowJob[] = []
 
     for (const workflow of workflows) {
-      if (this.matchesWebhookTrigger(workflow.trigger, path)) {
+      if (this.matchesWebhookTrigger(workflow.trigger, path) && authorize(workflow)) {
         const context: WorkflowContext = {
           trace: {
             correlationId: request.correlationId,

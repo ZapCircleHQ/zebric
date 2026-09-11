@@ -121,6 +121,21 @@ describe('AccessControl', () => {
   })
 
   describe('checkAccess - compound conditions', () => {
+    it('fails closed for empty and missing-value conditions', async () => {
+      expect(await AccessControl.checkAccess({
+        action: 'update', entity: makeEntity({ update: {} }),
+        session: authenticatedSession, data: {},
+      })).toBe(false)
+      expect(await AccessControl.checkAccess({
+        action: 'update', entity: makeEntity({ update: { userId: '$currentUser.missing' } }),
+        session: authenticatedSession, data: {},
+      })).toBe(false)
+      expect(await AccessControl.checkAccess({
+        action: 'update', entity: makeEntity({ update: { and: [] } }),
+        session: authenticatedSession, data: {},
+      })).toBe(false)
+    })
+
     it('should evaluate AND conditions', async () => {
       const entity = makeEntity({
         update: { and: ['authenticated', { userId: '$currentUser.id' }] }
@@ -144,7 +159,7 @@ describe('AccessControl', () => {
     it('filters anonymous reads to public rows but allows all rows when authenticated', () => {
       const entity = makeEntity({
         read: { or: [{ visibility: 'public' }, 'authenticated'] }
-      })
+      }, [{ name: 'visibility', type: 'Text' }])
 
       expect(AccessControl.getFilterConditions(entity, null)).toEqual({ visibility: 'public' })
       expect(AccessControl.getFilterConditions(entity, authenticatedSession)).toBeNull()
@@ -238,6 +253,16 @@ describe('AccessControl', () => {
   })
 
   describe('SYSTEM_SESSION', () => {
+    it('does not trust a user or agent that copies the reserved user id', async () => {
+      const entity = makeEntity({ update: false })
+      const forged = {
+        ...SYSTEM_SESSION,
+        actor: { type: 'agent' as const, id: SYSTEM_SESSION.user.id },
+      }
+      expect(await AccessControl.checkAccess({ action: 'update', entity, session: forged }))
+        .toBe(false)
+    })
+
     it('bypasses RBAC that would deny every other session', async () => {
       const entity = makeEntity({ update: 'owner' })
       const permissionManager = new PermissionManager({

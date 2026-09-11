@@ -91,7 +91,7 @@ export class AccessControl {
       return null
     }
 
-    return this.conditionToFilter(entity.access.read, session)
+    return this.conditionToFilter(entity.access.read, session, new Set(entity.fields.map(field => field.name)))
   }
 
   static isImpossibleFilter(filter: Record<string, any> | null): boolean {
@@ -100,7 +100,8 @@ export class AccessControl {
 
   private static conditionToFilter(
     condition: AccessCondition,
-    session?: UserSession | null
+    session?: UserSession | null,
+    entityFields?: ReadonlySet<string>
   ): Record<string, any> | null {
     if (typeof condition === 'boolean') {
       return condition ? null : { _impossible: true }
@@ -122,7 +123,7 @@ export class AccessControl {
     }
 
     if ('or' in condition && Array.isArray(condition.or)) {
-      const branches = condition.or.map(c => this.conditionToFilter(c, session))
+      const branches = condition.or.map(c => this.conditionToFilter(c, session, entityFields))
       if (branches.some(branch => branch === null)) {
         return null
       }
@@ -133,7 +134,8 @@ export class AccessControl {
     }
 
     if ('and' in condition && Array.isArray(condition.and)) {
-      const branches = condition.and.map(c => this.conditionToFilter(c, session))
+      if (condition.and.length === 0) return { _impossible: true }
+      const branches = condition.and.map(c => this.conditionToFilter(c, session, entityFields))
       if (branches.some(branch => this.isImpossibleFilter(branch))) {
         return { _impossible: true }
       }
@@ -144,12 +146,19 @@ export class AccessControl {
     }
 
     const rowFilter: Record<string, any> = {}
-    for (const [key, value] of Object.entries(condition)) {
+    const entries = Object.entries(condition)
+    if (entries.length === 0) return { _impossible: true }
+    for (const [key, value] of entries) {
       if (key.startsWith('$currentUser.')) {
         if (!this.evaluateCondition({ [key]: value }, session)) {
           return { _impossible: true }
         }
         continue
+      }
+      // Access rules are a security boundary. A misspelled or removed field must
+      // deny the query instead of being silently dropped by a database adapter.
+      if (entityFields && !entityFields.has(key)) {
+        return { _impossible: true }
       }
       const resolved = this.resolveValue(value, session)
       if (resolved === undefined) {
@@ -191,7 +200,8 @@ export class AccessControl {
 
     // AND condition
     if ('and' in condition && Array.isArray(condition.and)) {
-      return condition.and.every(c => this.evaluateCondition(c, session, data))
+      return condition.and.length > 0
+        && condition.and.every(c => this.evaluateCondition(c, session, data))
     }
 
     // OR condition
@@ -201,14 +211,19 @@ export class AccessControl {
 
     // Object condition - check if all fields match
     if (typeof condition === 'object') {
-      for (const [key, value] of Object.entries(condition)) {
+      const entries = Object.entries(condition)
+      if (entries.length === 0) return false
+      for (const [key, value] of entries) {
         // Check if the key itself is a session variable reference
         if (key.startsWith('$currentUser.')) {
           const sessionKey = key.substring(13)
+          if (!session?.user || !Object.prototype.hasOwnProperty.call(session.user, sessionKey)) {
+            return false
+          }
           const sessionValue = session?.user?.[sessionKey]
           const expectedValue = this.resolveValue(value, session)
 
-          if (sessionValue !== expectedValue) {
+          if (expectedValue === undefined || sessionValue !== expectedValue) {
             return false
           }
         } else {
@@ -216,7 +231,10 @@ export class AccessControl {
           const actualValue = this.resolveValue(value, session)
           const dataValue = data?.[key]
 
-          if (dataValue !== actualValue) {
+          if (actualValue === undefined
+            || !data
+            || !Object.prototype.hasOwnProperty.call(data, key)
+            || dataValue !== actualValue) {
             return false
           }
         }
