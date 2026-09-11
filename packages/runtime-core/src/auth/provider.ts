@@ -57,7 +57,9 @@ export const SYSTEM_SESSION: UserSession = {
 }
 
 export function isSystemSession(session: UserSession | null | undefined): boolean {
-  return session?.user?.id === SYSTEM_SESSION.user.id
+  return session?.actor?.type === 'system'
+    && session.actor.id === SYSTEM_SESSION.actor?.id
+    && session.user?.id === SYSTEM_SESSION.user.id
 }
 
 /**

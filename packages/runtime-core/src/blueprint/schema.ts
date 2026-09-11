@@ -482,15 +482,21 @@ const WorkflowSchema = z.object({
 // Auth
 // ============================================================================
 
+const PermissionActionSchema = z.enum(['read', 'create', 'update', 'delete', '*'])
+const PermissionPatternSchema = z.string().refine((pattern) => {
+  const parts = pattern.split('.')
+  return parts.length === 2 && Boolean(parts[0]) && PermissionActionSchema.safeParse(parts[1]).success
+}, 'Permission patterns must use Entity.action with a CRUD action or wildcard')
+
 const PermissionConditionSchema = z.object({
   entity: z.string(),
-  actions: z.array(z.string()),
+  actions: z.array(PermissionActionSchema).min(1),
   condition: AccessConditionSchema,
 })
 
 const PermissionRuleSchema = z.object({
-  allow: z.union([z.array(z.string()), z.array(PermissionConditionSchema)]),
-  deny: z.array(z.string()).optional(),
+  allow: z.union([z.array(PermissionPatternSchema), z.array(PermissionConditionSchema)]),
+  deny: z.array(PermissionPatternSchema).optional(),
 })
 
 const ApiKeyConfigSchema = z.object({

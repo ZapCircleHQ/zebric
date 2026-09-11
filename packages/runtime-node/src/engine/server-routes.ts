@@ -212,7 +212,8 @@ async function checkWorkflowEntityPermissions(
   permissionManager: PermissionManager,
   session: UserSession | null,
   workflow: { steps?: Array<Record<string, any>> } | undefined,
-  fallback?: RequiredEntityAction
+  fallback?: RequiredEntityAction,
+  data?: Record<string, any> | null
 ): Promise<boolean> {
   const pairs = getWorkflowRequiredEntityActions(workflow)
   const checks = pairs.length > 0 ? pairs : fallback ? [fallback] : []
@@ -221,7 +222,20 @@ async function checkWorkflowEntityPermissions(
   }
 
   const results = await Promise.all(
-    checks.map((pair) => permissionManager.checkPermission({ session, entity: pair.entity, action: pair.action }))
+    checks.map((pair) => {
+      // The loaded page record is authoritative only for existing-record
+      // operations on that same entity. Reusing it for a secondary entity or a
+      // create check can satisfy a conditional rule with unrelated fields.
+      const appliesToLoadedRecord = Boolean(
+        data && fallback && pair.entity === fallback.entity && pair.action !== 'create'
+      )
+      return permissionManager.checkPermission({
+        session,
+        entity: pair.entity,
+        action: pair.action,
+        data: appliesToLoadedRecord ? data! : undefined,
+      })
+    })
   )
   return results.every(Boolean)
 }
@@ -473,40 +487,59 @@ export function registerActionRoutes(
       const successMessage = typeof body.successMessage === 'string' ? body.successMessage : undefined
       const session = await sessionManager.getSession(c.req.raw)
       const workflow = workflowManager!.getWorkflow(workflowName)
-      if (!session) {
-        const exposed = pageExposesWorkflow(blueprint, workflowName, body.page)
-        const resolvedEntity = exposed ? getPagePrimaryEntity(findPage(blueprint, body.page)) : undefined
-        const entityMatches = !entity || entity === resolvedEntity
-        const allowed = exposed && resolvedEntity && entityMatches && anonymousActionRule && permissionManager
-          ? await checkWorkflowEntityPermissions(permissionManager, null, workflow, { entity: resolvedEntity, action: 'update' })
-          : false
-        if (!allowed) {
-          return Response.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-      } else if (permissionManager) {
-        // Verified upfront, not just per-step during execution: a caller permitted to
-        // perform only part of a workflow must never be able to trigger it at all, or
-        // that permitted prefix of steps commits before the workflow fails downstream.
-        const allowed = await checkWorkflowEntityPermissions(permissionManager, session, workflow)
-        if (!allowed) {
-          return Response.json({ error: 'Insufficient permissions for this workflow' }, { status: 403 })
-        }
-      }
-      let record: any = null
-
-      if (entity && recordId) {
-        try {
-          record = await queryExecutor.findById(entity, recordId, { session })
-        } catch (error) {
-          console.warn(`Action workflow '${workflowName}' could not load ${entity}(${recordId})`, error)
-        }
-      }
-
       if (!workflow) {
         return Response.json(
           { error: `Workflow '${workflowName}' not found` },
           { status: 404 }
         )
+      }
+
+      const hasRbacPolicy = Boolean(permissionManager?.getAllRoles().length)
+      const exposed = pageExposesWorkflow(blueprint, workflowName, body.page)
+      const resolvedEntity = exposed ? getPagePrimaryEntity(findPage(blueprint, body.page)) : undefined
+      const entityMatches = !entity || entity === resolvedEntity
+      if (hasRbacPolicy && (!exposed || !resolvedEntity || !entityMatches)) {
+        return Response.json(
+          { error: session ? 'Workflow is not exposed by this page' : 'Unauthorized' },
+          { status: session ? 403 : 401 }
+        )
+      }
+
+      let record: any = null
+      if (resolvedEntity && recordId) {
+        try {
+          record = await queryExecutor.findById(resolvedEntity, recordId, { session })
+        } catch (error) {
+          console.warn(`Action workflow '${workflowName}' could not load ${resolvedEntity}(${recordId})`, error)
+        }
+      }
+
+      if (!session) {
+        const allowed = exposed && resolvedEntity && entityMatches && anonymousActionRule && permissionManager
+          ? await checkWorkflowEntityPermissions(
+              permissionManager, null, workflow, { entity: resolvedEntity, action: 'update' }, record,
+            )
+          : false
+        if (!allowed) {
+          return Response.json({ error: 'Unauthorized' }, { status: 401 })
+        }
+      } else if (permissionManager && hasRbacPolicy) {
+        // Verified upfront, not just per-step during execution: a caller permitted to
+        // perform only part of a workflow must never be able to trigger it at all, or
+        // that permitted prefix of steps commits before the workflow fails downstream.
+        const allowed = await checkWorkflowEntityPermissions(
+          permissionManager, session, workflow, { entity: resolvedEntity!, action: 'update' }, record,
+        )
+        if (!allowed) {
+          return Response.json({ error: 'Insufficient permissions for this workflow' }, { status: 403 })
+        }
+      } else if (record === null && entity && recordId) {
+        // Applications without RBAC keep the existing authenticated action API.
+        try {
+          record = await queryExecutor.findById(entity, recordId, { session })
+        } catch (error) {
+          console.warn(`Action workflow '${workflowName}' could not load ${entity}(${recordId})`, error)
+        }
       }
 
       const pageActions = findPageWorkflowActions(blueprint, workflowName, body.page)
