@@ -14,7 +14,9 @@
       "@zebric/notifications",
       "@zebric/observability",
       "@zebric/plugin-sdk",
-      "@zebric/themes"
+      "@zebric/themes",
+      "@zebric/agent",
+      "@zebric/mcp-server"
     ]
   ],
   "linked": [],
