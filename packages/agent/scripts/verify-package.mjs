@@ -35,6 +35,19 @@ try {
       '@zebric/runtime-core': `file:${runtimeCoreTarball}`,
     },
   }, null, 2))
+  // The workspace dependency may be part of the same unpublished release.
+  // Force every occurrence to the tarball under test instead of asking npm to
+  // resolve the version embedded in the packed agent manifest. pnpm 11 reads
+  // overrides from pnpm-workspace.yaml rather than package.json.
+  writeFileSync(join(consumerRoot, 'pnpm-workspace.yaml'), `packages:
+  - .
+
+overrides:
+  '@zebric/runtime-core': ${JSON.stringify(`file:${runtimeCoreTarball}`)}
+`)
+  // Make an accidental registry lookup for an unpublished Zebric package fail
+  // deterministically, while leaving third-party package installs unchanged.
+  writeFileSync(join(consumerRoot, '.npmrc'), '@zebric:registry=http://127.0.0.1:9/\n')
   writeFileSync(join(consumerRoot, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       module: 'NodeNext',
