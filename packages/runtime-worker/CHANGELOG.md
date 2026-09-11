@@ -1,5 +1,33 @@
 # @zebric/runtime-worker
 
+## 0.4.0
+
+### Patch Changes
+
+- 9200a34: Harden Zebric's authorization and webhook security boundaries.
+  - Make explicit RBAC denies override allows across all assigned roles, support conditional anonymous rules, reject malformed permission patterns, and make empty or unresolved conditions fail closed.
+  - Prevent record data from spoofing `$currentUser.*` conditions and require the trusted system actor identity for system-session bypasses.
+  - Evaluate ownership checks against stored records, enforce row and field read access consistently, and reject unknown fields in row-access conditions.
+  - Require RBAC-protected manual workflows to be exposed by their submitted page and authorize every entity/action before execution using only the applicable server-loaded record.
+  - Authenticate inbound notification webhooks with a configured bearer secret or timestamped HMAC-SHA256 signature, including replay-window enforcement.
+
+- 8b1a1ba: Enforce blueprint access control in the Workers (D1) query executor, which previously ran every `create`, `update`, and `delete` with no authorization at all. `WorkersQueryExecutor` now:
+  - enforces role permissions and entity-level `access` rules for reads, searches, creates, updates, and deletes, matching the Node executor;
+  - applies row-level filters to collection reads and hides records that fail read access in `findById`;
+  - evaluates update and delete access against the stored record so caller-controlled fields cannot forge ownership;
+  - strips fields denied by field-level `access.read` from returned records;
+  - drops fields the caller may not write per field-level `access.write` rules, with trusted system / workflow sessions bypassing the filter;
+  - treats an update whose fields are all unwritable as a no-op returning the current row.
+
+- Updated dependencies [48bcb96]
+- Updated dependencies [9aa29c3]
+- Updated dependencies [e0da6cd]
+- Updated dependencies [9200a34]
+- Updated dependencies [1df1c9a]
+- Updated dependencies [4baefc7]
+  - @zebric/runtime-core@0.4.0
+  - @zebric/runtime-hono@0.4.0
+
 ## 0.3.1
 
 ### Patch Changes
