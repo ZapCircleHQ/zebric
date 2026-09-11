@@ -378,6 +378,12 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       const key = value.slice(1, -1)
       return context.params?.[key] ?? context.query?.[key] ?? context.session?.user?.id
     }
+    if (value.startsWith('$params.')) {
+      return context.params?.[value.slice(8)]
+    }
+    if (value.startsWith('$query.')) {
+      return context.query?.[value.slice(7)]
+    }
     if (value === '$currentUser.id') {
       return context.session?.user?.id
     }
