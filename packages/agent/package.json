@@ -21,6 +21,11 @@
   "publishConfig": {
     "access": "public"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ZapCircleHQ/zebric.git",
+    "directory": "packages/agent"
+  },
   "scripts": {
     "build": "rm -rf dist && tsc",
     "pretest": "pnpm --filter @zebric/runtime-node... build",
