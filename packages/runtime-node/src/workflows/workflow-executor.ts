@@ -454,8 +454,14 @@ export class WorkflowExecutor {
       throw new Error('Loop step requires do')
     }
 
-    // Get items from context
-    const items = this.resolveVariables(step.items, context)
+    // A loop source is a context path rather than an interpolated string. Resolve
+    // the whole value without stringifying arrays or objects first.
+    const templateMatch = step.items.match(/^\s*\{\{([^}]+)\}\}\s*$/)
+    const itemPath = templateMatch?.[1]?.trim() ?? step.items.trim()
+    const pathValue = this.getValueByPath(context, itemPath)
+    const items = pathValue !== undefined
+      ? pathValue
+      : this.resolveVariables(step.items, context)
 
     if (!Array.isArray(items)) {
       throw new Error(`Loop items must be an array, got: ${typeof items}`)
