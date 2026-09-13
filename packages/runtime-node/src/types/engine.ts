@@ -72,14 +72,6 @@ export interface HealthStatus {
   memory: NodeJS.MemoryUsage
 }
 
-export interface Session {
-  id: string
-  userId: string
-  user: any
-  expiresAt: Date
-  createdAt: Date
-}
-
 export interface ZebricEngineAPI {
   getState(): EngineState
   getBlueprint(): Blueprint

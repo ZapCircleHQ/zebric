@@ -79,9 +79,9 @@ pnpm deploy
 
 This example uses the `@zebric/runtime-worker` package which provides:
 
-- **D1Adapter**: Implements the StoragePort interface using CloudFlare D1
-- **KVCache**: Implements the CacheInterface using CloudFlare KV
-- **R2Storage**: File storage adapter for CloudFlare R2
+- **D1Adapter**: Implements `SqlStoragePort` using Cloudflare D1
+- **KVCache**: Implements `CachePort` using Cloudflare KV
+- **R2Storage**: Implements `ObjectStoragePort` using Cloudflare R2
 - **ZebricWorkersEngine**: Main engine that handles HTTP requests
 
 All platform-specific implementations conform to the port interfaces defined in `@zebric/runtime-core`, making the blueprint 100% portable across platforms.

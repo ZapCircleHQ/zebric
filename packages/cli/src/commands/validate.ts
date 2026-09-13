@@ -12,7 +12,7 @@ import {
   detectFormat,
   BlueprintValidationError,
   type Blueprint,
-} from '@zebric/runtime-node'
+} from '@zebric/runtime-core'
 import { readFile } from 'node:fs/promises'
 
 export interface ValidateOptions {

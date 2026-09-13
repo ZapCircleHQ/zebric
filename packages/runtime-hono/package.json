@@ -29,10 +29,10 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@zebric/runtime-core": "workspace:*",
-    "hono": "^4.12.14"
+    "@zebric/runtime-core": "workspace:*"
   },
   "devDependencies": {
+    "hono": "^4.12.14",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },

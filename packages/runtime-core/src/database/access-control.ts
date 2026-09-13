@@ -349,3 +349,32 @@ export class AccessControl {
     return dataArray.map(data => this.filterFields(entity, action, data, session))
   }
 }
+
+/** Enforce entity-level and RBAC access with one cross-runtime error contract. */
+export async function assertEntityAccess(context: AccessContext): Promise<void> {
+  if (!await AccessControl.checkAccess(context)) {
+    throw new Error(`Access denied: Cannot ${context.action} ${context.entity.name}`)
+  }
+}
+
+/** Apply the canonical field-level write policy used by every query executor. */
+export function filterWritableFields(
+  entity: Entity | undefined,
+  data: Record<string, any>,
+  session?: UserSession | null,
+): Record<string, any> {
+  if (!entity || isSystemSession(session)) return data
+  return AccessControl.filterFields(entity, 'write', data, session)
+}
+
+/** Apply the canonical field-level read policy used by every query executor. */
+export function filterReadableFields<T extends Record<string, any> | Record<string, any>[]>(
+  entity: Entity | undefined,
+  data: T,
+  session?: UserSession | null,
+): T {
+  if (!entity || isSystemSession(session)) return data
+  return (Array.isArray(data)
+    ? AccessControl.filterFieldsArray(entity, 'read', data, session)
+    : AccessControl.filterFields(entity, 'read', data, session)) as T
+}

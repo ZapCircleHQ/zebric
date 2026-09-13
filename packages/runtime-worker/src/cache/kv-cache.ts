@@ -4,9 +4,9 @@
  * Implements cache using CloudFlare KV storage.
  */
 
-import type { CacheInterface } from '@zebric/runtime-core'
+import type { CachePort } from '@zebric/runtime-core'
 
-export class KVCache implements CacheInterface {
+export class KVCache implements CachePort {
   constructor(private kv: KVNamespace, private keyPrefix: string = 'cache:') {}
 
   async get<T = unknown>(key: string): Promise<T | null> {
@@ -26,8 +26,7 @@ export class KVCache implements CacheInterface {
       const options: KVNamespacePutOptions = {}
 
       if (ttl !== undefined) {
-        // TTL in KV is in seconds
-        options.expirationTtl = Math.floor(ttl / 1000)
+        options.expirationTtl = ttl
       }
 
       await this.kv.put(fullKey, JSON.stringify(value), options)

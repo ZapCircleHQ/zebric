@@ -118,6 +118,62 @@ describe('WorkersQueryExecutor', () => {
       expect(result[0].userId).toBe('user-123')
     })
 
+    it('supports canonical route, query, and session placeholders', async () => {
+      await adapter.query(
+        'INSERT INTO Task (id, title, status, userId) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
+        ['task-1', 'Mine', 'pending', 'user-123', 'task-2', 'Other', 'completed', 'user-999']
+      )
+      const context: RequestContext = {
+        params: { id: 'task-1' },
+        query: { status: 'pending' },
+        session: { user: { id: 'user-123', email: 'u@example.test' } } as any,
+      }
+
+      const result = await executor.execute({
+        entity: 'Task',
+        where: {
+          id: '$params.id',
+          status: '$query.status',
+          userId: '$currentUser.id',
+        },
+      }, context)
+
+      expect(result.map((row: any) => row.id)).toEqual(['task-1'])
+    })
+
+    it('fails closed when a placeholder cannot be resolved', async () => {
+      await adapter.query(
+        'INSERT INTO Task (id, title) VALUES (?, ?)',
+        ['task-1', 'Must not leak']
+      )
+
+      const result = await executor.execute(
+        { entity: 'Task', where: { id: '$params.missing' } },
+        { params: {}, session: null },
+      )
+
+      expect(result).toEqual([])
+    })
+
+    it('supports the complete canonical comparison set', async () => {
+      await adapter.query(
+        'INSERT INTO Task (id, title, status) VALUES (?, ?, ?), (?, ?, ?)',
+        ['task-1', 'Alpha task', 'pending', 'task-2', 'Beta task', 'completed']
+      )
+
+      const result = await executor.execute({
+        entity: 'Task',
+        where: {
+          id: { $in: ['task-1', 'task-3'] },
+          status: { ne: 'completed' },
+          title: { $like: 'Alpha%' },
+          description: { $null: true },
+        },
+      }, { session: null })
+
+      expect(result.map((row: any) => row.id)).toEqual(['task-1'])
+    })
+
     it('should support ORDER BY', async () => {
       await adapter.query(
         'INSERT INTO Task (id, title, status) VALUES (?, ?, ?), (?, ?, ?)',

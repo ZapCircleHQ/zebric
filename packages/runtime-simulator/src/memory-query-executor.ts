@@ -1,5 +1,11 @@
 import {
   AccessControl,
+  PermissionManager,
+  assertEntityAccess,
+  filterReadableFields,
+  filterWritableFields,
+  matchesQueryPredicate,
+  normalizeQueryWhere,
   type Blueprint,
   type Entity,
   type Query,
@@ -12,17 +18,20 @@ import type { SimulatorSeedData } from './types.js'
 
 export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
   private tables = new Map<string, Array<Record<string, any>>>()
+  private permissionManager: PermissionManager
 
   constructor(
     private blueprint: Blueprint,
     seedData: SimulatorSeedData,
     private logger: SimulatorLogger
   ) {
+    this.permissionManager = new PermissionManager(blueprint.auth)
     this.loadSeed(seedData)
   }
 
   setBlueprint(blueprint: Blueprint): void {
     this.blueprint = blueprint
+    this.permissionManager = new PermissionManager(blueprint.auth)
     for (const entity of blueprint.entities) {
       if (!this.tables.has(entity.name)) {
         this.tables.set(entity.name, [])
@@ -74,24 +83,20 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     const entity = this.getEntity(query.entity)
     const rows = this.getRows(query.entity)
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'read',
       entity,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      this.logger.log({
-        type: 'query',
-        message: `Read denied for ${query.entity}`,
-        detail: { query },
-      })
-      return []
-    }
 
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
-    let result = rows.filter((row) => this.matchesWhere(row, query.where, context))
+    const allowedFields = new Set(entity.fields.map(field => field.name))
+    const predicate = normalizeQueryWhere(query.where, context, { allowedFields })
+    let result = rows.filter((row) => matchesQueryPredicate(row, predicate))
     if (accessFilter) {
-      result = result.filter((row) => this.matchesWhere(row, accessFilter, context))
+      const accessPredicate = normalizeQueryWhere(accessFilter, context, { allowedFields })
+      result = result.filter((row) => matchesQueryPredicate(row, accessPredicate))
     }
 
     result = this.applyOrder(result, query.orderBy)
@@ -101,7 +106,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       ? result.slice(offset)
       : result.slice(offset, offset + query.limit)
 
-    const filtered = limited.map((row) => AccessControl.filterFields(entity, 'read', row, context.session))
+    const filtered = limited.map((row) => filterReadableFields(entity, row, context.session))
     this.logger.log({
       type: 'query',
       message: `Read ${filtered.length} ${query.entity} record(s)`,
@@ -112,18 +117,16 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
 
   async create(entityName: string, data: Record<string, any>, context: RequestContext): Promise<any> {
     const entity = this.getEntity(entityName)
-    const writable = AccessControl.filterFields(entity, 'write', data, context.session)
+    const writable = filterWritableFields(entity, data, context.session)
     const record = this.applyDefaults(entity, writable, context)
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'create',
       entity,
       data: record,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot create ${entityName}`)
-    }
 
     this.getRows(entityName).push(record)
     this.logger.log({
@@ -131,7 +134,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       message: `Created ${entityName} ${record.id ?? ''}`.trim(),
       detail: { record },
     })
-    return { ...record }
+    return filterReadableFields(entity, { ...record }, context.session)
   }
 
   async update(entityName: string, id: string, data: Record<string, any>, context: RequestContext): Promise<any> {
@@ -143,17 +146,15 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     }
 
     const existing = rows[index]!
-    const writable = AccessControl.filterFields(entity, 'write', data, context.session)
-    const updated = { ...existing, ...this.coerceValues(entity, writable) }
-    const hasAccess = await AccessControl.checkAccess({
+    const writable = filterWritableFields(entity, data, context.session)
+    await assertEntityAccess({
       session: context.session,
       action: 'update',
       entity,
-      data: updated,
+      data: existing,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot update ${entityName}`)
-    }
+    const updated = { ...existing, ...this.coerceValues(entity, writable) }
 
     rows[index] = updated
     this.logger.log({
@@ -161,7 +162,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       message: `Updated ${entityName} ${id}`,
       detail: { before: existing, after: updated },
     })
-    return { ...updated }
+    return filterReadableFields(entity, { ...updated }, context.session)
   }
 
   async delete(entityName: string, id: string, context: RequestContext): Promise<any> {
@@ -173,15 +174,13 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     }
 
     const record = rows[index]!
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'delete',
       entity,
       data: record,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot delete ${entityName}`)
-    }
 
     rows.splice(index, 1)
     this.logger.log({
@@ -191,10 +190,9 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     })
   }
 
-  async findById(entityName: string, id: string, _context?: Record<string, any>): Promise<any> {
-    this.getEntity(entityName)
-    const record = this.getRows(entityName).find((row) => String(row.id) === String(id))
-    return record ? { ...record } : null
+  async findById(entityName: string, id: string, context: RequestContext = {}): Promise<any> {
+    const rows = await this.execute({ entity: entityName, where: { id }, limit: 1 }, context)
+    return rows[0] ?? null
   }
 
   async search(
@@ -207,12 +205,12 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     const rows = this.getRows(entityName)
     const context = options.context || {}
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'read',
       entity,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) return []
 
     const trimmed = String(query ?? '').trim()
     if (!trimmed) return []
@@ -226,17 +224,27 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     )
 
     if (options.filter) {
-      matches = matches.filter((row) => this.matchesWhere(row, options.filter, context))
+      const predicate = normalizeQueryWhere(
+        options.filter,
+        context,
+        { allowedFields: new Set(entity.fields.map(field => field.name)) },
+      )
+      matches = matches.filter((row) => matchesQueryPredicate(row, predicate))
     }
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
     if (accessFilter) {
-      matches = matches.filter((row) => this.matchesWhere(row, accessFilter, context))
+      const accessPredicate = normalizeQueryWhere(
+        accessFilter,
+        context,
+        { allowedFields: new Set(entity.fields.map(field => field.name)) },
+      )
+      matches = matches.filter((row) => matchesQueryPredicate(row, accessPredicate))
     }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
     return matches
       .slice(0, limit)
-      .map((row) => AccessControl.filterFields(entity, 'read', row, context.session))
+      .map((row) => filterReadableFields(entity, row, context.session))
   }
 
   private getEntity(name: string): Entity {
@@ -312,85 +320,6 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       }
     }
     return result
-  }
-
-  private matchesWhere(row: Record<string, any>, where: Record<string, any> | undefined, context: RequestContext): boolean {
-    if (!where) return true
-
-    if (Array.isArray((where as any).or)) {
-      return (where as any).or.some((condition: Record<string, any>) => this.matchesWhere(row, condition, context))
-    }
-
-    if (Array.isArray((where as any).and)) {
-      return (where as any).and.every((condition: Record<string, any>) => this.matchesWhere(row, condition, context))
-    }
-
-    for (const [field, expected] of Object.entries(where)) {
-      if (!this.matchesField(row[field], this.resolveValue(expected, context))) {
-        return false
-      }
-    }
-    return true
-  }
-
-  private matchesField(actual: any, expected: any): boolean {
-    if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
-      for (const [op, value] of Object.entries(expected)) {
-        if (!this.matchesOperator(actual, op, value)) {
-          return false
-        }
-      }
-      return true
-    }
-    return actual === expected
-  }
-
-  private matchesOperator(actual: any, op: string, value: any): boolean {
-    switch (op) {
-      case '$eq':
-        return actual === value
-      case '$ne':
-        return actual !== value
-      case '$gt':
-        return actual > value
-      case '$gte':
-        return actual >= value
-      case '$lt':
-        return actual < value
-      case '$lte':
-        return actual <= value
-      case '$in':
-        return Array.isArray(value) && value.includes(actual)
-      case '$like':
-        return String(actual ?? '').includes(String(value).replace(/%/g, ''))
-      case '$null':
-        return value ? actual == null : actual != null
-      default:
-        return actual === value
-    }
-  }
-
-  private resolveValue(value: any, context: RequestContext): any {
-    if (typeof value !== 'string') {
-      return value
-    }
-    if (value.startsWith('{') && value.endsWith('}')) {
-      const key = value.slice(1, -1)
-      return context.params?.[key] ?? context.query?.[key] ?? context.session?.user?.id
-    }
-    if (value.startsWith('$params.')) {
-      return context.params?.[value.slice(8)]
-    }
-    if (value.startsWith('$query.')) {
-      return context.query?.[value.slice(7)]
-    }
-    if (value === '$currentUser.id') {
-      return context.session?.user?.id
-    }
-    if (value.startsWith('$currentUser.')) {
-      return context.session?.user?.[value.slice(13)]
-    }
-    return value
   }
 
   private applyOrder(rows: Array<Record<string, any>>, orderBy?: Record<string, 'asc' | 'desc'>): Array<Record<string, any>> {

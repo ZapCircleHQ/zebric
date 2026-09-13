@@ -16,7 +16,7 @@ import type {
   SessionManagerPort,
   RendererPort,
   AuditLoggerPort,
-  FileStoragePort
+  RuntimePorts
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
 import {
@@ -33,13 +33,8 @@ import {
 import { executeFormAction, validateForm, checkFormAuthorization } from './form-processor.js'
 import { resolveSession, buildLoginRedirect } from './session-resolver.js'
 
-export interface RequestHandlerConfig {
+export interface RequestHandlerConfig extends RuntimePorts {
   blueprint: Blueprint
-  queryExecutor?: QueryExecutorPort
-  sessionManager?: SessionManagerPort
-  renderer?: RendererPort
-  auditLogger?: AuditLoggerPort
-  fileStorage?: FileStoragePort
   errorSanitizer?: ErrorSanitizer
   defaultOrigin?: string
 }
@@ -50,7 +45,6 @@ export class RequestHandler {
   private sessionManager?: SessionManagerPort
   private renderer?: RendererPort
   private auditLogger?: AuditLoggerPort
-  private fileStorage?: FileStoragePort
   private errorSanitizer?: ErrorSanitizer
   private defaultOrigin: string
 
@@ -60,7 +54,6 @@ export class RequestHandler {
     this.sessionManager = config.sessionManager
     this.renderer = config.renderer
     this.auditLogger = config.auditLogger
-    this.fileStorage = config.fileStorage
     this.errorSanitizer = config.errorSanitizer
     this.defaultOrigin = config.defaultOrigin || 'http://localhost:3000'
   }
@@ -88,7 +81,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'read', undefined, { session, request })
+        this.logAccessDenied(page.path, 'read', undefined, session, request)
 
         if (wantsJson(request)) {
           return jsonResponse(401, {
@@ -173,7 +166,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'create', undefined, { session, request })
+        this.logAccessDenied(page.path, 'create', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -217,7 +210,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'create', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'create', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -233,13 +226,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful create
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'create',
         page.form.entity,
         result?.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       // Handle success
@@ -282,7 +274,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'update', undefined, { session, request })
+        this.logAccessDenied(page.path, 'update', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -318,7 +310,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'update', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'update', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -334,13 +326,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful update
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'update',
         page.form.entity,
         match.params.id || result?.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       return jsonResponse(200, {
@@ -368,7 +359,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'delete', undefined, { session, request })
+        this.logAccessDenied(page.path, 'delete', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -393,7 +384,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'delete', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'delete', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -409,13 +400,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful delete
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'delete',
         page.form.entity,
         match.params.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       return jsonResponse(200, {
@@ -443,6 +433,47 @@ export class RequestHandler {
       console.error('Query execution error:', error)
       return []
     }
+  }
+
+  private logAccessDenied(
+    resource: string,
+    action: string,
+    entity: string | undefined,
+    session: RequestContext['session'],
+    request: HttpRequest,
+  ): void {
+    this.auditLogger?.log({
+      eventType: 'access.denied',
+      severity: 'WARNING',
+      action: `Access denied: ${action}`,
+      resource,
+      success: false,
+      userId: session?.user?.id,
+      ipAddress: extractIp(request),
+      userAgent: request.headers['user-agent'] as string,
+      entityType: entity,
+    })
+  }
+
+  private logDataAccess(
+    action: 'create' | 'update' | 'delete',
+    entity: string,
+    entityId: string | undefined,
+    session: RequestContext['session'],
+    request: HttpRequest,
+  ): void {
+    this.auditLogger?.log({
+      eventType: `data.${action}`,
+      severity: 'INFO',
+      action: `Data ${action}`,
+      resource: entity,
+      success: true,
+      userId: session?.user?.id,
+      ipAddress: extractIp(request),
+      userAgent: request.headers['user-agent'] as string,
+      entityType: entity,
+      entityId,
+    })
   }
 
   private handleError(error: any, session: any, resource: string, request: HttpRequest): HttpResponse {

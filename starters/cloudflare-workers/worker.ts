@@ -1,5 +1,5 @@
 /**
- * Zebric CloudFlare Workers Starter
+ * Zebric Cloudflare Workers Starter
  *
  * This is the only file you need - just modify blueprint.toml!
  */
@@ -9,7 +9,7 @@ import type { WorkersEnv } from '@zebric/runtime-worker'
 import blueprintToml from './blueprint.toml'
 
 export default {
-  async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
     const engine = new ZebricWorkersEngine({
       env,
       blueprintContent: blueprintToml,

@@ -191,8 +191,6 @@ export type SlotContext =
  */
 export interface AuditLoggerPort {
   log(event: LogEvent): void
-  logAccessDenied(resource: string, action: string, entity?: string, context?: any): void
-  logDataAccess(action: string, entity: string, recordId?: string, userId?: string, success?: boolean, context?: any): void
 }
 
 export interface LogEvent {
@@ -204,44 +202,15 @@ export interface LogEvent {
   userId?: string
   ipAddress?: string
   userAgent?: string
+  entityType?: string
+  entityId?: string
   metadata?: Record<string, any>
 }
 
-/**
- * File upload result
- */
-export interface UploadedFile {
-  id: string
-  url: string
-  originalName: string
-  size: number
-  mimeType: string
-}
-
-/**
- * File storage port - handles file uploads
- */
-export interface FileStoragePort {
-  validateFile(file: any, options: FileValidationOptions): { valid: boolean; error?: string }
-  saveFile(file: any): Promise<UploadedFile>
-}
-
-export interface FileValidationOptions {
-  maxSize?: number
-  allowedTypes?: string[]
-}
-
-/**
- * Authorization checker port
- */
-export interface AuthorizationPort {
-  checkAccess(options: AccessCheckOptions): Promise<boolean>
-}
-
-export interface AccessCheckOptions {
-  session: UserSession | null
-  action: 'create' | 'read' | 'update' | 'delete'
-  entity: any
-  data?: Record<string, any>
-  recordId?: string
+/** Application services consumed by the platform-neutral request handler. */
+export interface RuntimePorts {
+  queryExecutor?: QueryExecutorPort
+  sessionManager?: SessionManagerPort
+  renderer?: RendererPort
+  auditLogger?: AuditLoggerPort
 }

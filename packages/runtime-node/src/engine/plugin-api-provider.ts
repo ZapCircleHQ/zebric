@@ -16,7 +16,7 @@ import { ulid } from 'ulid'
 import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
 import type { QueryExecutor } from '../database/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
-import type { CacheInterface } from '../cache/index.js'
+import type { CachePort } from '../cache/index.js'
 import type { AuditLogger } from '../security/index.js'
 import { AuditSeverity } from '../security/index.js'
 import type { Blueprint, EngineAPI } from '@zebric/runtime-core'
@@ -28,7 +28,7 @@ export interface PluginAPIProviderDependencies {
   queryExecutor: QueryExecutor
   authProvider: AuthProvider
   sessionManager: SessionManager
-  cache: CacheInterface
+  cache: CachePort
   auditLogger: AuditLogger
   workflowManager?: WorkflowManager
   blueprint: Blueprint
@@ -43,7 +43,7 @@ export class PluginAPIProvider {
   private queryExecutor: QueryExecutor
   private authProvider: AuthProvider
   private sessionManager: SessionManager
-  private cache: CacheInterface
+  private cache: CachePort
   private auditLogger: AuditLogger
   private workflowManager?: WorkflowManager
   private blueprint: Blueprint

@@ -1,7 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { ulid } from 'ulid'
-import type { UploadedFile as BaseUploadedFile } from '@zebric/runtime-core'
 
 export type UploadableFile = File | {
   name?: string
@@ -12,7 +11,12 @@ export type UploadableFile = File | {
   arrayBuffer: () => Promise<ArrayBuffer>
 }
 
-export interface UploadedFileDetails extends BaseUploadedFile {
+export interface UploadedFileDetails {
+  id: string
+  url: string
+  originalName: string
+  size: number
+  mimeType: string
   filename: string
   path: string
 }

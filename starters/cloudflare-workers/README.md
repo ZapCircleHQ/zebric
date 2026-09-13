@@ -142,7 +142,10 @@ Use in `where` clauses:
 
 ## Optional Features
 
-### Enable Sessions (for forms with CSRF protection)
+### Enable Session Lookup
+
+This enables KV-backed session lookup in `ZebricWorkersEngine`. CSRF validation
+is available through `WorkersCSRFProtection` but is not installed automatically.
 
 1. Create KV namespace:
 
@@ -160,6 +163,9 @@ id = "your-session-kv-id"
 
 ### Enable Caching
 
+This makes a `KVCache` available through `engine.getCache()`. The engine does not
+automatically cache request or query results.
+
 1. Create KV namespace:
 
 ```bash
@@ -172,22 +178,6 @@ wrangler kv:namespace create CACHE_KV
 [[kv_namespaces]]
 binding = "CACHE_KV"
 id = "your-cache-kv-id"
-```
-
-### Enable File Storage
-
-1. Create R2 bucket:
-
-```bash
-wrangler r2 bucket create zebric-files
-```
-
-2. Uncomment in `wrangler.toml`:
-
-```toml
-[[r2_buckets]]
-binding = "FILES_R2"
-bucket_name = "zebric-files"
 ```
 
 ## API Access

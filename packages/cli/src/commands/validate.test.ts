@@ -19,7 +19,7 @@ vi.mock('node:fs/promises', () => ({
   readFile: vi.fn(),
 }))
 
-vi.mock('@zebric/runtime-node', async () => {
+vi.mock('@zebric/runtime-core', async () => {
   class BlueprintValidationError extends Error {
     structured: any
     constructor(structured: any) {
@@ -38,7 +38,7 @@ vi.mock('@zebric/runtime-node', async () => {
 })
 
 import { access, readFile } from 'node:fs/promises'
-import { BlueprintParser, detectFormat, BlueprintValidationError } from '@zebric/runtime-node'
+import { BlueprintParser, detectFormat, BlueprintValidationError } from '@zebric/runtime-core'
 
 const mockAccess = access as ReturnType<typeof vi.fn>
 const mockReadFile = readFile as ReturnType<typeof vi.fn>

@@ -166,4 +166,23 @@ describe('R2Storage', () => {
       expect(metadata).toBeNull()
     })
   })
+
+  describe('ObjectStoragePort', () => {
+    it('supports canonical put, get, and head operations', async () => {
+      await storage.put('canonical.txt', 'hello', {
+        contentType: 'text/plain',
+        metadata: { source: 'test' },
+      })
+
+      const body = await storage.get('canonical.txt')
+      const metadata = await storage.head('canonical.txt')
+
+      expect(await new Response(body).text()).toBe('hello')
+      expect(metadata).toMatchObject({
+        key: 'canonical.txt',
+        size: 5,
+        contentType: 'text/plain',
+      })
+    })
+  })
 })

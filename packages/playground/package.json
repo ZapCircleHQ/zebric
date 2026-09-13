@@ -8,6 +8,8 @@
     "dev": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "preview": "vite preview",
     "clean": "rm -rf dist"
   },
@@ -25,6 +27,7 @@
     "vite": "^8.0.9"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
     "typescript": "^6.0.3"

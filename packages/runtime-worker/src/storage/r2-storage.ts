@@ -4,22 +4,19 @@
  * Implements file storage using CloudFlare R2.
  */
 
+import type { ObjectStoragePort } from '@zebric/runtime-core'
+
 export interface R2StorageConfig {
   bucket: R2Bucket
   publicUrlBase?: string // For generating public URLs
 }
 
-export class R2Storage {
+export class R2Storage implements ObjectStoragePort {
   constructor(private config: R2StorageConfig) {}
 
-  async store(key: string, data: ArrayBuffer | ReadableStream, contentType?: string): Promise<string> {
+  async store(key: string, data: ArrayBuffer | Uint8Array | ReadableStream | string, contentType?: string): Promise<string> {
     try {
-      const options: R2PutOptions = {}
-      if (contentType) {
-        options.httpMetadata = { contentType }
-      }
-
-      await this.config.bucket.put(key, data, options)
+      await this.put(key, data, { contentType })
 
       // Return public URL if configured
       if (this.config.publicUrlBase) {
@@ -32,6 +29,21 @@ export class R2Storage {
     }
   }
 
+  async put(
+    key: string,
+    body: ReadableStream | ArrayBuffer | Uint8Array | string,
+    options: { contentType?: string; metadata?: Record<string, unknown> } = {},
+  ): Promise<void> {
+    const putOptions: R2PutOptions = {}
+    if (options.contentType) putOptions.httpMetadata = { contentType: options.contentType }
+    if (options.metadata) {
+      putOptions.customMetadata = Object.fromEntries(
+        Object.entries(options.metadata).map(([name, value]) => [name, String(value)]),
+      )
+    }
+    await this.config.bucket.put(key, body, putOptions)
+  }
+
   async retrieve(key: string): Promise<ReadableStream | null> {
     try {
       const object = await this.config.bucket.get(key)
@@ -40,6 +52,10 @@ export class R2Storage {
       console.error(`Failed to retrieve file ${key}:`, error)
       return null
     }
+  }
+
+  async get(key: string): Promise<ReadableStream | null> {
+    return this.retrieve(key)
   }
 
   async delete(key: string): Promise<void> {
@@ -92,5 +108,10 @@ export class R2Storage {
       console.error(`Failed to get metadata for ${key}:`, error)
       return null
     }
+  }
+
+  async head(key: string): Promise<{ key: string; size: number; contentType?: string; uploaded: Date } | null> {
+    const metadata = await this.getMetadata(key)
+    return metadata ? { key, ...metadata } : null
   }
 }

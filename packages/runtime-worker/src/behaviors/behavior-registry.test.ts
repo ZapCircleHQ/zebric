@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { BehaviorRegistry } from './behavior-registry.js'
-import type { BehaviorContext } from './behavior-registry.js'
+import type { BehaviorContext } from '@zebric/runtime-core'
 
 describe('BehaviorRegistry', () => {
   let registry: BehaviorRegistry
@@ -329,7 +329,7 @@ describe('BehaviorRegistry', () => {
         session: null
       })
 
-      expect(result).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;')
+      expect(result).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;&#x2F;script&gt;')
     })
 
     it('should provide current date/time helpers', async () => {

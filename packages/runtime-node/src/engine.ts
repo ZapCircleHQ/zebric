@@ -11,19 +11,19 @@ import { dirname } from 'node:path'
 import { BlueprintLoader } from './blueprint/index.js'
 import { PluginRegistry } from './plugins/index.js'
 import { DatabaseConnection, QueryExecutor, SchemaDiffer, type SchemaDiffResult } from './database/index.js'
-import { SessionManager, ErrorSanitizer, type RendererPort } from '@zebric/runtime-core'
+import { HTMLRenderer, SessionManager, ErrorSanitizer, type RendererPort } from '@zebric/runtime-core'
 import { AuditLogger } from './security/index.js'
 import { BlueprintWatcher, ReloadServer, getReloadScript } from './hot-reload/index.js'
 import type { WorkflowManager } from './workflows/index.js'
 import { MetricsRegistry, type MetricSnapshot } from './monitoring/metrics.js'
 import { RequestTracer } from './monitoring/request-tracer.js'
-import type { CacheInterface } from './cache/index.js'
+import type { CachePort } from './cache/index.js'
 import { ErrorHandler } from './errors/index.js'
 import type { AuthProvider, EngineAPI } from '@zebric/runtime-core'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
 import { FileStorage } from './storage/index.js'
 import type { Blueprint } from '@zebric/runtime-core'
-import { FileTemplateLoader, HTMLRenderer } from './renderer/index.js'
+import { FileTemplateLoader } from './renderer/index.js'
 import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { NotificationManager } from '@zebric/notifications'
 import { createLogger, type Logger } from '@zebric/observability'
@@ -31,7 +31,6 @@ import type {
   EngineConfig,
   EngineState,
   HealthStatus,
-  ZebricEngineAPI,
 } from './types/index.js'
 import { createQueryExecutorPort, createSessionManagerPort, createAuditLoggerPort } from './engine-port-factory.js'
 import { setupGracefulShutdown, setupHotReload as setupHotReloadFn, loadPlugins as loadPluginsFn, initializePluginAPIProvider } from './engine-lifecycle.js'
@@ -62,7 +61,7 @@ export class ZebricEngine extends EventEmitter {
   private metrics: MetricsRegistry
   private tracer: RequestTracer
   private logger: Logger
-  private cache!: CacheInterface
+  private cache!: CachePort
   private pluginAPIProvider!: PluginAPIProvider
   private subsystemInitializer!: SubsystemInitializer
   private serverManager!: ServerManager

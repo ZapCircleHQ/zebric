@@ -384,6 +384,46 @@ jobs:
       - name: Run runtime-worker smoke suite
         run: pnpm --filter @zebric/runtime-worker test:smoke
 
+  playground-smoke-test:
+    name: Playground Smoke Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.23.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @zebric/playground exec playwright install --with-deps chromium
+
+      - name: Build playground and its workspace dependencies
+        run: pnpm --filter @zebric/playground... build
+
+      - name: Run playground example smoke tests
+        run: pnpm --filter @zebric/playground test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playground-playwright-report
+          path: packages/playground/playwright-report/
+          retention-days: 7
+
   docs-quality:
     name: Docs Quality
     runs-on: ubuntu-latest

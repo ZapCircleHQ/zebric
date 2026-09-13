@@ -136,7 +136,7 @@ export async function checkFormAuthorization(
     try {
       const existingRecord = await queryExecutor.findById(form.entity, recordId, { session })
       data = { ...existingRecord, ...data }
-    } catch (error) {
+    } catch {
       return false
     }
   }

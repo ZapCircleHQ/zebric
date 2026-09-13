@@ -5,16 +5,15 @@
  * Translates Blueprint Query definitions into SQL and executes them via D1Adapter.
  */
 
-import type { Query, Entity, Blueprint, UserSession } from '@zebric/runtime-core'
-import type { QueryExecutorPort, RequestContext } from '@zebric/runtime-core'
-import { AccessControl, PermissionManager, isSystemSession } from '@zebric/runtime-core'
-import type { D1Adapter } from '../database/d1-adapter.js'
+import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
+import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, assertEntityAccess, filterReadableFields, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
 
   constructor(
-    private adapter: D1Adapter,
+    private adapter: SqlStoragePort,
     private blueprint: Blueprint
   ) {
     this.permissionManager = new PermissionManager(blueprint.auth)
@@ -29,7 +28,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${query.entity}`)
     }
 
-    await this.assertAccess(entity, 'read', undefined, context.session)
+    await assertEntityAccess({
+      entity,
+      action: 'read',
+      session: context.session,
+      permissionManager: this.permissionManager,
+    })
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
     if (AccessControl.isImpossibleFilter(accessFilter)) {
       throw new Error(`Access denied: Cannot read ${entity.name}`)
@@ -40,12 +44,13 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       ? { and: [query.where, accessFilter] }
       : query.where || accessFilter || undefined
     const securedQuery = { ...query, where: combinedWhere }
-    const sql = this.buildSelectQuery(entity, securedQuery, context)
-    const params = this.buildQueryParams(securedQuery, context)
+    const allowedFields = new Set(entity.fields.map(field => field.name))
+    const compiledWhere = this.compilePredicate(normalizeQueryWhere(securedQuery.where, context, { allowedFields }))
+    const sql = this.buildSelectQuery(securedQuery, compiledWhere.sql)
 
     // Execute query
-    const result = await this.adapter.query(sql, params)
-    return this.applyReadFieldAccess(entity, result.rows, context.session)
+    const result = await this.adapter.query(sql, compiledWhere.params)
+    return filterReadableFields(entity, result.rows, context.session)
   }
 
   /**
@@ -58,8 +63,14 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     }
 
     // Drop fields the caller may not write, then check entity-level create access.
-    const writable = this.applyWriteFieldAccess(entityDef, data, context.session)
-    await this.assertAccess(entityDef, 'create', writable, context.session)
+    const writable = filterWritableFields(entityDef, data, context.session)
+    await assertEntityAccess({
+      entity: entityDef,
+      action: 'create',
+      data: writable,
+      session: context.session,
+      permissionManager: this.permissionManager,
+    })
 
     // Filter data to only include defined fields
     const filteredData = this.filterFields(entityDef, writable)
@@ -77,7 +88,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, values)
-    return this.applyReadFieldAccess(entityDef, result.rows[0] || { ...filteredData }, context.session)
+    return filterReadableFields(entityDef, result.rows[0] || { ...filteredData }, context.session)
   }
 
   /**
@@ -101,13 +112,14 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     // Drop fields the caller may not write, then authorize the stored resource.
     // Proposed ownership values must not grant access to the update itself.
-    const writable = this.applyWriteFieldAccess(entityDef, data, context.session)
-    await this.assertAccess(
-      entityDef,
-      'update',
-      existing,
-      context.session
-    )
+    const writable = filterWritableFields(entityDef, data, context.session)
+    await assertEntityAccess({
+      entity: entityDef,
+      action: 'update',
+      data: existing,
+      session: context.session,
+      permissionManager: this.permissionManager,
+    })
 
     // Filter data to only include defined fields
     const filteredData = this.filterFields(entityDef, writable)
@@ -130,7 +142,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
-    return this.applyReadFieldAccess(
+    return filterReadableFields(
       entityDef,
       result.rows[0] || { ...(existing ?? {}), ...filteredData, id },
       context.session
@@ -149,7 +161,13 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     // Missing row: nothing to authorize against, DELETE is a harmless no-op.
     const existing = await this.findByIdUnrestricted(entity, id)
     if (existing) {
-      await this.assertAccess(entityDef, 'delete', existing, context.session)
+      await assertEntityAccess({
+        entity: entityDef,
+        action: 'delete',
+        data: existing,
+        session: context.session,
+        permissionManager: this.permissionManager,
+      })
     }
 
     const sql = `
@@ -200,7 +218,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entityName}`)
     }
 
-    await this.assertAccess(entityDef, 'read', undefined, options.context?.session)
+    await assertEntityAccess({
+      entity: entityDef,
+      action: 'read',
+      session: options.context?.session,
+      permissionManager: this.permissionManager,
+    })
     const accessFilter = AccessControl.getFilterConditions(entityDef, options.context?.session)
     if (AccessControl.isImpossibleFilter(accessFilter)) {
       throw new Error(`Access denied: Cannot read ${entityName}`)
@@ -220,17 +243,25 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     let whereSql = `(${orClauses})`
     if (options.filter) {
-      const filterClause = this.buildWhereClause(options.filter, options.context ?? {})
-      if (filterClause) {
-        whereSql = `${whereSql} AND (${filterClause})`
-        params.push(...this.buildQueryParams({ entity: entityName, where: options.filter }, options.context ?? {}))
+      const filter = this.compilePredicate(normalizeQueryWhere(
+        options.filter,
+        options.context ?? {},
+        { allowedFields: new Set(entityDef.fields.map(field => field.name)) },
+      ))
+      if (filter.sql) {
+        whereSql = `${whereSql} AND (${filter.sql})`
+        params.push(...filter.params)
       }
     }
     if (accessFilter) {
-      const accessClause = this.buildWhereClause(accessFilter, options.context ?? {})
-      if (accessClause) {
-        whereSql = `${whereSql} AND (${accessClause})`
-        params.push(...this.buildQueryParams({ entity: entityName, where: accessFilter }, options.context ?? {}))
+      const access = this.compilePredicate(normalizeQueryWhere(
+        accessFilter,
+        options.context ?? {},
+        { allowedFields: new Set(entityDef.fields.map(field => field.name)) },
+      ))
+      if (access.sql) {
+        whereSql = `${whereSql} AND (${access.sql})`
+        params.push(...access.params)
       }
     }
 
@@ -238,7 +269,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql} LIMIT ${limit}`
 
     const result = await this.adapter.query(sql, params)
-    return this.applyReadFieldAccess(entityDef, result.rows || [], options.context?.session)
+    return filterReadableFields(entityDef, result.rows || [], options.context?.session)
   }
 
   // ==========================================================================
@@ -247,52 +278,6 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   private getEntity(name: string): Entity | undefined {
     return this.blueprint.entities?.find((e: Entity) => e.name === name)
-  }
-
-  /**
-   * Throw unless the session may perform `action` on the entity. Mirrors the
-   * Node executor: entity-level `access` rules plus RBAC when a permission
-   * manager is available.
-   */
-  private async assertAccess(
-    entity: Entity,
-    action: 'read' | 'create' | 'update' | 'delete',
-    data: Record<string, any> | undefined,
-    session?: UserSession | null
-  ): Promise<void> {
-    const allowed = await AccessControl.checkAccess({
-      session, action, entity, data, permissionManager: this.permissionManager,
-    })
-    if (!allowed) {
-      throw new Error(`Access denied: Cannot ${action} ${entity.name}`)
-    }
-  }
-
-  /**
-   * Drop fields the caller is not permitted to write, per blueprint field-level
-   * `access.write` rules. Trusted system / workflow sessions bypass this, the
-   * same way they bypass entity-level access checks.
-   */
-  private applyWriteFieldAccess(
-    entity: Entity,
-    data: Record<string, any>,
-    session?: UserSession | null
-  ): Record<string, any> {
-    if (isSystemSession(session)) {
-      return data
-    }
-    return AccessControl.filterFields(entity, 'write', data, session)
-  }
-
-  private applyReadFieldAccess(
-    entity: Entity,
-    data: Record<string, any> | Record<string, any>[],
-    session?: UserSession | null
-  ): any {
-    if (isSystemSession(session)) return data
-    return Array.isArray(data)
-      ? AccessControl.filterFieldsArray(entity, 'read', data, session)
-      : AccessControl.filterFields(entity, 'read', data, session)
   }
 
   private filterFields(entity: Entity, data: Record<string, any>): Record<string, any> {
@@ -324,16 +309,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     return value
   }
 
-  private buildSelectQuery(entity: Entity, query: Query, context: RequestContext): string {
+  private buildSelectQuery(query: Query, whereClause: string): string {
     const tableName = this.quoteIdentifier(query.entity)
     let sql = `SELECT * FROM ${tableName}`
 
-    // WHERE clause
-    if (query.where) {
-      const whereClause = this.buildWhereClause(query.where, context)
-      if (whereClause) {
-        sql += ` WHERE ${whereClause}`
-      }
+    if (whereClause) {
+      sql += ` WHERE ${whereClause}`
     }
 
     // ORDER BY clause
@@ -357,123 +338,53 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     return sql
   }
 
-  private buildWhereClause(where: Record<string, any>, context: RequestContext): string {
-    if (Array.isArray(where.and)) {
-      return where.and.map((branch: Record<string, any>) => this.buildWhereClause(branch, context))
-        .filter(Boolean).map((clause: string) => `(${clause})`).join(' AND ')
+  private compilePredicate(predicate: QueryPredicate | undefined): { sql: string; params: any[] } {
+    if (!predicate) return { sql: '', params: [] }
+    if (predicate.kind === 'constant') {
+      return { sql: predicate.value ? '1 = 1' : '1 = 0', params: [] }
     }
-    if (Array.isArray(where.or)) {
-      return where.or.map((branch: Record<string, any>) => this.buildWhereClause(branch, context))
-        .filter(Boolean).map((clause: string) => `(${clause})`).join(' OR ')
-    }
-    const conditions: string[] = []
-
-    for (const [field, value] of Object.entries(where)) {
-      if (field === 'and' || field === 'or') continue
-      // Handle parameter references like {user_id}
-      if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
-        const paramName = value.slice(1, -1)
-        const paramValue = context.params?.[paramName] || context.session?.userId
-
-        if (paramValue !== undefined) {
-          conditions.push(`${this.quoteIdentifier(field)} = ?`)
-        }
-        continue
+    if (predicate.kind === 'group') {
+      const children = predicate.predicates.map(child => this.compilePredicate(child))
+      if (children.length === 0) {
+        return { sql: predicate.operator === 'and' ? '1 = 1' : '1 = 0', params: [] }
       }
-
-      // Handle operators
-      if (typeof value === 'object' && value !== null) {
-        for (const [op, opValue] of Object.entries(value)) {
-          switch (op) {
-            case '$eq':
-              conditions.push(`${this.quoteIdentifier(field)} = ?`)
-              break
-            case '$ne':
-              conditions.push(`${this.quoteIdentifier(field)} != ?`)
-              break
-            case '$gt':
-              conditions.push(`${this.quoteIdentifier(field)} > ?`)
-              break
-            case '$gte':
-              conditions.push(`${this.quoteIdentifier(field)} >= ?`)
-              break
-            case '$lt':
-              conditions.push(`${this.quoteIdentifier(field)} < ?`)
-              break
-            case '$lte':
-              conditions.push(`${this.quoteIdentifier(field)} <= ?`)
-              break
-            case '$in':
-              if (Array.isArray(opValue) && opValue.length > 0) {
-                const placeholders = opValue.map(() => '?').join(', ')
-                conditions.push(`${this.quoteIdentifier(field)} IN (${placeholders})`)
-              }
-              break
-            case '$like':
-              conditions.push(`${this.quoteIdentifier(field)} LIKE ?`)
-              break
-            case '$null':
-              conditions.push(
-                opValue
-                  ? `${this.quoteIdentifier(field)} IS NULL`
-                  : `${this.quoteIdentifier(field)} IS NOT NULL`
-              )
-              break
-            default:
-              console.warn(`Unknown operator: ${op}`)
-          }
-        }
-      } else {
-        // Simple equality
-        conditions.push(`${this.quoteIdentifier(field)} = ?`)
+      return {
+        sql: children.map(child => `(${child.sql})`).join(` ${predicate.operator.toUpperCase()} `),
+        params: children.flatMap(child => child.params),
       }
     }
 
-    return conditions.join(' AND ')
+    const field = this.quoteIdentifier(predicate.field)
+    switch (predicate.operator) {
+      case 'eq': return predicate.value === null
+        ? { sql: `${field} IS NULL`, params: [] }
+        : { sql: `${field} = ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'ne': return predicate.value === null
+        ? { sql: `${field} IS NOT NULL`, params: [] }
+        : { sql: `${field} != ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'gt': return { sql: `${field} > ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'gte': return { sql: `${field} >= ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'lt': return { sql: `${field} < ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'lte': return { sql: `${field} <= ?`, params: [this.coerceQueryValue(predicate.value)] }
+      case 'like': return { sql: `${field} LIKE ?`, params: [String(predicate.value)] }
+      case 'null': return { sql: `${field} IS ${predicate.value ? '' : 'NOT '}NULL`, params: [] }
+      case 'in': {
+        if (!Array.isArray(predicate.value) || predicate.value.length === 0) {
+          return { sql: '1 = 0', params: [] }
+        }
+        return {
+          sql: `${field} IN (${predicate.value.map(() => '?').join(', ')})`,
+          params: predicate.value.map(value => this.coerceQueryValue(value)),
+        }
+      }
+    }
   }
 
-  private buildQueryParams(query: Query, context: RequestContext): any[] {
-    if (!query.where) {
-      return []
-    }
-
-    return this.buildWhereParams(query.where, context)
-  }
-
-  private buildWhereParams(where: Record<string, any>, context: RequestContext): any[] {
-    if (Array.isArray(where.and)) return where.and.flatMap((branch: Record<string, any>) => this.buildWhereParams(branch, context))
-    if (Array.isArray(where.or)) return where.or.flatMap((branch: Record<string, any>) => this.buildWhereParams(branch, context))
-    const params: any[] = []
-
-    for (const [field, value] of Object.entries(where)) {
-      if (field === 'and' || field === 'or') continue
-      // Handle parameter references like {user_id}
-      if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
-        const paramName = value.slice(1, -1)
-        const paramValue = context.params?.[paramName] || context.session?.userId
-
-        if (paramValue !== undefined) {
-          params.push(paramValue)
-        }
-        continue
-      }
-
-      // Handle operators
-      if (typeof value === 'object' && value !== null) {
-        for (const [op, opValue] of Object.entries(value)) {
-          if (op === '$in' && Array.isArray(opValue)) {
-            params.push(...opValue)
-          } else if (op !== '$null') {
-            params.push(opValue)
-          }
-        }
-      } else {
-        // Simple equality
-        params.push(value)
-      }
-    }
-
-    return params
+  private coerceQueryValue(value: unknown): unknown {
+    if (typeof value === 'boolean') return value ? 1 : 0
+    if (value instanceof Date) return value.toISOString()
+    if (value !== null && typeof value === 'object') return JSON.stringify(value)
+    return value
   }
 
   private quoteIdentifier(identifier: string): string {

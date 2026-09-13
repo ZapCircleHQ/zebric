@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import type { Context } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import type { Logger } from '@zebric/observability'
 import type { Blueprint } from '@zebric/runtime-core'

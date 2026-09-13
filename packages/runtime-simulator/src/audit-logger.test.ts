@@ -5,8 +5,24 @@ describe('SimulatorAuditLogger', () => {
   it('uses Zebric runtime audit event names and action labels', () => {
     const auditLogger = new SimulatorAuditLogger()
 
-    auditLogger.logDataAccess('create', 'Task', 'task-1', 'user', true)
-    auditLogger.logAccessDenied('/tasks/new', 'create', 'Task', { session: { user: { id: 'user' } } })
+    auditLogger.log({
+      eventType: 'data.create',
+      severity: 'INFO',
+      action: 'Data create',
+      resource: 'Task',
+      success: true,
+      userId: 'user',
+      metadata: { entityType: 'Task', entityId: 'task-1' },
+    })
+    auditLogger.log({
+      eventType: 'access.denied',
+      severity: 'WARNING',
+      action: 'Access denied: create',
+      resource: '/tasks/new',
+      success: false,
+      userId: 'user',
+      metadata: { entityType: 'Task' },
+    })
 
     const [denied, created] = auditLogger.getEntries()
 

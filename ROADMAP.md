@@ -118,7 +118,7 @@ This release is critical for building AI-powered app builders (like a "vibe codi
 - [x] KV Cache Integration
   - Distributed edge caching
   - TTL support
-  - Compatible with CacheInterface
+  - Compatible with CachePort
 
 - [x] R2 Storage Integration
   - S3-compatible object storage

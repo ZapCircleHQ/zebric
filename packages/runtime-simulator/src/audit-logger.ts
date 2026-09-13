@@ -11,37 +11,6 @@ export class SimulatorAuditLogger implements AuditLoggerPort {
     ].slice(0, 500)
   }
 
-  logAccessDenied(resource: string, action: string, entity?: string, context?: any): void {
-    this.log({
-      eventType: 'access.denied',
-      severity: 'WARNING',
-      action: `Access denied: ${action}`,
-      resource,
-      success: false,
-      userId: context?.session?.user?.id,
-      metadata: { entityType: entity },
-    })
-  }
-
-  logDataAccess(
-    action: string,
-    entity: string,
-    recordId?: string,
-    userId?: string,
-    success = true,
-    context?: any
-  ): void {
-    this.log({
-      eventType: `data.${action}`,
-      severity: success ? 'INFO' : 'WARNING',
-      action: `Data ${action}`,
-      resource: entity,
-      success,
-      userId: userId ?? context?.session?.user?.id,
-      metadata: { entityType: entity, entityId: recordId },
-    })
-  }
-
   getEntries(): AuditEvent[] {
     return [...this.entries]
   }
@@ -56,10 +25,12 @@ export class SimulatorAuditLogger implements AuditLoggerPort {
       timestamp: Date.now(),
       userId: event.userId,
       action: event.action,
-      entity: event.metadata?.entityType ?? event.metadata?.entity ?? event.resource,
-      entityId: event.metadata?.entityId ?? event.metadata?.recordId,
+      entity: event.entityType ?? event.metadata?.entityType ?? event.metadata?.entity ?? event.resource,
+      entityId: event.entityId ?? event.metadata?.entityId ?? event.metadata?.recordId,
       metadata: {
         ...event.metadata,
+        entityType: event.entityType ?? event.metadata?.entityType,
+        entityId: event.entityId ?? event.metadata?.entityId,
         eventType: event.eventType,
         severity: event.severity,
         resource: event.resource,

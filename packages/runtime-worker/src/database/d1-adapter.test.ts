@@ -53,12 +53,7 @@ describe('D1Adapter', () => {
     })
   })
 
-  describe('transaction', () => {
-    it('rejects callback transactions instead of providing a false atomicity guarantee', async () => {
-      await expect(adapter.transaction(async () => 'unreachable'))
-        .rejects.toThrow('D1 does not support callback transactions')
-    })
-
+  describe('batch', () => {
     it('executes fixed statements through D1 batch', async () => {
       await db.exec('CREATE TABLE users (id TEXT, name TEXT)')
       await adapter.batch([

@@ -22,6 +22,7 @@ const blueprint: Blueprint = {
       { name: 'title', type: 'Text', required: true },
       { name: 'visibility', type: 'Enum', values: ['public', 'internal'], required: true },
       { name: 'publishedAt', type: 'DateTime' },
+      { name: 'priority', type: 'Integer' },
       { name: 'createdAt', type: 'DateTime', default: 'now' },
       { name: 'submittedAt', type: 'DateTime', default: 'now' },
     ],
@@ -44,10 +45,10 @@ describe('QueryExecutor row access', () => {
     await connection.connect()
     executor = new QueryExecutor(connection)
     await executor.create('RoadmapItem', {
-      id: 'public-item', title: 'Public item', visibility: 'public',
+      id: 'public-item', title: 'Public item', visibility: 'public', priority: 2,
     }, { session: authenticatedSession })
     await executor.create('RoadmapItem', {
-      id: 'internal-item', title: 'Internal item', visibility: 'internal',
+      id: 'internal-item', title: 'Internal item', visibility: 'internal', priority: 5,
     }, { session: authenticatedSession })
   })
 
@@ -70,6 +71,37 @@ describe('QueryExecutor row access', () => {
     expect(await executor.findById('RoadmapItem', 'internal-item')).toBeNull()
     expect(await executor.findById('RoadmapItem', 'internal-item', { session: authenticatedSession }))
       .toMatchObject({ id: 'internal-item' })
+  })
+
+  it('compiles canonical placeholders and operators', async () => {
+    const byRouteParam = await executor.execute(
+      { entity: 'RoadmapItem', where: { id: '$params.id' } },
+      { params: { id: 'public-item' }, session: authenticatedSession },
+    )
+    const byLegacyParam = await executor.execute(
+      { entity: 'RoadmapItem', where: { id: '{id}' } },
+      { params: { id: 'public-item' }, session: authenticatedSession },
+    )
+    const byOperators = await executor.execute({
+      entity: 'RoadmapItem',
+      where: {
+        priority: { $gte: 2, lt: 5 },
+        visibility: { $in: ['public', 'internal'], $ne: 'internal' },
+        publishedAt: { $null: true },
+      },
+    }, { session: authenticatedSession })
+
+    expect(byRouteParam.map(row => row.id)).toEqual(['public-item'])
+    expect(byLegacyParam.map(row => row.id)).toEqual(['public-item'])
+    expect(byOperators.map(row => row.id)).toEqual(['public-item'])
+  })
+
+  it('fails closed when a query placeholder cannot be resolved', async () => {
+    const rows = await executor.execute(
+      { entity: 'RoadmapItem', where: { id: '$params.missing' } },
+      { params: {}, session: authenticatedSession },
+    )
+    expect(rows).toEqual([])
   })
 
   it('rejects anonymous mutations', async () => {

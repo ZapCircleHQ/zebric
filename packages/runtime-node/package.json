@@ -1,7 +1,7 @@
 {
   "name": "@zebric/runtime-node",
   "version": "0.4.0",
-  "description": "Zebric Runtime Node.js Adapter - Hono, SQLite, PostgreSQL, S3, Redis",
+  "description": "Zebric Runtime Node.js Adapter - Hono, SQLite, PostgreSQL, Redis",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -30,7 +30,7 @@
     "zebric",
     "runtime",
     "node",
-    "fastify",
+    "hono",
     "adapter"
   ],
   "homepage": "https://github.com/ZapCircleHQ/zebric#readme",
@@ -65,7 +65,6 @@
     "better-sqlite3": "^12.9.0",
     "bullmq": "^5.75.2",
     "chokidar": "^5.0.0",
-    "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.14",
     "ioredis": "^5.3.2",

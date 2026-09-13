@@ -39,7 +39,7 @@ export async function handleWidgetEvent(
   // Load the current record so `$row.<field>` placeholders can read it.
   let row: Record<string, any> = {}
   try {
-    const existing = await deps.queryExecutor.findById(body.row.entity, body.row.id)
+    const existing = await deps.queryExecutor.findById(body.row.entity, body.row.id, { session })
     if (existing) row = existing
   } catch {
     // Tolerate missing — the row may have been created out-of-band.

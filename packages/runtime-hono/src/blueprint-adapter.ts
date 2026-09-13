@@ -4,10 +4,9 @@ import {
   type Blueprint,
   type HttpRequest,
   type HttpResponse,
-  type QueryExecutorPort,
+  type HttpRequestAdapter,
   type RendererPort,
-  type SessionManagerPort,
-  type AuditLoggerPort,
+  type RuntimePorts,
   HTMLRenderer,
   getInjectedCsrfTokenFromRequest,
   type Theme,
@@ -15,12 +14,8 @@ import {
 } from '@zebric/runtime-core'
 import type { MiddlewareHandler } from 'hono'
 
-export interface BlueprintAdapterConfig {
+export interface BlueprintAdapterConfig extends RuntimePorts {
   blueprint: Blueprint
-  queryExecutor?: QueryExecutorPort
-  sessionManager?: SessionManagerPort
-  renderer?: RendererPort
-  auditLogger?: AuditLoggerPort
   errorSanitizer?: ErrorSanitizer
   defaultOrigin?: string
   theme?: Theme
@@ -31,7 +26,7 @@ export interface BlueprintAdapterConfig {
  * Bridges fetch-style requests to the core RequestHandler.
  * Designed to be used inside Hono routes on any runtime (Node, Workers, etc).
  */
-export class BlueprintHttpAdapter {
+export class BlueprintHttpAdapter implements HttpRequestAdapter {
   private requestHandler: RequestHandler
   private routeMatcher: RouteMatcher
   private blueprint: Blueprint

@@ -46,7 +46,7 @@ export interface WorkflowStep {
   else?: WorkflowStep[]
 
   // Loop step
-  items?: string  // Variable path like "context.items"
+  items?: string  // Variable path like "variables.items"
   do?: WorkflowStep[]
 
   // Delay step

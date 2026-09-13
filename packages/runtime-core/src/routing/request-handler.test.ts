@@ -50,9 +50,11 @@ describe('RequestHandler', () => {
 
   describe('handleGet', () => {
     it('returns 401 for authenticated page when no session', async () => {
+      const log = vi.fn()
       const handler = new RequestHandler({
         blueprint,
         sessionManager: { getSession: async () => null },
+        auditLogger: { log },
       })
 
       const page: Page = { path: '/tasks', title: 'Tasks', layout: 'list' }
@@ -64,6 +66,12 @@ describe('RequestHandler', () => {
 
       const body = JSON.parse(response.body as string)
       expect(body.error).toBe('Authentication required')
+      expect(log).toHaveBeenCalledWith(expect.objectContaining({
+        eventType: 'access.denied',
+        action: 'Access denied: read',
+        resource: '/tasks',
+        success: false,
+      }))
     })
 
     it('allows access when page auth is none', async () => {
@@ -730,11 +738,7 @@ describe('RequestHandler', () => {
           delete: vi.fn(),
           findById: vi.fn(),
         },
-        auditLogger: {
-          log: logSpy,
-          logAccessDenied: vi.fn(),
-          logDataAccess: vi.fn(),
-        },
+        auditLogger: { log: logSpy },
       })
 
       const page: Page = {
