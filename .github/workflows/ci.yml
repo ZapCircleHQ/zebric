@@ -410,8 +410,8 @@ jobs:
       - name: Install Playwright browser
         run: pnpm --filter @zebric/playground exec playwright install --with-deps chromium
 
-      - name: Build playground
-        run: pnpm --filter @zebric/playground build
+      - name: Build playground and its workspace dependencies
+        run: pnpm --filter @zebric/playground... build
 
       - name: Run playground example smoke tests
         run: pnpm --filter @zebric/playground test:e2e
