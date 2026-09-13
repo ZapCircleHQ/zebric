@@ -4,7 +4,7 @@
  * Defines the contract for cache implementations (in-memory, Redis, etc.)
  */
 
-export interface CacheInterface {
+export interface CachePort {
   /**
    * Get a value from the cache
    */

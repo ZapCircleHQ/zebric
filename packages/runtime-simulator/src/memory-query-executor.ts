@@ -1,5 +1,9 @@
 import {
   AccessControl,
+  filterReadableFields,
+  filterWritableFields,
+  matchesQueryPredicate,
+  normalizeQueryWhere,
   type Blueprint,
   type Entity,
   type Query,
@@ -89,9 +93,12 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     }
 
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
-    let result = rows.filter((row) => this.matchesWhere(row, query.where, context))
+    const allowedFields = new Set(entity.fields.map(field => field.name))
+    const predicate = normalizeQueryWhere(query.where, context, { allowedFields })
+    let result = rows.filter((row) => matchesQueryPredicate(row, predicate))
     if (accessFilter) {
-      result = result.filter((row) => this.matchesWhere(row, accessFilter, context))
+      const accessPredicate = normalizeQueryWhere(accessFilter, context, { allowedFields })
+      result = result.filter((row) => matchesQueryPredicate(row, accessPredicate))
     }
 
     result = this.applyOrder(result, query.orderBy)
@@ -101,7 +108,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       ? result.slice(offset)
       : result.slice(offset, offset + query.limit)
 
-    const filtered = limited.map((row) => AccessControl.filterFields(entity, 'read', row, context.session))
+    const filtered = limited.map((row) => filterReadableFields(entity, row, context.session))
     this.logger.log({
       type: 'query',
       message: `Read ${filtered.length} ${query.entity} record(s)`,
@@ -112,7 +119,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
 
   async create(entityName: string, data: Record<string, any>, context: RequestContext): Promise<any> {
     const entity = this.getEntity(entityName)
-    const writable = AccessControl.filterFields(entity, 'write', data, context.session)
+    const writable = filterWritableFields(entity, data, context.session)
     const record = this.applyDefaults(entity, writable, context)
 
     const hasAccess = await AccessControl.checkAccess({
@@ -143,7 +150,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     }
 
     const existing = rows[index]!
-    const writable = AccessControl.filterFields(entity, 'write', data, context.session)
+    const writable = filterWritableFields(entity, data, context.session)
     const updated = { ...existing, ...this.coerceValues(entity, writable) }
     const hasAccess = await AccessControl.checkAccess({
       session: context.session,
@@ -226,17 +233,27 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     )
 
     if (options.filter) {
-      matches = matches.filter((row) => this.matchesWhere(row, options.filter, context))
+      const predicate = normalizeQueryWhere(
+        options.filter,
+        context,
+        { allowedFields: new Set(entity.fields.map(field => field.name)) },
+      )
+      matches = matches.filter((row) => matchesQueryPredicate(row, predicate))
     }
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
     if (accessFilter) {
-      matches = matches.filter((row) => this.matchesWhere(row, accessFilter, context))
+      const accessPredicate = normalizeQueryWhere(
+        accessFilter,
+        context,
+        { allowedFields: new Set(entity.fields.map(field => field.name)) },
+      )
+      matches = matches.filter((row) => matchesQueryPredicate(row, accessPredicate))
     }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
     return matches
       .slice(0, limit)
-      .map((row) => AccessControl.filterFields(entity, 'read', row, context.session))
+      .map((row) => filterReadableFields(entity, row, context.session))
   }
 
   private getEntity(name: string): Entity {
@@ -312,85 +329,6 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       }
     }
     return result
-  }
-
-  private matchesWhere(row: Record<string, any>, where: Record<string, any> | undefined, context: RequestContext): boolean {
-    if (!where) return true
-
-    if (Array.isArray((where as any).or)) {
-      return (where as any).or.some((condition: Record<string, any>) => this.matchesWhere(row, condition, context))
-    }
-
-    if (Array.isArray((where as any).and)) {
-      return (where as any).and.every((condition: Record<string, any>) => this.matchesWhere(row, condition, context))
-    }
-
-    for (const [field, expected] of Object.entries(where)) {
-      if (!this.matchesField(row[field], this.resolveValue(expected, context))) {
-        return false
-      }
-    }
-    return true
-  }
-
-  private matchesField(actual: any, expected: any): boolean {
-    if (expected && typeof expected === 'object' && !Array.isArray(expected)) {
-      for (const [op, value] of Object.entries(expected)) {
-        if (!this.matchesOperator(actual, op, value)) {
-          return false
-        }
-      }
-      return true
-    }
-    return actual === expected
-  }
-
-  private matchesOperator(actual: any, op: string, value: any): boolean {
-    switch (op) {
-      case '$eq':
-        return actual === value
-      case '$ne':
-        return actual !== value
-      case '$gt':
-        return actual > value
-      case '$gte':
-        return actual >= value
-      case '$lt':
-        return actual < value
-      case '$lte':
-        return actual <= value
-      case '$in':
-        return Array.isArray(value) && value.includes(actual)
-      case '$like':
-        return String(actual ?? '').includes(String(value).replace(/%/g, ''))
-      case '$null':
-        return value ? actual == null : actual != null
-      default:
-        return actual === value
-    }
-  }
-
-  private resolveValue(value: any, context: RequestContext): any {
-    if (typeof value !== 'string') {
-      return value
-    }
-    if (value.startsWith('{') && value.endsWith('}')) {
-      const key = value.slice(1, -1)
-      return context.params?.[key] ?? context.query?.[key] ?? context.session?.user?.id
-    }
-    if (value.startsWith('$params.')) {
-      return context.params?.[value.slice(8)]
-    }
-    if (value.startsWith('$query.')) {
-      return context.query?.[value.slice(7)]
-    }
-    if (value === '$currentUser.id') {
-      return context.session?.user?.id
-    }
-    if (value.startsWith('$currentUser.')) {
-      return context.session?.user?.[value.slice(13)]
-    }
-    return value
   }
 
   private applyOrder(rows: Array<Record<string, any>>, orderBy?: Record<string, 'asc' | 'desc'>): Array<Record<string, any>> {

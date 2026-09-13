@@ -5,14 +5,14 @@
  * Not suitable for production with multiple instances.
  */
 
-import type { CacheInterface } from '@zebric/runtime-core'
+import type { CachePort } from '@zebric/runtime-core'
 
 interface CacheEntry {
   value: any
   expiresAt?: number
 }
 
-export class MemoryCache implements CacheInterface {
+export class MemoryCache implements CachePort {
   private store = new Map<string, CacheEntry>()
 
   async get<T>(key: string): Promise<T | null> {

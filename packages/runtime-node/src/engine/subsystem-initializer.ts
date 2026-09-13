@@ -16,7 +16,7 @@ import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } 
 import { createBetterAuthProvider, type AuthProviderConfig } from '../auth/index.js'
 import { WorkflowManager, ProductionHttpClient } from '../workflows/index.js'
 import type { WorkflowJob } from '../workflows/types.js'
-import { CacheInterface, MemoryCache, RedisCache } from '../cache/index.js'
+import { type CachePort, MemoryCache, RedisCache } from '../cache/index.js'
 import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { PluginRegistry } from '../plugins/index.js'
 import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
@@ -39,7 +39,7 @@ export interface InitializedSubsystems {
   sessionManager: SessionManager
   permissionManager: PermissionManager
   workflowManager?: WorkflowManager
-  cache: CacheInterface
+  cache: CachePort
   notificationManager?: NotificationManager
 }
 
@@ -60,7 +60,7 @@ export class SubsystemInitializer {
   private sessionManager?: SessionManager
   private permissionManager?: PermissionManager
   private workflowManager?: WorkflowManager
-  private cache?: CacheInterface
+  private cache?: CachePort
   private notificationManager?: NotificationManager
   private auditLogger: AuditLogger
   private auditOutboxDelivery?: Promise<void>
@@ -100,7 +100,7 @@ export class SubsystemInitializer {
   /**
    * Initialize cache based on configuration
    */
-  initializeCache(): CacheInterface {
+  initializeCache(): CachePort {
     const redisUrl = this.config.cache?.redisUrl || process.env.REDIS_URL
     const cacheType = this.config.cache?.type || (redisUrl ? 'redis' : 'memory')
 

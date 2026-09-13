@@ -1,12 +1,12 @@
 /**
  * D1 Database Adapter
  *
- * Implements the StoragePort interface for CloudFlare D1 (SQLite).
+ * Implements the SqlStoragePort interface for Cloudflare D1 (SQLite).
  */
 
-import type { StoragePort } from '@zebric/runtime-core'
+import type { SqlStoragePort } from '@zebric/runtime-core'
 
-export class D1Adapter implements StoragePort {
+export class D1Adapter implements SqlStoragePort {
   constructor(private db: D1Database) {}
 
   async query<T = unknown>(sql: string, params?: unknown[]): Promise<{ rows: T[] }> {
@@ -24,7 +24,7 @@ export class D1Adapter implements StoragePort {
     }
   }
 
-  async transaction<T>(fn: (tx: StoragePort) => Promise<T>): Promise<T> {
+  async transaction<T>(fn: (tx: SqlStoragePort) => Promise<T>): Promise<T> {
     void fn
     throw new Error(
       'D1 does not support callback transactions. Use batch() for a fixed set of atomic statements, or a SQLite-backed Durable Object for interactive transactions.'

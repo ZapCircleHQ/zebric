@@ -17,7 +17,7 @@ import { BlueprintWatcher, ReloadServer, getReloadScript } from './hot-reload/in
 import type { WorkflowManager } from './workflows/index.js'
 import { MetricsRegistry, type MetricSnapshot } from './monitoring/metrics.js'
 import { RequestTracer } from './monitoring/request-tracer.js'
-import type { CacheInterface } from './cache/index.js'
+import type { CachePort } from './cache/index.js'
 import { ErrorHandler } from './errors/index.js'
 import type { AuthProvider, EngineAPI } from '@zebric/runtime-core'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
@@ -62,7 +62,7 @@ export class ZebricEngine extends EventEmitter {
   private metrics: MetricsRegistry
   private tracer: RequestTracer
   private logger: Logger
-  private cache!: CacheInterface
+  private cache!: CachePort
   private pluginAPIProvider!: PluginAPIProvider
   private subsystemInitializer!: SubsystemInitializer
   private serverManager!: ServerManager

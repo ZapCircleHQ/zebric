@@ -5,21 +5,17 @@
  * Translates Blueprint query syntax to SQL.
  */
 
-import { eq, and, or, gt, gte, lt, lte, like, ilike, asc, desc, sql, SQL } from 'drizzle-orm'
-import type { Query, Entity } from '@zebric/runtime-core'
+import { eq, ne, and, or, gt, gte, lt, lte, like, ilike, inArray, isNull, isNotNull, asc, desc, sql, SQL } from 'drizzle-orm'
+import type { Query, Entity, QueryPredicate, RequestContext } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
 import type { UserSession, PermissionManager } from '@zebric/runtime-core'
-import { AccessControl, SYSTEM_SESSION, isSystemSession } from '@zebric/runtime-core'
+import { AccessControl, SYSTEM_SESSION, assertEntityAccess, filterReadableFields, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 // performance.now() is available as a Web API (no import needed)
 
-export interface QueryContext {
-  params?: Record<string, string>
-  query?: Record<string, string>
-  session?: UserSession | null
-}
+export type QueryContext = RequestContext
 
 export interface AuditOutboxRecord {
   id: string
@@ -160,16 +156,12 @@ export class QueryExecutor {
 
     // Check read access
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: context.session,
         action: 'read',
         entity,
         permissionManager: this.permissionManager,
       })
-
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
-      }
     }
 
     // Build WHERE clause with access control filters
@@ -229,7 +221,7 @@ export class QueryExecutor {
       const results = await query
       // Convert snake_case to camelCase for consistency with findById/create/update.
       return Array.isArray(results)
-        ? results.map((r) => this.applyReadFieldAccess(entity, this.toCamelCase(r), context.session))
+        ? results.map((r) => filterReadableFields(entity, this.toCamelCase(r), context.session))
         : results
     } finally {
       this.metrics?.recordQuery(queryDef.entity, 'read', performance.now() - start)
@@ -261,15 +253,12 @@ export class QueryExecutor {
     }
 
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: options.context?.session,
         action: 'read',
         entity,
         permissionManager: this.permissionManager,
       })
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot read ${entityName}`)
-      }
     }
 
     const trimmed = String(query ?? '').trim()
@@ -315,7 +304,7 @@ export class QueryExecutor {
         .limit(limit)
 
       return Array.isArray(results)
-        ? results.map((r) => this.applyReadFieldAccess(entity, this.toCamelCase(r), options.context?.session))
+        ? results.map((r) => filterReadableFields(entity, this.toCamelCase(r), options.context?.session))
         : []
     } finally {
       this.metrics?.recordQuery(entityName, 'search', performance.now() - start)
@@ -336,32 +325,6 @@ export class QueryExecutor {
   }
 
   /**
-   * Drop any fields the caller is not permitted to write, per the blueprint's
-   * field-level `access.write` rules. Trusted system / workflow sessions bypass
-   * this the same way they bypass entity-level access checks - background workflow
-   * logic is authored by the blueprint, not supplied by an end user or agent.
-   */
-  private applyWriteFieldAccess(
-    entity: Entity | undefined,
-    data: Record<string, any>,
-    session?: UserSession | null
-  ): Record<string, any> {
-    if (!entity || isSystemSession(session)) {
-      return data
-    }
-    return AccessControl.filterFields(entity, 'write', data, session)
-  }
-
-  private applyReadFieldAccess(
-    entity: Entity | undefined,
-    data: Record<string, any>,
-    session?: UserSession | null
-  ): Record<string, any> {
-    if (!entity || isSystemSession(session)) return data
-    return AccessControl.filterFields(entity, 'read', data, session)
-  }
-
-  /**
    * Create a new record
    */
   async create(entityName: string, data: Record<string, any>, context?: QueryContext): Promise<any> {
@@ -375,21 +338,17 @@ export class QueryExecutor {
     }
 
     // Strip fields the caller cannot write before any access or default handling.
-    data = this.applyWriteFieldAccess(entity, data, context?.session)
+    data = filterWritableFields(entity, data, context?.session)
 
     // Check create access
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: context?.session,
         action: 'create',
         entity,
         data,
         permissionManager: this.permissionManager,
       })
-
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot create ${entityName}`)
-      }
     }
 
     // Generate ID if not provided
@@ -428,7 +387,7 @@ export class QueryExecutor {
       const inserted = await (db as any).insert(table).values(dbData).returning()
       const record = inserted?.[0]
       if (record) {
-        return this.applyReadFieldAccess(entity, this.toCamelCase(record), context?.session)
+        return filterReadableFields(entity, this.toCamelCase(record), context?.session)
       }
 
       return await this.findById(entityName, data.id, context)
@@ -476,12 +435,12 @@ export class QueryExecutor {
     }
 
     // Strip fields the caller cannot write before merge / access / default handling.
-    data = this.applyWriteFieldAccess(entity, data, context?.session)
+    data = filterWritableFields(entity, data, context?.session)
 
     // Check update access against the stored resource so owner and state rules
     // cannot be satisfied by values introduced in the patch itself.
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: context?.session,
         action: 'update',
         entity,
@@ -490,10 +449,6 @@ export class QueryExecutor {
         data: existingRecord,
         permissionManager: this.permissionManager,
       })
-
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot update ${entityName}`)
-      }
     }
 
     // Every supplied field was stripped as unwritable - nothing to persist.
@@ -526,7 +481,7 @@ export class QueryExecutor {
       }
 
       // Return updated record
-      return this.applyReadFieldAccess(entity, this.toCamelCase(updated[0]), context?.session)
+      return filterReadableFields(entity, this.toCamelCase(updated[0]), context?.session)
     } finally {
       this.metrics?.recordQuery(entityName, 'update', performance.now() - start)
     }
@@ -552,17 +507,13 @@ export class QueryExecutor {
 
     // Check delete access
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: context?.session,
         action: 'delete',
         entity,
         data: existingRecord,
         permissionManager: this.permissionManager,
       })
-
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot delete ${entityName}`)
-      }
     }
 
     const start = performance.now()
@@ -589,15 +540,12 @@ export class QueryExecutor {
 
     const entity = this.connection.getEntity(queryDef.entity)
     if (entity) {
-      const hasAccess = await AccessControl.checkAccess({
+      await assertEntityAccess({
         session: context.session,
         action: 'read',
         entity,
         permissionManager: this.permissionManager,
       })
-      if (!hasAccess) {
-        throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
-      }
     }
 
     const whereClause = this.buildWhere(queryDef.where, context, queryDef.entity)
@@ -635,65 +583,40 @@ export class QueryExecutor {
 
     const targetEntity = typeof where?.entity === 'string' ? where.entity : entityName
     const table = targetEntity ? this.connection.getTable(targetEntity) : undefined
+    const entity: Entity | undefined = targetEntity ? this.connection.getEntity(targetEntity) : undefined
+    const allowedFields = entity ? new Set(entity.fields.map(field => field.name)) : undefined
+    return this.compilePredicate(normalizeQueryWhere(where, context, { allowedFields }), table)
+  }
 
-    // Handle AND/OR operators
-    if (where.and) {
-      const conditions = where.and.map((w: any) => this.buildWhere(w, context, targetEntity)).filter(Boolean)
-      return conditions.length > 0 ? and(...conditions) : undefined
-    }
-
-    if (where.or) {
-      const conditions = where.or.map((w: any) => this.buildWhere(w, context, targetEntity)).filter(Boolean)
-      return conditions.length > 0 ? or(...conditions) : undefined
-    }
-
-    // Handle field conditions
-    const conditions = []
-    for (const [key, value] of Object.entries(where)) {
-      if (key === 'and' || key === 'or' || key === 'entity') continue
-
-      // Replace $params.x, $query.x, and $currentUser.x with actual values
-      let actualValue = value
-      if (typeof value === 'string' && value.startsWith('$params.')) {
-        const paramKey = value.substring(8)
-        actualValue = context.params?.[paramKey]
-      } else if (typeof value === 'string' && value.startsWith('$query.')) {
-        const queryKey = value.substring(7)
-        actualValue = context.query?.[queryKey]
-      } else if (typeof value === 'string' && value.startsWith('$currentUser.')) {
-        const sessionKey = value.substring(13)
-        actualValue = context.session?.user?.[sessionKey]
-      } else if (typeof value === 'string' && value === '$currentUser.id') {
-        actualValue = context.session?.user?.id
+  private compilePredicate(predicate: QueryPredicate | undefined, table: any): SQL | undefined {
+    if (!predicate) return undefined
+    if (predicate.kind === 'constant') return predicate.value ? sql`1 = 1` : sql`1 = 0`
+    if (predicate.kind === 'group') {
+      const conditions = predicate.predicates
+        .map(child => this.compilePredicate(child, table))
+        .filter((condition): condition is SQL => condition !== undefined)
+      if (conditions.length === 0) {
+        return predicate.operator === 'and' ? sql`1 = 1` : sql`1 = 0`
       }
-
-      const column = table?.[key]
-      if (!column) continue
-
-      // Handle operators
-      if (typeof actualValue === 'object' && actualValue !== null) {
-        if ('gt' in actualValue) {
-          conditions.push(gt(column, actualValue.gt))
-        }
-        if ('gte' in actualValue) {
-          conditions.push(gte(column, actualValue.gte))
-        }
-        if ('lt' in actualValue) {
-          conditions.push(lt(column, actualValue.lt))
-        }
-        if ('lte' in actualValue) {
-          conditions.push(lte(column, actualValue.lte))
-        }
-        if ('like' in actualValue) {
-          conditions.push(like(column, String(actualValue.like)))
-        }
-      } else {
-        // Simple equality
-        conditions.push(eq(column, actualValue))
-      }
+      return predicate.operator === 'and' ? and(...conditions) : or(...conditions)
     }
 
-    return conditions.length > 0 ? and(...conditions) : undefined
+    const column = table?.[predicate.field] ?? table?.[this.toSnakeCaseString(predicate.field)]
+    if (!column) return undefined
+
+    switch (predicate.operator) {
+      case 'eq': return predicate.value === null ? isNull(column) : eq(column, predicate.value)
+      case 'ne': return predicate.value === null ? isNotNull(column) : ne(column, predicate.value)
+      case 'gt': return gt(column, predicate.value)
+      case 'gte': return gte(column, predicate.value)
+      case 'lt': return lt(column, predicate.value)
+      case 'lte': return lte(column, predicate.value)
+      case 'in': return Array.isArray(predicate.value) && predicate.value.length > 0
+        ? inArray(column, predicate.value)
+        : sql`1 = 0`
+      case 'like': return like(column, String(predicate.value))
+      case 'null': return predicate.value ? isNull(column) : isNotNull(column)
+    }
   }
 
   /**

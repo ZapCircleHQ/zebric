@@ -7,7 +7,7 @@
 
 import Redis from 'ioredis'
 import type { Logger } from '@zebric/observability'
-import type { CacheInterface } from '@zebric/runtime-core'
+import type { CachePort } from '@zebric/runtime-core'
 
 export interface RedisCacheConfig {
   host?: string
@@ -19,7 +19,7 @@ export interface RedisCacheConfig {
   logger?: Logger
 }
 
-export class RedisCache implements CacheInterface {
+export class RedisCache implements CachePort {
   private client: Redis
   private logger?: Logger
 

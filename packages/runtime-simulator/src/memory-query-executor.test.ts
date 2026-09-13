@@ -108,3 +108,22 @@ describe('BrowserMemoryQueryExecutor placeholder resolution', () => {
     expect(rows).toHaveLength(0)
   })
 })
+
+describe('BrowserMemoryQueryExecutor canonical predicates', () => {
+  it('evaluates nested groups and comparison operators', async () => {
+    const executor = makeExecutor([
+      { id: 'bella', name: 'Bella' },
+      { id: 'max', name: 'Max' },
+    ])
+
+    const rows = await executor.execute({
+      entity: 'Dog',
+      where: {
+        or: [{ id: { $in: ['bella'] } }, { name: { $like: 'Ma%' } }],
+        id: { $ne: 'max' },
+      },
+    } as any, { session: null } as any)
+
+    expect(rows.map(row => row.id)).toEqual(['bella'])
+  })
+})

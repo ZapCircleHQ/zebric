@@ -7,6 +7,7 @@
 
 // Platform Ports
 export * from './ports.js'
+export * from './audit/types.js'
 
 // Blueprint Types & Schemas
 export * from './types/blueprint.js'
@@ -18,6 +19,7 @@ export * from './blueprint/workflow-analysis.js'
 
 // Database
 export * from './database/access-control.js'
+export * from './database/query-normalization.js'
 export * from './conditions.js'
 export * from './behaviors.js'
 // schema-generator and schema-diff moved to runtime-node (Drizzle-specific)

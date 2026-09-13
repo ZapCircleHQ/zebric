@@ -16,7 +16,7 @@ import type {
   SessionManagerPort,
   RendererPort,
   AuditLoggerPort,
-  FileStoragePort
+  RuntimePorts
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
 import {
@@ -33,13 +33,8 @@ import {
 import { executeFormAction, validateForm, checkFormAuthorization } from './form-processor.js'
 import { resolveSession, buildLoginRedirect } from './session-resolver.js'
 
-export interface RequestHandlerConfig {
+export interface RequestHandlerConfig extends RuntimePorts {
   blueprint: Blueprint
-  queryExecutor?: QueryExecutorPort
-  sessionManager?: SessionManagerPort
-  renderer?: RendererPort
-  auditLogger?: AuditLoggerPort
-  fileStorage?: FileStoragePort
   errorSanitizer?: ErrorSanitizer
   defaultOrigin?: string
 }
@@ -50,7 +45,6 @@ export class RequestHandler {
   private sessionManager?: SessionManagerPort
   private renderer?: RendererPort
   private auditLogger?: AuditLoggerPort
-  private fileStorage?: FileStoragePort
   private errorSanitizer?: ErrorSanitizer
   private defaultOrigin: string
 
@@ -60,7 +54,6 @@ export class RequestHandler {
     this.sessionManager = config.sessionManager
     this.renderer = config.renderer
     this.auditLogger = config.auditLogger
-    this.fileStorage = config.fileStorage
     this.errorSanitizer = config.errorSanitizer
     this.defaultOrigin = config.defaultOrigin || 'http://localhost:3000'
   }

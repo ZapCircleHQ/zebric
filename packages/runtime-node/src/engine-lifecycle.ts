@@ -15,7 +15,7 @@ import { PluginAPIProvider } from './engine/index.js'
 import type { QueryExecutor } from './database/index.js'
 import type { SessionManager, AuthProvider } from '@zebric/runtime-core'
 import type { AuditLogger } from './security/index.js'
-import type { CacheInterface } from './cache/index.js'
+import type { CachePort } from './cache/index.js'
 import type { WorkflowManager } from './workflows/index.js'
 import type { EngineConfig } from './types/index.js'
 import { EventEmitter } from 'node:events'
@@ -163,7 +163,7 @@ export interface PluginAPIDeps {
   queryExecutor: QueryExecutor
   authProvider: AuthProvider
   sessionManager: SessionManager
-  cache: CacheInterface
+  cache: CachePort
   auditLogger: AuditLogger
   workflowManager?: WorkflowManager
   blueprint: Blueprint
