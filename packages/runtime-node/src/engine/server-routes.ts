@@ -13,8 +13,8 @@ import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
 import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
 import {
   registerWidgetRoutes as registerSharedWidgetRoutes,
-  registerSearchRoutes as registerSharedSearchRoutes,
 } from '@zebric/runtime-hono'
+export { registerSearchRoutes } from '@zebric/runtime-hono'
 import { agentApiError } from './agent-api-error.js'
 import type { AgentEventBus } from './agent-event-bus.js'
 import {
@@ -1169,17 +1169,6 @@ export function registerWidgetRoutes(
       ? (name, data) => { workflowManager.trigger(name, data, {}) }
       : undefined,
   })
-}
-
-export function registerSearchRoutes(
-  app: Hono,
-  deps: {
-    blueprint: Blueprint
-    queryExecutor: QueryExecutor
-    sessionManager: SessionManager
-  }
-): void {
-  registerSharedSearchRoutes(app, deps)
 }
 
 export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAdapter, csrfCookieName = 'csrf-token'): void {

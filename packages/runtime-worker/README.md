@@ -2,17 +2,18 @@
 
 CloudFlare Workers runtime adapter for Zebric. Provides platform-specific implementations for running Zebric applications on CloudFlare's edge network.
 
-## Features
+## Engine Features
 
 - ✅ **Platform-agnostic business logic** - Uses @zebric/runtime-core for routing, auth, validation
 - ✅ **Session management** - KV-backed sessions with automatic expiration
-- ✅ **CSRF protection** - Token-based CSRF validation
-- ✅ **Cookie management** - Secure cookie parsing and serialization
-- ✅ **Form data parsing** - Native support for forms and file uploads
 - ✅ **D1 database** - CloudFlare D1 SQL database adapter
-- ✅ **KV cache** - CloudFlare KV storage for caching
-- ✅ **R2 storage** - CloudFlare R2 object storage for files
-- ✅ **Rate limiting** - Native Workers rate limiting (when configured)
+- ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
+- ❌ **Workflows** - Rejected during initialization until a Workers executor is available
+
+The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
+`WorkersCookieManager`, `KVTemplateLoader`, and `BehaviorRegistry` as low-level
+adapters. These are available for custom Worker composition but are not
+automatically wired into `ZebricWorkersEngine`.
 
 ## Installation
 
@@ -113,8 +114,8 @@ response.headers.set('Set-Cookie', cookie)
 ### Getting Sessions
 
 ```typescript
-// From HttpRequest (in RequestHandler)
-const session = await sessionManager.getSession(httpRequest)
+// From either a Fetch Request or a normalized HttpRequest
+const session = await sessionManager.getSession(request)
 
 // From session ID
 const session = await sessionManager.getSessionById(sessionId)
@@ -240,12 +241,12 @@ const cache = new KVCache(env.CACHE)
 const value = await cache.get('key')
 
 // Set with TTL
-await cache.set('key', 'value', { ttl: 3600 })
+await cache.set('key', 'value', 3600)
 
 // Delete
 await cache.delete('key')
 
-// Clear all
+// KV has no bulk delete; this logs a warning and leaves entries intact
 await cache.clear()
 ```
 
@@ -254,21 +255,19 @@ await cache.clear()
 ```typescript
 import { R2Storage } from '@zebric/runtime-worker'
 
-const storage = new R2Storage(env.FILES)
+const storage = new R2Storage({ bucket: env.FILES })
 
 // Upload file
-await storage.put('path/to/file.jpg', buffer, {
-  contentType: 'image/jpeg'
-})
+await storage.store('path/to/file.jpg', buffer, 'image/jpeg')
 
 // Get file
-const file = await storage.get('path/to/file.jpg')
+const file = await storage.retrieve('path/to/file.jpg')
 
 // Delete file
 await storage.delete('path/to/file.jpg')
 
 // List files
-const files = await storage.list({ prefix: 'uploads/' })
+const files = await storage.list('uploads/')
 ```
 
 ## Form Data & File Uploads
@@ -337,7 +336,10 @@ The runtime-worker package follows a clean architecture:
 └─────────────────────────────────────────┘
 ```
 
-All business logic (routing, auth, validation, query execution) lives in `@zebric/runtime-core` and is shared across all platforms (Node, Workers, etc.).
+Shared orchestration, access control, validation, rendering, and port contracts live
+in `@zebric/runtime-core`. D1 query compilation and CloudFlare service integration
+remain in this package; HTTP translation and shared routes live in
+`@zebric/runtime-hono`.
 
 ## Security Best Practices
 

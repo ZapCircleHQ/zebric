@@ -4,7 +4,7 @@
  * Core types for the Zebric Engine runtime.
  */
 
-import type { Blueprint, Theme, HTMLRenderer } from '@zebric/runtime-core'
+import type { Blueprint, Theme, HTMLRenderer, UserSession } from '@zebric/runtime-core'
 import type { SchemaDiffResult } from '../database/schema-diff.js'
 
 export interface EngineConfig {
@@ -72,13 +72,8 @@ export interface HealthStatus {
   memory: NodeJS.MemoryUsage
 }
 
-export interface Session {
-  id: string
-  userId: string
-  user: any
-  expiresAt: Date
-  createdAt: Date
-}
+/** @deprecated Use UserSession from @zebric/runtime-core. */
+export type Session = UserSession
 
 export interface ZebricEngineAPI {
   getState(): EngineState

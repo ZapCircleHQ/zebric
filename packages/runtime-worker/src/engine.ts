@@ -16,13 +16,16 @@ import { WorkersQueryExecutor } from './query/workers-query-executor.js'
 export interface WorkersEnv {
   // CloudFlare bindings
   DB: D1Database
+  /** Creates the cache returned by getCache(); request execution does not use it automatically. */
   CACHE_KV?: KVNamespace
+  /** @deprecated Not consumed by ZebricWorkersEngine. Compose R2Storage explicitly. */
   FILES_R2?: R2Bucket
   SESSION_KV?: KVNamespace
 
   // Environment variables
   BLUEPRINT?: string // Serialized blueprint JSON
-  SESSION_SECRET?: string // Secret for session encryption
+  /** @deprecated Worker KV sessions are not currently encrypted. */
+  SESSION_SECRET?: string
 }
 
 export interface WorkersEngineConfig {
@@ -62,14 +65,18 @@ export class ZebricWorkersEngine {
       throw new Error('Blueprint must be provided via config.blueprint, config.blueprintContent, or env.BLUEPRINT')
     }
 
-    const transactionalWorkflows = (this.blueprint.workflows ?? []).filter(workflow => workflow.transactional)
-    if (transactionalWorkflows.length > 0) {
-      const details = transactionalWorkflows.map(workflow => {
+    const unsupportedWorkflows = this.blueprint.workflows ?? []
+    if (unsupportedWorkflows.length > 0) {
+      const details = unsupportedWorkflows.map(workflow => {
+        if (!workflow.transactional) {
+          return `${workflow.name} (workflow execution is not implemented)`
+        }
+
         const analysis = analyzeTransactionalWorkflow(workflow)
         return `${workflow.name} (${analysis.d1BatchEligible ? 'D1-batch eligible but not yet executable' : analysis.reasons.join('; ')})`
       })
       throw new Error(
-        `Cloudflare Workers transactional workflows are not yet supported: ${details.join(', ')}`
+        `Cloudflare Workers workflows are not yet supported: ${details.join(', ')}`
       )
     }
 

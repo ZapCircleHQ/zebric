@@ -75,7 +75,8 @@ If a page queries or displays a field that isn't defined on the entity, the runt
 ### Session not persisting between requests
 
 - Session cookies require HTTPS in production. In local development, use `http://localhost` (not an IP or custom hostname) to avoid cookie rejection.
-- Verify `SESSION_SECRET` is set in your environment — if it's undefined, sessions may not serialize correctly.
+- On Node, verify the configured Better Auth secret resolves correctly.
+- On Workers, verify `SESSION_KV` is bound and the request includes the configured session cookie. `SESSION_SECRET` is not currently consumed by the Workers runtime.
 
 ---
 

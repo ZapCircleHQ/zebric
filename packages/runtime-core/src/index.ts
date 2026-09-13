@@ -19,6 +19,7 @@ export * from './blueprint/workflow-analysis.js'
 // Database
 export * from './database/access-control.js'
 export * from './conditions.js'
+export * from './behaviors.js'
 // schema-generator and schema-diff moved to runtime-node (Drizzle-specific)
 // query-executor moved to runtime-node (depends on connection, metrics)
 

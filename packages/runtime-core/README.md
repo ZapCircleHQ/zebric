@@ -1,6 +1,6 @@
 # @zebric/runtime-core
 
-Platform-agnostic engine core for Zebric. Provides the routing, authentication, validation, query execution, and rendering logic shared across all Zebric runtimes.
+Platform-agnostic application core for Zebric. It owns blueprint parsing, request orchestration, access rules, rendering, and the contracts implemented by platform runtimes.
 
 ## Installation
 
@@ -14,8 +14,9 @@ You likely don't need to install this directly — it's a peer dependency of `@z
 
 - **Blueprint parsing** — loads and validates blueprint.toml/json application definitions
 - **Request routing** — maps HTTP requests to blueprint-defined endpoints
-- **Auth & sessions** — session management, CSRF protection, access control
-- **Query execution** — database-agnostic query port for CRUD operations
+- **Auth & session contracts** — shared session types, auth interfaces, and access control
+- **Query contracts** — database-agnostic ports implemented by platform runtimes
+- **Behavior contracts** — shared behavior context and pure helper functions
 - **HTML rendering** — server-side rendering of blueprint-defined UI
 - **Port interfaces** — TypeScript interfaces for implementing platform adapters
 

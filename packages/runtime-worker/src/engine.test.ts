@@ -62,6 +62,20 @@ describe('ZebricWorkersEngine', () => {
         } as any,
       })).toThrow('D1-batch eligible but not yet executable')
     })
+
+    it('rejects non-transactional workflows until Workers has a workflow executor', () => {
+      expect(() => new ZebricWorkersEngine({
+        env,
+        blueprint: {
+          ...simpleBlueprint,
+          workflows: [{
+            name: 'NotifyAuthor',
+            trigger: { manual: true },
+            steps: [{ type: 'query', entity: 'post', action: 'update' }],
+          }],
+        } as any,
+      })).toThrow('NotifyAuthor (workflow execution is not implemented)')
+    })
   })
 
   describe('health check', () => {

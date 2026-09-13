@@ -329,7 +329,7 @@ describe('BehaviorRegistry', () => {
         session: null
       })
 
-      expect(result).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;')
+      expect(result).toBe('&lt;script&gt;alert(&quot;xss&quot;)&lt;&#x2F;script&gt;')
     })
 
     it('should provide current date/time helpers', async () => {

@@ -14,26 +14,10 @@
  *   })
  */
 
-import type { UserSession } from '@zebric/runtime-core'
+import { createBehaviorHelpers } from '@zebric/runtime-core'
+import type { BehaviorContext, BehaviorFunction, BehaviorHandler } from '@zebric/runtime-core'
 
-export interface BehaviorContext {
-  data: any
-  helpers: BehaviorHelpers
-  params?: Record<string, string>
-  session?: UserSession | null
-}
-
-export interface BehaviorHelpers {
-  today: () => string
-  now: () => string
-  formatDate: (date: string) => string
-  formatDateTime: (date: string) => string
-  escapeHtml: (str: string) => string
-}
-
-export type BehaviorFunction = (context: BehaviorContext) => string | Promise<string>
-
-export type BehaviorHandler = (context: BehaviorContext) => any | Promise<any>
+export type { BehaviorContext, BehaviorHelpers, BehaviorFunction, BehaviorHandler } from '@zebric/runtime-core'
 
 /**
  * Behavior registry for Workers
@@ -73,7 +57,7 @@ export class BehaviorRegistry {
       throw new Error(`Behavior not found: ${path}`)
     }
 
-    const helpers = this.createHelpers()
+    const helpers = createBehaviorHelpers()
     const fullContext: BehaviorContext = {
       ...context,
       helpers
@@ -92,7 +76,7 @@ export class BehaviorRegistry {
       throw new Error(`Handler not found: ${path}`)
     }
 
-    const helpers = this.createHelpers()
+    const helpers = createBehaviorHelpers()
     const fullContext: BehaviorContext = {
       ...context,
       helpers
@@ -101,48 +85,4 @@ export class BehaviorRegistry {
     return await handler(fullContext)
   }
 
-  /**
-   * Create helper functions
-   */
-  private createHelpers(): BehaviorHelpers {
-    return {
-      today: () => {
-        const now = new Date()
-        return now.toISOString().split('T')[0] || ''
-      },
-
-      now: () => {
-        return new Date().toISOString()
-      },
-
-      formatDate: (date: string) => {
-        const d = new Date(date)
-        return d.toLocaleDateString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })
-      },
-
-      formatDateTime: (date: string) => {
-        const d = new Date(date)
-        return d.toLocaleString('en-US', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })
-      },
-
-      escapeHtml: (str: string) => {
-        return str
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#039;')
-      },
-    }
-  }
 }

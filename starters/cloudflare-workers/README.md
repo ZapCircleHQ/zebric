@@ -142,7 +142,10 @@ Use in `where` clauses:
 
 ## Optional Features
 
-### Enable Sessions (for forms with CSRF protection)
+### Enable Session Lookup
+
+This enables KV-backed session lookup in `ZebricWorkersEngine`. CSRF validation
+is available through `WorkersCSRFProtection` but is not installed automatically.
 
 1. Create KV namespace:
 
@@ -160,6 +163,9 @@ id = "your-session-kv-id"
 
 ### Enable Caching
 
+This makes a `KVCache` available through `engine.getCache()`. The engine does not
+automatically cache request or query results.
+
 1. Create KV namespace:
 
 ```bash
@@ -175,6 +181,9 @@ id = "your-cache-kv-id"
 ```
 
 ### Enable File Storage
+
+`R2Storage` is a low-level adapter and must be composed in custom request routes;
+`ZebricWorkersEngine` does not consume `FILES_R2` automatically.
 
 1. Create R2 bucket:
 

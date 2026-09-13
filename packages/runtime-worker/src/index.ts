@@ -25,7 +25,7 @@ export * from './security/index.js'
 export { KVTemplateLoader } from './renderer/kv-template-loader.js'
 
 // Behaviors
-export { BehaviorRegistry, type BehaviorContext, type BehaviorHelpers, type BehaviorFunction, type BehaviorHandler } from './behaviors/behavior-registry.js'
+export { BehaviorRegistry } from './behaviors/behavior-registry.js'
 export * from './behaviors/example-behaviors.js'
 
 // Query Executor

@@ -6,6 +6,7 @@
  */
 
 import cookie from 'cookie'
+import type { HttpRequest } from '@zebric/runtime-core'
 
 export interface WorkersCookieOptions {
   httpOnly?: boolean
@@ -21,8 +22,8 @@ export class WorkersCookieManager {
   /**
    * Parse cookies from request headers
    */
-  static parse(request: Request): Record<string, string> {
-    const cookieHeader = request.headers.get('cookie')
+  static parse(request: Request | HttpRequest): Record<string, string> {
+    const cookieHeader = this.getCookieHeader(request)
     if (!cookieHeader) {
       return {}
     }
@@ -32,9 +33,22 @@ export class WorkersCookieManager {
   /**
    * Get a specific cookie value
    */
-  static get(request: Request, name: string): string | undefined {
+  static get(request: Request | HttpRequest, name: string): string | undefined {
     const cookies = this.parse(request)
     return cookies[name]
+  }
+
+  private static getCookieHeader(request: Request | HttpRequest): string | undefined {
+    if (request.headers instanceof Headers) {
+      return request.headers.get('cookie') ?? undefined
+    }
+
+    for (const [name, value] of Object.entries(request.headers)) {
+      if (name.toLowerCase() !== 'cookie') continue
+      return Array.isArray(value) ? value.join('; ') : value
+    }
+
+    return undefined
   }
 
   /**

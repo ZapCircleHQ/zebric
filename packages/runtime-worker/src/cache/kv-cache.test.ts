@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { KVCache } from './kv-cache.js'
 import { MockKVNamespace } from '../test-helpers/mocks.js'
 
@@ -49,11 +49,15 @@ describe('KVCache', () => {
     })
 
     it('should set value with TTL', async () => {
-      await cache.set('mykey', 'value', 5000) // 5 seconds in ms
+      const put = vi.spyOn(kv, 'put')
 
-      const entry = (kv as any).data.get('test:mykey')
-      expect(entry).toBeDefined()
-      // TTL should be converted from ms to seconds
+      await cache.set('mykey', 'value', 5)
+
+      expect(put).toHaveBeenCalledWith(
+        'test:mykey',
+        JSON.stringify('value'),
+        { expirationTtl: 5 }
+      )
     })
 
     it('should throw error on set failure', async () => {

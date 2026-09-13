@@ -86,7 +86,10 @@ export default {
 }
 ```
 
-`WorkersEnv` bindings: `DB` (D1, required), `CACHE_KV`, `FILES_R2`, `SESSION_KV` (all optional — enabling `SESSION_KV` turns on session-backed forms with CSRF protection).
+`WorkersEnv` requires `DB` (D1). `SESSION_KV` optionally enables KV-backed
+session lookup. `CACHE_KV` creates the adapter returned by `engine.getCache()`,
+but request execution does not use it automatically. R2 storage and CSRF are
+low-level adapters that must be composed explicitly.
 
 ```toml
 # wrangler.toml
@@ -105,21 +108,18 @@ database_id = "your-database-id"  # from: wrangler d1 create my-zebric-db
 binding = "SESSION_KV"
 id = "your-session-kv-id"  # from: wrangler kv:namespace create SESSION_KV
 
-[[r2_buckets]]
-binding = "FILES_R2"
-bucket_name = "my-zebric-files"
 ```
 
-Create the D1 database (tables are created automatically from your entities on first request), then run locally or deploy:
+Create the D1 database, apply your migrations, then run locally or deploy:
 
 ```bash
 wrangler d1 create my-zebric-db   # copy the database_id into wrangler.toml
 
-wrangler dev      # local dev at http://localhost:8787, with D1/KV/R2 emulation
+wrangler dev      # local dev at http://localhost:8787, with D1/KV emulation
 wrangler deploy   # deploy to your-app.your-subdomain.workers.dev
 ```
 
-For a working reference with all three bindings wired up, see `examples/workers-blog`.
+For a working reference, see `starters/cloudflare-workers`.
 
 ## Deployment
 
