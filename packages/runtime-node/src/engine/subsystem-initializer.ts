@@ -274,7 +274,7 @@ export class SubsystemInitializer {
       retryDelay: 1000,
       maxRetries: 3,
       jobTimeout: 30000,
-      enqueueTransactionalAudit: async (job, workflow) => {
+      enqueueTransactionalAudit: async (job, _workflow) => {
         const event = this.buildWorkflowAuditEvent(job, true)
         await this.queryExecutor!.enqueueAuditOutbox({
           id: `workflow:${job.id}:completed`,

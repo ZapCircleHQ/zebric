@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
 import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
-import type { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes, registerSearchRoutes } from './server-routes.js'
+import { registerSearchRoutes, type BlueprintHttpAdapter } from '@zebric/runtime-hono'
+import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
 import { createApiKeyRegistry } from './server-security.js'
 import { AgentEventBus } from './agent-event-bus.js'
 

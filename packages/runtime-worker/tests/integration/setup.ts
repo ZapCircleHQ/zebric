@@ -38,9 +38,6 @@ export async function createTestEnvironment(blueprint: Blueprint): Promise<TestE
       SESSION_KV: 'session-kv',
       CACHE_KV: 'cache-kv'
     },
-    r2Buckets: {
-      FILES_R2: 'files-r2'
-    },
     bindings: {
       BLUEPRINT: JSON.stringify(blueprint)
     }

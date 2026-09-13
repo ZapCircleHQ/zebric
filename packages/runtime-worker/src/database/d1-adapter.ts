@@ -24,13 +24,6 @@ export class D1Adapter implements SqlStoragePort {
     }
   }
 
-  async transaction<T>(fn: (tx: SqlStoragePort) => Promise<T>): Promise<T> {
-    void fn
-    throw new Error(
-      'D1 does not support callback transactions. Use batch() for a fixed set of atomic statements, or a SQLite-backed Durable Object for interactive transactions.'
-    )
-  }
-
   /** Execute a fixed set of statements as one atomic D1 batch. */
   async batch<T = unknown>(queries: Array<{ sql: string; params?: unknown[] }>): Promise<Array<{ rows: T[] }>> {
     const statements = queries.map(({ sql, params }) => {

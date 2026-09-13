@@ -17,8 +17,6 @@
 import { createBehaviorHelpers } from '@zebric/runtime-core'
 import type { BehaviorContext, BehaviorFunction, BehaviorHandler } from '@zebric/runtime-core'
 
-export type { BehaviorContext, BehaviorHelpers, BehaviorFunction, BehaviorHandler } from '@zebric/runtime-core'
-
 /**
  * Behavior registry for Workers
  * Maps behavior paths to bundled functions

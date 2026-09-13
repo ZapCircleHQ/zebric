@@ -30,7 +30,7 @@ export function createQueryExecutorPort(
       onEntityChanged?.({ entity, event: 'delete', id, session: context.session })
       return result
     },
-    findById: (entity, id) => queryExecutor.findById(entity, id),
+    findById: (entity, id, context) => queryExecutor.findById(entity, id, context),
     search: (entity, fields, query, options) => queryExecutor.search(entity, fields, query, options)
   }
 }
@@ -72,17 +72,10 @@ export function createAuditLoggerPort(auditLogger: AuditLogger): AuditLoggerPort
         userId: event.userId,
         ipAddress: event.ipAddress,
         userAgent: event.userAgent,
+        entityType: event.entityType,
+        entityId: event.entityId,
         metadata: event.metadata
       })
-    },
-    logAccessDenied: (resource: string, action: string, entity?: string, context?: any) => {
-      auditLogger.logAccessDenied(resource, action, context?.userId, {
-        entityType: entity,
-        ...context
-      })
-    },
-    logDataAccess: (action, entity, recordId, userId, success, context) => {
-      auditLogger.logDataAccess(action as any, entity, recordId, userId, success ?? true, context)
     }
   }
 }

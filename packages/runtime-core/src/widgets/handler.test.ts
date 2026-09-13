@@ -72,7 +72,7 @@ describe('handleWidgetEvent', () => {
     })
 
     expect(getSession).toHaveBeenCalledWith(request)
-    expect(executor.findById).toHaveBeenCalledWith('Task', 'task-1')
+    expect(executor.findById).toHaveBeenCalledWith('Task', 'task-1', { session })
     expect(executor.update).toHaveBeenCalledWith(
       'Task', 'task-1', { completed: true }, { session },
     )

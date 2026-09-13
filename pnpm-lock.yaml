@@ -59,6 +59,9 @@ importers:
 
   examples/custom-theme:
     dependencies:
+      '@zebric/runtime-core':
+        specifier: workspace:*
+        version: link:../../packages/runtime-core
       '@zebric/runtime-node':
         specifier: workspace:*
         version: link:../../packages/runtime-node
@@ -197,6 +200,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@zebric/runtime-core':
+        specifier: workspace:*
+        version: link:../runtime-core
       '@zebric/runtime-node':
         specifier: workspace:*
         version: link:../runtime-node
@@ -493,10 +499,10 @@ importers:
       '@zebric/runtime-core':
         specifier: workspace:*
         version: link:../runtime-core
+    devDependencies:
       hono:
         specifier: ^4.12.14
         version: 4.12.14
-    devDependencies:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -638,9 +644,9 @@ importers:
 
   plugins/card-grid-layout:
     devDependencies:
-      '@zebric/runtime-node':
+      '@zebric/runtime-core':
         specifier: workspace:*
-        version: link:../../packages/runtime-node
+        version: link:../../packages/runtime-core
       typescript:
         specifier: ^6.0.3
         version: 6.0.3

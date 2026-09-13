@@ -1,6 +1,6 @@
 # @zebric/runtime-node
 
-Node.js runtime adapter for Zebric. Runs Zebric blueprint applications on Node.js with support for SQLite, PostgreSQL, S3, Redis, and more.
+Node.js runtime adapter for Zebric. Runs Zebric blueprint applications on Node.js with Hono, SQLite or PostgreSQL, Redis caching, and local file storage.
 
 ## Installation
 
@@ -30,7 +30,7 @@ npx zebric dev --blueprint blueprint.toml --port 3000
 ## Features
 
 - SQLite and PostgreSQL database adapters
-- S3-compatible file storage
+- Local file storage
 - Redis caching
 - Session management with CSRF protection
 - Hot reload during development

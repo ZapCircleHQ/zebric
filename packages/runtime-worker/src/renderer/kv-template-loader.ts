@@ -86,7 +86,7 @@ export class KVTemplateLoader implements TemplateLoader {
   /**
    * Sync load not supported for KV (always async)
    */
-  loadSync(source: string, engine: 'handlebars' | 'liquid'): Template {
+  loadSync(_source: string, _engine: 'handlebars' | 'liquid'): Template {
     throw new Error('Synchronous template loading not supported in CloudFlare Workers. Use load() instead.')
   }
 

@@ -41,8 +41,8 @@ import {
   registerOpenAPIRoute,
   registerPageRoutes,
   registerWidgetRoutes,
-  registerSearchRoutes,
 } from './server-routes.js'
+import { registerSearchRoutes } from '@zebric/runtime-hono'
 import { AgentEventBus } from './agent-event-bus.js'
 
 export interface ServerManagerDependencies {

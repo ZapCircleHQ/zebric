@@ -5,7 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
 import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
-import { PermissionManager, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
+import { HTMLRenderer, PermissionManager, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
@@ -14,7 +14,6 @@ import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/ind
 import {
   registerWidgetRoutes as registerSharedWidgetRoutes,
 } from '@zebric/runtime-hono'
-export { registerSearchRoutes } from '@zebric/runtime-hono'
 import { agentApiError } from './agent-api-error.js'
 import type { AgentEventBus } from './agent-event-bus.js'
 import {
@@ -294,7 +293,7 @@ async function createAuthRenderer(blueprint: Blueprint, config: EngineConfig) {
     baseDir: path.dirname(config.blueprintPath),
     cache: !config.dev?.hotReload,
   })
-  return new rendererModule.HTMLRenderer(blueprint, config.theme, undefined, templateLoader)
+  return new HTMLRenderer(blueprint, config.theme, undefined, templateLoader)
 }
 
 export function registerAuthRoutes(app: Hono, authProvider: AuthProvider): void {

@@ -127,3 +127,77 @@ describe('BrowserMemoryQueryExecutor canonical predicates', () => {
     expect(rows.map(row => row.id)).toEqual(['bella'])
   })
 })
+
+describe('BrowserMemoryQueryExecutor access conformance', () => {
+  const member = { user: { id: 'user-1', role: 'member' } } as any
+  const other = { user: { id: 'user-2', role: 'member' } } as any
+  const documentEntity: Entity = {
+    name: 'Document',
+    fields: [
+      { name: 'id', type: 'ULID', primary_key: true },
+      { name: 'title', type: 'Text' },
+      { name: 'userId', type: 'Text' },
+      { name: 'secret', type: 'Text', access: { read: false, write: false } },
+    ],
+    access: {
+      read: 'owner',
+      create: 'authenticated',
+      update: 'owner',
+      delete: 'owner',
+    },
+  }
+
+  function accessExecutor() {
+    const blueprint = {
+      entities: [documentEntity],
+      auth: {
+        providers: ['email'],
+        permissions: { member: { allow: ['Document.*'] } },
+      },
+    } as unknown as Blueprint
+    return new BrowserMemoryQueryExecutor(blueprint, {
+      Document: [
+        { id: 'mine', title: 'Mine', userId: 'user-1', secret: 'hidden' },
+        { id: 'theirs', title: 'Theirs', userId: 'user-2', secret: 'hidden' },
+      ],
+    }, new SimulatorLogger())
+  }
+
+  it('applies row and field access to findById', async () => {
+    const executor = accessExecutor()
+
+    await expect(executor.findById('Document', 'theirs', { session: member })).resolves.toBeNull()
+    await expect(executor.findById('Document', 'mine', { session: member })).resolves.toEqual({
+      id: 'mine',
+      title: 'Mine',
+      userId: 'user-1',
+    })
+  })
+
+  it('authorizes updates against the stored owner and filters returned fields', async () => {
+    const executor = accessExecutor()
+
+    await expect(executor.update('Document', 'theirs', {
+      userId: 'user-1',
+      title: 'Taken over',
+    }, { session: member })).rejects.toThrow('Access denied: Cannot update Document')
+
+    const updated = await executor.update('Document', 'mine', {
+      title: 'Updated',
+      secret: 'replacement',
+    }, { session: member })
+    expect(updated).toEqual({ id: 'mine', title: 'Updated', userId: 'user-1' })
+  })
+
+  it('enforces blueprint RBAC', async () => {
+    const executor = accessExecutor()
+
+    await expect(executor.findById('Document', 'theirs', { session: other })).resolves.toEqual({
+      id: 'theirs',
+      title: 'Theirs',
+      userId: 'user-2',
+    })
+    await expect(executor.execute({ entity: 'Document' }, { session: null }))
+      .rejects.toThrow('Access denied: Cannot read Document')
+  })
+})

@@ -4,8 +4,6 @@ import vm from 'node:vm'
 import { createBehaviorHelpers } from '@zebric/runtime-core'
 import type { BehaviorContext, PageBehavior } from '@zebric/runtime-core'
 
-export type { BehaviorContext, BehaviorHelpers } from '@zebric/runtime-core'
-
 /**
  * BehaviorExecutor
  *

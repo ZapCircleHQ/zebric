@@ -12,7 +12,6 @@ import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { SchemaGenerator } from './schema-generator.js'
-import { SchemaDiffer } from './schema-diff.js'
 import type { SchemaDiffResult, EntityFieldChange } from './schema-diff.js'
 import type { Blueprint, Entity } from '@zebric/runtime-core'
 import { mkdirSync } from 'fs'
@@ -69,7 +68,7 @@ export class DatabaseConnection {
     const dir = dirname(dbPath)
     try {
       mkdirSync(dir, { recursive: true })
-    } catch (err) {
+    } catch {
       // Directory might already exist
     }
 

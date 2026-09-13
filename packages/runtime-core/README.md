@@ -8,7 +8,7 @@ Platform-agnostic application core for Zebric. It owns blueprint parsing, reques
 npm install @zebric/runtime-core
 ```
 
-You likely don't need to install this directly — it's a peer dependency of `@zebric/runtime-node` and `@zebric/runtime-worker`.
+You likely don't need to install this directly — it is a dependency of the platform-specific runtime packages.
 
 ## What's Inside
 

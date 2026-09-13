@@ -1,11 +1,8 @@
 /**
  * Database Module
  *
- * Exports database components (both core and Node-specific).
+ * Exports Node-specific database components.
  */
-
-// Re-export from core
-export { AccessControl } from '@zebric/runtime-core'
 
 // Node-specific exports (Drizzle-based)
 export * from './connection.js'

@@ -18,13 +18,9 @@ export type {
 } from './routing/request-ports.js'
 export type { CachePort } from './cache/cache-interface.js'
 
-/** Low-level SQL service used by adapters such as Cloudflare D1. */
+/** Minimal SQL query service consumed by platform query executors. */
 export interface SqlStoragePort {
   query<T = unknown>(sql: string, params?: unknown[]): Promise<{ rows: T[] }>
-  transaction<T>(fn: (tx: SqlStoragePort) => Promise<T>): Promise<T>
-  migrate(statements: string[]): Promise<void>
-  healthCheck(): Promise<boolean>
-  close(): Promise<void>
 }
 
 export interface ObjectMetadata {

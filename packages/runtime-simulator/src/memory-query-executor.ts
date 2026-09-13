@@ -1,5 +1,7 @@
 import {
   AccessControl,
+  PermissionManager,
+  assertEntityAccess,
   filterReadableFields,
   filterWritableFields,
   matchesQueryPredicate,
@@ -16,17 +18,20 @@ import type { SimulatorSeedData } from './types.js'
 
 export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
   private tables = new Map<string, Array<Record<string, any>>>()
+  private permissionManager: PermissionManager
 
   constructor(
     private blueprint: Blueprint,
     seedData: SimulatorSeedData,
     private logger: SimulatorLogger
   ) {
+    this.permissionManager = new PermissionManager(blueprint.auth)
     this.loadSeed(seedData)
   }
 
   setBlueprint(blueprint: Blueprint): void {
     this.blueprint = blueprint
+    this.permissionManager = new PermissionManager(blueprint.auth)
     for (const entity of blueprint.entities) {
       if (!this.tables.has(entity.name)) {
         this.tables.set(entity.name, [])
@@ -78,19 +83,12 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     const entity = this.getEntity(query.entity)
     const rows = this.getRows(query.entity)
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'read',
       entity,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      this.logger.log({
-        type: 'query',
-        message: `Read denied for ${query.entity}`,
-        detail: { query },
-      })
-      return []
-    }
 
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
     const allowedFields = new Set(entity.fields.map(field => field.name))
@@ -122,15 +120,13 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     const writable = filterWritableFields(entity, data, context.session)
     const record = this.applyDefaults(entity, writable, context)
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'create',
       entity,
       data: record,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot create ${entityName}`)
-    }
 
     this.getRows(entityName).push(record)
     this.logger.log({
@@ -138,7 +134,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       message: `Created ${entityName} ${record.id ?? ''}`.trim(),
       detail: { record },
     })
-    return { ...record }
+    return filterReadableFields(entity, { ...record }, context.session)
   }
 
   async update(entityName: string, id: string, data: Record<string, any>, context: RequestContext): Promise<any> {
@@ -151,16 +147,14 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
 
     const existing = rows[index]!
     const writable = filterWritableFields(entity, data, context.session)
-    const updated = { ...existing, ...this.coerceValues(entity, writable) }
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'update',
       entity,
-      data: updated,
+      data: existing,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot update ${entityName}`)
-    }
+    const updated = { ...existing, ...this.coerceValues(entity, writable) }
 
     rows[index] = updated
     this.logger.log({
@@ -168,7 +162,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
       message: `Updated ${entityName} ${id}`,
       detail: { before: existing, after: updated },
     })
-    return { ...updated }
+    return filterReadableFields(entity, { ...updated }, context.session)
   }
 
   async delete(entityName: string, id: string, context: RequestContext): Promise<any> {
@@ -180,15 +174,13 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     }
 
     const record = rows[index]!
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'delete',
       entity,
       data: record,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) {
-      throw new Error(`Access denied: Cannot delete ${entityName}`)
-    }
 
     rows.splice(index, 1)
     this.logger.log({
@@ -198,10 +190,9 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     })
   }
 
-  async findById(entityName: string, id: string, _context?: Record<string, any>): Promise<any> {
-    this.getEntity(entityName)
-    const record = this.getRows(entityName).find((row) => String(row.id) === String(id))
-    return record ? { ...record } : null
+  async findById(entityName: string, id: string, context: RequestContext = {}): Promise<any> {
+    const rows = await this.execute({ entity: entityName, where: { id }, limit: 1 }, context)
+    return rows[0] ?? null
   }
 
   async search(
@@ -214,12 +205,12 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
     const rows = this.getRows(entityName)
     const context = options.context || {}
 
-    const hasAccess = await AccessControl.checkAccess({
+    await assertEntityAccess({
       session: context.session,
       action: 'read',
       entity,
+      permissionManager: this.permissionManager,
     })
-    if (!hasAccess) return []
 
     const trimmed = String(query ?? '').trim()
     if (!trimmed) return []

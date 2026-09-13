@@ -18,14 +18,10 @@ export interface WorkersEnv {
   DB: D1Database
   /** Creates the cache returned by getCache(); request execution does not use it automatically. */
   CACHE_KV?: KVNamespace
-  /** @deprecated Not consumed by ZebricWorkersEngine. Compose R2Storage explicitly. */
-  FILES_R2?: R2Bucket
   SESSION_KV?: KVNamespace
 
   // Environment variables
   BLUEPRINT?: string // Serialized blueprint JSON
-  /** @deprecated Worker KV sessions are not currently encrypted. */
-  SESSION_SECRET?: string
 }
 
 export interface WorkersEngineConfig {

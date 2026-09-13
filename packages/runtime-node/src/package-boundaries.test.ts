@@ -89,4 +89,20 @@ describe('runtime dependency direction', () => {
       ...boundaryViolations('runtime-worker', ['@zebric/runtime-node'], true),
     ]).toEqual([])
   })
+
+  it('keeps platform entry points from re-exporting core or Hono APIs', () => {
+    const publicBarrels = [
+      'packages/runtime-node/src/index.ts',
+      'packages/runtime-node/src/renderer/index.ts',
+      'packages/runtime-node/src/server/index.ts',
+      'packages/runtime-worker/src/index.ts',
+    ]
+
+    for (const relativePath of publicBarrels) {
+      const source = readFileSync(resolve(repositoryRoot, relativePath), 'utf8')
+      expect(source, relativePath).not.toMatch(
+        /export\s+(?:\*|\{[^}]*\})\s+from\s+['"]@zebric\/runtime-(?:core|hono)['"]/s,
+      )
+    }
+  })
 })

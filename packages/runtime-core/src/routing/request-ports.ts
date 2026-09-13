@@ -191,8 +191,6 @@ export type SlotContext =
  */
 export interface AuditLoggerPort {
   log(event: LogEvent): void
-  logAccessDenied(resource: string, action: string, entity?: string, context?: any): void
-  logDataAccess(action: string, entity: string, recordId?: string, userId?: string, success?: boolean, context?: any): void
 }
 
 export interface LogEvent {
@@ -204,6 +202,8 @@ export interface LogEvent {
   userId?: string
   ipAddress?: string
   userAgent?: string
+  entityType?: string
+  entityId?: string
   metadata?: Record<string, any>
 }
 

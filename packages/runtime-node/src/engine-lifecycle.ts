@@ -6,10 +6,9 @@
 
 import type { ServerType } from '@hono/node-server'
 import type { Logger } from '@zebric/observability'
-import type { Blueprint, EngineAPI } from '@zebric/runtime-core'
+import type { Blueprint, EngineAPI, HTMLRenderer } from '@zebric/runtime-core'
 import type { PluginRegistry } from './plugins/index.js'
 import type { BlueprintWatcher, ReloadServer } from './hot-reload/index.js'
-import type { HTMLRenderer } from './renderer/index.js'
 import { getReloadScript } from './hot-reload/index.js'
 import { PluginAPIProvider } from './engine/index.js'
 import type { QueryExecutor } from './database/index.js'

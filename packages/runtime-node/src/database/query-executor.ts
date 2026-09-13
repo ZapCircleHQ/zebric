@@ -8,7 +8,7 @@
 import { eq, ne, and, or, gt, gte, lt, lte, like, ilike, inArray, isNull, isNotNull, asc, desc, sql, SQL } from 'drizzle-orm'
 import type { Query, Entity, QueryPredicate, RequestContext } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
-import type { UserSession, PermissionManager } from '@zebric/runtime-core'
+import type { PermissionManager } from '@zebric/runtime-core'
 import { AccessControl, SYSTEM_SESSION, assertEntityAccess, filterReadableFields, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'

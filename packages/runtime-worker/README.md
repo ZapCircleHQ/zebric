@@ -1,12 +1,12 @@
 # @zebric/runtime-worker
 
-CloudFlare Workers runtime adapter for Zebric. Provides platform-specific implementations for running Zebric applications on CloudFlare's edge network.
+Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implementations for running Zebric applications on Cloudflare's edge network.
 
 ## Engine Features
 
 - ✅ **Platform-agnostic business logic** - Uses @zebric/runtime-core for routing, auth, validation
 - ✅ **Session management** - KV-backed sessions with automatic expiration
-- ✅ **D1 database** - CloudFlare D1 SQL database adapter
+- ✅ **D1 database** - Cloudflare D1 SQL database adapter
 - ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
 - ❌ **Workflows** - Rejected during initialization until a Workers executor is available
 
@@ -272,7 +272,7 @@ const files = await storage.list('uploads/')
 
 ## Form Data & File Uploads
 
-CloudFlare Workers has native support for form data parsing:
+Cloudflare Workers has native support for form data parsing:
 
 ```typescript
 // Parse form data
@@ -314,7 +314,7 @@ The runtime-worker package follows a clean architecture:
 
 ```
 ┌─────────────────────────────────────────┐
-│     CloudFlare Workers fetch API        │
+│     Cloudflare Workers fetch API        │
 │            (Request/Response)           │
 └───────────────┬─────────────────────────┘
                 │
@@ -337,7 +337,7 @@ The runtime-worker package follows a clean architecture:
 ```
 
 Shared orchestration, access control, validation, rendering, and port contracts live
-in `@zebric/runtime-core`. D1 query compilation and CloudFlare service integration
+in `@zebric/runtime-core`. D1 query compilation and Cloudflare service integration
 remain in this package; HTTP translation and shared routes live in
 `@zebric/runtime-hono`.
 

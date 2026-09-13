@@ -180,25 +180,6 @@ binding = "CACHE_KV"
 id = "your-cache-kv-id"
 ```
 
-### Enable File Storage
-
-`R2Storage` is a low-level adapter and must be composed in custom request routes;
-`ZebricWorkersEngine` does not consume `FILES_R2` automatically.
-
-1. Create R2 bucket:
-
-```bash
-wrangler r2 bucket create zebric-files
-```
-
-2. Uncomment in `wrangler.toml`:
-
-```toml
-[[r2_buckets]]
-binding = "FILES_R2"
-bucket_name = "zebric-files"
-```
-
 ## API Access
 
 All pages are available as JSON APIs by setting the `Accept` header:

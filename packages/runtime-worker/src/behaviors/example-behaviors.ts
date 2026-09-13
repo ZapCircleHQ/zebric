@@ -5,7 +5,7 @@
  * Import and register them in your worker's entry point.
  */
 
-import type { BehaviorContext } from './behavior-registry.js'
+import type { BehaviorContext } from '@zebric/runtime-core'
 
 /**
  * Example: Render a list of tasks

@@ -9,6 +9,7 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
+    "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-node": "workspace:*"
   },
   "devDependencies": {

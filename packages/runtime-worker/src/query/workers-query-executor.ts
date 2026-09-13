@@ -6,15 +6,14 @@
  */
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
-import type { QueryExecutorPort, RequestContext } from '@zebric/runtime-core'
+import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
 import { AccessControl, PermissionManager, assertEntityAccess, filterReadableFields, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
-import type { D1Adapter } from '../database/d1-adapter.js'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
 
   constructor(
-    private adapter: D1Adapter,
+    private adapter: SqlStoragePort,
     private blueprint: Blueprint
   ) {
     this.permissionManager = new PermissionManager(blueprint.auth)

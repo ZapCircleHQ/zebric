@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { BehaviorRegistry } from './behavior-registry.js'
-import type { BehaviorContext } from './behavior-registry.js'
+import type { BehaviorContext } from '@zebric/runtime-core'
 
 describe('BehaviorRegistry', () => {
   let registry: BehaviorRegistry

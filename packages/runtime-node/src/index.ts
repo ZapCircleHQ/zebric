@@ -1,11 +1,8 @@
 /**
  * Zebric Runtime Node.js Adapter
  *
- * Node.js-specific implementations and re-exports of core functionality.
+ * Node.js-specific Zebric implementations.
  */
-
-// Re-export everything from core
-export * from '@zebric/runtime-core'
 
 // Node.js-specific types
 export * from './types/index.js'

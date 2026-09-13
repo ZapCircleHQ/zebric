@@ -81,7 +81,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'read', undefined, { session, request })
+        this.logAccessDenied(page.path, 'read', undefined, session, request)
 
         if (wantsJson(request)) {
           return jsonResponse(401, {
@@ -166,7 +166,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'create', undefined, { session, request })
+        this.logAccessDenied(page.path, 'create', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -210,7 +210,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'create', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'create', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -226,13 +226,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful create
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'create',
         page.form.entity,
         result?.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       // Handle success
@@ -275,7 +274,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'update', undefined, { session, request })
+        this.logAccessDenied(page.path, 'update', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -311,7 +310,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'update', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'update', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -327,13 +326,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful update
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'update',
         page.form.entity,
         match.params.id || result?.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       return jsonResponse(200, {
@@ -361,7 +359,7 @@ export class RequestHandler {
       const authRequired = page.auth !== 'none' && page.auth !== 'optional'
 
       if (authRequired && !session) {
-        this.auditLogger?.logAccessDenied(page.path, 'delete', undefined, { session, request })
+        this.logAccessDenied(page.path, 'delete', undefined, session, request)
 
         return jsonResponse(401, {
           error: 'Authentication required',
@@ -386,7 +384,7 @@ export class RequestHandler {
       )
 
       if (!authorized) {
-        this.auditLogger?.logAccessDenied(page.path, 'delete', page.form.entity, { session, request })
+        this.logAccessDenied(page.path, 'delete', page.form.entity, session, request)
 
         return jsonResponse(403, {
           error: 'Access denied',
@@ -402,13 +400,12 @@ export class RequestHandler {
       }, this.queryExecutor)
 
       // Log successful delete
-      this.auditLogger?.logDataAccess(
+      this.logDataAccess(
         'delete',
         page.form.entity,
         match.params.id,
-        session?.user?.id,
-        true,
-        { session, request }
+        session,
+        request
       )
 
       return jsonResponse(200, {
@@ -436,6 +433,47 @@ export class RequestHandler {
       console.error('Query execution error:', error)
       return []
     }
+  }
+
+  private logAccessDenied(
+    resource: string,
+    action: string,
+    entity: string | undefined,
+    session: RequestContext['session'],
+    request: HttpRequest,
+  ): void {
+    this.auditLogger?.log({
+      eventType: 'access.denied',
+      severity: 'WARNING',
+      action: `Access denied: ${action}`,
+      resource,
+      success: false,
+      userId: session?.user?.id,
+      ipAddress: extractIp(request),
+      userAgent: request.headers['user-agent'] as string,
+      entityType: entity,
+    })
+  }
+
+  private logDataAccess(
+    action: 'create' | 'update' | 'delete',
+    entity: string,
+    entityId: string | undefined,
+    session: RequestContext['session'],
+    request: HttpRequest,
+  ): void {
+    this.auditLogger?.log({
+      eventType: `data.${action}`,
+      severity: 'INFO',
+      action: `Data ${action}`,
+      resource: entity,
+      success: true,
+      userId: session?.user?.id,
+      ipAddress: extractIp(request),
+      userAgent: request.headers['user-agent'] as string,
+      entityType: entity,
+      entityId,
+    })
   }
 
   private handleError(error: any, session: any, resource: string, request: HttpRequest): HttpResponse {
