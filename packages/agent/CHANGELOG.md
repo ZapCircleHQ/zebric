@@ -1,5 +1,12 @@
 # @zebric/agent
 
+## 0.5.0
+
+### Patch Changes
+
+- Updated dependencies [b48d68b]
+  - @zebric/runtime-core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
