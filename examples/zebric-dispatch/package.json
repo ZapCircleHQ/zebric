@@ -4,10 +4,11 @@
   "private": true,
   "description": "Dispatch example app built with Zebric",
   "scripts": {
+    "predev": "pnpm --dir ../.. --filter @zebric/runtime-core build",
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
-    "seed:user": "bash seed-dev-user.sh",
-    "audit:layouts": "node audit-layouts.mjs",
-    "audit:layouts:live": "node audit-live-layouts.mjs"
+    "seed": "bash seed.sh",
+    "validate": "zebric validate --blueprint blueprint.toml",
+    "test:workflows": "bash test-workflows.sh"
   },
   "dependencies": {
     "@zebric/cli": "workspace:*",

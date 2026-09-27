@@ -1,97 +1,94 @@
 # Zebric Dispatch
 
-Agent-native intake, approvals, audit trail, and Slack notifications — defined entirely in a single `blueprint.toml`.
+Zebric Dispatch is an open-source operations desk where humans and AI agents work through the same governed workflows.
 
-Zebric Dispatch shows the minimal declarative effort needed for a genuinely useful internal workflow app. One TOML file gives you issue tracking, conditional approval routing, a full audit log, bidirectional Slack integration, and an agent-accessible API — no application code required.
+It gives a 5–50 person team one place for access, purchasing, onboarding, IT, engineering, and general operations requests. Humans use the Zazzle web UI. Agents use Zebric's generated agent API/MCP surface. Both act on the same `Request`, `Comment`, and `Approval` records and the same workflow guards.
 
-## What the Blueprint Declares
+```text
+Human                           Agent
+  │                               │
+  │ Zazzle UI                     │ MCP
+  ▼                               ▼
+┌──────────────────────────────────────┐
+│                Zebric                │
+│                                      │
+│ Entities     Workflows      Auth     │
+│ Events       Permissions    Audit    │
+│ Agent/MCP capabilities               │
+└──────────────────────────────────────┘
+                  │
+                  ▼
+            Application State
+```
 
-### Entities
+## What is included
 
-| Entity | Purpose |
-|---|---|
-| **TeamMember** | People (engineers, PMs, approvers) with roles and Slack handles |
-| **Issue** | Requests flowing through `new → triage → in_progress → awaiting_approval → approved/rejected → done` |
-| **Comment** | Threaded discussion on issues (user, agent, or system authored) |
-| **AuditEvent** | Immutable log of every status change, approval, and agent action |
-| **ApprovalRule** | Category-to-role mapping that drives conditional approval gates |
+- An actionable Inbox for approvals, assigned work, waiting work, and recent changes.
+- A searchable/filterable operational request list.
+- A polished request detail with workflow progress, approval decisions, comments, contextual actions, and a mixed human/agent activity timeline.
+- General operations, access, and purchase workflows.
+- Email authentication with requester, operator, approver, and admin roles.
+- A scoped `dispatch` agent skill that exposes workflow actions instead of unrestricted status mutation.
+- Twelve demo requests, two pending approvals, four roles, comments, and meaningful mixed activity.
 
-### Pages
-
-| Route | Layout | What it shows |
-|---|---|---|
-| `/` | Dashboard | New issues and items awaiting approval |
-| `/issues` | List | All issues with assignee and requester |
-| `/board` | Dashboard | Kanban-style columns by status |
-| `/issues/new` | Form | Create an issue with category and priority |
-| `/issues/:id` | Detail | Issue detail with comments, audit log, and action bar |
-
-### Workflows
-
-| Workflow | Trigger | What it does |
-|---|---|---|
-| **SetIssueStatus** | Manual (action bar) | Updates status + writes an audit event |
-| **RequestApprovalIfNeeded** | Manual (action bar) | Checks ApprovalRule for the category; if a rule exists, moves to `awaiting_approval` and sends a Slack notification with approve/reject buttons |
-| **NotifyDoneToSlack** | Issue status → `done` | Posts a "Done" notification to Slack |
-| **HandleSlackApprovalActions** | Webhook (`/notifications/slack_dispatch/actions`) | Processes Slack button clicks to approve or reject, with audit logging |
-| **LogAuditEvent** | Manual (reusable helper) | Appends an audit event |
-
-### Agent Skill
-
-The `dispatch` skill exposes a structured API for LLM agents:
-
-- `create_issue` — POST `/api/issues`
-- `get_issue` — GET `/api/issues/{id}`
-- `set_status` — POST `/api/issues/{id}/status`
-- `add_comment` — POST `/api/issues/{id}/comments`
-- `get_audit` — GET `/api/issues/{id}/audit`
+The implementation is blueprint-first. The application definition lives in [`blueprint.toml`](blueprint.toml); custom Liquid is limited to the three surfaces where the PRD calls for product-specific presentation.
 
 ## Run
 
-From the repo root:
+From the repository root:
 
 ```bash
 pnpm --filter zebric-dispatch dev
 ```
 
-Then open http://localhost:3000.
-
-### Seed a Dev User
-
-With the dev server running:
+In a second terminal:
 
 ```bash
-pnpm --filter zebric-dispatch seed:user
+pnpm --filter zebric-dispatch seed
 ```
 
-Optional overrides:
+Open <http://127.0.0.1:3000>. Every demo account uses `DispatchDemo1!` by default:
+
+| Role | Email |
+|---|---|
+| Requester | `alice@dispatch.local` |
+| Operator | `priya@dispatch.local` |
+| Approver | `jeff@dispatch.local` |
+| Admin | `admin@dispatch.local` |
+
+Set `DEMO_PASSWORD`, `BASE_URL`, or `DB_PATH` to override seed defaults. The seed is idempotent once `cat_general` exists.
+
+## Authentication and authorization
+
+Zebric's email provider owns identity and sessions. The seed script provisions roles through a trusted database write because public sign-up must not be allowed to self-select an operational role. Pages require authentication, entity permissions enforce the role matrix, workflow preconditions enforce lifecycle state, and agent credentials add scopes on top.
+
+One important current limitation is documented honestly: Zebric has no “workflow-only” field mutation policy, so a role that may run a workflow writing `Request.status` also has entity-level update permission. Dispatch only exposes guarded status actions in its UI and agent skill, but the generic entity API is not yet an airtight domain-command boundary. See [`ZEBRIC_GAPS.md`](ZEBRIC_GAPS.md).
+
+## Connect an agent
+
+Start the app with a credential:
 
 ```bash
-BASE_URL=http://127.0.0.1:3000 \
-DEV_EMAIL=dev@zebric.local \
-DEV_PASSWORD='DevPass123!' \
-DEV_NAME='Dispatch Developer' \
-pnpm --filter zebric-dispatch seed:user
+export DISPATCH_AGENT_API_KEY='replace-with-a-long-random-secret'
+pnpm --filter zebric-dispatch dev
 ```
 
-### Slack Setup
+Use the normal Zebric MCP/agent connection for the running engine and supply that bearer credential. Mutating calls also require an `X-Agent-Run-ID`; this gives the framework stable agent attribution and idempotency/audit context.
 
-Dispatch includes bidirectional Slack integration: outbound notifications with Block Kit approve/reject buttons, and inbound webhook handling for those button clicks.
+The generated `dispatch` capability includes request discovery, inspection, creation, assignment, comments, approval requests, protected-work continuation, and completion. It does not grant approval decisions to the default operator agent.
 
-Set these env vars before starting the app:
+See [`docs/AGENT_DEMO.md`](docs/AGENT_DEMO.md) for the complete human → agent → human approval → agent scenario and the sample guidance in [`examples/claude/CLAUDE.md`](examples/claude/CLAUDE.md) and [`examples/codex/AGENTS.md`](examples/codex/AGENTS.md).
+
+## Validate
 
 ```bash
-export SLACK_BOT_TOKEN="xoxb-..."
-export SLACK_SIGNING_SECRET="..."
-export SLACK_DEFAULT_CHANNEL="#dispatch"
+pnpm --filter zebric-dispatch validate
+pnpm --filter @zebric/framework-stories test -- zebric-dispatch.story.test.ts
+pnpm --filter zebric-dispatch test:workflows
 ```
 
-Without `SLACK_BOT_TOKEN`, the Slack adapter is not initialized and notification workflows will fail silently.
+The workflow smoke test expects a running, seeded server and `DISPATCH_AGENT_API_KEY` to match the server environment.
 
-For inbound webhooks (Slack button callbacks), configure your Slack app's Interactivity Request URL to:
+## Dogfooding
 
-```
-http://yourexternalurl/notifications/slack_dispatch/actions
-```
-
-Use ngrok or a similar tool to expose your local port 3000.
+Dispatch is intentionally both a useful example and a framework probe. [`ZEBRIC_GAPS.md`](ZEBRIC_GAPS.md) records what is native, what needed a workaround, and what should become a Zebric 0.5 capability. The gaps are part of the deliverable, not hidden implementation debt.

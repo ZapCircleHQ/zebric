@@ -11,67 +11,87 @@ describe('Story: zebric-dispatch', () => {
     blueprint = await loadBlueprint(story.blueprintPath)
   })
 
-  it('defines dashboard and issue list pages for dispatch operations', () => {
+  it('models the PRD domain without a parallel agent model', () => {
     expect(blueprint.project?.name).toBe('Zebric Dispatch')
-
-    const dashboard = blueprint.pages.find((page) => page.path === '/')
-    const issues = blueprint.pages.find((page) => page.path === '/issues')
-    const board = blueprint.pages.find((page) => page.path === '/board')
-
-    expect(dashboard?.layout).toBe('dashboard')
-    expect(Object.keys(dashboard?.queries || {})).toEqual(['summaryNew', 'summaryAwaitingApproval'])
-    expect(issues?.layout).toBe('list')
-    expect(board?.layout).toBe('dashboard')
-  })
-
-  it('provides an issue intake form with object-based select options and redirect', () => {
-    const intakePage = blueprint.pages.find((page) => page.path === '/issues/new')
-    expect(intakePage?.layout).toBe('form')
-    expect(intakePage?.form?.entity).toBe('Issue')
-    expect(intakePage?.form?.method).toBe('create')
-
-    const categoryField = intakePage?.form?.fields.find((field: any) => field.name === 'category')
-    expect(categoryField?.type).toBe('select')
-    expect(categoryField?.options).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ value: 'general', label: 'General' }),
-        expect.objectContaining({ value: 'finance', label: 'Finance' })
-      ])
+    expect(blueprint.entities.map(entity => entity.name)).toEqual(
+      expect.arrayContaining(['Request', 'RequestCategory', 'Comment', 'Approval', 'RequestActivity'])
     )
+    expect(blueprint.entities.some(entity => entity.name === 'AgentComment')).toBe(false)
 
-    expect(intakePage?.form?.onSuccess?.redirect).toBe('/issues/{id}')
-  })
-
-  it('wires issue detail actions to manual lifecycle workflows', () => {
-    const detailPage = blueprint.pages.find((page) => page.path === '/issues/:id')
-    expect(detailPage?.layout).toBe('detail')
-    expect(detailPage?.actionBar?.actions?.some((action) => action.workflow === 'SetIssueStatus')).toBe(true)
-    expect(detailPage?.actionBar?.actions?.some((action) => action.workflow === 'RequestApprovalIfNeeded')).toBe(true)
-
-    const statusWorkflow = blueprint.workflows?.find((workflow) => workflow.name === 'SetIssueStatus')
-    const approvalWorkflow = blueprint.workflows?.find((workflow) => workflow.name === 'RequestApprovalIfNeeded')
-
-    expect(statusWorkflow?.trigger?.manual).toBe(true)
-    expect(approvalWorkflow?.trigger?.manual).toBe(true)
-  })
-
-  it('configures Slack notifications for done issue transitions', () => {
-    expect(blueprint.notifications?.adapters.some((adapter) => adapter.name === 'slack_dispatch' && adapter.type === 'slack')).toBe(true)
-    const slackAdapter = blueprint.notifications?.adapters.find((adapter) => adapter.name === 'slack_dispatch')
-    expect((slackAdapter as any)?.config?.botTokenEnv).toBe('SLACK_BOT_TOKEN')
-
-    const notifyWorkflow = blueprint.workflows?.find((workflow) => workflow.name === 'NotifyDoneToSlack')
-    expect(notifyWorkflow).toBeDefined()
-    expect(notifyWorkflow?.trigger?.entity).toBe('Issue')
-    expect(notifyWorkflow?.trigger?.event).toBe('update')
-    expect(notifyWorkflow?.trigger?.condition).toEqual({
-      'after.status': 'done',
-      'before.status': { $ne: 'done' }
+    const request = blueprint.entities.find(entity => entity.name === 'Request')
+    expect(request?.fields.find(field => field.name === 'status')).toMatchObject({
+      values: ['new', 'triaged', 'in_progress', 'waiting', 'completed', 'cancelled'],
     })
-    expect(notifyWorkflow?.steps[0]?.type).toBe('notify')
-    expect((notifyWorkflow?.steps[0] as any)?.adapter).toBe('slack_dispatch')
-    expect((notifyWorkflow?.steps[0] as any)?.metadata).toEqual(
-      expect.objectContaining({ mrkdwn: true })
+    expect(request?.fields.find(field => field.name === 'approvalState')).toBeDefined()
+  })
+
+  it('defines the required authenticated product surfaces', () => {
+    const inbox = blueprint.pages.find(page => page.path === '/')
+    const requests = blueprint.pages.find(page => page.path === '/requests')
+    const create = blueprint.pages.find(page => page.path === '/requests/new')
+    const detail = blueprint.pages.find(page => page.path === '/requests/:id')
+    const categories = blueprint.pages.find(page => page.path === '/admin/categories')
+
+    expect(inbox).toMatchObject({ auth: 'required', layout: 'custom' })
+    expect(Object.keys(inbox?.queries || {})).toEqual(['needsApproval', 'assigned', 'waiting', 'recent'])
+    expect(requests).toMatchObject({ auth: 'required', layout: 'custom' })
+    expect(create?.form).toMatchObject({ entity: 'Request', method: 'create' })
+    expect(create?.form?.fields.map((field: any) => field.name)).toEqual([
+      'categoryId', 'title', 'description', 'priority',
+    ])
+    expect(detail).toMatchObject({ auth: 'required', layout: 'custom' })
+    expect(Object.keys(detail?.queries || {})).toEqual(['request', 'comments', 'approvals', 'activity'])
+    expect(categories?.layout).toBe('list')
+  })
+
+  it('guards general, access, and purchasing transitions with workflow preconditions', () => {
+    const names = blueprint.workflows?.map(workflow => workflow.name) || []
+    expect(names).toEqual(expect.arrayContaining([
+      'TriageRequest',
+      'StartGeneralWork',
+      'RequestHumanApproval',
+      'ApproveRequest',
+      'RejectRequest',
+      'StartProtectedWork',
+      'CompleteGeneralRequest',
+      'CompleteProtectedRequest',
+    ]))
+
+    const completeProtected = blueprint.workflows?.find(workflow => workflow.name === 'CompleteProtectedRequest')
+    expect(completeProtected?.transactional).toBe(true)
+    expect(completeProtected?.precondition).toMatchObject({
+      'variables.data.record.approvalState': 'approved',
+      'variables.data.record.status': 'in_progress',
+    })
+
+    const detail = blueprint.pages.find(page => page.path === '/requests/:id')
+    expect(detail?.actionBar?.actions?.every(action => Boolean(action.visibleWhen))).toBe(true)
+  })
+
+  it('exposes a scoped semantic agent surface without approval decisions or raw status writes', () => {
+    const dispatch = blueprint.skills?.find(skill => skill.name === 'dispatch')
+    const actions = dispatch?.actions || []
+    const names = actions.map(action => action.name)
+
+    expect(names).toEqual(expect.arrayContaining([
+      'list_requests', 'get_request', 'create_request', 'list_comments',
+      'list_approvals', 'list_activity', 'assign_request', 'add_comment',
+      'request_approval', 'start_approved_work', 'complete_request',
+    ]))
+    expect(names).not.toContain('approve_request')
+    expect(actions.some(action => action.action === 'update')).toBe(false)
+    expect(actions.filter(action => action.method !== 'GET').every(action => action.risk === 'write')).toBe(true)
+    expect(blueprint.auth?.apiKeys?.[0]?.scopes).toContain('dispatch.approvals.request')
+  })
+
+  it('uses the framework auth and permission model for humans and agents', () => {
+    expect(blueprint.auth?.providers).toEqual(['email'])
+    expect(Object.keys(blueprint.auth?.permissions || {})).toEqual(
+      expect.arrayContaining(['requester', 'operator', 'approver', 'admin', 'user'])
     )
+    expect(blueprint.auth?.apiKeys?.[0]).toMatchObject({
+      agentId: 'dispatch-operator-agent',
+      credentialId: 'dispatch-demo-credential',
+    })
   })
 })
