@@ -1,0 +1,134 @@
+version = "0.1.0"
+
+[project]
+name = "Merge Conflict Workflow"
+version = "0.1.0"
+description = "Human-supervised merge-conflict resolution evidence and review console"
+
+[project.runtime]
+min_version = "0.2.3"
+
+[entity.Repository]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true, unique = true },
+  { name = "provider", type = "Enum", values = ["local", "github"], required = true },
+  { name = "location", type = "Text", required = true },
+  { name = "validationCommands", type = "JSON" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.PullRequest]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "repositoryId", type = "Ref", ref = "Repository.id", required = true, index = true },
+  { name = "externalNumber", type = "Integer" },
+  { name = "title", type = "Text", required = true },
+  { name = "baseRef", type = "Text", required = true },
+  { name = "headRef", type = "Text", required = true },
+  { name = "headSha", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.ConflictResolution]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "pullRequestId", type = "Ref", ref = "PullRequest.id", required = true, index = true },
+  { name = "status", type = "Enum", values = ["detected", "analyzing", "resolving", "validating", "awaiting_approval", "approved", "applying", "completed", "failed", "abandoned"], default = "detected", index = true },
+  { name = "failure", type = "LongText" },
+  { name = "publishedCommit", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.ConflictFile]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "resolutionId", type = "Ref", ref = "ConflictResolution.id", required = true, index = true },
+  { name = "path", type = "Text", required = true },
+  { name = "classification", type = "Enum", values = ["IMPORTS", "FORMATTING", "ADDITIVE", "GENERATED", "DEPENDENCY", "IMPLEMENTATION", "TEST", "CONFIGURATION", "DOCUMENTATION", "UNKNOWN"], required = true },
+  { name = "risk", type = "Enum", values = ["LOW", "MEDIUM", "HIGH", "UNKNOWN"], required = true },
+  { name = "classifier", type = "Text", required = true },
+  { name = "modelVersion", type = "Text", required = true },
+  { name = "reasons", type = "JSON" }
+]
+
+[entity.ResolutionAttempt]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "resolutionId", type = "Ref", ref = "ConflictResolution.id", required = true, index = true },
+  { name = "conflictFileId", type = "Ref", ref = "ConflictFile.id", required = true, index = true },
+  { name = "attemptNumber", type = "Integer", required = true },
+  { name = "source", type = "Enum", values = ["deterministic", "agent"], required = true },
+  { name = "resolver", type = "Text", required = true },
+  { name = "proposedContent", type = "LongText", required = true },
+  { name = "explanation", type = "LongText", required = true },
+  { name = "assumptions", type = "JSON" },
+  { name = "validation", type = "JSON" },
+  { name = "validationPassed", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.ReviewDecision]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "resolutionId", type = "Ref", ref = "ConflictResolution.id", required = true, index = true },
+  { name = "decision", type = "Enum", values = ["approved", "rejected", "revise"], required = true },
+  { name = "reviewerId", type = "Text", required = true },
+  { name = "reason", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[page."/"]
+title = "Conflict resolutions"
+auth = "optional"
+layout = "list"
+
+[page."/".query.resolutions]
+entity = "ConflictResolution"
+orderBy = { createdAt = "desc" }
+
+[page."/resolutions/:id"]
+title = "Resolution evidence"
+auth = "optional"
+layout = "detail"
+
+[page."/resolutions/:id".query.resolution]
+entity = "ConflictResolution"
+where = { id = "$params.id" }
+
+[workflow.ApproveResolution]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "awaiting_approval" }
+transactional = true
+
+[[workflow.ApproveResolution.steps]]
+type = "query"
+entity = "ReviewDecision"
+action = "create"
+data = { resolutionId = "{{ variables.data.record.id }}", decision = "approved", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
+
+[[workflow.ApproveResolution.steps]]
+type = "query"
+entity = "ConflictResolution"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "awaiting_approval" }
+data = { status = "approved", updatedAt = "now" }
+
+[workflow.RejectResolution]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "awaiting_approval" }
+transactional = true
+
+[[workflow.RejectResolution.steps]]
+type = "query"
+entity = "ReviewDecision"
+action = "create"
+data = { resolutionId = "{{ variables.data.record.id }}", decision = "rejected", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
+
+[[workflow.RejectResolution.steps]]
+type = "query"
+entity = "ConflictResolution"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "awaiting_approval" }
+data = { status = "abandoned", updatedAt = "now" }
