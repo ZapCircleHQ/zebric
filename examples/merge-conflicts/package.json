@@ -1,0 +1,22 @@
+{
+  "name": "merge-conflicts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Auditable, policy-driven merge-conflict workflow example for Zebric",
+  "scripts": {
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3012",
+    "build": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@zebric/cli": "workspace:*",
+    "@zebric/runtime-node": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}
