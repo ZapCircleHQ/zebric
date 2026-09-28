@@ -1,5 +1,39 @@
 import { describe, expect, it, vi } from 'vitest'
-import { drainAuditOutbox } from './subsystem-initializer.js'
+import { drainAuditOutbox, resolveAuthDbPath } from './subsystem-initializer.js'
+
+describe('resolveAuthDbPath', () => {
+  it('uses an explicit sqlite database.url over dev.dbPath', () => {
+    expect(
+      resolveAuthDbPath({
+        database: { url: 'sqlite:///tmp/custom.db' },
+        dev: { dbPath: '/tmp/dev-only.db' },
+      })
+    ).toBe('/tmp/custom.db')
+  })
+
+  it('strips the sqlite:// prefix when there is no dev config at all', () => {
+    expect(resolveAuthDbPath({ database: { url: 'sqlite:///tmp/custom.db' } })).toBe(
+      '/tmp/custom.db'
+    )
+  })
+
+  it('falls back to dev.dbPath when no database.url is configured', () => {
+    expect(resolveAuthDbPath({ dev: { dbPath: '/tmp/dev-only.db' } })).toBe('/tmp/dev-only.db')
+  })
+
+  it('falls back to the default file when neither database.url nor dev.dbPath is set', () => {
+    expect(resolveAuthDbPath({})).toBe('./data/app.db')
+  })
+
+  it('falls back to dev.dbPath for a postgres database.url, since Better Auth only supports sqlite', () => {
+    expect(
+      resolveAuthDbPath({
+        database: { url: 'postgres://user:pass@host/db' },
+        dev: { dbPath: '/tmp/dev-only.db' },
+      })
+    ).toBe('/tmp/dev-only.db')
+  })
+})
 
 describe('drainAuditOutbox', () => {
   it('drains every batch instead of stopping after the first 100 records', async () => {
