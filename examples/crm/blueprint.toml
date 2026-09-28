@@ -1,0 +1,1583 @@
+version = "0.1.0"
+
+[project]
+name = "Zebric CRM"
+version = "1.0.0"
+description = "A governed B2B CRM where humans and agents share records, workflows, approvals, and audit trails."
+
+[project.runtime]
+min_version = "0.2.3"
+
+[ux]
+pattern = "queue-detail@v1"
+
+[ux.interaction]
+selection = "multi"
+row_click = "open-detail"
+edit_mode = "page"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
+
+[ux.data]
+mode = "table"
+density = "compact"
+pagination = "server"
+filters = "top-bar"
+column_config = true
+
+[ux.system.feedback]
+success = "toast"
+error = "inline"
+
+[ux.system.activity]
+timeline = true
+location = "main"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Attention", "Accounts", "Leads", "Pipeline", "Prospecting", "Messages", "Tasks"]
+
+[ux.responsive]
+mode = "desktop-first"
+collapse_sidebar = true
+
+[design_system]
+name = "crm"
+extends = "minimal"
+tokens = { primary = "#173f5f", accent = "#e07a3f", radius = "0.7rem", font = "Inter, ui-sans-serif, system-ui, sans-serif" }
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+[design_adapter.roles]
+primary-action = "buttonPrimary"
+secondary-action = "buttonSecondary"
+destructive-action = "buttonSecondary"
+surface-default = "body"
+surface-elevated = "card"
+feedback-error = "errorState"
+
+# Identity and teams ----------------------------------------------------------
+
+[entity.User]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "email", type = "Email", required = true, unique = true },
+  { name = "name", type = "Text", required = true },
+  { name = "role", type = "Enum", values = ["admin", "manager", "ae", "assistant", "user"], default = "user" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.SalesTeam]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true, unique = true },
+  { name = "accountExecutiveId", type = "Text", required = true, index = true },
+  { name = "accountExecutiveName", type = "Text", required = true },
+  { name = "active", type = "Boolean", default = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.SalesTeam.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.TeamMembership]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "userId", type = "Text", required = true, index = true },
+  { name = "userEmail", type = "Email", required = true, index = true },
+  { name = "userName", type = "Text", required = true },
+  { name = "teamRole", type = "Enum", values = ["account_executive", "assistant"], required = true },
+  { name = "active", type = "Boolean", default = true }
+]
+
+[entity.TeamMembership.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+
+[entity.TeamMembership.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Core CRM -------------------------------------------------------------------
+
+[entity.CrmAccount]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true, index = true },
+  { name = "website", type = "Text" },
+  { name = "phone", type = "Text" },
+  { name = "address", type = "Text" },
+  { name = "city", type = "Text", index = true },
+  { name = "state", type = "Text" },
+  { name = "postalCode", type = "Text" },
+  { name = "latitude", type = "Float" },
+  { name = "longitude", type = "Float" },
+  { name = "industry", type = "Text", index = true },
+  { name = "status", type = "Enum", values = ["prospect", "customer", "inactive"], default = "prospect", index = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "source", type = "Enum", values = ["manual", "google_places", "import", "agent", "lead_conversion"], default = "manual" },
+  { name = "externalPlaceId", type = "Text", index = true, nullable = true },
+  { name = "lastActivityAt", type = "DateTime", nullable = true, index = true },
+  { name = "nextAction", type = "Text" },
+  { name = "tags", type = "Text" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.CrmAccount.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+contacts = { type = "hasMany", entity = "Contact", foreign_key = "accountId" }
+opportunities = { type = "hasMany", entity = "Opportunity", foreign_key = "accountId" }
+
+[entity.CrmAccount.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Contact]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true },
+  { name = "firstName", type = "Text", required = true },
+  { name = "lastName", type = "Text", required = true },
+  { name = "email", type = "Email", index = true },
+  { name = "phone", type = "Text" },
+  { name = "title", type = "Text" },
+  { name = "status", type = "Enum", values = ["active", "inactive", "unsubscribed"], default = "active" },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "source", type = "Enum", values = ["manual", "google_places", "import", "agent", "lead_conversion"], default = "manual" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Contact.relations]
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+
+[entity.Contact.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Lead]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "companyName", type = "Text", required = true, index = true },
+  { name = "firstName", type = "Text" },
+  { name = "lastName", type = "Text" },
+  { name = "email", type = "Email", index = true },
+  { name = "phone", type = "Text" },
+  { name = "website", type = "Text" },
+  { name = "source", type = "Enum", values = ["manual", "google_places", "import", "agent", "referral"], default = "manual" },
+  { name = "sourceCandidateId", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["new", "researching", "qualified", "rejected", "converted"], default = "new", index = true },
+  { name = "qualificationNotes", type = "LongText" },
+  { name = "nextAction", type = "Text" },
+  { name = "lastActivityAt", type = "DateTime", nullable = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "convertedAccountId", type = "Text", nullable = true },
+  { name = "convertedContactId", type = "Text", nullable = true },
+  { name = "convertedOpportunityId", type = "Text", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Lead.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+
+[entity.Lead.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Opportunity]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "stage", type = "Enum", values = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"], default = "discovery", index = true },
+  { name = "amount", type = "Float", default = 0 },
+  { name = "probability", type = "Integer", default = 10 },
+  { name = "expectedCloseDate", type = "Date", nullable = true, index = true },
+  { name = "nextAction", type = "Text" },
+  { name = "status", type = "Enum", values = ["open", "won", "lost"], default = "open", index = true },
+  { name = "lossReason", type = "Text" },
+  { name = "lastActivityAt", type = "DateTime", nullable = true },
+  { name = "closedAt", type = "DateTime", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Opportunity.relations]
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+
+[entity.Opportunity.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Work, communication, and audit projections --------------------------------
+
+[entity.Activity]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "accountId", type = "Text", index = true, nullable = true },
+  { name = "contactId", type = "Text", index = true, nullable = true },
+  { name = "leadId", type = "Text", index = true, nullable = true },
+  { name = "opportunityId", type = "Text", index = true, nullable = true },
+  { name = "type", type = "Enum", values = ["email_sent", "email_received", "call", "meeting", "note", "status_change", "assignment", "workflow"], required = true, index = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "actorType", type = "Enum", values = ["user", "agent", "workflow", "system"], required = true },
+  { name = "actorId", type = "Text" },
+  { name = "actorName", type = "Text", required = true },
+  { name = "initiatedById", type = "Text" },
+  { name = "command", type = "Text" },
+  { name = "metadata", type = "JSON" },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "occurredAt", type = "DateTime", default = "now", index = true }
+]
+
+[entity.Activity.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = false
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Conversation]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "subject", type = "Text", required = true },
+  { name = "accountId", type = "Text", index = true, nullable = true },
+  { name = "contactId", type = "Text", index = true, nullable = true },
+  { name = "leadId", type = "Text", index = true, nullable = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "status", type = "Enum", values = ["open", "closed"], default = "open" },
+  { name = "lastMessageAt", type = "DateTime", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Conversation.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Message]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "conversationId", type = "Ref", ref = "Conversation.id", required = true, index = true },
+  { name = "accountId", type = "Text", index = true, nullable = true },
+  { name = "contactId", type = "Text", index = true, nullable = true },
+  { name = "leadId", type = "Text", index = true, nullable = true },
+  { name = "direction", type = "Enum", values = ["inbound", "outbound"], required = true, index = true },
+  { name = "sender", type = "Email", required = true },
+  { name = "recipients", type = "Text", required = true },
+  { name = "subject", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "sendGridId", type = "Text", index = true, nullable = true },
+  { name = "status", type = "Enum", values = ["draft", "pending_review", "approved", "sending", "sent", "delivered", "failed", "received"], required = true, index = true },
+  { name = "approvalRequired", type = "Boolean", default = true },
+  { name = "reviewerId", type = "Text", nullable = true, index = true },
+  { name = "reviewerName", type = "Text" },
+  { name = "approvedById", type = "Text", nullable = true },
+  { name = "approvedAt", type = "DateTime", nullable = true },
+  { name = "classification", type = "Enum", values = ["unclassified", "interested", "not_interested", "follow_up_later", "referral", "question", "unclear"], default = "unclassified", index = true },
+  { name = "classificationReason", type = "LongText" },
+  { name = "classificationModel", type = "Text" },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "initiatedById", type = "Text" },
+  { name = "createdByType", type = "Enum", values = ["user", "agent", "workflow", "system"], default = "user" },
+  { name = "sentAt", type = "DateTime", nullable = true },
+  { name = "receivedAt", type = "DateTime", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Message.relations]
+conversation = { type = "belongsTo", entity = "Conversation", foreign_key = "conversationId" }
+
+[entity.Message.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { reviewerId = "$currentUser.id" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { reviewerId = "$currentUser.id" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "type", type = "Enum", values = ["review_outreach", "follow_up", "call", "investigate_reply", "update_opportunity", "general"], default = "general", index = true },
+  { name = "status", type = "Enum", values = ["open", "in_progress", "completed", "cancelled"], default = "open", index = true },
+  { name = "priority", type = "Enum", values = ["low", "normal", "high", "urgent"], default = "normal" },
+  { name = "assigneeId", type = "Text", required = true, index = true },
+  { name = "assigneeName", type = "Text", required = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "accountId", type = "Text", nullable = true },
+  { name = "leadId", type = "Text", nullable = true },
+  { name = "opportunityId", type = "Text", nullable = true },
+  { name = "messageId", type = "Text", nullable = true },
+  { name = "insightId", type = "Text", nullable = true },
+  { name = "dueAt", type = "DateTime", nullable = true, index = true },
+  { name = "completedAt", type = "DateTime", nullable = true },
+  { name = "createdByType", type = "Enum", values = ["user", "agent", "workflow", "system"], default = "user" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Task.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { assigneeId = "$currentUser.id" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { assigneeId = "$currentUser.id" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Prospecting and insights ----------------------------------------------------
+
+[entity.ProspectSearch]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "query", type = "Text", required = true },
+  { name = "location", type = "Text", required = true },
+  { name = "latitude", type = "Float", required = true },
+  { name = "longitude", type = "Float", required = true },
+  { name = "radiusMeters", type = "Integer", required = true, default = 32000 },
+  { name = "status", type = "Enum", values = ["pending", "running", "completed", "failed"], default = "pending", index = true },
+  { name = "requestedById", type = "Text", required = true },
+  { name = "requestedByType", type = "Enum", values = ["user", "agent"], default = "user" },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "resultCount", type = "Integer", default = 0 },
+  { name = "externalRequestId", type = "Text" },
+  { name = "error", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "completedAt", type = "DateTime", nullable = true }
+]
+
+[entity.ProspectSearch.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.ProspectCandidate]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "searchId", type = "Ref", ref = "ProspectSearch.id", required = true, index = true },
+  { name = "externalSource", type = "Enum", values = ["google_places", "manual", "import"], default = "google_places" },
+  { name = "externalId", type = "Text", required = true, index = true },
+  { name = "name", type = "Text", required = true, index = true },
+  { name = "address", type = "Text" },
+  { name = "city", type = "Text" },
+  { name = "latitude", type = "Float" },
+  { name = "longitude", type = "Float" },
+  { name = "category", type = "Text" },
+  { name = "rating", type = "Float" },
+  { name = "reviewCount", type = "Integer" },
+  { name = "website", type = "Text" },
+  { name = "phone", type = "Text" },
+  { name = "evaluation", type = "LongText" },
+  { name = "score", type = "Integer", default = 0 },
+  { name = "disposition", type = "Enum", values = ["new", "researching", "recommended", "rejected", "potential_duplicate", "promoted"], default = "new", index = true },
+  { name = "potentialDuplicateAccountId", type = "Text", nullable = true },
+  { name = "promotedLeadId", type = "Text", nullable = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.ProspectCandidate.relations]
+search = { type = "belongsTo", entity = "ProspectSearch", foreign_key = "searchId" }
+
+[entity.ProspectCandidate.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Insight]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "type", type = "Enum", values = ["stale_account", "opportunity_without_next_action", "closing_soon", "unanswered_prospect", "interested_prospect", "team_workload"], required = true, index = true },
+  { name = "accountId", type = "Text", nullable = true },
+  { name = "contactId", type = "Text", nullable = true },
+  { name = "leadId", type = "Text", nullable = true },
+  { name = "opportunityId", type = "Text", nullable = true },
+  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerName", type = "Text", required = true },
+  { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
+  { name = "assistantEmail", type = "Email", index = true },
+  { name = "severity", type = "Enum", values = ["low", "medium", "high", "urgent"], default = "medium", index = true },
+  { name = "summary", type = "Text", required = true },
+  { name = "evidence", type = "LongText", required = true },
+  { name = "suggestedAction", type = "Text", required = true },
+  { name = "generatedAt", type = "DateTime", default = "now" },
+  { name = "expiresAt", type = "DateTime", nullable = true },
+  { name = "status", type = "Enum", values = ["open", "acknowledged", "acted_on", "dismissed", "expired"], default = "open", index = true },
+  { name = "actedOnAt", type = "DateTime", nullable = true },
+  { name = "generator", type = "Text", default = "deterministic" }
+]
+
+[entity.Insight.access]
+read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Human UI -------------------------------------------------------------------
+
+[page."/"]
+title = "What needs attention"
+auth = "required"
+layout = "custom"
+
+[page."/".query.insights]
+entity = "Insight"
+where = { status = "open" }
+orderBy = { generatedAt = "desc" }
+limit = 50
+
+[page."/".query.tasks]
+entity = "Task"
+where = { status = { "$in" = ["open", "in_progress"] } }
+orderBy = { dueAt = "asc" }
+limit = 50
+
+[page."/".query.opportunities]
+entity = "Opportunity"
+where = { status = "open" }
+orderBy = { expectedCloseDate = "asc" }
+limit = 20
+include = ["account"]
+
+[page."/".query.replies]
+entity = "Message"
+where = { direction = "inbound" }
+orderBy = { receivedAt = "desc" }
+limit = 10
+
+[page."/".template]
+engine = "liquid"
+type = "file"
+source = "templates/dashboard.liquid"
+
+[page."/accounts"]
+title = "Accounts"
+auth = "required"
+layout = "custom"
+
+[page."/accounts".query.accounts]
+entity = "CrmAccount"
+orderBy = { updatedAt = "desc" }
+limit = 250
+include = ["team"]
+
+[page."/accounts".template]
+engine = "liquid"
+type = "file"
+source = "templates/accounts.liquid"
+
+[page."/accounts/new"]
+title = "New account"
+auth = "required"
+layout = "form"
+
+[page."/accounts/new".query.teams]
+entity = "SalesTeam"
+where = { active = true }
+orderBy = { name = "asc" }
+limit = 20
+
+[page."/accounts/new".form]
+entity = "CrmAccount"
+method = "create"
+
+[[page."/accounts/new".form.fields]]
+name = "name"
+type = "text"
+label = "Account name"
+required = true
+
+[[page."/accounts/new".form.fields]]
+name = "website"
+type = "text"
+label = "Website"
+
+[[page."/accounts/new".form.fields]]
+name = "industry"
+type = "text"
+label = "Industry"
+
+[[page."/accounts/new".form.fields]]
+name = "status"
+type = "select"
+label = "Status"
+options = [{ value = "prospect", label = "Prospect" }, { value = "customer", label = "Customer" }, { value = "inactive", label = "Inactive" }]
+default = "prospect"
+
+[[page."/accounts/new".form.fields]]
+name = "ownerId"
+type = "text"
+label = "Owner user ID"
+required = true
+
+[[page."/accounts/new".form.fields]]
+name = "ownerName"
+type = "text"
+label = "Owner name"
+required = true
+
+[[page."/accounts/new".form.fields]]
+name = "teamId"
+type = "select"
+label = "Sales team"
+required = true
+optionsFrom = { query = "teams", value = "id", label = "name", emptyLabel = "Select a team" }
+
+[[page."/accounts/new".form.fields]]
+name = "assistantEmail"
+type = "email"
+label = "Supporting assistant email"
+
+[page."/accounts/new".form.onSuccess]
+redirect = "/accounts/{id}"
+message = "Account created."
+
+[page."/accounts/:id"]
+title = "Account"
+auth = "required"
+layout = "custom"
+
+[page."/accounts/:id".query.account]
+entity = "CrmAccount"
+where = { id = "$params.id" }
+include = ["team"]
+
+[page."/accounts/:id".query.contacts]
+entity = "Contact"
+where = { accountId = "$params.id" }
+orderBy = { lastName = "asc" }
+limit = 100
+
+[page."/accounts/:id".query.opportunities]
+entity = "Opportunity"
+where = { accountId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+
+[page."/accounts/:id".query.activities]
+entity = "Activity"
+where = { accountId = "$params.id" }
+orderBy = { occurredAt = "desc" }
+limit = 100
+
+[page."/accounts/:id".query.tasks]
+entity = "Task"
+where = { accountId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+
+[page."/accounts/:id".template]
+engine = "liquid"
+type = "file"
+source = "templates/account-detail.liquid"
+
+[page."/leads"]
+title = "Leads"
+auth = "required"
+layout = "list"
+
+[page."/leads".query.leads]
+entity = "Lead"
+orderBy = { updatedAt = "desc" }
+limit = 250
+
+[page."/pipeline"]
+title = "Pipeline"
+auth = "required"
+layout = "board"
+
+[page."/pipeline".query.opportunities]
+entity = "Opportunity"
+where = { status = "open" }
+orderBy = { expectedCloseDate = "asc" }
+limit = 250
+include = ["account"]
+
+[page."/pipeline".board]
+query = "opportunities"
+groupBy = "stage"
+orderBy = "expectedCloseDate"
+columns = [
+  { value = "discovery", label = "Discovery" },
+  { value = "qualified", label = "Qualified" },
+  { value = "proposal", label = "Proposal" },
+  { value = "negotiation", label = "Negotiation" }
+]
+card = { title = "name", description = "nextAction", href = "/opportunities/{id}", fields = ["amount", "expectedCloseDate", "ownerName"] }
+move = { workflow = "AdvanceOpportunity", payloadField = "stage", successMessage = "Opportunity advanced.", errorMessage = "Stage change was rejected." }
+
+[page."/opportunities/:id"]
+title = "Opportunity"
+auth = "required"
+layout = "detail"
+
+[page."/opportunities/:id".query.opportunity]
+entity = "Opportunity"
+where = { id = "$params.id" }
+include = ["account"]
+
+[page."/prospecting"]
+title = "Prospecting"
+auth = "required"
+layout = "custom"
+
+[page."/prospecting".query.searches]
+entity = "ProspectSearch"
+orderBy = { createdAt = "desc" }
+limit = 25
+
+[page."/prospecting".query.candidates]
+entity = "ProspectCandidate"
+orderBy = { score = "desc" }
+limit = 250
+
+[page."/prospecting".query.accounts]
+entity = "CrmAccount"
+orderBy = { name = "asc" }
+limit = 250
+
+[page."/prospecting".template]
+engine = "liquid"
+type = "file"
+source = "templates/prospecting.liquid"
+
+[page."/messages"]
+title = "Messages"
+auth = "required"
+layout = "list"
+
+[page."/messages".query.messages]
+entity = "Message"
+orderBy = { createdAt = "desc" }
+limit = 250
+include = ["conversation"]
+
+[page."/messages/:id"]
+title = "Message review"
+auth = "required"
+layout = "custom"
+
+[page."/messages/:id".query.message]
+entity = "Message"
+where = { id = "$params.id" }
+include = ["conversation"]
+
+[page."/messages/:id".template]
+engine = "liquid"
+type = "file"
+source = "templates/message-detail.liquid"
+
+[page."/messages/:id".actionBar]
+title = "Message actions"
+statusField = "status"
+
+[[page."/messages/:id".actionBar.actions]]
+label = "Approve outreach"
+workflow = "ApproveOutreach"
+style = "primary"
+visibleWhen = { status = "pending_review" }
+
+[[page."/messages/:id".actionBar.actions]]
+label = "Send approved email"
+workflow = "SendApprovedEmail"
+style = "primary"
+visibleWhen = { status = "approved" }
+
+[[page."/messages/:id".actionBar.secondaryActions]]
+label = "Classify inbound reply"
+workflow = "ApplyReplyClassification"
+style = "secondary"
+visibleWhen = { direction = "inbound", classification = "unclassified" }
+
+[page."/tasks"]
+title = "Tasks"
+auth = "required"
+layout = "list"
+
+[page."/tasks".query.tasks]
+entity = "Task"
+orderBy = { dueAt = "asc" }
+limit = 250
+
+# Governed domain workflows --------------------------------------------------
+
+[workflow.QualifyLead]
+description = "Qualify an active lead through a semantic command."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["new", "researching"] }
+transactional = true
+
+[[workflow.QualifyLead.steps]]
+type = "query"
+entity = "Lead"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
+data = { status = "qualified", qualificationNotes = "{{ variables.data.payload.notes }}", nextAction = "{{ variables.data.payload.nextAction }}" }
+
+[[workflow.QualifyLead.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead qualified: {{ variables.data.payload.notes }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "qualifyLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.RejectLead]
+description = "Reject a non-converted lead with a reason."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["new", "researching", "qualified"] }
+transactional = true
+
+[[workflow.RejectLead.steps]]
+type = "query"
+entity = "Lead"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "rejected", qualificationNotes = "{{ variables.data.payload.reason }}" }
+
+[[workflow.RejectLead.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead rejected: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "rejectLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.ReassignLead]
+description = "Reassign a lead and preserve an application-visible ownership trail."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.ReassignLead.steps]]
+type = "query"
+entity = "Lead"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", teamId = "{{ variables.data.payload.teamId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
+
+[[workflow.ReassignLead.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { leadId = "{{ variables.data.record.id }}", type = "assignment", summary = "Lead reassigned to {{ variables.data.payload.ownerName }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "reassignLead", ownerId = "{{ variables.data.payload.ownerId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
+
+[workflow.PromoteProspect]
+description = "Promote a reviewed external candidate into a CRM Lead while retaining provenance."
+trigger = { manual = true }
+precondition = { "variables.data.record.disposition" = ["new", "researching", "recommended"] }
+transactional = true
+
+[[workflow.PromoteProspect.steps]]
+type = "query"
+entity = "Lead"
+action = "create"
+assignTo = "lead"
+data = { companyName = "{{ variables.data.record.name }}", phone = "{{ variables.data.record.phone }}", website = "{{ variables.data.record.website }}", source = "google_places", sourceCandidateId = "{{ variables.data.record.id }}", status = "new", qualificationNotes = "{{ variables.data.record.evaluation }}", nextAction = "Research decision maker and prepare outreach", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", teamId = "{{ variables.data.record.teamId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[[workflow.PromoteProspect.steps]]
+type = "query"
+entity = "ProspectCandidate"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", disposition = "{{ variables.data.record.disposition }}" }
+data = { disposition = "promoted", promotedLeadId = "{{ variables.lead.id }}" }
+
+[[workflow.PromoteProspect.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { leadId = "{{ variables.lead.id }}", type = "workflow", summary = "Promoted Google Places candidate into a lead", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "promoteProspect", metadata = { candidateId = "{{ variables.data.record.id }}", externalId = "{{ variables.data.record.externalId }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.RejectProspect]
+trigger = { manual = true }
+precondition = { "variables.data.record.disposition" = ["new", "researching", "recommended", "potential_duplicate"] }
+
+[[workflow.RejectProspect.steps]]
+type = "query"
+entity = "ProspectCandidate"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { disposition = "rejected", evaluation = "{{ variables.data.payload.reason }}" }
+
+[workflow.RunGooglePlacesSearch]
+description = "Retrieve geographically constrained Google Places results into the candidate staging table."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["pending", "failed"] }
+
+[[workflow.RunGooglePlacesSearch.steps]]
+type = "query"
+entity = "ProspectSearch"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
+data = { status = "running", error = "" }
+
+[[workflow.RunGooglePlacesSearch.steps]]
+type = "webhook"
+url = "https://places.googleapis.com/v1/places:searchText"
+method = "POST"
+assignTo = "placesResponse"
+[workflow.RunGooglePlacesSearch.steps.headers]
+Content-Type = "application/json"
+X-Goog-Api-Key = "{{ env.GOOGLE_PLACES_API_KEY }}"
+X-Goog-FieldMask = "places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.websiteUri,places.nationalPhoneNumber"
+[workflow.RunGooglePlacesSearch.steps.payload]
+textQuery = "{{ variables.data.record.query }} near {{ variables.data.record.location }}"
+maxResultCount = 20
+locationBias = { circle = { center = { latitude = "{{ variables.data.record.latitude }}", longitude = "{{ variables.data.record.longitude }}" }, radius = "{{ variables.data.record.radiusMeters }}" } }
+
+[[workflow.RunGooglePlacesSearch.steps]]
+type = "loop"
+items = "{{ variables.placesResponse.places }}"
+do = [
+  { type = "query", entity = "ProspectCandidate", action = "create", data = { searchId = "{{ variables.data.record.id }}", externalSource = "google_places", externalId = "{{ variables.item.id }}", name = "{{ variables.item.displayName.text }}", address = "{{ variables.item.formattedAddress }}", latitude = "{{ variables.item.location.latitude }}", longitude = "{{ variables.item.location.longitude }}", category = "{{ variables.item.types.0 }}", rating = "{{ variables.item.rating }}", reviewCount = "{{ variables.item.userRatingCount }}", website = "{{ variables.item.websiteUri }}", phone = "{{ variables.item.nationalPhoneNumber }}", evaluation = "Pending CRM duplicate review and qualification", disposition = "new", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", teamId = "{{ variables.data.payload.teamId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" } }
+]
+
+[[workflow.RunGooglePlacesSearch.steps]]
+type = "query"
+entity = "ProspectSearch"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "running" }
+data = { status = "completed", completedAt = "now" }
+
+[workflow.AdvanceOpportunity]
+description = "Move an open opportunity to a valid active stage."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "open", "variables.data.payload.stage" = ["discovery", "qualified", "proposal", "negotiation"] }
+transactional = true
+
+[[workflow.AdvanceOpportunity.steps]]
+type = "query"
+entity = "Opportunity"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "open" }
+data = { stage = "{{ variables.data.payload.stage }}", probability = "{{ variables.data.payload.probability }}", nextAction = "{{ variables.data.payload.nextAction }}" }
+
+[[workflow.AdvanceOpportunity.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity moved to {{ variables.data.payload.stage }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "advanceOpportunity", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.MarkOpportunityWon]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "open", "variables.data.record.stage" = ["proposal", "negotiation"] }
+transactional = true
+
+[[workflow.MarkOpportunityWon.steps]]
+type = "query"
+entity = "Opportunity"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "open" }
+data = { stage = "won", status = "won", probability = 100, closedAt = "now", nextAction = "Customer handoff" }
+
+[[workflow.MarkOpportunityWon.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity won", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityWon", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.MarkOpportunityLost]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "open" }
+transactional = true
+
+[[workflow.MarkOpportunityLost.steps]]
+type = "query"
+entity = "Opportunity"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "open" }
+data = { stage = "lost", status = "lost", probability = 0, closedAt = "now", lossReason = "{{ variables.data.payload.reason }}", nextAction = "" }
+
+[[workflow.MarkOpportunityLost.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity lost: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityLost", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.LogInteraction]
+trigger = { manual = true }
+transactional = true
+
+[[workflow.LogInteraction.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", type = "{{ variables.data.payload.type }}", summary = "{{ variables.data.payload.summary }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "logInteraction", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.ScheduleFollowup]
+trigger = { manual = true }
+transactional = true
+
+[[workflow.ScheduleFollowup.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", type = "follow_up", status = "open", priority = "{{ variables.data.payload.priority }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "user" }
+
+[workflow.PrepareOutreach]
+description = "Create a draft and, when required, a human review task."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.PrepareOutreach.steps]]
+type = "query"
+entity = "Message"
+action = "create"
+assignTo = "message"
+data = { conversationId = "{{ variables.data.payload.conversationId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", direction = "outbound", sender = "{{ variables.data.payload.sender }}", recipients = "{{ variables.data.payload.recipients }}", subject = "{{ variables.data.payload.subject }}", body = "{{ variables.data.payload.body }}", status = "pending_review", approvalRequired = true, reviewerId = "{{ variables.data.payload.reviewerId }}", reviewerName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", initiatedById = "{{ variables.data.session.user.id }}", createdByType = "user" }
+
+[[workflow.PrepareOutreach.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "Review outreach to {{ variables.data.payload.recipients }}", description = "Review and approve the prepared prospect email before sending.", type = "review_outreach", status = "open", priority = "normal", assigneeId = "{{ variables.data.payload.reviewerId }}", assigneeName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", messageId = "{{ variables.message.id }}", dueAt = "{{ variables.data.payload.reviewDueAt }}", createdByType = "workflow" }
+
+[workflow.ApproveOutreach]
+description = "Allow only the assigned reviewer, a manager, or an admin to approve outreach."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "pending_review", "session.user.role" = ["assistant", "manager", "admin"] }
+transactional = true
+
+[[workflow.ApproveOutreach.steps]]
+type = "query"
+entity = "Message"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "pending_review" }
+data = { status = "approved", body = "{{ variables.data.payload.body }}", approvedById = "{{ variables.data.session.user.id }}", approvedAt = "now" }
+
+[[workflow.ApproveOutreach.steps]]
+type = "query"
+entity = "Task"
+action = "find"
+where = { messageId = "{{ variables.data.record.id }}", status = "open" }
+assignTo = "reviewTasks"
+
+[[workflow.ApproveOutreach.steps]]
+type = "loop"
+items = "{{ variables.reviewTasks }}"
+do = [
+  { type = "query", entity = "Task", action = "update", where = { id = "{{ variables.item.id }}", status = "open" }, data = { status = "completed", completedAt = "now" } }
+]
+
+[[workflow.ApproveOutreach.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Outbound email approved for sending", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "approveOutreach", metadata = { messageId = "{{ variables.data.record.id }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[workflow.SendApprovedEmail]
+description = "Send only an approved CRM message through SendGrid."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "approved" }
+
+[[workflow.SendApprovedEmail.steps]]
+type = "query"
+entity = "Message"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "approved" }
+data = { status = "sending" }
+
+[[workflow.SendApprovedEmail.steps]]
+type = "webhook"
+url = "https://api.sendgrid.com/v3/mail/send"
+method = "POST"
+assignTo = "sendgrid"
+[workflow.SendApprovedEmail.steps.headers]
+Authorization = "Bearer {{ env.SENDGRID_API_KEY }}"
+Content-Type = "application/json"
+[workflow.SendApprovedEmail.steps.payload]
+personalizations = [{ to = [{ email = "{{ variables.data.record.recipients }}" }] }]
+from = { email = "{{ variables.data.record.sender }}" }
+subject = "{{ variables.data.record.subject }}"
+content = [{ type = "text/plain", value = "{{ variables.data.record.body }}" }]
+
+[[workflow.SendApprovedEmail.steps]]
+type = "query"
+entity = "Message"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "sending" }
+data = { status = "sent", sentAt = "now" }
+
+[[workflow.SendApprovedEmail.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "email_sent", summary = "Sent: {{ variables.data.record.subject }}", actorType = "workflow", actorName = "Zebric CRM", initiatedById = "{{ variables.data.record.initiatedById }}", command = "sendApprovedEmail", metadata = { messageId = "{{ variables.data.record.id }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[[workflow.SendApprovedEmail.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "Follow up on {{ variables.data.record.subject }}", description = "No reply has been recorded yet.", type = "follow_up", status = "open", priority = "normal", assigneeId = "{{ variables.data.record.ownerId }}", assigneeName = "{{ variables.data.record.ownerName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", messageId = "{{ variables.data.record.id }}", createdByType = "workflow" }
+
+# Inbound SendGrid parse webhook. The current engine accepts JSON, not SendGrid's
+# multipart parse body; a normalization adapter is still required (documented gap).
+[workflow.ReceiveInboundEmail]
+trigger = { webhook = "/webhooks/sendgrid/inbound", webhookSecretEnv = "CRM_INBOUND_WEBHOOK_SECRET" }
+
+[[workflow.ReceiveInboundEmail.steps]]
+type = "query"
+entity = "Message"
+action = "create"
+assignTo = "inbound"
+data = { conversationId = "{{ variables.webhook.body.conversationId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", direction = "inbound", sender = "{{ variables.webhook.body.from }}", recipients = "{{ variables.webhook.body.to }}", subject = "{{ variables.webhook.body.subject }}", body = "{{ variables.webhook.body.text }}", sendGridId = "{{ variables.webhook.body.messageId }}", status = "received", approvalRequired = false, ownerId = "{{ variables.webhook.body.ownerId }}", ownerName = "{{ variables.webhook.body.ownerName }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}", createdByType = "system", receivedAt = "now" }
+
+[[workflow.ReceiveInboundEmail.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", type = "email_received", summary = "Received: {{ variables.webhook.body.subject }}", actorType = "system", actorName = "SendGrid inbound", command = "receiveInboundEmail", metadata = { messageId = "{{ variables.inbound.id }}", externalId = "{{ variables.webhook.body.messageId }}" }, ownerId = "{{ variables.webhook.body.ownerId }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}" }
+
+# OpenAI is used only to produce a structured classification. A separate semantic
+# command applies deterministic consequences so the model never mutates CRM state.
+[workflow.ClassifyInboundReply]
+trigger = { manual = true }
+precondition = { "variables.data.record.direction" = "inbound", "variables.data.record.classification" = "unclassified" }
+
+[[workflow.ClassifyInboundReply.steps]]
+type = "webhook"
+url = "https://api.openai.com/v1/chat/completions"
+method = "POST"
+assignTo = "classificationResponse"
+[workflow.ClassifyInboundReply.steps.headers]
+Authorization = "Bearer {{ env.OPENAI_API_KEY }}"
+Content-Type = "application/json"
+[workflow.ClassifyInboundReply.steps.payload]
+model = "gpt-4o-mini"
+temperature = 0
+response_format = { type = "json_object" }
+messages = [
+  { role = "system", content = "Classify a B2B sales reply. Return JSON with classification (interested, not_interested, follow_up_later, referral, question, or unclear) and reason. Do not suggest or perform CRM mutations." },
+  { role = "user", content = "Subject: {{ variables.data.record.subject }}\n\n{{ variables.data.record.body }}" }
+]
+
+# The webhook executor does not parse nested JSON contained in the model's message
+# content. The caller supplies the reviewed structured output to ApplyReplyClassification.
+[workflow.ApplyReplyClassification]
+trigger = { manual = true }
+precondition = { "variables.data.record.direction" = "inbound", "variables.data.record.classification" = "unclassified", "variables.data.payload.classification" = ["interested", "not_interested", "follow_up_later", "referral", "question", "unclear"] }
+transactional = true
+
+[[workflow.ApplyReplyClassification.steps]]
+type = "query"
+entity = "Message"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", classification = "unclassified" }
+data = { classification = "{{ variables.data.payload.classification }}", classificationReason = "{{ variables.data.payload.reason }}", classificationModel = "{{ variables.data.payload.model }}" }
+
+[[workflow.ApplyReplyClassification.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Reply classified as {{ variables.data.payload.classification }}: {{ variables.data.payload.reason }}", actorType = "workflow", actorName = "Zebric CRM", command = "applyReplyClassification", metadata = { messageId = "{{ variables.data.record.id }}", model = "{{ variables.data.payload.model }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+
+[[workflow.ApplyReplyClassification.steps]]
+type = "condition"
+if = { "variables.data.payload.classification" = ["interested", "referral", "question", "follow_up_later", "unclear"] }
+then = [
+  { type = "query", entity = "Task", action = "create", data = { title = "Respond to {{ variables.data.record.sender }}", description = "Reply classified as {{ variables.data.payload.classification }}: {{ variables.data.payload.reason }}", type = "investigate_reply", status = "open", priority = "high", assigneeId = "{{ variables.data.record.ownerId }}", assigneeName = "{{ variables.data.record.ownerName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", messageId = "{{ variables.data.record.id }}", createdByType = "workflow" } }
+]
+
+[workflow.DismissInsight]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["open", "acknowledged"] }
+
+[[workflow.DismissInsight.steps]]
+type = "query"
+entity = "Insight"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "dismissed", actedOnAt = "now" }
+
+[workflow.ActOnInsight]
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["open", "acknowledged"] }
+transactional = true
+
+[[workflow.ActOnInsight.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { title = "{{ variables.data.payload.title }}", description = "{{ variables.data.record.evidence }}", type = "follow_up", status = "open", priority = "{{ variables.data.record.severity }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", opportunityId = "{{ variables.data.record.opportunityId }}", insightId = "{{ variables.data.record.id }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "workflow" }
+
+[[workflow.ActOnInsight.steps]]
+type = "query"
+entity = "Insight"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "acted_on", actedOnAt = "now" }
+
+# Agent surface ---------------------------------------------------------------
+
+[skill.crm]
+description = "Operate Zebric CRM through governed sales, prospecting, communication, and insight workflows."
+auth = "required"
+
+[[skill.crm.actions]]
+name = "list_accounts"
+description = "List visible accounts. Use filters to find owned, team, industry, or status segments."
+method = "GET"
+path = "/api/agent/accounts"
+entity = "CrmAccount"
+action = "list"
+scopes = ["crm.accounts.read"]
+risk = "read"
+[skill.crm.actions.query.ownerId]
+type = "Text"
+required = false
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["prospect", "customer", "inactive"]
+required = false
+[skill.crm.actions.query.industry]
+type = "Text"
+required = false
+
+[[skill.crm.actions]]
+name = "get_account"
+description = "Get an account's authoritative CRM record."
+method = "GET"
+path = "/api/agent/accounts/{id}"
+entity = "CrmAccount"
+action = "get"
+scopes = ["crm.accounts.read"]
+risk = "read"
+
+[[skill.crm.actions]]
+name = "list_contacts"
+description = "List contacts, optionally for one account."
+method = "GET"
+path = "/api/agent/contacts"
+entity = "Contact"
+action = "list"
+scopes = ["crm.accounts.read"]
+risk = "read"
+[skill.crm.actions.query.accountId]
+type = "Ref"
+required = false
+
+[[skill.crm.actions]]
+name = "list_leads"
+description = "List visible leads by status or owner."
+method = "GET"
+path = "/api/agent/leads"
+entity = "Lead"
+action = "list"
+scopes = ["crm.leads.read"]
+risk = "read"
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["new", "researching", "qualified", "rejected", "converted"]
+required = false
+[skill.crm.actions.query.ownerId]
+type = "Text"
+required = false
+
+[[skill.crm.actions]]
+name = "qualify_lead"
+description = "Qualify a lead and record its next action."
+method = "POST"
+path = "/api/agent/leads/{id}/qualify"
+entity = "Lead"
+workflow = "QualifyLead"
+scopes = ["crm.leads.transition"]
+risk = "write"
+body = { notes = "LongText", nextAction = "Text" }
+
+[[skill.crm.actions]]
+name = "reject_lead"
+description = "Reject an active lead with an auditable reason."
+method = "POST"
+path = "/api/agent/leads/{id}/reject"
+entity = "Lead"
+workflow = "RejectLead"
+scopes = ["crm.leads.transition"]
+risk = "write"
+body = { reason = "LongText" }
+
+[[skill.crm.actions]]
+name = "reassign_lead"
+description = "Reassign a lead and its team authorization snapshot."
+method = "POST"
+path = "/api/agent/leads/{id}/reassign"
+entity = "Lead"
+workflow = "ReassignLead"
+scopes = ["crm.assignment.write"]
+risk = "write"
+body = { ownerId = "Text", ownerName = "Text", teamId = "Ref", assistantEmail = "Email" }
+
+[[skill.crm.actions]]
+name = "list_opportunities"
+description = "List opportunities by owner, stage, status, or expected close date."
+method = "GET"
+path = "/api/agent/opportunities"
+entity = "Opportunity"
+action = "list"
+scopes = ["crm.opportunities.read"]
+risk = "read"
+[skill.crm.actions.query.ownerId]
+type = "Text"
+required = false
+[skill.crm.actions.query.stage]
+type = "Enum"
+values = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"]
+required = false
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["open", "won", "lost"]
+required = false
+[skill.crm.actions.query.expectedCloseDate]
+type = "Date"
+required = false
+
+[[skill.crm.actions]]
+name = "advance_opportunity"
+description = "Advance an open opportunity through a governed stage transition."
+method = "POST"
+path = "/api/agent/opportunities/{id}/advance"
+entity = "Opportunity"
+workflow = "AdvanceOpportunity"
+scopes = ["crm.opportunities.transition"]
+risk = "write"
+body = { stage = "Enum", probability = "Integer", nextAction = "Text" }
+
+[[skill.crm.actions]]
+name = "mark_opportunity_won"
+description = "Close a proposal or negotiation opportunity as won."
+method = "POST"
+path = "/api/agent/opportunities/{id}/won"
+entity = "Opportunity"
+workflow = "MarkOpportunityWon"
+scopes = ["crm.opportunities.transition"]
+risk = "write"
+body = {}
+
+[[skill.crm.actions]]
+name = "mark_opportunity_lost"
+description = "Close an opportunity as lost with a reason."
+method = "POST"
+path = "/api/agent/opportunities/{id}/lost"
+entity = "Opportunity"
+workflow = "MarkOpportunityLost"
+scopes = ["crm.opportunities.transition"]
+risk = "write"
+body = { reason = "Text" }
+
+[[skill.crm.actions]]
+name = "list_activity"
+description = "Read the human, agent, and workflow timeline for an account, lead, or opportunity."
+method = "GET"
+path = "/api/agent/activity"
+entity = "Activity"
+action = "list"
+scopes = ["crm.activity.read"]
+risk = "read"
+[skill.crm.actions.query.accountId]
+type = "Text"
+required = false
+[skill.crm.actions.query.leadId]
+type = "Text"
+required = false
+[skill.crm.actions.query.opportunityId]
+type = "Text"
+required = false
+
+[[skill.crm.actions]]
+name = "log_interaction"
+description = "Append a governed CRM interaction to a record timeline."
+method = "POST"
+path = "/api/agent/accounts/{id}/interactions"
+entity = "CrmAccount"
+workflow = "LogInteraction"
+scopes = ["crm.activity.create"]
+risk = "write"
+body = { accountId = "Text", contactId = "Text", leadId = "Text", opportunityId = "Text", type = "Enum", summary = "LongText" }
+
+[[skill.crm.actions]]
+name = "schedule_followup"
+description = "Create assigned follow-up work for a visible account."
+method = "POST"
+path = "/api/agent/accounts/{id}/followups"
+entity = "CrmAccount"
+workflow = "ScheduleFollowup"
+scopes = ["crm.tasks.create"]
+risk = "write"
+body = { title = "Text", description = "LongText", priority = "Enum", assigneeId = "Text", assigneeName = "Text", accountId = "Text", leadId = "Text", opportunityId = "Text", dueAt = "DateTime" }
+
+[[skill.crm.actions]]
+name = "list_prospect_searches"
+description = "List prospect searches and their completion state."
+method = "GET"
+path = "/api/agent/prospect-searches"
+entity = "ProspectSearch"
+action = "list"
+scopes = ["crm.prospects.read"]
+risk = "read"
+
+[[skill.crm.actions]]
+name = "create_prospect_search"
+description = "Record a geographically constrained prospect search request. The integration runner performs Google Places retrieval."
+method = "POST"
+path = "/api/agent/prospect-searches"
+entity = "ProspectSearch"
+action = "create"
+scopes = ["crm.prospects.search"]
+risk = "write"
+body = { query = "Text", location = "Text", latitude = "Float", longitude = "Float", radiusMeters = "Integer", requestedById = "Text", requestedByType = "Enum", ownerId = "Text", ownerName = "Text", assistantEmail = "Email" }
+
+[[skill.crm.actions]]
+name = "list_prospect_candidates"
+description = "List external candidates without promoting them into authoritative CRM data."
+method = "GET"
+path = "/api/agent/prospect-candidates"
+entity = "ProspectCandidate"
+action = "list"
+scopes = ["crm.prospects.read"]
+risk = "read"
+[skill.crm.actions.query.searchId]
+type = "Ref"
+required = false
+
+[[skill.crm.actions]]
+name = "run_google_places_search"
+description = "Execute a pending geographically constrained search against Google Places and stage its results as candidates."
+method = "POST"
+path = "/api/agent/prospect-searches/{id}/run"
+entity = "ProspectSearch"
+workflow = "RunGooglePlacesSearch"
+scopes = ["crm.prospects.search"]
+risk = "write"
+body = { teamId = "Ref" }
+[skill.crm.actions.query.disposition]
+type = "Enum"
+values = ["new", "researching", "recommended", "rejected", "potential_duplicate", "promoted"]
+required = false
+
+[[skill.crm.actions]]
+name = "promote_prospect"
+description = "Promote a reviewed candidate to a Lead. Do not use when potentialDuplicateAccountId is set."
+method = "POST"
+path = "/api/agent/prospect-candidates/{id}/promote"
+entity = "ProspectCandidate"
+workflow = "PromoteProspect"
+scopes = ["crm.prospects.promote"]
+risk = "write"
+body = {}
+
+[[skill.crm.actions]]
+name = "prepare_outreach"
+description = "Prepare outreach and assign mandatory human review. This never sends email."
+method = "POST"
+path = "/api/agent/leads/{id}/prepare-outreach"
+entity = "Lead"
+workflow = "PrepareOutreach"
+scopes = ["crm.outreach.prepare"]
+risk = "write"
+body = { conversationId = "Ref", accountId = "Text", contactId = "Text", leadId = "Text", sender = "Email", recipients = "Text", subject = "Text", body = "LongText", reviewerId = "Text", reviewerName = "Text", reviewDueAt = "DateTime" }
+
+[[skill.crm.actions]]
+name = "list_messages"
+description = "List inbound/outbound messages, including today's replies and classified interest."
+method = "GET"
+path = "/api/agent/messages"
+entity = "Message"
+action = "list"
+scopes = ["crm.messages.read"]
+risk = "read"
+[skill.crm.actions.query.direction]
+type = "Enum"
+values = ["inbound", "outbound"]
+required = false
+[skill.crm.actions.query.classification]
+type = "Enum"
+values = ["unclassified", "interested", "not_interested", "follow_up_later", "referral", "question", "unclear"]
+required = false
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["draft", "pending_review", "approved", "sending", "sent", "delivered", "failed", "received"]
+required = false
+
+[[skill.crm.actions]]
+name = "approve_outreach"
+description = "Approve assigned outreach after human review; the workflow verifies reviewer identity or manager role."
+method = "POST"
+path = "/api/agent/messages/{id}/approve"
+entity = "Message"
+workflow = "ApproveOutreach"
+scopes = ["crm.outreach.approve"]
+risk = "write"
+body = { body = "LongText" }
+
+[[skill.crm.actions]]
+name = "send_approved_email"
+description = "Send a message only after approval. The workflow rejects any other state."
+method = "POST"
+path = "/api/agent/messages/{id}/send"
+entity = "Message"
+workflow = "SendApprovedEmail"
+scopes = ["crm.outreach.send"]
+risk = "write"
+body = {}
+
+[[skill.crm.actions]]
+name = "apply_reply_classification"
+description = "Apply a reviewed structured classification and deterministic follow-up behavior."
+method = "POST"
+path = "/api/agent/messages/{id}/classification"
+entity = "Message"
+workflow = "ApplyReplyClassification"
+scopes = ["crm.messages.classify"]
+risk = "write"
+body = { classification = "Enum", reason = "LongText", model = "Text" }
+
+[[skill.crm.actions]]
+name = "list_tasks"
+description = "List actionable assigned work, including assistant outreach reviews."
+method = "GET"
+path = "/api/agent/tasks"
+entity = "Task"
+action = "list"
+scopes = ["crm.tasks.read"]
+risk = "read"
+[skill.crm.actions.query.assigneeId]
+type = "Text"
+required = false
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["open", "in_progress", "completed", "cancelled"]
+required = false
+[skill.crm.actions.query.type]
+type = "Enum"
+values = ["review_outreach", "follow_up", "call", "investigate_reply", "update_opportunity", "general"]
+required = false
+
+[[skill.crm.actions]]
+name = "list_insights"
+description = "Answer what needs attention with persisted, evidence-backed CRM insights."
+method = "GET"
+path = "/api/agent/insights"
+entity = "Insight"
+action = "list"
+scopes = ["crm.insights.read"]
+risk = "read"
+[skill.crm.actions.query.ownerId]
+type = "Text"
+required = false
+[skill.crm.actions.query.status]
+type = "Enum"
+values = ["open", "acknowledged", "acted_on", "dismissed", "expired"]
+required = false
+[skill.crm.actions.query.severity]
+type = "Enum"
+values = ["low", "medium", "high", "urgent"]
+required = false
+
+[[skill.crm.actions]]
+name = "act_on_insight"
+description = "Turn an open insight into assigned follow-up work and mark it acted on."
+method = "POST"
+path = "/api/agent/insights/{id}/act"
+entity = "Insight"
+workflow = "ActOnInsight"
+scopes = ["crm.insights.act"]
+risk = "write"
+body = { title = "Text", assigneeId = "Text", assigneeName = "Text", dueAt = "DateTime" }
+
+[[skill.crm.actions]]
+name = "dismiss_insight"
+description = "Dismiss an insight through the governed lifecycle."
+method = "POST"
+path = "/api/agent/insights/{id}/dismiss"
+entity = "Insight"
+workflow = "DismissInsight"
+scopes = ["crm.insights.act"]
+risk = "write"
+body = {}
+
+# Authentication --------------------------------------------------------------
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+[auth.pages.signIn]
+engine = "liquid"
+type = "file"
+source = "templates/sign-in.liquid"
+
+[auth.permissions]
+assistant = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
+ae = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.create", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
+manager = { allow = ["SalesTeam.*", "TeamMembership.*", "CrmAccount.*", "Contact.*", "Lead.*", "Opportunity.*", "Activity.read", "Activity.create", "Conversation.*", "Message.*", "Task.*", "ProspectSearch.*", "ProspectCandidate.*", "Insight.*"] }
+# Static API-key actors currently receive the fallback user role. Skill scopes
+# limit reachable routes, while entity rules admit the agent principal. Zebric
+# cannot yet bind it to the initiating human's team rows; see ZEBRIC_GAPS.md.
+user = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.create", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
+admin = { allow = ["*.*"] }
+
+[[auth.apiKeys]]
+name = "crm-sales-agent"
+keyEnv = "CRM_AGENT_API_KEY"
+agentId = "crm-sales-agent"
+credentialId = "crm-demo-credential"
+displayName = "CRM Sales Agent"
+scopes = ["crm.accounts.read", "crm.leads.read", "crm.leads.transition", "crm.assignment.write", "crm.opportunities.read", "crm.opportunities.transition", "crm.activity.read", "crm.activity.create", "crm.tasks.read", "crm.tasks.create", "crm.prospects.read", "crm.prospects.search", "crm.prospects.promote", "crm.outreach.prepare", "crm.messages.read", "crm.messages.classify", "crm.outreach.send", "crm.insights.read", "crm.insights.act"]
+
+[ui]
+render_mode = "server"
+theme = "default"
+progressive_enhancement = "alpine"
+view_transitions = true

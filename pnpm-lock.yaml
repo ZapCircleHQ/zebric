@@ -57,6 +57,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime-node
 
+  examples/crm:
+    dependencies:
+      '@zebric/cli':
+        specifier: workspace:*
+        version: link:../../packages/cli
+      '@zebric/runtime-node':
+        specifier: workspace:*
+        version: link:../../packages/runtime-node
+
   examples/custom-theme:
     dependencies:
       '@zebric/runtime-core':
