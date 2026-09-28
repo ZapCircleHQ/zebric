@@ -1,0 +1,17 @@
+{
+  "name": "zebric-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent-native B2B CRM built with Zebric",
+  "scripts": {
+    "predev": "pnpm --dir ../.. --filter @zebric/runtime-core build",
+    "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
+    "seed": "bash seed.sh",
+    "validate": "zebric validate --blueprint blueprint.toml"
+  },
+  "dependencies": {
+    "@zebric/cli": "workspace:*",
+    "@zebric/runtime-node": "workspace:*"
+  }
+}
+
