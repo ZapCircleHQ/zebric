@@ -1,0 +1,202 @@
+<style>
+.on{max-width:760px;margin:auto;padding:24px 28px 80px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.on *{box-sizing:border-box}
+.on h1{font-size:28px;letter-spacing:-.03em;margin:0 0 18px}
+.on-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:20px;margin-bottom:16px}
+.on-card h2{font-size:14px;margin:0 0 14px}
+.on label{display:block;font-size:12px;font-weight:750;margin-bottom:5px}
+.on select,.on input,.on textarea{width:100%;border:1px solid #ddd0bc;border-radius:8px;padding:9px 10px;font:inherit;margin-bottom:12px}
+.on textarea{min-height:70px;resize:vertical}
+.on-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.on-item-row{display:grid;grid-template-columns:2fr 90px 90px 32px;gap:10px;align-items:center;margin-bottom:10px}
+.on-item-row .price{font-weight:700;color:#5b3a29;text-align:right}
+.on-remove{border:1px solid #ddd0bc;background:#fff;border-radius:6px;width:32px;height:32px;cursor:pointer}
+.on-add{border:1px dashed #c8862d;color:#c8862d;background:#fff;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
+.on-truck{display:none}
+.on-truck.show{display:block}
+.on-warn{color:#a33b32;font-size:12px;margin-top:-6px;margin-bottom:12px;display:none}
+.on-warn.show{display:block}
+.on-submit{background:#5b3a29;color:#fff;border:0;border-radius:8px;padding:12px 20px;font-weight:800;cursor:pointer;font-size:14px}
+.on-total{font-weight:800;color:#5b3a29;text-align:right;padding-top:8px}
+</style>
+<div class="on">
+<h1>New order</h1>
+<div>{{ renderer.feedback | raw }}</div>
+<form id="order-form" method="POST" action="/actions/CreateOrderWithItems">
+  <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+  <input type="hidden" name="page" value="/orders/new">
+  <input type="hidden" name="redirect" value="/orders">
+  <input type="hidden" name="payload" id="payload-field">
+
+  <div class="on-card">
+    <h2>Account</h2>
+    <label for="customerId">Customer</label>
+    <select id="customerId" required>
+      {% for customer in data.customers %}
+        <option value="{{ customer.id }}" data-type="{{ customer.type }}" data-email="{{ customer.email }}">{{ customer.name }} ({{ customer.type }})</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="on-card">
+    <h2>Products</h2>
+    <div id="items"></div>
+    <button type="button" class="on-add" id="add-item">+ Add product</button>
+    <div class="on-total" id="order-total"></div>
+  </div>
+
+  <div class="on-card">
+    <h2>Shipping</h2>
+    <label for="shippingMethod">Method</label>
+    <select id="shippingMethod" required>
+      <option value="ups">UPS</option>
+      <option value="fedex">FedEx</option>
+      <option value="usps">USPS</option>
+      <option value="delivery_truck">Delivery Truck</option>
+    </select>
+    <div class="on-truck" id="truck-fields">
+      <label for="warehouseId">Warehouse</label>
+      <select id="warehouseId"></select>
+      <label for="truckingServiceId">Trucking service</label>
+      <select id="truckingServiceId">
+        {% for service in data.truckingServices %}
+          <option value="{{ service.id }}" data-capacity="{{ service.capacityCases }}" data-area="{{ service.serviceArea }}">{{ service.name }} ({{ service.capacityCases }} cases/load, {{ service.serviceArea }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="on-2col">
+      <div><label for="requestedShipDate">Requested ship date</label><input type="date" id="requestedShipDate"></div>
+      <div><label for="dueDate">Delivery due date</label><input type="date" id="dueDate" required></div>
+    </div>
+    <div class="on-warn" id="date-warning">The delivery due date is before the requested ship date.</div>
+    <label for="notes">Notes</label>
+    <textarea id="notes"></textarea>
+  </div>
+
+  <button type="submit" class="on-submit">Create order</button>
+</form>
+</div>
+<script>
+(function(){
+  var products = {{ data.products | json }};
+  var warehouses = {{ data.warehouses | json }};
+  var itemsEl = document.getElementById('items');
+  var customerSel = document.getElementById('customerId');
+  var shippingSel = document.getElementById('shippingMethod');
+  var truckFields = document.getElementById('truck-fields');
+  var warehouseSel = document.getElementById('warehouseId');
+
+  function orderType(){
+    var opt = customerSel.options[customerSel.selectedIndex];
+    return opt ? opt.dataset.type : 'retail';
+  }
+
+  function customerEmail(){
+    var opt = customerSel.options[customerSel.selectedIndex];
+    return opt ? opt.dataset.email : '';
+  }
+
+  function priceFor(product){
+    return orderType() === 'wholesale' ? product.wholesalePricePerCase : product.retailPricePerBag;
+  }
+
+  function addRow(){
+    var row = document.createElement('div');
+    row.className = 'on-item-row';
+    var opts = products.map(function(p){ return '<option value="'+p.id+'">'+p.name+' ('+p.sku+')</option>'; }).join('');
+    row.innerHTML = '<select class="item-product">'+opts+'</select>'+
+      '<input class="item-qty" type="number" min="1" value="1">'+
+      '<span class="price">$0.00</span>'+
+      '<button type="button" class="on-remove">&times;</button>';
+    itemsEl.appendChild(row);
+    row.querySelector('.on-remove').addEventListener('click', function(){ row.remove(); recalc(); });
+    row.querySelector('.item-product').addEventListener('change', recalc);
+    row.querySelector('.item-qty').addEventListener('input', recalc);
+    recalc();
+  }
+
+  function refreshWarehouses(){
+    var custId = customerSel.value;
+    var matches = warehouses.filter(function(w){ return w.customerId === custId; });
+    warehouseSel.innerHTML = matches.map(function(w){ return '<option value="'+w.id+'" data-area="'+w.serviceArea+'">'+w.name+' ('+w.city+', '+w.state+')</option>'; }).join('');
+  }
+
+  function recalc(){
+    var total = 0;
+    itemsEl.querySelectorAll('.on-item-row').forEach(function(row){
+      var pid = row.querySelector('.item-product').value;
+      var qty = parseInt(row.querySelector('.item-qty').value, 10) || 0;
+      var product = products.filter(function(p){ return p.id === pid; })[0];
+      var price = product ? priceFor(product) : 0;
+      row.querySelector('.price').textContent = '$' + (price * qty).toFixed(2);
+      total += price * qty;
+    });
+    document.getElementById('order-total').textContent = 'Total: $' + total.toFixed(2);
+    checkDates();
+  }
+
+  function checkDates(){
+    var req = document.getElementById('requestedShipDate').value;
+    var due = document.getElementById('dueDate').value;
+    var warn = document.getElementById('date-warning');
+    warn.classList.toggle('show', !!(req && due && due < req));
+  }
+
+  customerSel.addEventListener('change', function(){ refreshWarehouses(); recalc(); });
+  shippingSel.addEventListener('change', function(){
+    truckFields.classList.toggle('show', shippingSel.value === 'delivery_truck');
+  });
+  document.getElementById('add-item').addEventListener('click', addRow);
+  document.getElementById('requestedShipDate').addEventListener('change', checkDates);
+  document.getElementById('dueDate').addEventListener('change', checkDates);
+
+  refreshWarehouses();
+  addRow();
+
+  document.getElementById('order-form').addEventListener('submit', function(){
+    var items = [];
+    itemsEl.querySelectorAll('.on-item-row').forEach(function(row){
+      var pid = row.querySelector('.item-product').value;
+      var qty = parseInt(row.querySelector('.item-qty').value, 10) || 0;
+      var product = products.filter(function(p){ return p.id === pid; })[0];
+      if (qty > 0 && product) {
+        items.push({ productId: pid, quantity: qty, unitPrice: priceFor(product) });
+      }
+    });
+
+    var method = shippingSel.value;
+    var shipments = [];
+    if (method === 'delivery_truck') {
+      var totalCases = items.reduce(function(sum, i){ return sum + i.quantity; }, 0);
+      var svcSel = document.getElementById('truckingServiceId');
+      var svcOpt = svcSel.options[svcSel.selectedIndex];
+      var capacity = svcOpt ? parseInt(svcOpt.dataset.capacity, 10) : totalCases;
+      var remaining = totalCases;
+      var loadNumber = 1;
+      while (remaining > 0) {
+        var cases = Math.min(remaining, capacity);
+        shipments.push({ loadNumber: loadNumber, cases: cases });
+        remaining -= cases;
+        loadNumber += 1;
+      }
+      if (shipments.length === 0) shipments.push({ loadNumber: 1, cases: 0 });
+    } else {
+      shipments.push({ loadNumber: 1, cases: null });
+    }
+
+    var payload = {
+      customerId: customerSel.value,
+      customerEmail: customerEmail(),
+      orderType: orderType(),
+      items: items,
+      shippingMethod: method,
+      truckingServiceId: method === 'delivery_truck' ? document.getElementById('truckingServiceId').value : null,
+      warehouseId: method === 'delivery_truck' ? warehouseSel.value : null,
+      requestedShipDate: document.getElementById('requestedShipDate').value || null,
+      dueDate: document.getElementById('dueDate').value,
+      notes: document.getElementById('notes').value
+    };
+    document.getElementById('payload-field').value = JSON.stringify(payload);
+  });
+})();
+</script>

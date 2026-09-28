@@ -1,0 +1,114 @@
+<style>
+.od{max-width:900px;margin:auto;padding:24px 28px 80px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.od *{box-sizing:border-box}
+.od-back{color:#8a7a68;text-decoration:none;display:inline-block;margin-bottom:14px}
+.od-head{display:flex;justify-content:space-between;align-items:start;padding-bottom:18px;border-bottom:1px solid #e6dccd}
+.od-num{font:700 11px ui-monospace,monospace;color:#c8862d;letter-spacing:.08em}
+.od h1{font-size:32px;letter-spacing:-.04em;margin:6px 0}
+.od-pill{display:inline-block;border-radius:99px;padding:4px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+.od-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:18px;margin-top:16px}
+.od-card h2{font-size:14px;margin:0 0 12px}
+.od-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.od-fact label{display:block;color:#8a7a68;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:800}
+.od-fact div{margin-top:3px;font-weight:650}
+table.od-t{width:100%;border-collapse:collapse}
+.od-t th{text-align:left;font-size:11px;text-transform:uppercase;color:#8a7a68;padding:6px 0;border-bottom:1px solid #e6dccd}
+.od-t td{padding:8px 0;border-bottom:1px solid #f1e9dc}
+.od-t td.num{text-align:right}
+.od-total{text-align:right;font-weight:800;color:#5b3a29;padding-top:8px}
+.od-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.od button,.od-btn{border:1px solid #e6dccd;background:#fff;border-radius:7px;padding:9px 14px;font:700 12px inherit;cursor:pointer}
+.od button.primary{background:#5b3a29;border-color:#5b3a29;color:#fff}
+.od button.danger{color:#a33b32}
+.od-form{display:inline-flex;gap:6px;align-items:center}
+.od-form input{border:1px solid #ddd0bc;border-radius:6px;padding:8px}
+</style>
+<div class="od">
+<a class="od-back" href="/orders">&larr; Orders</a>
+{% assign order = data.order[0] %}
+{% assign customer = data.customers | find: "id", order.customerId %}
+<div class="od-head">
+  <div>
+    <div class="od-num">{{ order.orderNumber | default: order.id }}</div>
+    <h1>{{ customer.name }}</h1>
+    <span class="od-pill">{{ order.status | replace: "_", " " }}</span>
+  </div>
+</div>
+
+<div class="od-card">
+  <h2>Order details</h2>
+  <div class="od-facts">
+    <div class="od-fact"><label>Type</label><div>{{ order.orderType }}</div></div>
+    <div class="od-fact"><label>Ordered</label><div>{{ order.orderDate | formatDate: "long" }}</div></div>
+    <div class="od-fact"><label>Requested ship</label><div>{{ order.requestedShipDate | default: "--" }}</div></div>
+    <div class="od-fact"><label>Due date</label><div>{{ order.dueDate | default: "--" }}</div></div>
+  </div>
+  {% if order.notes and order.notes.size > 0 %}<p style="margin-top:14px;white-space:pre-line">{{ order.notes }}</p>{% endif %}
+</div>
+
+<div class="od-card">
+  <h2>Items</h2>
+  <table class="od-t">
+    <thead><tr><th>Product</th><th class="num">Qty</th><th class="num">Unit price</th><th class="num">Line total</th></tr></thead>
+    <tbody>
+    {% assign total = 0 %}
+    {% for item in data.items %}
+      {% assign product = data.products | find: "id", item.productId %}
+      {% assign lineTotal = item.quantity | times: item.unitPrice %}
+      {% assign total = total | plus: lineTotal %}
+      <tr>
+        <td>{{ product.name | default: item.productId }}</td>
+        <td class="num">{{ item.quantity }}</td>
+        <td class="num">${{ item.unitPrice }}</td>
+        <td class="num">${{ lineTotal }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4">No items.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="od-total">Total: ${{ total }}</div>
+</div>
+
+<div class="od-card">
+  <h2>Shipping</h2>
+  {% for shipment in data.shipments %}
+    {% assign warehouse = data.warehouses | find: "id", shipment.warehouseId %}
+    {% assign service = data.truckingServices | find: "id", shipment.truckingServiceId %}
+    <div class="od-facts" style="margin-bottom:10px">
+      <div class="od-fact"><label>Method</label><div>{{ shipment.method | replace: "_", " " }}{% if shipment.method == "delivery_truck" %} (load {{ shipment.loadNumber }}){% endif %}</div></div>
+      <div class="od-fact"><label>Status</label><div>{{ shipment.status | replace: "_", " " }}</div></div>
+      <div class="od-fact"><label>Destination</label><div>{% if warehouse %}{{ warehouse.name }} &middot; {{ warehouse.city }}, {{ warehouse.state }}{% else %}{{ customer.address }} &middot; {{ customer.city }}, {{ customer.state }}{% endif %}</div></div>
+      {% if shipment.method == "delivery_truck" %}<div class="od-fact"><label>Carrier</label><div>{{ service.name | default: "--" }} ({{ shipment.cases }} cases)</div></div>{% endif %}
+    </div>
+  {% else %}
+    <p>No shipments recorded.</p>
+  {% endfor %}
+</div>
+
+{% unless user.role == "customer" %}
+<div class="od-card">
+  <h2>Update order</h2>
+  <div class="od-actions">
+    {% if order.status == "pending" %}
+      <form class="od-form" method="POST" action="/actions/ConfirmOrder"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><button class="primary" type="submit">Confirm order</button></form>
+    {% endif %}
+    {% if order.status == "confirmed" %}
+      <form class="od-form" method="POST" action="/actions/StartRoastingForOrder"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><button class="primary" type="submit">Start roasting</button></form>
+    {% endif %}
+    {% if order.status == "roasting" %}
+      <form class="od-form" method="POST" action="/actions/ShipOrder"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><button class="primary" type="submit">Ship order</button></form>
+    {% endif %}
+    {% if order.status == "shipped" %}
+      <form class="od-form" method="POST" action="/actions/DeliverOrder"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><button class="primary" type="submit">Mark delivered</button></form>
+    {% endif %}
+    {% if order.status != "delivered" and order.status != "cancelled" %}
+      <form class="od-form" method="POST" action="/actions/CancelOrder"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><button class="danger" type="submit" onclick="return confirm('Cancel this order?')">Cancel order</button></form>
+    {% endif %}
+  </div>
+  {% if order.status != "delivered" and order.status != "cancelled" %}
+  <form class="od-form" data-json-payload method="POST" action="/actions/SetOrderDueDate" style="margin-top:14px"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="SalesOrder"><input type="hidden" name="recordId" value="{{ order.id }}"><input type="hidden" name="page" value="/orders/:id"><input type="hidden" name="redirect" value="/orders/{{ order.id }}"><input type="hidden" name="payload"><input type="date" name="payload_dueDate" required><button type="submit">Set due date</button></form>
+  {% endif %}
+</div>
+{% endunless %}
+</div>

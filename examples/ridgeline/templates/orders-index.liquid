@@ -1,0 +1,37 @@
+<style>
+.oi{max-width:1100px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.oi *{box-sizing:border-box}
+.oi-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}
+.oi h1{font-size:28px;letter-spacing:-.03em;margin:0}
+.oi-btn{display:inline-block;background:#5b3a29;color:#fff!important;border-radius:8px;padding:10px 16px;font-weight:750;text-decoration:none}
+table.oi-t{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e6dccd;border-radius:12px;overflow:hidden}
+.oi-t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a7a68;padding:10px 14px;border-bottom:1px solid #e6dccd;background:#faf6ef}
+.oi-t td{padding:10px 14px;border-bottom:1px solid #f1e9dc}
+.oi-t tr:last-child td{border-bottom:none}
+.oi-t a{color:#5b3a29;font-weight:700;text-decoration:none}
+.oi-pill{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+</style>
+<div class="oi">
+<div class="oi-head">
+  <h1>Orders</h1>
+  <a class="oi-btn" href="/orders/new">New order</a>
+</div>
+<table class="oi-t">
+<thead><tr><th>Order</th><th>Account</th><th>Type</th><th>Status</th><th>Ordered</th><th>Due</th></tr></thead>
+<tbody>
+{% for order in data.orders %}
+  {% assign customer = data.customers | find: "id", order.customerId %}
+  <tr>
+    <td><a href="/orders/{{ order.id }}">{{ order.orderNumber | default: order.id }}</a></td>
+    <td>{{ customer.name | default: "--" }}</td>
+    <td>{{ order.orderType }}</td>
+    <td><span class="oi-pill">{{ order.status | replace: "_", " " }}</span></td>
+    <td>{{ order.orderDate | formatDate: "short" }}</td>
+    <td>{{ order.dueDate | default: "--" }}</td>
+  </tr>
+{% else %}
+  <tr><td colspan="6">No orders yet.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
