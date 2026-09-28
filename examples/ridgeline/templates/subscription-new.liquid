@@ -1,0 +1,61 @@
+<style>
+.sn{max-width:560px;margin:auto;padding:24px 28px 80px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.sn *{box-sizing:border-box}
+.sn h1{font-size:28px;letter-spacing:-.03em;margin:0 0 18px}
+.sn-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:20px}
+.sn label{display:block;font-size:12px;font-weight:750;margin-bottom:5px}
+.sn select,.sn input{width:100%;border:1px solid #ddd0bc;border-radius:8px;padding:9px 10px;font:inherit;margin-bottom:12px}
+.sn-submit{background:#5b3a29;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-weight:800;cursor:pointer;width:100%}
+</style>
+<div class="sn">
+<h1>New subscription</h1>
+<div>{{ renderer.feedback | raw }}</div>
+<form id="sub-form" method="POST" action="/actions/CreateSubscription">
+  <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+  <input type="hidden" name="page" value="/subscriptions/new">
+  <input type="hidden" name="redirect" value="/subscriptions">
+  <input type="hidden" name="payload" id="sub-payload">
+  <div class="sn-card">
+    <label for="customerId">Account</label>
+    <select id="customerId" required>
+      {% for customer in data.customers %}
+        <option value="{{ customer.id }}" data-email="{{ customer.email }}">{{ customer.name }}</option>
+      {% endfor %}
+    </select>
+    <label for="productId">Product</label>
+    <select id="productId" required>
+      {% for product in data.products %}
+        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+      {% endfor %}
+    </select>
+    <label for="frequency">Frequency</label>
+    <select id="frequency">
+      <option value="weekly">Weekly</option>
+      <option value="biweekly">Every two weeks</option>
+      <option value="monthly" selected>Monthly</option>
+    </select>
+    <label for="quantity">Quantity</label>
+    <input type="number" id="quantity" min="1" value="1">
+    <label for="nextShipDate">Next ship date</label>
+    <input type="date" id="nextShipDate" required>
+    <button type="submit" class="sn-submit">Create subscription</button>
+  </div>
+</form>
+</div>
+<script>
+(function(){
+  document.getElementById('sub-form').addEventListener('submit', function(){
+    var customerSel = document.getElementById('customerId');
+    var opt = customerSel.options[customerSel.selectedIndex];
+    var payload = {
+      customerId: customerSel.value,
+      customerEmail: opt ? opt.dataset.email : '',
+      productId: document.getElementById('productId').value,
+      frequency: document.getElementById('frequency').value,
+      quantity: parseInt(document.getElementById('quantity').value, 10) || 1,
+      nextShipDate: document.getElementById('nextShipDate').value
+    };
+    document.getElementById('sub-payload').value = JSON.stringify(payload);
+  });
+})();
+</script>

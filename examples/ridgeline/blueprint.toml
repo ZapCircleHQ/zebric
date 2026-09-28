@@ -1,0 +1,1564 @@
+version = "0.1.0"
+
+[project]
+name = "Ridgeline Coffee"
+version = "1.0.0"
+description = "A wholesale and retail coffee roaster operations app: green-coffee inventory, roast logging, orders, shipping, and subscriptions."
+
+[project.runtime]
+min_version = "0.2.3"
+
+[ux]
+pattern = "dashboard@v1"
+
+[ux.interaction]
+selection = "single"
+row_click = "open-detail"
+edit_mode = "page"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
+
+[ux.data]
+mode = "table"
+density = "compact"
+pagination = "server"
+filters = "top-bar"
+column_config = true
+
+[ux.system.feedback]
+success = "toast"
+error = "inline"
+
+[ux.system.activity]
+timeline = false
+location = "hidden"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Dashboard", "Orders", "Roasting", "Inventory", "Accounts", "Subscriptions", "Shipping"]
+
+[ux.responsive]
+mode = "desktop-first"
+collapse_sidebar = true
+
+[design_system]
+name = "ridgeline"
+extends = "minimal"
+tokens = { primary = "#5b3a29", accent = "#c8862d", radius = "0.5rem", font = "Inter, ui-sans-serif, system-ui, sans-serif" }
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+[design_adapter.roles]
+primary-action = "buttonPrimary"
+secondary-action = "buttonSecondary"
+destructive-action = "buttonSecondary"
+surface-default = "body"
+surface-elevated = "card"
+feedback-error = "errorState"
+
+# Domain ----------------------------------------------------------------------
+
+# Better Auth owns this table when auth is enabled; declaring its application-facing
+# shape lets access rules reference a real User's `role`. A `customerId` field was
+# tried here first, but Better Auth's real `user` table has a fixed column set and
+# silently drops fields that aren't part of it -- see ZEBRIC_GAPS.md G-04. A
+# customer login is linked to its account by matching email address instead
+# ($currentUser.email against Customer.email / a denormalized *Email snapshot).
+[entity.User]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "email", type = "Email", required = true, unique = true },
+  { name = "name", type = "Text", required = true },
+  { name = "role", type = "Enum", values = ["admin", "staff", "customer"], default = "customer" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Customer]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true },
+  { name = "type", type = "Enum", values = ["wholesale", "retail"], default = "retail", index = true },
+  { name = "email", type = "Email" },
+  { name = "phone", type = "Text" },
+  { name = "address", type = "Text" },
+  { name = "city", type = "Text" },
+  { name = "state", type = "Text" },
+  { name = "country", type = "Text", default = "USA" },
+  { name = "currency", type = "Text", default = "USD" },
+  { name = "notes", type = "LongText" },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+# Customers may read only their own account, matched by login email (see the
+# note on [entity.User] -- there is no real `customerId` field on the session
+# user to compare against). Staff and admins read every account. Zebric applies
+# this same condition as an automatic row filter on list queries, so the
+# dashboard and order-entry pages don't need to repeat it in `where`.
+[entity.Customer.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { email = "$currentUser.email" }] }
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Warehouse]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "customerId", type = "Ref", ref = "Customer.id", required = true, index = true },
+  { name = "name", type = "Text", required = true },
+  { name = "address", type = "Text", required = true },
+  { name = "city", type = "Text", required = true },
+  { name = "state", type = "Text", required = true },
+  { name = "country", type = "Text", default = "USA" },
+  { name = "serviceArea", type = "Enum", values = ["local", "in_state", "interstate"], default = "interstate" },
+  { name = "dockNotes", type = "LongText" }
+]
+
+# Read is permissive: warehouse address/dock details aren't sensitive, and a
+# customer placing a truck order needs to see their own warehouses without a
+# customerId-to-session link (see [entity.User]).
+[entity.Warehouse.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.TruckingService]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "name", type = "Text", required = true, unique = true },
+  { name = "serviceArea", type = "Enum", values = ["local", "in_state", "interstate"], required = true },
+  { name = "capacityCases", type = "Integer", required = true },
+  { name = "liftgate", type = "Boolean", default = false },
+  { name = "appointmentDelivery", type = "Boolean", default = false },
+  { name = "active", type = "Boolean", default = true }
+]
+
+[entity.TruckingService.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Product]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "sku", type = "Text", required = true, unique = true },
+  { name = "name", type = "Text", required = true },
+  { name = "origin", type = "Text", required = true },
+  { name = "process", type = "Text" },
+  { name = "roastLevel", type = "Enum", values = ["light", "medium", "dark"], required = true },
+  { name = "wholesalePricePerCase", type = "Float", required = true },
+  { name = "retailPricePerBag", type = "Float", required = true },
+  { name = "bagWeightG", type = "Integer", default = 340 },
+  { name = "casesInStock", type = "Integer", default = 0, index = true },
+  { name = "bagsInStock", type = "Integer", default = 0 },
+  { name = "active", type = "Boolean", default = true, index = true }
+]
+
+# Readable by every signed-in role (matches the original app: the product catalog,
+# unlike green-coffee inventory, is not staff-only).
+[entity.Product.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.GreenCoffeeLot]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "lotCode", type = "Text", required = true, unique = true },
+  { name = "origin", type = "Text", required = true },
+  { name = "farmOrCoop", type = "Text" },
+  { name = "process", type = "Text" },
+  { name = "arrivalDate", type = "Date", required = true },
+  { name = "weightKgReceived", type = "Float", required = true },
+  { name = "weightKgRemaining", type = "Float", required = true },
+  { name = "costPerKgUsd", type = "Float", required = true },
+  { name = "supplierCurrency", type = "Text", default = "USD" }
+]
+
+# Staff-only, matching the original app's roastery-ops-only inventory page. "Low"
+# (<=15% of what arrived) is computed at render time from the two weight fields
+# with a Liquid math filter -- see ZEBRIC_GAPS.md, no computed field is stored.
+[entity.GreenCoffeeLot.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.RoastBatch]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "batchNumber", type = "Text", index = true },
+  { name = "lotId", type = "Ref", ref = "GreenCoffeeLot.id", required = true, index = true },
+  { name = "productId", type = "Ref", ref = "Product.id", required = true, index = true },
+  { name = "roastDate", type = "Date", required = true },
+  { name = "greenWeightKg", type = "Float", required = true },
+  { name = "roastedWeightKg", type = "Float", nullable = true },
+  { name = "roastLevel", type = "Enum", values = ["light", "medium", "dark"] },
+  { name = "notes", type = "LongText" },
+  { name = "roastedBy", type = "Text" }
+]
+
+# `update` stays staff/admin (not false) because InitializeRoastBatchNumber writes
+# batchNumber through this same check -- an entity-blocked update also blocks the
+# entity-triggered workflow that runs under the creating session. See the same
+# note on [entity.SalesOrder.access].
+[entity.RoastBatch.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.SalesOrder]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "orderNumber", type = "Text", index = true },
+  { name = "customerId", type = "Ref", ref = "Customer.id", required = true, index = true },
+  # Snapshotted at creation so `access.read`/`access.create` can match the owning
+  # customer's login by email -- see the [entity.User] note on why a real
+  # customerId-to-session link isn't available.
+  { name = "customerEmail", type = "Text", index = true },
+  { name = "orderType", type = "Enum", values = ["wholesale", "retail"], required = true, index = true },
+  { name = "status", type = "Enum", values = ["pending", "confirmed", "roasting", "shipped", "delivered", "cancelled"], default = "pending", index = true },
+  { name = "orderDate", type = "DateTime", default = "now" },
+  { name = "requestedShipDate", type = "Date", nullable = true },
+  { name = "dueDate", type = "Date", nullable = true },
+  { name = "notes", type = "LongText" },
+  { name = "createdBy", type = "Text" }
+]
+
+[entity.SalesOrder.relations]
+customer = { type = "belongsTo", entity = "Customer", foreign_key = "customerId" }
+items = { type = "hasMany", entity = "OrderItem", foreign_key = "orderId" }
+shipments = { type = "hasMany", entity = "Shipment", foreign_key = "orderId" }
+
+# Status, and therefore shipment status, changes only through the guarded workflows
+# below -- see ZEBRIC_GAPS.md G-01. `update` stays permissive ("authenticated")
+# because those workflows write Order.status through this same access check using
+# the triggering session; the real gate is that no page/skill exposes a generic
+# update route and `auth.permissions` grants Order.update only to staff/admin.
+# Row visibility is scoped to the owning customer automatically via `read`.
+[entity.SalesOrder.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+update = "authenticated"
+delete = { "$currentUser.role" = "admin" }
+
+[entity.OrderItem]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "orderId", type = "Ref", ref = "SalesOrder.id", required = true, index = true },
+  # A page loading /orders/:id queries OrderItem directly by orderId, independent of
+  # whether the viewer may see that SalesOrder -- there is no relation-traversing
+  # access condition (SalesOrder.customerId/customerEmail isn't reachable from here).
+  # Without this snapshot, any signed-in customer could read another customer's line
+  # items by guessing an order id. See ZEBRIC_GAPS.md G-05.
+  { name = "customerEmail", type = "Text", index = true },
+  { name = "productId", type = "Ref", ref = "Product.id", required = true, index = true },
+  { name = "quantity", type = "Integer", required = true },
+  { name = "unitPrice", type = "Float", required = true }
+]
+
+[entity.OrderItem.relations]
+order = { type = "belongsTo", entity = "SalesOrder", foreign_key = "orderId" }
+product = { type = "belongsTo", entity = "Product", foreign_key = "productId" }
+
+# Items are written only inside CreateOrderWithItems (see workflows).
+[entity.OrderItem.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = false
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Shipment]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "orderId", type = "Ref", ref = "SalesOrder.id", required = true, index = true },
+  # Same reasoning as OrderItem.customerEmail above.
+  { name = "customerEmail", type = "Text", index = true },
+  { name = "method", type = "Enum", values = ["ups", "fedex", "usps", "delivery_truck"], required = true },
+  { name = "status", type = "Enum", values = ["planned", "ready", "in_transit", "delivered", "exception"], default = "planned", index = true },
+  { name = "scheduledShipDate", type = "Date", nullable = true },
+  { name = "trackingNumber", type = "Text", nullable = true },
+  { name = "truckingServiceId", type = "Ref", ref = "TruckingService.id", nullable = true },
+  { name = "warehouseId", type = "Ref", ref = "Warehouse.id", nullable = true },
+  { name = "loadNumber", type = "Integer", default = 1 },
+  { name = "cases", type = "Integer", nullable = true }
+]
+
+[entity.Shipment.relations]
+order = { type = "belongsTo", entity = "SalesOrder", foreign_key = "orderId" }
+
+[entity.Shipment.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Subscription]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "customerId", type = "Ref", ref = "Customer.id", required = true, index = true },
+  # Snapshotted at creation -- see the matching note on SalesOrder.customerEmail.
+  { name = "customerEmail", type = "Text", index = true },
+  { name = "productId", type = "Ref", ref = "Product.id", required = true, index = true },
+  { name = "frequency", type = "Enum", values = ["weekly", "biweekly", "monthly"], default = "monthly" },
+  { name = "quantity", type = "Integer", default = 1 },
+  { name = "status", type = "Enum", values = ["active", "paused", "cancelled"], default = "active", index = true },
+  { name = "nextShipDate", type = "Date", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Subscription.relations]
+customer = { type = "belongsTo", entity = "Customer", foreign_key = "customerId" }
+product = { type = "belongsTo", entity = "Product", foreign_key = "productId" }
+
+[entity.Subscription.access]
+read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Human surfaces ----------------------------------------------------------------
+
+[page."/"]
+title = "Dashboard"
+auth = "required"
+layout = "custom"
+
+[page."/".query.myOrders]
+entity = "SalesOrder"
+where = { status = { "$in" = ["pending", "confirmed", "roasting", "shipped"] } }
+orderBy = { orderDate = "desc" }
+limit = 50
+
+[page."/".query.customers]
+entity = "Customer"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/".query.mySubscriptions]
+entity = "Subscription"
+orderBy = { status = "asc" }
+limit = 50
+
+[page."/".query.lowStockProducts]
+entity = "Product"
+where = { casesInStock = { "$lt" = 5 }, active = true }
+orderBy = { casesInStock = "asc" }
+limit = 20
+
+[page."/".query.wholesaleCustomers]
+entity = "Customer"
+where = { type = "wholesale" }
+limit = 200
+
+[page."/".query.retailCustomers]
+entity = "Customer"
+where = { type = "retail" }
+limit = 200
+
+[page."/".template]
+engine = "liquid"
+type = "file"
+source = "templates/dashboard.liquid"
+
+[page."/orders"]
+title = "Orders"
+auth = "required"
+layout = "custom"
+
+[page."/orders".query.orders]
+entity = "SalesOrder"
+orderBy = { orderDate = "desc" }
+limit = 250
+
+[page."/orders".query.customers]
+entity = "Customer"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/orders".template]
+engine = "liquid"
+type = "file"
+source = "templates/orders-index.liquid"
+
+[page."/orders/new"]
+title = "New order"
+auth = "required"
+layout = "custom"
+
+[page."/orders/new".ux]
+pattern = "form-page@v1"
+primitives = ["page", "header", "content", "form", "footer-actions"]
+
+[page."/orders/new".query.customers]
+entity = "Customer"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/orders/new".query.products]
+entity = "Product"
+where = { active = true }
+orderBy = { name = "asc" }
+limit = 100
+
+[page."/orders/new".query.warehouses]
+entity = "Warehouse"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/orders/new".query.truckingServices]
+entity = "TruckingService"
+where = { active = true }
+orderBy = { capacityCases = "asc" }
+limit = 50
+
+[page."/orders/new".template]
+engine = "liquid"
+type = "file"
+source = "templates/order-new.liquid"
+
+# CreateOrderWithItems is invoked from a custom form (see the template); this
+# actionBar entry is what exposes the workflow to that page under RBAC. See
+# building/security.mdx "manual workflow requests must identify a blueprint page".
+[page."/orders/new".actionBar]
+title = "Create order"
+
+[[page."/orders/new".actionBar.actions]]
+label = "Create order"
+workflow = "CreateOrderWithItems"
+style = "primary"
+
+[page."/orders/:id"]
+title = "Order"
+auth = "required"
+layout = "custom"
+
+[page."/orders/:id".query.order]
+entity = "SalesOrder"
+where = { id = "$params.id" }
+
+[page."/orders/:id".query.customers]
+entity = "Customer"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/orders/:id".query.items]
+entity = "OrderItem"
+where = { orderId = "$params.id" }
+limit = 100
+
+[page."/orders/:id".query.products]
+entity = "Product"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/orders/:id".query.shipments]
+entity = "Shipment"
+where = { orderId = "$params.id" }
+orderBy = { loadNumber = "asc" }
+limit = 100
+
+[page."/orders/:id".query.warehouses]
+entity = "Warehouse"
+limit = 200
+
+[page."/orders/:id".query.truckingServices]
+entity = "TruckingService"
+limit = 50
+
+[page."/orders/:id".template]
+engine = "liquid"
+type = "file"
+source = "templates/order-detail.liquid"
+
+[page."/orders/:id".actionBar]
+title = "Order status"
+statusField = "status"
+
+[[page."/orders/:id".actionBar.actions]]
+label = "Confirm order"
+workflow = "ConfirmOrder"
+style = "primary"
+visibleWhen = { status = "pending" }
+
+[[page."/orders/:id".actionBar.actions]]
+label = "Start roasting"
+workflow = "StartRoastingForOrder"
+style = "primary"
+visibleWhen = { status = "confirmed" }
+
+[[page."/orders/:id".actionBar.actions]]
+label = "Ship order"
+workflow = "ShipOrder"
+style = "primary"
+visibleWhen = { status = "roasting" }
+
+[[page."/orders/:id".actionBar.actions]]
+label = "Mark delivered"
+workflow = "DeliverOrder"
+style = "primary"
+visibleWhen = { status = "shipped" }
+
+[[page."/orders/:id".actionBar.actions]]
+label = "Set due date"
+workflow = "SetOrderDueDate"
+style = "secondary"
+visibleWhen = { status = ["pending", "confirmed", "roasting", "shipped"] }
+
+[[page."/orders/:id".actionBar.secondaryActions]]
+label = "Cancel order"
+workflow = "CancelOrder"
+style = "danger"
+confirm = "Cancel this order? Any planned shipments will be marked exception."
+visibleWhen = { status = ["pending", "confirmed", "roasting", "shipped"] }
+
+[page."/roasting"]
+title = "Roasting"
+auth = "required"
+layout = "custom"
+
+[page."/roasting".query.batches]
+entity = "RoastBatch"
+orderBy = { roastDate = "desc" }
+limit = 100
+
+[page."/roasting".query.lots]
+entity = "GreenCoffeeLot"
+where = { weightKgRemaining = { "$gt" = 0 } }
+orderBy = { origin = "asc" }
+limit = 100
+
+[page."/roasting".query.allLots]
+entity = "GreenCoffeeLot"
+orderBy = { lotCode = "asc" }
+limit = 200
+
+[page."/roasting".query.products]
+entity = "Product"
+where = { active = true }
+orderBy = { name = "asc" }
+limit = 100
+
+[page."/roasting".template]
+engine = "liquid"
+type = "file"
+source = "templates/roasting.liquid"
+
+[page."/roasting".actionBar]
+title = "Log a roast"
+
+[[page."/roasting".actionBar.actions]]
+label = "Log batch"
+workflow = "LogRoastBatch"
+style = "primary"
+
+[page."/inventory"]
+title = "Green coffee inventory"
+auth = "required"
+layout = "custom"
+
+[page."/inventory".query.lots]
+entity = "GreenCoffeeLot"
+orderBy = { arrivalDate = "desc" }
+limit = 200
+
+[page."/inventory".template]
+engine = "liquid"
+type = "file"
+source = "templates/inventory.liquid"
+
+[page."/inventory/new"]
+title = "New green coffee lot"
+auth = "required"
+layout = "form"
+
+[page."/inventory/new".form]
+entity = "GreenCoffeeLot"
+method = "create"
+
+[[page."/inventory/new".form.fields]]
+name = "lotCode"
+type = "text"
+label = "Lot code"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "origin"
+type = "text"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "farmOrCoop"
+type = "text"
+label = "Farm or co-op"
+
+[[page."/inventory/new".form.fields]]
+name = "process"
+type = "text"
+
+[[page."/inventory/new".form.fields]]
+name = "arrivalDate"
+type = "date"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "weightKgReceived"
+type = "number"
+label = "Weight received (kg)"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "weightKgRemaining"
+type = "number"
+label = "Weight remaining (kg)"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "costPerKgUsd"
+type = "number"
+label = "Cost per kg (USD)"
+required = true
+
+[[page."/inventory/new".form.fields]]
+name = "supplierCurrency"
+type = "text"
+default = "USD"
+
+[page."/inventory/new".form.onSuccess]
+redirect = "/inventory"
+message = "Lot recorded."
+
+[page."/products"]
+title = "Products"
+auth = "required"
+layout = "list"
+
+[page."/products".query.products]
+entity = "Product"
+orderBy = { origin = "asc" }
+limit = 200
+
+[page."/products/new"]
+title = "New product"
+auth = "required"
+layout = "form"
+
+[page."/products/new".form]
+entity = "Product"
+method = "create"
+
+[[page."/products/new".form.fields]]
+name = "sku"
+type = "text"
+required = true
+
+[[page."/products/new".form.fields]]
+name = "name"
+type = "text"
+required = true
+
+[[page."/products/new".form.fields]]
+name = "origin"
+type = "text"
+required = true
+
+[[page."/products/new".form.fields]]
+name = "process"
+type = "text"
+
+[[page."/products/new".form.fields]]
+name = "roastLevel"
+type = "select"
+label = "Roast level"
+options = [{ value = "light", label = "Light" }, { value = "medium", label = "Medium" }, { value = "dark", label = "Dark" }]
+required = true
+
+[[page."/products/new".form.fields]]
+name = "wholesalePricePerCase"
+type = "number"
+label = "Wholesale price / case"
+required = true
+
+[[page."/products/new".form.fields]]
+name = "retailPricePerBag"
+type = "number"
+label = "Retail price / bag"
+required = true
+
+[[page."/products/new".form.fields]]
+name = "bagWeightG"
+type = "number"
+label = "Bag weight (g)"
+default = 340
+
+[[page."/products/new".form.fields]]
+name = "casesInStock"
+type = "number"
+label = "Cases in stock"
+default = 0
+
+[[page."/products/new".form.fields]]
+name = "bagsInStock"
+type = "number"
+label = "Bags in stock"
+default = 0
+
+[[page."/products/new".form.fields]]
+name = "active"
+type = "checkbox"
+default = true
+
+[page."/products/new".form.onSuccess]
+redirect = "/products"
+message = "Product created."
+
+[page."/accounts"]
+title = "Accounts"
+auth = "required"
+layout = "custom"
+
+[page."/accounts".query.customers]
+entity = "Customer"
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/accounts".template]
+engine = "liquid"
+type = "file"
+source = "templates/accounts-index.liquid"
+
+[page."/accounts/lookup"]
+title = "Find an account"
+auth = "required"
+
+[page."/accounts/lookup".widget]
+kind = "lookup"
+entity = "Customer"
+search = ["name", "email", "city"]
+display = "{name}"
+limit = 10
+placeholder = "Search accounts by name, email, or city"
+
+[page."/accounts/lookup".widget.on_select]
+navigate = "/accounts/$to.id"
+
+[page."/accounts/new"]
+title = "New account"
+auth = "required"
+layout = "form"
+
+[page."/accounts/new".form]
+entity = "Customer"
+method = "create"
+
+[[page."/accounts/new".form.fields]]
+name = "name"
+type = "text"
+required = true
+
+[[page."/accounts/new".form.fields]]
+name = "type"
+type = "select"
+options = [{ value = "wholesale", label = "Wholesale" }, { value = "retail", label = "Retail" }]
+required = true
+
+[[page."/accounts/new".form.fields]]
+name = "email"
+type = "email"
+
+[[page."/accounts/new".form.fields]]
+name = "phone"
+type = "text"
+
+[[page."/accounts/new".form.fields]]
+name = "address"
+type = "text"
+
+[[page."/accounts/new".form.fields]]
+name = "city"
+type = "text"
+
+[[page."/accounts/new".form.fields]]
+name = "state"
+type = "text"
+
+[[page."/accounts/new".form.fields]]
+name = "country"
+type = "text"
+default = "USA"
+
+[[page."/accounts/new".form.fields]]
+name = "currency"
+type = "text"
+default = "USD"
+
+[[page."/accounts/new".form.fields]]
+name = "notes"
+type = "textarea"
+rows = 3
+
+[page."/accounts/new".form.onSuccess]
+redirect = "/accounts"
+message = "Account created."
+
+[page."/accounts/:id"]
+title = "Account"
+auth = "required"
+layout = "custom"
+
+[page."/accounts/:id".query.customer]
+entity = "Customer"
+where = { id = "$params.id" }
+
+[page."/accounts/:id".query.orders]
+entity = "SalesOrder"
+where = { customerId = "$params.id" }
+orderBy = { orderDate = "desc" }
+limit = 100
+
+[page."/accounts/:id".query.subscriptions]
+entity = "Subscription"
+where = { customerId = "$params.id" }
+limit = 50
+
+[page."/accounts/:id".query.warehouses]
+entity = "Warehouse"
+where = { customerId = "$params.id" }
+limit = 50
+
+[page."/accounts/:id".template]
+engine = "liquid"
+type = "file"
+source = "templates/account-detail.liquid"
+
+[page."/accounts/:id/warehouses/new"]
+title = "New warehouse"
+auth = "required"
+layout = "form"
+
+[page."/accounts/:id/warehouses/new".query.customer]
+entity = "Customer"
+where = { id = "$params.id" }
+
+[page."/accounts/:id/warehouses/new".form]
+entity = "Warehouse"
+method = "create"
+
+# A form's `hidden`/`default` field values are static in the blueprint (no
+# `$params.*` interpolation), so the parent account can't be silently prefilled --
+# this single-option select keeps the field visible but effectively fixed. See
+# ZEBRIC_GAPS.md.
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "customerId"
+type = "select"
+label = "Account"
+required = true
+optionsFrom = { query = "customer", value = "id", label = "name" }
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "name"
+type = "text"
+required = true
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "address"
+type = "text"
+required = true
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "city"
+type = "text"
+required = true
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "state"
+type = "text"
+required = true
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "country"
+type = "text"
+default = "USA"
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "serviceArea"
+type = "select"
+label = "Service area"
+options = [{ value = "local", label = "Local" }, { value = "in_state", label = "In-state" }, { value = "interstate", label = "Interstate" }]
+default = "interstate"
+
+[[page."/accounts/:id/warehouses/new".form.fields]]
+name = "dockNotes"
+type = "textarea"
+label = "Dock notes"
+rows = 3
+
+[page."/accounts/:id/warehouses/new".form.onSuccess]
+redirect = "/accounts/{customerId}"
+message = "Warehouse added."
+
+[page."/shipping"]
+title = "Shipping"
+auth = "required"
+layout = "custom"
+
+[page."/shipping".query.services]
+entity = "TruckingService"
+orderBy = { capacityCases = "asc" }
+limit = 50
+
+[page."/shipping".query.truckLoads]
+entity = "Shipment"
+where = { method = "delivery_truck" }
+orderBy = { scheduledShipDate = "desc" }
+limit = 200
+
+[page."/shipping".query.orders]
+entity = "SalesOrder"
+limit = 250
+
+[page."/shipping".query.warehouses]
+entity = "Warehouse"
+limit = 200
+
+[page."/shipping".template]
+engine = "liquid"
+type = "file"
+source = "templates/shipping.liquid"
+
+[page."/shipping/services/new"]
+title = "New trucking service"
+auth = "required"
+layout = "form"
+
+[page."/shipping/services/new".form]
+entity = "TruckingService"
+method = "create"
+
+[[page."/shipping/services/new".form.fields]]
+name = "name"
+type = "text"
+required = true
+
+[[page."/shipping/services/new".form.fields]]
+name = "serviceArea"
+type = "select"
+label = "Service area"
+options = [{ value = "local", label = "Local" }, { value = "in_state", label = "In-state" }, { value = "interstate", label = "Interstate" }]
+required = true
+
+[[page."/shipping/services/new".form.fields]]
+name = "capacityCases"
+type = "number"
+label = "Capacity (cases per load)"
+required = true
+
+[[page."/shipping/services/new".form.fields]]
+name = "liftgate"
+type = "checkbox"
+
+[[page."/shipping/services/new".form.fields]]
+name = "appointmentDelivery"
+type = "checkbox"
+label = "Appointment delivery"
+
+[[page."/shipping/services/new".form.fields]]
+name = "active"
+type = "checkbox"
+default = true
+
+[page."/shipping/services/new".form.onSuccess]
+redirect = "/shipping"
+message = "Trucking service added."
+
+[page."/subscriptions"]
+title = "Subscriptions"
+auth = "required"
+layout = "custom"
+
+[page."/subscriptions".query.subscriptions]
+entity = "Subscription"
+orderBy = { status = "asc" }
+limit = 250
+
+[page."/subscriptions".query.customers]
+entity = "Customer"
+limit = 200
+
+[page."/subscriptions".query.products]
+entity = "Product"
+limit = 200
+
+[page."/subscriptions".template]
+engine = "liquid"
+type = "file"
+source = "templates/subscriptions-index.liquid"
+
+# A native form can't copy the selected customer's email onto the submitted
+# record (see ZEBRIC_GAPS.md on computed/derived form values), and Subscription
+# needs that email snapshot for row-level access -- see the customerEmail note
+# on [entity.SalesOrder]. This page is a small custom form for the same reason
+# order-new.liquid is.
+[page."/subscriptions/new"]
+title = "New subscription"
+auth = "required"
+layout = "custom"
+
+[page."/subscriptions/new".query.customers]
+entity = "Customer"
+where = { type = "retail" }
+orderBy = { name = "asc" }
+limit = 200
+
+[page."/subscriptions/new".query.products]
+entity = "Product"
+where = { active = true }
+orderBy = { name = "asc" }
+limit = 100
+
+[page."/subscriptions/new".template]
+engine = "liquid"
+type = "file"
+source = "templates/subscription-new.liquid"
+
+[page."/subscriptions/new".actionBar]
+title = "Create subscription"
+
+[[page."/subscriptions/new".actionBar.actions]]
+label = "Create subscription"
+workflow = "CreateSubscription"
+style = "primary"
+
+# There is deliberately no /admin/users directory or account-creation page here.
+# [entity.User] only documents the session shape for $currentUser.* access
+# conditions -- Better Auth's real `user` table isn't registered with the app's
+# own query executor, so `entity = "User"` in a page query fails outright
+# ("Entity User not found") and a create-form would bypass Better Auth's
+# credential/session setup entirely. See ZEBRIC_GAPS.md G-04.
+
+# Workflows -----------------------------------------------------------------
+
+[workflow.InitializeOrderNumber]
+description = "Give a newly created order a type-prefixed reference number."
+trigger = { entity = "SalesOrder", event = "create" }
+
+[[workflow.InitializeOrderNumber.steps]]
+type = "condition"
+if = { "trigger.after.orderType" = "wholesale" }
+then = [
+  { type = "query", entity = "SalesOrder", action = "update", where = { id = "{{ trigger.after.id }}" }, data = { orderNumber = "WS-{{ trigger.after.id }}" } }
+]
+else = [
+  { type = "query", entity = "SalesOrder", action = "update", where = { id = "{{ trigger.after.id }}" }, data = { orderNumber = "RT-{{ trigger.after.id }}" } }
+]
+
+[workflow.InitializeRoastBatchNumber]
+description = "Give a newly logged roast batch a reference number."
+trigger = { entity = "RoastBatch", event = "create" }
+
+[[workflow.InitializeRoastBatchNumber.steps]]
+type = "query"
+entity = "RoastBatch"
+action = "update"
+where = { id = "{{ trigger.after.id }}" }
+data = { batchNumber = "RB-{{ trigger.after.id }}" }
+
+# Creates the order header, every line item, and every shipment/truck-load record
+# in one transaction. Line items and (for delivery_truck) capacity-split loads are
+# built by the browser and submitted as JSON arrays in the payload; the `loop` step
+# below fans that array out into per-row Order/OrderItem/Shipment create steps. See
+# ZEBRIC_GAPS.md G-02 for what this does, and does not, verify server-side.
+[workflow.CreateOrderWithItems]
+description = "Create an order with its line items and shipment records atomically."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.CreateOrderWithItems.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "create"
+assignTo = "order"
+data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", orderType = "{{ variables.data.payload.orderType }}", status = "pending", requestedShipDate = "{{ variables.data.payload.requestedShipDate }}", dueDate = "{{ variables.data.payload.dueDate }}", notes = "{{ variables.data.payload.notes }}", createdBy = "{{ variables.data.session.user.id }}" }
+
+[[workflow.CreateOrderWithItems.steps]]
+type = "loop"
+items = "{{ variables.data.payload.items }}"
+do = [
+  { type = "query", entity = "OrderItem", action = "create", data = { orderId = "{{ variables.order.id }}", customerEmail = "{{ variables.data.payload.customerEmail }}", productId = "{{ variables.item.productId }}", quantity = "{{ variables.item.quantity }}", unitPrice = "{{ variables.item.unitPrice }}" } }
+]
+
+[[workflow.CreateOrderWithItems.steps]]
+type = "loop"
+items = "{{ variables.data.payload.shipments }}"
+do = [
+  { type = "query", entity = "Shipment", action = "create", data = { orderId = "{{ variables.order.id }}", customerEmail = "{{ variables.data.payload.customerEmail }}", method = "{{ variables.data.payload.shippingMethod }}", status = "planned", scheduledShipDate = "{{ variables.data.payload.requestedShipDate }}", truckingServiceId = "{{ variables.data.payload.truckingServiceId }}", warehouseId = "{{ variables.data.payload.warehouseId }}", loadNumber = "{{ variables.item.loadNumber }}", cases = "{{ variables.item.cases }}" } }
+]
+
+# Staff/admin-only is enforced by `auth.permissions` (only they hold
+# SalesOrder.update), the same as every other order workflow below -- no
+# precondition role check needed (an earlier draft had one, but wrote it as
+# `= "staff"` instead of `$or`-ing in "admin", which locked admins out too;
+# workflow preconditions use conditions.ts's `$or`/array-of-values syntax,
+# not entity.access's `or = [...]`, and this workflow doesn't need either).
+[workflow.SetOrderDueDate]
+description = "Set or change an order's customer delivery deadline."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.SetOrderDueDate.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { dueDate = "{{ variables.data.payload.dueDate }}" }
+
+[workflow.ConfirmOrder]
+description = "Move a pending order to confirmed and mark its shipments ready."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "pending" }
+transactional = true
+
+[[workflow.ConfirmOrder.steps]]
+type = "query"
+entity = "Shipment"
+action = "find"
+where = { orderId = "{{ variables.data.record.id }}" }
+assignTo = "shipments"
+
+[[workflow.ConfirmOrder.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "pending" }
+data = { status = "confirmed" }
+
+[[workflow.ConfirmOrder.steps]]
+type = "loop"
+items = "{{ variables.shipments }}"
+do = [
+  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "ready" } }
+]
+
+[workflow.StartRoastingForOrder]
+description = "Move a confirmed order into roasting."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "confirmed" }
+transactional = true
+
+[[workflow.StartRoastingForOrder.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "confirmed" }
+data = { status = "roasting" }
+
+[workflow.ShipOrder]
+description = "Ship a roasting order and mark every shipment in transit."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "roasting" }
+transactional = true
+
+[[workflow.ShipOrder.steps]]
+type = "query"
+entity = "Shipment"
+action = "find"
+where = { orderId = "{{ variables.data.record.id }}" }
+assignTo = "shipments"
+
+[[workflow.ShipOrder.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "roasting" }
+data = { status = "shipped" }
+
+[[workflow.ShipOrder.steps]]
+type = "loop"
+items = "{{ variables.shipments }}"
+do = [
+  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "in_transit" } }
+]
+
+[workflow.DeliverOrder]
+description = "Mark a shipped order delivered along with every shipment."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "shipped" }
+transactional = true
+
+[[workflow.DeliverOrder.steps]]
+type = "query"
+entity = "Shipment"
+action = "find"
+where = { orderId = "{{ variables.data.record.id }}" }
+assignTo = "shipments"
+
+[[workflow.DeliverOrder.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "shipped" }
+data = { status = "delivered" }
+
+[[workflow.DeliverOrder.steps]]
+type = "loop"
+items = "{{ variables.shipments }}"
+do = [
+  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "delivered" } }
+]
+
+[workflow.CancelOrder]
+description = "Cancel an order that has not shipped and mark shipments exception."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["pending", "confirmed", "roasting", "shipped"] }
+transactional = true
+
+[[workflow.CancelOrder.steps]]
+type = "query"
+entity = "Shipment"
+action = "find"
+where = { orderId = "{{ variables.data.record.id }}" }
+assignTo = "shipments"
+
+[[workflow.CancelOrder.steps]]
+type = "query"
+entity = "SalesOrder"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "cancelled" }
+
+[[workflow.CancelOrder.steps]]
+type = "loop"
+items = "{{ variables.shipments }}"
+do = [
+  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "exception" } }
+]
+
+# The browser computes newRemainingKg and newBagsInStock from the values it read
+# when the roasting page loaded (see roasting.liquid). The `where` compare-and-set
+# on both updates rejects the write if that read is stale -- e.g. another batch
+# already consumed the lot -- instead of silently overdrawing green coffee or
+# double-counting bags. See ZEBRIC_GAPS.md G-03 for what this does not verify.
+[workflow.LogRoastBatch]
+description = "Log a roast batch and atomically apply its inventory deltas."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.LogRoastBatch.steps]]
+type = "query"
+entity = "RoastBatch"
+action = "create"
+data = { lotId = "{{ variables.data.payload.lotId }}", productId = "{{ variables.data.payload.productId }}", roastDate = "{{ variables.data.payload.roastDate }}", greenWeightKg = "{{ variables.data.payload.greenWeightKg }}", roastedWeightKg = "{{ variables.data.payload.roastedWeightKg }}", roastLevel = "{{ variables.data.payload.roastLevel }}", notes = "{{ variables.data.payload.notes }}", roastedBy = "{{ variables.data.session.user.name }}" }
+
+[[workflow.LogRoastBatch.steps]]
+type = "query"
+entity = "GreenCoffeeLot"
+action = "update"
+where = { id = "{{ variables.data.payload.lotId }}", weightKgRemaining = "{{ variables.data.payload.expectedRemainingKg }}" }
+data = { weightKgRemaining = "{{ variables.data.payload.newRemainingKg }}" }
+
+[[workflow.LogRoastBatch.steps]]
+type = "query"
+entity = "Product"
+action = "update"
+where = { id = "{{ variables.data.payload.productId }}", bagsInStock = "{{ variables.data.payload.expectedBagsInStock }}" }
+data = { bagsInStock = "{{ variables.data.payload.newBagsInStock }}" }
+
+[workflow.CreateSubscription]
+description = "Create a subscription, snapshotting the customer's email for row-level access."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.CreateSubscription.steps]]
+type = "query"
+entity = "Subscription"
+action = "create"
+data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", productId = "{{ variables.data.payload.productId }}", frequency = "{{ variables.data.payload.frequency }}", quantity = "{{ variables.data.payload.quantity }}", status = "active", nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
+
+[workflow.PauseSubscription]
+description = "Pause an active subscription."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "active" }
+transactional = true
+
+[[workflow.PauseSubscription.steps]]
+type = "query"
+entity = "Subscription"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "active" }
+data = { status = "paused" }
+
+[workflow.ResumeSubscription]
+description = "Resume a paused subscription with a new next-ship date."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "paused" }
+transactional = true
+
+[[workflow.ResumeSubscription.steps]]
+type = "query"
+entity = "Subscription"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "paused" }
+data = { status = "active", nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
+
+[workflow.CancelSubscription]
+description = "Cancel a subscription."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["active", "paused"] }
+transactional = true
+
+[[workflow.CancelSubscription.steps]]
+type = "query"
+entity = "Subscription"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "cancelled" }
+
+# Agent surface -----------------------------------------------------------------
+
+[skill.ridgeline]
+description = "Operate Ridgeline Coffee's orders, inventory, and subscriptions through the same governed workflows as staff."
+auth = "required"
+
+[[skill.ridgeline.actions]]
+name = "list_open_orders"
+description = "List orders that are not yet delivered or cancelled."
+method = "GET"
+path = "/api/agent/orders"
+entity = "SalesOrder"
+action = "list"
+scopes = ["ridgeline.orders.read"]
+risk = "read"
+
+[skill.ridgeline.actions.query.orderType]
+type = "Enum"
+values = ["wholesale", "retail"]
+required = false
+
+[[skill.ridgeline.actions]]
+name = "get_order"
+description = "Fetch one order by id, including how it will be shown to staff."
+method = "GET"
+path = "/api/agent/orders/{id}"
+entity = "SalesOrder"
+action = "get"
+scopes = ["ridgeline.orders.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_order_items"
+description = "List line items for one order."
+method = "GET"
+path = "/api/agent/orders/{id}/items"
+entity = "OrderItem"
+action = "list"
+mapParams = { id = "orderId" }
+scopes = ["ridgeline.orders.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_shipments"
+description = "List parcel shipments and truck loads for one order."
+method = "GET"
+path = "/api/agent/orders/{id}/shipments"
+entity = "Shipment"
+action = "list"
+mapParams = { id = "orderId" }
+scopes = ["ridgeline.orders.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "set_order_due_date"
+description = "Set an order's customer delivery deadline."
+method = "POST"
+path = "/api/agent/orders/{id}/due-date"
+entity = "SalesOrder"
+workflow = "SetOrderDueDate"
+scopes = ["ridgeline.orders.transition"]
+risk = "write"
+body = { dueDate = "Date" }
+
+[[skill.ridgeline.actions]]
+name = "confirm_order"
+description = "Confirm a pending order."
+method = "POST"
+path = "/api/agent/orders/{id}/confirm"
+entity = "SalesOrder"
+workflow = "ConfirmOrder"
+scopes = ["ridgeline.orders.transition"]
+risk = "write"
+body = {}
+
+[[skill.ridgeline.actions]]
+name = "ship_order"
+description = "Ship an order that is roasting."
+method = "POST"
+path = "/api/agent/orders/{id}/ship"
+entity = "SalesOrder"
+workflow = "ShipOrder"
+scopes = ["ridgeline.orders.transition"]
+risk = "write"
+body = {}
+
+[[skill.ridgeline.actions]]
+name = "deliver_order"
+description = "Mark a shipped order delivered."
+method = "POST"
+path = "/api/agent/orders/{id}/deliver"
+entity = "SalesOrder"
+workflow = "DeliverOrder"
+scopes = ["ridgeline.orders.transition"]
+risk = "write"
+body = {}
+
+[[skill.ridgeline.actions]]
+name = "list_low_stock_products"
+description = "List roasted products with fewer than 5 cases in stock."
+method = "GET"
+path = "/api/agent/inventory/low-stock-products"
+entity = "Product"
+action = "list"
+scopes = ["ridgeline.inventory.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_green_coffee_lots"
+description = "List green coffee lots with received/remaining weight so the caller can identify running-low lots."
+method = "GET"
+path = "/api/agent/inventory/lots"
+entity = "GreenCoffeeLot"
+action = "list"
+scopes = ["ridgeline.inventory.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_recent_roast_batches"
+description = "List the most recent roast batches, most recent first."
+method = "GET"
+path = "/api/agent/roast-batches"
+entity = "RoastBatch"
+action = "list"
+scopes = ["ridgeline.inventory.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_products"
+description = "List roasted product SKUs, optionally filtered by roast level."
+method = "GET"
+path = "/api/agent/products"
+entity = "Product"
+action = "list"
+scopes = ["ridgeline.inventory.read"]
+risk = "read"
+
+[skill.ridgeline.actions.query.roastLevel]
+type = "Enum"
+values = ["light", "medium", "dark"]
+required = false
+
+[[skill.ridgeline.actions]]
+name = "list_accounts"
+description = "List wholesale and retail accounts, optionally filtered by type."
+method = "GET"
+path = "/api/agent/accounts"
+entity = "Customer"
+action = "list"
+scopes = ["ridgeline.accounts.read"]
+risk = "read"
+
+[skill.ridgeline.actions.query.type]
+type = "Enum"
+values = ["wholesale", "retail"]
+required = false
+
+[[skill.ridgeline.actions]]
+name = "get_account"
+description = "Fetch one account's contact and billing details."
+method = "GET"
+path = "/api/agent/accounts/{id}"
+entity = "Customer"
+action = "get"
+scopes = ["ridgeline.accounts.read"]
+risk = "read"
+
+[[skill.ridgeline.actions]]
+name = "list_subscriptions"
+description = "List subscriptions, optionally filtered by status."
+method = "GET"
+path = "/api/agent/subscriptions"
+entity = "Subscription"
+action = "list"
+scopes = ["ridgeline.subscriptions.read"]
+risk = "read"
+
+[skill.ridgeline.actions.query.status]
+type = "Enum"
+values = ["active", "paused", "cancelled"]
+required = false
+
+[[skill.ridgeline.actions]]
+name = "pause_subscription"
+description = "Pause a customer's subscription by its id."
+method = "POST"
+path = "/api/agent/subscriptions/{id}/pause"
+entity = "Subscription"
+workflow = "PauseSubscription"
+scopes = ["ridgeline.subscriptions.transition"]
+risk = "write"
+body = {}
+
+[[skill.ridgeline.actions]]
+name = "resume_subscription"
+description = "Resume a paused subscription with an explicit next ship date."
+method = "POST"
+path = "/api/agent/subscriptions/{id}/resume"
+entity = "Subscription"
+workflow = "ResumeSubscription"
+scopes = ["ridgeline.subscriptions.transition"]
+risk = "write"
+body = { nextShipDate = "Date" }
+
+# Auth and notifications ----------------------------------------------------
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+[auth.pages.signIn]
+engine = "liquid"
+type = "file"
+source = "templates/sign-in.liquid"
+
+[auth.permissions]
+customer = { allow = ["SalesOrder.read", "SalesOrder.create", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Subscription.read", "Subscription.create", "Subscription.update", "Customer.read", "Warehouse.read", "Product.read", "TruckingService.read"] }
+staff = { allow = ["SalesOrder.read", "SalesOrder.create", "SalesOrder.update", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Shipment.update", "Customer.read", "Customer.create", "Customer.update", "Warehouse.read", "Warehouse.create", "Warehouse.update", "TruckingService.read", "TruckingService.create", "TruckingService.update", "Product.read", "Product.create", "Product.update", "GreenCoffeeLot.read", "GreenCoffeeLot.create", "GreenCoffeeLot.update", "RoastBatch.read", "RoastBatch.create", "RoastBatch.update", "Subscription.read", "Subscription.create", "Subscription.update"] }
+# API-key actors receive the fallback `user` role. Scopes narrow their HTTP
+# surface; this role grants the underlying writes required by scoped workflows.
+user = { allow = ["SalesOrder.read", "SalesOrder.create", "SalesOrder.update", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Customer.read", "Product.read", "GreenCoffeeLot.read", "RoastBatch.read", "Subscription.read", "Subscription.update"] }
+admin = { allow = ["*.*"] }
+
+[[auth.apiKeys]]
+name = "ridgeline-agent"
+keyEnv = "RIDGELINE_AGENT_API_KEY"
+agentId = "ridgeline-agent"
+credentialId = "ridgeline-demo-credential"
+displayName = "Ridgeline Agent"
+scopes = ["ridgeline.orders.read", "ridgeline.orders.transition", "ridgeline.inventory.read", "ridgeline.accounts.read", "ridgeline.subscriptions.read", "ridgeline.subscriptions.transition"]
+
+[ui]
+render_mode = "server"
+theme = "default"
+progressive_enhancement = "alpine"
+view_transitions = true

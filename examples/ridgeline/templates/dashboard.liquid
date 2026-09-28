@@ -1,0 +1,71 @@
+<style>
+.db{max-width:1100px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.db *{box-sizing:border-box}
+.db h1{font-size:28px;letter-spacing:-.03em;margin:0 0 4px}
+.db .sub{color:#8a7a68;margin:0 0 22px}
+.db-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:26px}
+.db-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:16px}
+.db-card .n{font-size:26px;font-weight:800;color:#5b3a29}
+.db-card .l{color:#8a7a68;font-size:12px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.db-section{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:18px;margin-bottom:16px}
+.db-section h2{font-size:15px;margin:0 0 12px}
+.db-row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid #f1e9dc}
+.db-row:last-child{border-bottom:none}
+.db-row a{color:#5b3a29;font-weight:700;text-decoration:none}
+.db-pill{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+.db-empty{color:#8a7a68;padding:6px 0}
+</style>
+<div class="db">
+<h1>{% if user.role == "customer" %}Welcome back{% else %}Operations dashboard{% endif %}</h1>
+<p class="sub">{% if user.role == "customer" %}Your open orders and subscriptions.{% else %}Open orders, low stock, and account mix across Ridgeline Coffee.{% endif %}</p>
+
+{% unless user.role == "customer" %}
+<div class="db-grid">
+  <div class="db-card"><div class="n">{{ data.myOrders | size }}</div><div class="l">Open orders</div></div>
+  <div class="db-card"><div class="n">{{ data.wholesaleCustomers | size }}</div><div class="l">Wholesale accounts</div></div>
+  <div class="db-card"><div class="n">{{ data.retailCustomers | size }}</div><div class="l">Retail accounts</div></div>
+  <div class="db-card"><div class="n">{{ data.lowStockProducts | size }}</div><div class="l">Low-stock products</div></div>
+</div>
+{% endunless %}
+
+<div class="db-section">
+  <h2>{% if user.role == "customer" %}Your open orders{% else %}Open orders{% endif %}</h2>
+  {% for order in data.myOrders %}
+    {% assign customer = data.customers | find: "id", order.customerId %}
+    <div class="db-row">
+      <a href="/orders/{{ order.id }}">{{ order.orderNumber | default: order.id }}{% unless user.role == "customer" %} &middot; {{ customer.name }}{% endunless %}</a>
+      <span class="db-pill">{{ order.status | replace: "_", " " }}</span>
+    </div>
+  {% else %}
+    <div class="db-empty">Nothing open right now.</div>
+  {% endfor %}
+</div>
+
+<div class="db-section">
+  <h2>{% if user.role == "customer" %}Your subscriptions{% else %}Active subscriptions{% endif %}</h2>
+  {% for sub in data.mySubscriptions %}
+    {% if sub.status == "active" %}
+    <div class="db-row">
+      <a href="/subscriptions">{{ sub.frequency }} &middot; qty {{ sub.quantity }}</a>
+      <span class="db-pill">{{ sub.status }}</span>
+    </div>
+    {% endif %}
+  {% else %}
+    <div class="db-empty">No subscriptions yet.</div>
+  {% endfor %}
+</div>
+
+{% unless user.role == "customer" %}
+<div class="db-section">
+  <h2>Low stock (fewer than 5 cases)</h2>
+  {% for product in data.lowStockProducts %}
+    <div class="db-row">
+      <a href="/products">{{ product.name }} ({{ product.sku }})</a>
+      <span class="db-pill">{{ product.casesInStock }} cases</span>
+    </div>
+  {% else %}
+    <div class="db-empty">Nothing running low.</div>
+  {% endfor %}
+</div>
+{% endunless %}
+</div>

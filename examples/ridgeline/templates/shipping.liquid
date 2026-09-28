@@ -1,0 +1,59 @@
+<style>
+.sh{max-width:1000px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.sh-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}
+.sh h1{font-size:28px;letter-spacing:-.03em;margin:0}
+.sh-btn{display:inline-block;background:#5b3a29;color:#fff!important;border-radius:8px;padding:10px 16px;font-weight:750;text-decoration:none}
+.sh-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:18px;margin-bottom:16px}
+.sh-card h2{font-size:14px;margin:0 0 12px}
+table.sh-t{width:100%;border-collapse:collapse}
+.sh-t th{text-align:left;font-size:11px;text-transform:uppercase;color:#8a7a68;padding:6px 0;border-bottom:1px solid #e6dccd}
+.sh-t td{padding:8px 0;border-bottom:1px solid #f1e9dc}
+.sh-pill{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+</style>
+<div class="sh">
+<div class="sh-head">
+  <h1>Shipping</h1>
+  <a class="sh-btn" href="/shipping/services/new">New trucking service</a>
+</div>
+
+<div class="sh-card">
+  <h2>Trucking services</h2>
+  <table class="sh-t">
+  <thead><tr><th>Name</th><th>Area</th><th>Capacity</th><th>Options</th></tr></thead>
+  <tbody>
+  {% for service in data.services %}
+    <tr>
+      <td>{{ service.name }}</td>
+      <td>{{ service.serviceArea | replace: "_", "-" }}</td>
+      <td>{{ service.capacityCases }} cases/load</td>
+      <td>{% if service.liftgate %}Liftgate {% endif %}{% if service.appointmentDelivery %}Appointment{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="4">No trucking services yet.</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+</div>
+
+<div class="sh-card">
+  <h2>Truck loads</h2>
+  <table class="sh-t">
+  <thead><tr><th>Order</th><th>Load</th><th>Cases</th><th>Warehouse</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for shipment in data.truckLoads %}
+    {% assign order = data.orders | find: "id", shipment.orderId %}
+    {% assign warehouse = data.warehouses | find: "id", shipment.warehouseId %}
+    <tr>
+      <td><a href="/orders/{{ shipment.orderId }}">{{ order.orderNumber | default: shipment.orderId }}</a></td>
+      <td>{{ shipment.loadNumber }}</td>
+      <td>{{ shipment.cases }}</td>
+      <td>{{ warehouse.name | default: "--" }}</td>
+      <td><span class="sh-pill">{{ shipment.status | replace: "_", " " }}</span></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No truck loads yet.</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+</div>
+</div>

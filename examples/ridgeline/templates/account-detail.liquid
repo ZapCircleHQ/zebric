@@ -1,0 +1,63 @@
+<style>
+.ad{max-width:900px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.ad-back{color:#8a7a68;text-decoration:none;display:inline-block;margin-bottom:14px}
+.ad h1{font-size:32px;letter-spacing:-.04em;margin:0 0 4px}
+.ad-pill{display:inline-block;border-radius:99px;padding:4px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+.ad-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:18px;margin-top:16px}
+.ad-card h2{font-size:14px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center}
+.ad-card h2 a{font-size:12px;font-weight:700;color:#c8862d;text-decoration:none}
+.ad-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.ad-fact label{display:block;color:#8a7a68;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:800}
+.ad-fact div{margin-top:3px;font-weight:650}
+.ad-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1e9dc}
+.ad-row:last-child{border-bottom:none}
+.ad-row a{color:#5b3a29;font-weight:700;text-decoration:none}
+</style>
+<div class="ad">
+<a class="ad-back" href="/accounts">&larr; Accounts</a>
+{% assign customer = data.customer[0] %}
+<h1>{{ customer.name }}</h1>
+<span class="ad-pill">{{ customer.type }}</span>
+
+<div class="ad-card">
+  <h2>Contact</h2>
+  <div class="ad-facts">
+    <div class="ad-fact"><label>Email</label><div>{{ customer.email | default: "--" }}</div></div>
+    <div class="ad-fact"><label>Phone</label><div>{{ customer.phone | default: "--" }}</div></div>
+    <div class="ad-fact"><label>Currency</label><div>{{ customer.currency }}</div></div>
+    <div class="ad-fact"><label>Address</label><div>{{ customer.address | default: "--" }}</div></div>
+    <div class="ad-fact"><label>City / State</label><div>{{ customer.city }}, {{ customer.state }}</div></div>
+    <div class="ad-fact"><label>Country</label><div>{{ customer.country }}</div></div>
+  </div>
+  {% if customer.notes and customer.notes.size > 0 %}<p style="margin-top:14px;white-space:pre-line">{{ customer.notes }}</p>{% endif %}
+</div>
+
+<div class="ad-card">
+  <h2>Orders</h2>
+  {% for order in data.orders %}
+    <div class="ad-row"><a href="/orders/{{ order.id }}">{{ order.orderNumber | default: order.id }}</a><span>{{ order.status | replace: "_", " " }}</span></div>
+  {% else %}
+    <p>No orders yet.</p>
+  {% endfor %}
+</div>
+
+<div class="ad-card">
+  <h2>Subscriptions</h2>
+  {% for sub in data.subscriptions %}
+    <div class="ad-row"><span>{{ sub.frequency }} &middot; qty {{ sub.quantity }}</span><span>{{ sub.status }}</span></div>
+  {% else %}
+    <p>No subscriptions.</p>
+  {% endfor %}
+</div>
+
+{% if customer.type == "wholesale" %}
+<div class="ad-card">
+  <h2>Warehouses <a href="/accounts/{{ customer.id }}/warehouses/new">+ Add warehouse</a></h2>
+  {% for wh in data.warehouses %}
+    <div class="ad-row"><span>{{ wh.name }} &middot; {{ wh.city }}, {{ wh.state }}</span><span>{{ wh.serviceArea | replace: "_", "-" }}</span></div>
+  {% else %}
+    <p>No warehouses on file.</p>
+  {% endfor %}
+</div>
+{% endif %}
+</div>

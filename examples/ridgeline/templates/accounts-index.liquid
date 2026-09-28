@@ -1,0 +1,38 @@
+<style>
+.ac{max-width:1000px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.ac-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}
+.ac h1{font-size:28px;letter-spacing:-.03em;margin:0}
+.ac-actions{display:flex;gap:8px}
+.ac-btn{display:inline-block;background:#5b3a29;color:#fff!important;border-radius:8px;padding:10px 16px;font-weight:750;text-decoration:none}
+.ac-btn.secondary{background:#fff;color:#5b3a29!important;border:1px solid #e6dccd}
+table.ac-t{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e6dccd;border-radius:12px;overflow:hidden}
+.ac-t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a7a68;padding:10px 14px;border-bottom:1px solid #e6dccd;background:#faf6ef}
+.ac-t td{padding:10px 14px;border-bottom:1px solid #f1e9dc}
+.ac-t tr:last-child td{border-bottom:none}
+.ac-t a{color:#5b3a29;font-weight:700;text-decoration:none}
+</style>
+<div class="ac">
+<div class="ac-head">
+  <h1>Accounts</h1>
+  <div class="ac-actions">
+    <a class="ac-btn secondary" href="/accounts/lookup">Find an account</a>
+    <a class="ac-btn" href="/accounts/new">New account</a>
+  </div>
+</div>
+<table class="ac-t">
+<thead><tr><th>Name</th><th>Type</th><th>City</th><th>Country</th><th>Email</th></tr></thead>
+<tbody>
+{% for customer in data.customers %}
+  <tr>
+    <td><a href="/accounts/{{ customer.id }}">{{ customer.name }}</a></td>
+    <td>{{ customer.type }}</td>
+    <td>{{ customer.city }}, {{ customer.state }}</td>
+    <td>{{ customer.country }}</td>
+    <td>{{ customer.email }}</td>
+  </tr>
+{% else %}
+  <tr><td colspan="5">No accounts yet.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>

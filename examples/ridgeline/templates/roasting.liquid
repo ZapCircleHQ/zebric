@@ -1,0 +1,139 @@
+<style>
+.rs{max-width:1000px;margin:auto;padding:24px 28px 80px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.rs *{box-sizing:border-box}
+.rs h1{font-size:28px;letter-spacing:-.03em;margin:0 0 18px}
+.rs-layout{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start}
+.rs-card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:18px}
+.rs-card h2{font-size:14px;margin:0 0 12px}
+table.rs-t{width:100%;border-collapse:collapse}
+.rs-t th{text-align:left;font-size:11px;text-transform:uppercase;color:#8a7a68;padding:6px 0;border-bottom:1px solid #e6dccd}
+.rs-t td{padding:7px 0;border-bottom:1px solid #f1e9dc;font-size:13px}
+.rs label{display:block;font-size:12px;font-weight:750;margin-bottom:5px}
+.rs select,.rs input,.rs textarea{width:100%;border:1px solid #ddd0bc;border-radius:8px;padding:9px 10px;font:inherit;margin-bottom:12px}
+.rs-2col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.rs-hint{font-size:11px;color:#8a7a68;margin:-8px 0 12px}
+.rs-warn{color:#a33b32;font-size:12px;margin:-8px 0 12px;display:none}
+.rs-warn.show{display:block}
+.rs-submit{background:#5b3a29;color:#fff;border:0;border-radius:8px;padding:11px 18px;font-weight:800;cursor:pointer;width:100%}
+</style>
+<div class="rs">
+<h1>Roasting</h1>
+<div class="rs-layout">
+<div class="rs-card">
+  <h2>Recent batches</h2>
+  <table class="rs-t">
+  <thead><tr><th>Batch</th><th>Lot</th><th>Product</th><th>Green kg</th><th>Yield</th></tr></thead>
+  <tbody>
+  {% for batch in data.batches %}
+    {% assign lot = data.allLots | find: "id", batch.lotId %}
+    {% assign product = data.products | find: "id", batch.productId %}
+    <tr>
+      <td>{{ batch.batchNumber | default: batch.id }}</td>
+      <td>{{ lot.lotCode | default: batch.lotId }}</td>
+      <td>{{ product.name | default: batch.productId }}</td>
+      <td>{{ batch.greenWeightKg }}</td>
+      <td>{% if batch.roastedWeightKg %}{% assign yieldPct = batch.roastedWeightKg | times: 100.0 | divided_by: batch.greenWeightKg %}{{ yieldPct | round: 1 }}%{% else %}--{% endif %}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="5">No batches logged yet.</td></tr>
+  {% endfor %}
+  </tbody>
+  </table>
+</div>
+
+<div class="rs-card">
+  <h2>Log a roast</h2>
+  <div>{{ renderer.feedback | raw }}</div>
+  <form id="roast-form" method="POST" action="/actions/LogRoastBatch">
+    <input type="hidden" name="_csrf" value="{{ csrfToken }}">
+    <input type="hidden" name="page" value="/roasting">
+    <input type="hidden" name="redirect" value="/roasting">
+    <input type="hidden" name="payload" id="roast-payload">
+
+    <label for="lotId">Green coffee lot</label>
+    <select id="lotId" required>
+      {% for lot in data.lots %}
+        <option value="{{ lot.id }}" data-remaining="{{ lot.weightKgRemaining }}">{{ lot.lotCode }} &middot; {{ lot.origin }} ({{ lot.weightKgRemaining }} kg left)</option>
+      {% endfor %}
+    </select>
+
+    <label for="productId">Roasts into</label>
+    <select id="productId" required>
+      {% for product in data.products %}
+        <option value="{{ product.id }}" data-bagweight="{{ product.bagWeightG }}" data-bagsinstock="{{ product.bagsInStock }}">{{ product.name }} ({{ product.sku }})</option>
+      {% endfor %}
+    </select>
+
+    <div class="rs-2col">
+      <div><label for="greenWeightKg">Green weight (kg)</label><input type="number" step="0.01" id="greenWeightKg" required></div>
+      <div><label for="roastedWeightKg">Roasted weight (kg)</label><input type="number" step="0.01" id="roastedWeightKg"></div>
+    </div>
+    <div class="rs-warn" id="weight-warning">This lot doesn't have that much green coffee remaining.</div>
+
+    <label for="roastLevel">Roast level</label>
+    <select id="roastLevel">
+      <option value="light">Light</option>
+      <option value="medium" selected>Medium</option>
+      <option value="dark">Dark</option>
+    </select>
+
+    <label for="notes">Notes</label>
+    <textarea id="notes"></textarea>
+    <p class="rs-hint">Finished bags (roasted kg &times; 1000 &divide; bag weight) are added to product stock automatically.</p>
+
+    <button type="submit" class="rs-submit">Log batch</button>
+  </form>
+</div>
+</div>
+</div>
+<script>
+(function(){
+  var lotSel = document.getElementById('lotId');
+  var productSel = document.getElementById('productId');
+  var greenInput = document.getElementById('greenWeightKg');
+  var warn = document.getElementById('weight-warning');
+
+  function checkWeight(){
+    var opt = lotSel.options[lotSel.selectedIndex];
+    var remaining = opt ? parseFloat(opt.dataset.remaining) : 0;
+    var green = parseFloat(greenInput.value) || 0;
+    warn.classList.toggle('show', green > remaining);
+  }
+  lotSel.addEventListener('change', checkWeight);
+  greenInput.addEventListener('input', checkWeight);
+
+  document.getElementById('roast-form').addEventListener('submit', function(e){
+    var lotOpt = lotSel.options[lotSel.selectedIndex];
+    var productOpt = productSel.options[productSel.selectedIndex];
+    var expectedRemaining = parseFloat(lotOpt.dataset.remaining);
+    var green = parseFloat(greenInput.value) || 0;
+    if (green > expectedRemaining) {
+      e.preventDefault();
+      checkWeight();
+      return;
+    }
+    var newRemaining = Math.round((expectedRemaining - green) * 100) / 100;
+
+    var roasted = parseFloat(document.getElementById('roastedWeightKg').value) || 0;
+    var bagWeight = parseFloat(productOpt.dataset.bagweight) || 340;
+    var expectedBags = parseInt(productOpt.dataset.bagsinstock, 10) || 0;
+    var bagsProduced = roasted > 0 ? Math.floor((roasted * 1000) / bagWeight) : 0;
+    var newBags = expectedBags + bagsProduced;
+
+    var payload = {
+      lotId: lotSel.value,
+      productId: productSel.value,
+      roastDate: new Date().toISOString().slice(0, 10),
+      greenWeightKg: green,
+      roastedWeightKg: roasted > 0 ? roasted : null,
+      roastLevel: document.getElementById('roastLevel').value,
+      notes: document.getElementById('notes').value,
+      expectedRemainingKg: expectedRemaining,
+      newRemainingKg: newRemaining,
+      expectedBagsInStock: expectedBags,
+      newBagsInStock: newBags
+    };
+    document.getElementById('roast-payload').value = JSON.stringify(payload);
+  });
+})();
+</script>

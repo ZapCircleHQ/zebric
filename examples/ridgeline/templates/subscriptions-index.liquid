@@ -1,0 +1,53 @@
+<style>
+.su{max-width:1000px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.su-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}
+.su h1{font-size:28px;letter-spacing:-.03em;margin:0}
+.su-btn{display:inline-block;background:#5b3a29;color:#fff!important;border-radius:8px;padding:10px 16px;font-weight:750;text-decoration:none}
+table.su-t{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e6dccd;border-radius:12px;overflow:hidden}
+.su-t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a7a68;padding:10px 14px;border-bottom:1px solid #e6dccd;background:#faf6ef}
+.su-t td{padding:10px 14px;border-bottom:1px solid #f1e9dc;vertical-align:middle}
+.su-t tr:last-child td{border-bottom:none}
+.su-pill{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#f1e9dc;color:#5b3a29}
+.su-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.su-t button{border:1px solid #e6dccd;background:#fff;border-radius:6px;padding:6px 10px;font:700 11px inherit;cursor:pointer}
+.su-t button.danger{color:#a33b32}
+.su-t input[type=date]{border:1px solid #ddd0bc;border-radius:6px;padding:5px}
+</style>
+<div class="su">
+<div class="su-head">
+  <h1>Subscriptions</h1>
+  <a class="su-btn" href="/subscriptions/new">New subscription</a>
+</div>
+<table class="su-t">
+<thead><tr><th>Account</th><th>Product</th><th>Frequency</th><th>Qty</th><th>Next ship</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for sub in data.subscriptions %}
+  {% assign customer = data.customers | find: "id", sub.customerId %}
+  {% assign product = data.products | find: "id", sub.productId %}
+  <tr>
+    <td>{{ customer.name | default: sub.customerId }}</td>
+    <td>{{ product.name | default: sub.productId }}</td>
+    <td>{{ sub.frequency }}</td>
+    <td>{{ sub.quantity }}</td>
+    <td>{{ sub.nextShipDate | default: "--" }}</td>
+    <td><span class="su-pill">{{ sub.status }}</span></td>
+    <td>
+      <div class="su-actions">
+      {% if sub.status == "active" %}
+        <form method="POST" action="/actions/PauseSubscription"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="Subscription"><input type="hidden" name="recordId" value="{{ sub.id }}"><input type="hidden" name="page" value="/subscriptions"><input type="hidden" name="redirect" value="/subscriptions"><button type="submit">Pause</button></form>
+      {% endif %}
+      {% if sub.status == "paused" %}
+        <form class="su-actions" data-json-payload method="POST" action="/actions/ResumeSubscription"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="Subscription"><input type="hidden" name="recordId" value="{{ sub.id }}"><input type="hidden" name="page" value="/subscriptions"><input type="hidden" name="redirect" value="/subscriptions"><input type="hidden" name="payload"><input type="date" name="payload_nextShipDate" required><button type="submit">Resume</button></form>
+      {% endif %}
+      {% if sub.status != "cancelled" %}
+        <form method="POST" action="/actions/CancelSubscription"><input type="hidden" name="_csrf" value="{{ csrfToken }}"><input type="hidden" name="entity" value="Subscription"><input type="hidden" name="recordId" value="{{ sub.id }}"><input type="hidden" name="page" value="/subscriptions"><input type="hidden" name="redirect" value="/subscriptions"><button class="danger" type="submit" onclick="return confirm('Cancel this subscription?')">Cancel</button></form>
+      {% endif %}
+      </div>
+    </td>
+  </tr>
+{% else %}
+  <tr><td colspan="7">No subscriptions yet.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>

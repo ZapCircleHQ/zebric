@@ -1,0 +1,37 @@
+<style>
+.iv{max-width:1000px;margin:auto;padding:24px 28px 60px;color:#2a1f16;font:14px/1.5 Inter,ui-sans-serif,system-ui,sans-serif}
+.iv-head{display:flex;justify-content:space-between;align-items:end;margin-bottom:18px}
+.iv h1{font-size:28px;letter-spacing:-.03em;margin:0}
+.iv-btn{display:inline-block;background:#5b3a29;color:#fff!important;border-radius:8px;padding:10px 16px;font-weight:750;text-decoration:none}
+table.iv-t{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e6dccd;border-radius:12px;overflow:hidden}
+.iv-t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#8a7a68;padding:10px 14px;border-bottom:1px solid #e6dccd;background:#faf6ef}
+.iv-t td{padding:10px 14px;border-bottom:1px solid #f1e9dc}
+.iv-t tr:last-child td{border-bottom:none}
+.iv-low{color:#a33b32;font-weight:800}
+.iv-pill{display:inline-block;border-radius:99px;padding:3px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;background:#fbe3e0;color:#a33b32}
+</style>
+<div class="iv">
+<div class="iv-head">
+  <h1>Green coffee inventory</h1>
+  <a class="iv-btn" href="/inventory/new">New lot</a>
+</div>
+<table class="iv-t">
+<thead><tr><th>Lot</th><th>Origin</th><th>Arrived</th><th>Received (kg)</th><th>Remaining (kg)</th><th></th></tr></thead>
+<tbody>
+{% for lot in data.lots %}
+  {% assign threshold = lot.weightKgReceived | times: 0.15 %}
+  {% assign isLow = lot.weightKgRemaining <= threshold %}
+  <tr>
+    <td>{{ lot.lotCode }}</td>
+    <td>{{ lot.origin }}{% if lot.farmOrCoop %} &middot; {{ lot.farmOrCoop }}{% endif %}</td>
+    <td>{{ lot.arrivalDate }}</td>
+    <td>{{ lot.weightKgReceived }}</td>
+    <td{% if isLow %} class="iv-low"{% endif %}>{{ lot.weightKgRemaining }}</td>
+    <td>{% if isLow %}<span class="iv-pill">Low</span>{% endif %}</td>
+  </tr>
+{% else %}
+  <tr><td colspan="6">No lots recorded.</td></tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
