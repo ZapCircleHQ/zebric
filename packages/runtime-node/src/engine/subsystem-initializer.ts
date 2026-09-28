@@ -44,6 +44,28 @@ export interface InitializedSubsystems {
 }
 
 /**
+ * Resolves the SQLite file Better Auth should connect to.
+ *
+ * This must match the file initializeDatabase() connects the main
+ * DatabaseConnection to: an explicit `database.url` (SQLite) always wins,
+ * falling back to `dev.dbPath`/the default file only when no databaseUrl was
+ * given at all. Postgres URLs are not handled here — Better Auth's provider
+ * only supports SQLite — so they fall through to the same dev/default path
+ * the database layer would use in that case.
+ */
+export function resolveAuthDbPath(config: Pick<EngineConfig, 'database' | 'dev'>): string {
+  const databaseUrl = config.database?.url
+  const isPostgresUrl =
+    databaseUrl?.startsWith('postgres://') || databaseUrl?.startsWith('postgresql://')
+
+  if (databaseUrl && !isPostgresUrl) {
+    return databaseUrl.replace('sqlite://', '')
+  }
+
+  return config.dev?.dbPath || './data/app.db'
+}
+
+/**
  * SubsystemInitializer - Initializes all engine subsystems
  */
 export class SubsystemInitializer {
@@ -183,7 +205,7 @@ export class SubsystemInitializer {
     sessionManager: SessionManager
     permissionManager: PermissionManager
   }> {
-    const dbPath = this.config.dev?.dbPath || './data/app.db'
+    const dbPath = resolveAuthDbPath(this.config)
     const host = this.config.host || 'localhost'
     const port = this.config.port ?? 3000
     const baseURL = `http://${host}:${port}`

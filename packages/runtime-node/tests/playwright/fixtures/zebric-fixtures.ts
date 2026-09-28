@@ -48,10 +48,6 @@ export const test = base.extend<Fixtures>({
           port,
           databaseUrl: `sqlite://${dbPath}`,
           validateBeforeStart: false,
-          // Required so Better Auth resolves its own SQLite connection to this
-          // same tmp dbPath: outside dev mode, the auth provider's db path
-          // falls back to ./data/app.db regardless of `databaseUrl` above.
-          dev: true,
         })
 
         await waitForHttp(`${baseURL}/health`, 15_000)
