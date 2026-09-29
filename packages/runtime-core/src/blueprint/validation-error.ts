@@ -26,10 +26,23 @@ export interface ValidationErrorDetail {
 }
 
 export interface StructuredValidationError {
-  type: 'SCHEMA_VALIDATION' | 'REFERENCE_VALIDATION' | 'PARSE_ERROR' | 'VERSION_ERROR'
+  type: 'SCHEMA_VALIDATION' | 'REFERENCE_VALIDATION' | 'COMPOSITION_ERROR' | 'PARSE_ERROR' | 'VERSION_ERROR'
   message: string
   errors: ValidationErrorDetail[]
   file?: string
+}
+
+export function createCompositionError(errors: string[], file?: string): BlueprintValidationError {
+  return new BlueprintValidationError({
+    type: 'COMPOSITION_ERROR',
+    message: 'Blueprint composition failed',
+    errors: errors.map(message => ({
+      code: 'COMPOSITION_ERROR',
+      message,
+      location: { path: ['imports'] },
+    })),
+    file,
+  })
 }
 
 /**

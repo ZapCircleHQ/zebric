@@ -4,7 +4,7 @@
  * Wrapper around BlueprintParser from core for backwards compatibility.
  */
 
-import { BlueprintParser, detectFormat } from '@zebric/runtime-core'
+import { BlueprintParser } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
 
 /**
@@ -19,8 +19,6 @@ export function validateBlueprint(content: string, format: 'toml' | 'json', sour
  * Validate a blueprint from a file path
  */
 export async function validateBlueprintFile(path: string): Promise<Blueprint> {
-  const { readFile } = await import('node:fs/promises')
-  const content = await readFile(path, 'utf-8')
-  const format = detectFormat(path)
-  return validateBlueprint(content, format, path)
+  const { BlueprintLoader } = await import('./loader.js')
+  return new BlueprintLoader().load(path)
 }

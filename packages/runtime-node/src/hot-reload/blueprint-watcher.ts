@@ -5,21 +5,22 @@
  */
 
 import { watch, type FSWatcher } from 'chokidar'
-import { readFile } from 'node:fs/promises'
 import type { Logger } from '@zebric/observability'
-import { BlueprintParser, detectFormat } from '@zebric/runtime-core'
 import type { Blueprint } from '@zebric/runtime-core'
+import { BlueprintLoader } from '../blueprint/loader.js'
 
 export interface BlueprintWatcherOptions {
   blueprintPath: string
   onReload: (blueprint: Blueprint) => Promise<void>
   onError?: (error: Error) => void
   logger?: Logger
+  blueprintFiles?: readonly string[]
 }
 
 export class BlueprintWatcher {
   private watcher: FSWatcher | null = null
   private isReloading = false
+  private watchedFiles = new Set<string>()
 
   constructor(private options: BlueprintWatcherOptions) {}
 
@@ -31,7 +32,11 @@ export class BlueprintWatcher {
       blueprintPath: this.options.blueprintPath,
     })
 
-    this.watcher = watch(this.options.blueprintPath, {
+    const initialFiles = this.options.blueprintFiles?.length
+      ? [...this.options.blueprintFiles]
+      : [this.options.blueprintPath]
+    this.watchedFiles = new Set(initialFiles)
+    this.watcher = watch(initialFiles, {
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: {
@@ -40,7 +45,7 @@ export class BlueprintWatcher {
       },
     })
 
-    this.watcher.on('change', async (path) => {
+    const reload = async (path: string) => {
       if (this.isReloading) {
         this.options.logger?.info('Blueprint reload already in progress, skipping duplicate change event')
         return
@@ -53,7 +58,8 @@ export class BlueprintWatcher {
         const startTime = Date.now()
 
         // Load and parse blueprint
-        const blueprint = await this.loadBlueprint(this.options.blueprintPath)
+        const { blueprint, files } = await this.loadBlueprint(this.options.blueprintPath)
+        await this.syncWatchedFiles(files)
 
         // Trigger reload
         await this.options.onReload(blueprint)
@@ -68,7 +74,10 @@ export class BlueprintWatcher {
       } finally {
         this.isReloading = false
       }
-    })
+    }
+
+    this.watcher.on('change', reload)
+    this.watcher.on('unlink', reload)
 
     this.watcher.on('error', (error) => {
       this.options.logger?.error('Blueprint watcher error', { error })
@@ -92,10 +101,19 @@ export class BlueprintWatcher {
   /**
    * Load and validate blueprint from file
    */
-  private async loadBlueprint(path: string): Promise<Blueprint> {
-    const content = await readFile(path, 'utf-8')
-    const parser = new BlueprintParser()
-    const format = detectFormat(path)
-    return parser.parse(content, format, path)
+  private async loadBlueprint(path: string): Promise<{ blueprint: Blueprint; files: readonly string[] }> {
+    const loader = new BlueprintLoader()
+    const blueprint = await loader.load(path)
+    return { blueprint, files: loader.getLoadedFiles() }
+  }
+
+  private async syncWatchedFiles(files: readonly string[]): Promise<void> {
+    if (!this.watcher) return
+    const next = new Set(files)
+    const added = files.filter(file => !this.watchedFiles.has(file))
+    const removed = [...this.watchedFiles].filter(file => !next.has(file))
+    if (added.length > 0) this.watcher.add(added)
+    if (removed.length > 0) await this.watcher.unwatch(removed)
+    this.watchedFiles = next
   }
 }

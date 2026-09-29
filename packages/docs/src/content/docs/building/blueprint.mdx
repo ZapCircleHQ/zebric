@@ -24,6 +24,37 @@ description = "An internal tool"
 min_version = "0.1.0"
 ```
 
+## Composing multiple TOML files
+
+Large applications can split a Blueprint into explicitly imported TOML fragments. Put `imports` at the top of the root file, before any table declaration:
+
+```toml
+imports = [
+  "./foundation/design-system.toml",
+  "./domain/requests/module.toml",
+]
+
+version = "0.6.0"
+
+[project]
+name = "My App"
+version = "1.0.0"
+
+[project.runtime]
+min_version = "0.6.0"
+```
+
+Fragments can import other fragments. Each path is resolved relative to the file containing it, so a directory can own its composition without registering names globally:
+
+```toml
+# domain/requests/module.toml
+imports = ["./entities.toml", "./commands.toml", "./workflows.toml"]
+```
+
+Only the root file defines `version` and `project`. Imported files can use any `.toml` filename and contain any other Blueprint sections. Runtime names remain application-global: two imported files cannot both define the same entity, command, workflow, page, service, skill, or plugin.
+
+Imports must name explicit relative `.toml` files. Globs, absolute paths, files outside the root Blueprint directory, cycles, and ambiguous singleton configuration are rejected. Importing the same canonical file through multiple branches incorporates it once, which allows a shared `design-system.toml` to be reused safely.
+
 ## Entities
 
 Entities define your data model. The runtime creates database tables automatically.

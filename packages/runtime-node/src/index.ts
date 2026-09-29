@@ -10,6 +10,7 @@ export * from './types/index.js'
 // Node.js-specific exports
 export { ZebricEngine } from './engine.js'
 export * from './programmatic.js'
+export * from './blueprint/index.js'
 
 // Database (Node-specific implementations)
 export * from './database/connection.js'

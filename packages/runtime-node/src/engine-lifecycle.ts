@@ -81,6 +81,7 @@ export interface HotReloadDeps {
   reloadCallback: (blueprint: Blueprint) => Promise<void>
   errorCallback: (error: Error) => void
   logger?: Logger
+  blueprintFiles?: readonly string[]
 }
 
 export interface HotReloadResult {
@@ -114,6 +115,7 @@ export async function setupHotReload(deps: HotReloadDeps): Promise<HotReloadResu
     onReload: deps.reloadCallback,
     onError: deps.errorCallback,
     logger: deps.logger,
+    blueprintFiles: deps.blueprintFiles,
   })
 
   // Start watching

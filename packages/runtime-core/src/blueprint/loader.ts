@@ -6,12 +6,13 @@
  */
 
 import { parse as parseTOML } from 'smol-toml'
-import { BlueprintSchema } from './schema.js'
+import { BlueprintFragmentSchema, BlueprintSchema } from './schema.js'
 import type { Blueprint } from '../types/index.js'
 import {
   BlueprintValidationError,
   zodErrorToStructured,
   createReferenceError,
+  createCompositionError,
   createParseError,
   createVersionError,
 } from './validation-error.js'
@@ -26,43 +27,54 @@ export class BlueprintParser {
    * Parse Blueprint from string content
    */
   parse(content: string, format: 'toml' | 'json', source?: string): Blueprint {
-    // Parse based on format
-    let data: any
-    try {
-      if (format === 'toml') {
-        const parsed = parseTOML(content)
-        // Transform spec-compliant TOML to Blueprint JSON structure
-        data = this.transformTOML(parsed)
-        // Normalize parser output before validation.
-        data = this.stripSymbolKeys(data)
-      } else {
-        data = JSON.parse(content)
-      }
-    } catch (parseError: any) {
-      // Extract line/column from parse error if available
-      const line = parseError.line
-      const column = parseError.col ?? parseError.column
-      throw createParseError(parseError.message, source, line, column)
+    const data = this.parseData(content, format, source)
+    if (Array.isArray(data?.imports) && data.imports.length > 0) {
+      throw createCompositionError([
+        'Blueprint imports require a filesystem-aware BlueprintLoader; load this TOML from its file path',
+      ], source)
     }
+    return this.validateComposed(data, content, source)
+  }
 
-    // Validate against schema
-    const result = BlueprintSchema.safeParse(data)
-
+  /** Parse and structurally validate a partial TOML Blueprint module. */
+  parseFragment(content: string, source?: string): import('./schema.js').BlueprintFragmentSchemaType {
+    const data = this.parseData(content, 'toml', source)
+    const result = BlueprintFragmentSchema.safeParse(data)
     if (!result.success) {
-      throw new BlueprintValidationError(
-        zodErrorToStructured(result.error, source)
+      throw new BlueprintValidationError(zodErrorToStructured(result.error, source))
+    }
+    return result.data
+  }
+
+  /** Validate a filesystem adapter's fully composed Blueprint. */
+  validateComposed(
+    data: unknown,
+    hashContent: string,
+    source?: string,
+    sourceFor?: (kind: string, identity: string) => string | undefined,
+  ): Blueprint {
+    const result = BlueprintSchema.safeParse(data)
+    if (!result.success) {
+      throw new BlueprintValidationError(zodErrorToStructured(result.error, source))
+    }
+    const blueprint = result.data as Blueprint
+    blueprint.hash = this.generateHash(hashContent)
+    this.validateReferences(blueprint, source, sourceFor)
+    return blueprint
+  }
+
+  private parseData(content: string, format: 'toml' | 'json', source?: string): any {
+    try {
+      const parsed = format === 'toml' ? parseTOML(content) : JSON.parse(content)
+      return this.stripSymbolKeys(format === 'toml' ? this.transformTOML(parsed) : parsed)
+    } catch (parseError: any) {
+      throw createParseError(
+        parseError.message,
+        source,
+        parseError.line,
+        parseError.col ?? parseError.column,
       )
     }
-
-    const blueprint = result.data as Blueprint
-
-    // Add hash (using Web Crypto API)
-    blueprint.hash = this.generateHash(content)
-
-    // Validate references
-    this.validateReferences(blueprint, source)
-
-    return blueprint
   }
 
   /**
@@ -97,22 +109,23 @@ export class BlueprintParser {
    * Handles both [entity.Name] and [[entities]] syntax
    */
   private transformTOML(parsed: any): any {
-    // If already in correct format (has entities array), return as-is
-    if (parsed.entities) {
-      return parsed
-    }
-
     const transformed: any = {
       version: parsed.version,
       project: parsed.project,
-      entities: [],
-      pages: [],
+      entities: Array.isArray(parsed.entities) ? [...parsed.entities] : [],
+      pages: Array.isArray(parsed.pages) ? [...parsed.pages] : [],
+      workflows: Array.isArray(parsed.workflows) ? [...parsed.workflows] : undefined,
+      commands: Array.isArray(parsed.commands) ? [...parsed.commands] : undefined,
+      services: Array.isArray(parsed.services) ? [...parsed.services] : undefined,
+      plugins: Array.isArray(parsed.plugins) ? [...parsed.plugins] : undefined,
+      skills: Array.isArray(parsed.skills) ? [...parsed.skills] : undefined,
       auth: parsed.auth,
       ui: parsed.ui,
       ux: parsed.ux,
       design_adapter: parsed.design_adapter,
       design_system: parsed.design_system,
       notifications: parsed.notifications,
+      imports: parsed.imports,
     }
 
     // Transform [entity.Name] to entities array
@@ -143,7 +156,7 @@ export class BlueprintParser {
 
     // Handle workflows if present
     if (parsed.workflow) {
-      transformed.workflows = []
+      transformed.workflows ??= []
       for (const [workflowName, workflowDef] of Object.entries(parsed.workflow)) {
         transformed.workflows.push({
           name: workflowName,
@@ -154,7 +167,7 @@ export class BlueprintParser {
 
     // Handle first-class domain commands.
     if (parsed.command) {
-      transformed.commands = []
+      transformed.commands ??= []
       for (const [commandName, commandDef] of Object.entries(parsed.command)) {
         transformed.commands.push({
           name: commandName,
@@ -164,9 +177,9 @@ export class BlueprintParser {
     }
 
     // Handle [services.<name>] and [service.<name>] declarations.
-    const serviceDefinitions = parsed.services ?? parsed.service
+    const serviceDefinitions = Array.isArray(parsed.services) ? parsed.service : (parsed.services ?? parsed.service)
     if (serviceDefinitions && !Array.isArray(serviceDefinitions)) {
-      transformed.services = []
+      transformed.services ??= []
       for (const [serviceName, serviceDef] of Object.entries(serviceDefinitions)) {
         transformed.services.push({
           name: serviceName,
@@ -177,7 +190,7 @@ export class BlueprintParser {
 
     // Handle plugins if present
     if (parsed.plugin) {
-      transformed.plugins = []
+      transformed.plugins ??= []
       for (const [pluginName, pluginDef] of Object.entries(parsed.plugin)) {
         transformed.plugins.push({
           name: pluginName,
@@ -188,7 +201,7 @@ export class BlueprintParser {
 
     // Handle skills if present
     if (parsed.skill) {
-      transformed.skills = []
+      transformed.skills ??= []
       for (const [skillName, skillDef] of Object.entries(parsed.skill)) {
         transformed.skills.push({
           name: skillName,
@@ -233,7 +246,11 @@ export class BlueprintParser {
   /**
    * Validate entity references, field refs, etc.
    */
-  private validateReferences(blueprint: Blueprint, file?: string): void {
+  private validateReferences(
+    blueprint: Blueprint,
+    file?: string,
+    sourceFor?: (kind: string, identity: string) => string | undefined,
+  ): void {
     const entityNames = new Set(blueprint.entities.map((e) => e.name))
     const errors: string[] = []
 
@@ -516,7 +533,17 @@ export class BlueprintParser {
     this.validateRouteLinks(blueprint, errors)
 
     if (errors.length > 0) {
-      throw createReferenceError(errors, file)
+      const contextualErrors = sourceFor
+        ? errors.map(error => {
+            const definition = error.match(/^(Command|Workflow|Entity|Field|Page|Skill) "([^"]+)/)
+            if (!definition?.[1] || !definition[2]) return error
+            const kind = definition[1].toLowerCase()
+            const identity = kind === 'field' ? definition[2].split('.')[0]! : definition[2]
+            const location = sourceFor(kind === 'field' ? 'entity' : kind, identity)
+            return location ? `${location}: ${error}` : error
+          })
+        : errors
+      throw createReferenceError(contextualErrors, file)
     }
   }
 

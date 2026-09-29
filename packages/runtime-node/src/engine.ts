@@ -265,6 +265,7 @@ export class ZebricEngine extends EventEmitter {
         const result = await setupHotReloadFn({
           server: this.server!,
           blueprintPath: this.config.blueprintPath,
+          blueprintFiles: this.loader.getLoadedFiles(),
           rendererInstance: this.rendererInstance,
           reloadCallback: async (blueprint) => {
             await this.reload(blueprint)

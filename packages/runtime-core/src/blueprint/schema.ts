@@ -740,4 +740,10 @@ export const BlueprintSchema = z.object({
   services: z.array(ServiceConfigSchema).optional(),
 })
 
+/** Schema for a TOML file participating in a composed Blueprint. */
+export const BlueprintFragmentSchema = BlueprintSchema.partial().extend({
+  imports: z.array(z.string().min(1)).optional(),
+})
+
 export type BlueprintSchemaType = z.infer<typeof BlueprintSchema>
+export type BlueprintFragmentSchemaType = z.infer<typeof BlueprintFragmentSchema>
