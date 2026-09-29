@@ -84,7 +84,7 @@ describe('agent discovery routes', () => {
       entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
       pages: [],
       commands: [{
-        name: 'ApproveRequest', entity: 'Request', label: 'Approve',
+        name: 'ApproveRequest', entity: 'Request', label: 'Approve', confirm: 'Approve this request?', style: 'primary',
         input: { comment: { type: 'Text', required: false } }, mutations: { status: 'approved' },
       }],
     }, { port: 3000 } as any)
@@ -92,6 +92,7 @@ describe('agent discovery routes', () => {
     expect(body.capabilities.domainCommands).toBe(true)
     expect(body.commands).toEqual([expect.objectContaining({
       name: 'ApproveRequest', operationId: 'approve_request', entity: 'Request', label: 'Approve',
+      confirm: 'Approve this request?', style: 'primary',
     })])
   })
 })
@@ -123,6 +124,42 @@ describe('domain command HTTP routes', () => {
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({
       command: 'ApproveRequest', recordId: 'req-1', input: { comment: 'ok' },
       context: expect.objectContaining({ session, source: 'http' }),
+    }))
+  })
+
+  it('executes generated UI command forms with typed input and redirects with flash feedback', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint: {
+        ...blueprint,
+        commands: [{
+          ...blueprint.commands[0], label: 'Approve',
+          input: {
+            score: { type: 'Integer', required: true },
+            notify: { type: 'Boolean' },
+            context: { type: 'JSON' },
+          },
+        }],
+      },
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => session } as any,
+      apiKeys: new Map(),
+    })
+    const response = await app.request('/commands/approve_request/req-1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', referer: 'http://localhost/requests/req-1' },
+      body: 'score=7&notify=true&context=%7B%22source%22%3A%22ui%22%7D&redirect=%2Frequests%2Freq-1',
+    })
+
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe('/requests/req-1')
+    expect(response.headers.get('set-cookie')).toContain('Approve%20completed')
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest', recordId: 'req-1',
+      input: { score: 7, notify: true, context: { source: 'ui' } },
+      context: expect.objectContaining({ session, source: 'ui' }),
     }))
   })
 

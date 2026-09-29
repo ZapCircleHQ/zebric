@@ -88,6 +88,14 @@ export interface RendererPort {
   renderPage(context: RenderContext): string
 }
 
+export interface CommandAvailabilityPort {
+  list(request: {
+    entity: string
+    record: Record<string, unknown>
+    session?: UserSession | null
+  }): Promise<string[]>
+}
+
 export interface FlashMessage {
   type: 'success' | 'error' | 'info' | 'warning'
   text: string
@@ -102,6 +110,8 @@ export interface RenderContext {
   csrfToken?: string
   renderer?: RendererContext
   flash?: FlashMessage
+  /** Command names already authorized and available for this actor/record. */
+  availableCommands?: string[]
 }
 
 /**
@@ -233,6 +243,7 @@ export interface RuntimePorts {
   eventPublisher?: DomainEventPublisherPort
   executionObserver?: ExecutionObserverPort
   services?: import('../services/registry.js').ServiceInvoker
+  commandAvailability?: CommandAvailabilityPort
 }
 
 export interface ExecutionObserverPort {

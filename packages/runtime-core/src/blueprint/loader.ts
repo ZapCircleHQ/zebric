@@ -279,6 +279,7 @@ export class BlueprintParser {
         }
       }
       validatePolicy(`Command "${command.name}" policy`, command.policy)
+      validatePolicy(`Command "${command.name}" availability`, command.availableWhen)
     }
 
     const commandNames = new Set((blueprint.commands ?? []).map(command => command.name))

@@ -25,11 +25,16 @@ commands = ["ApproveRequest"]
 [command.ApproveRequest]
 entity = "Request"
 description = "Approve a pending request"
+label = "Approve"
+availableWhen = "record.status == 'pending'"
+confirm = "Approve this request?"
+style = "primary"
 policy = "record.status == 'pending'"
 
 [command.ApproveRequest.input.comment]
 type = "Text"
 required = false
+label = "Approval note"
 
 [command.ApproveRequest.mutations]
 status = "approved"
@@ -42,7 +47,11 @@ describe('command blueprint parsing', () => {
     expect(blueprint.commands).toEqual([expect.objectContaining({
       name: 'ApproveRequest',
       entity: 'Request',
-      input: { comment: { type: 'Text', required: false } },
+      label: 'Approve',
+      availableWhen: "record.status == 'pending'",
+      confirm: 'Approve this request?',
+      style: 'primary',
+      input: { comment: { type: 'Text', required: false, label: 'Approval note' } },
       mutations: { status: 'approved', approvedAt: 'now' },
     })])
     expect(blueprint.entities[0]?.protection).toEqual({
@@ -61,6 +70,13 @@ describe('command blueprint parsing', () => {
   it('rejects an invalid policy expression during blueprint parsing', () => {
     expect(() => new BlueprintParser().parse(
       base.replace("record.status == 'pending'", "record.status = 'pending'"),
+      'toml',
+    )).toThrow(BlueprintValidationError)
+  })
+
+  it('rejects an invalid availability expression during blueprint parsing', () => {
+    expect(() => new BlueprintParser().parse(
+      base.replace("availableWhen = \"record.status == 'pending'\"", "availableWhen = \"record.status = 'pending'\""),
       'toml',
     )).toThrow(BlueprintValidationError)
   })

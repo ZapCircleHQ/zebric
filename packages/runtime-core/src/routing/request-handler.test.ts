@@ -164,6 +164,42 @@ describe('RequestHandler', () => {
       expect(body.title).toBe('Tasks')
     })
 
+    it('resolves available commands for the selected detail record before rendering', async () => {
+      const session = { user: { id: 'u1', email: 'user@example.test' } }
+      const list = vi.fn().mockResolvedValue(['ApproveTask'])
+      const renderPage = vi.fn(() => '<html>detail</html>')
+      const handler = new RequestHandler({
+        blueprint,
+        sessionManager: { getSession: async () => session as any },
+        queryExecutor: {
+          execute: vi.fn().mockResolvedValue([
+            { id: 'task-1', title: 'First' },
+            { id: 'task-2', title: 'Second' },
+          ]),
+          create: vi.fn(), update: vi.fn(), delete: vi.fn(), findById: vi.fn(), search: vi.fn(),
+        },
+        commandAvailability: { list },
+        renderer: { renderPage },
+      })
+      const page: Page = {
+        path: '/tasks/:id', title: 'Task', layout: 'detail',
+        queries: { task: { entity: 'Task' } },
+      }
+
+      const response = await handler.handleGet(
+        makeMatch(page, { params: { id: 'task-2' } }),
+        makeRequest({ headers: { accept: 'text/html' } }),
+      )
+
+      expect(response.status).toBe(200)
+      expect(list).toHaveBeenCalledWith({
+        entity: 'Task', record: { id: 'task-2', title: 'Second' }, session,
+      })
+      expect(renderPage).toHaveBeenCalledWith(expect.objectContaining({
+        availableCommands: ['ApproveTask'],
+      }))
+    })
+
     it('renders HTML when renderer is available and accept is text/html', async () => {
       const session = { user: { id: 'u1', name: 'Test' } }
       const handler = new RequestHandler({

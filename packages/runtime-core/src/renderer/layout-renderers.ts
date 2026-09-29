@@ -157,7 +157,13 @@ export class LayoutRenderers {
       e => e.name === page.queries?.[queryName]?.entity
     )
 
-    const actionBar = this.componentRenderers.renderActionBar(page, record, entity, context.csrfToken)
+    const actionBar = this.componentRenderers.renderActionBar(
+      page,
+      record,
+      entity,
+      context.csrfToken,
+      context.availableCommands,
+    )
 
     const mainContent = html`
       <div class="${this.theme.card}">

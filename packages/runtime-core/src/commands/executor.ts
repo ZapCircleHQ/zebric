@@ -57,6 +57,33 @@ export class CommandExecutor {
     this.handlers.set(reference, handler)
   }
 
+  /**
+   * Evaluate whether a command may be offered for an already-loaded record.
+   * Execution repeats these checks and remains authoritative.
+   */
+  async isAvailable(
+    commandName: string,
+    record: Record<string, unknown>,
+    context: RequestContext = {},
+  ): Promise<boolean> {
+    const command = this.registry.get(commandName)
+    if (!command) return false
+    if (command.handler && !this.handlers.has(command.handler)) return false
+    const actor = context.actor ?? actorFromSession(context.session)
+    if (!actor) return false
+    const effectiveSession = sessionWithActor(context.session, actor)
+    const policyContext = {
+      actor,
+      session: effectiveSession,
+      record,
+      input: {},
+      workflow: context.workflowContext,
+      entity: command.entity,
+    }
+    if (!await this.policyEvaluator.evaluate(command.policy, policyContext)) return false
+    return this.policyEvaluator.evaluate(command.availableWhen, policyContext)
+  }
+
   async execute(request: CommandExecutionRequest): Promise<CommandExecutionResult> {
     const span = this.ports.executionObserver?.startSpan('zebric.command', {
       'zebric.command.name': request.command,
@@ -122,6 +149,21 @@ export class CommandExecutor {
       throw new AuthorizationFailureError(`Actor ${actor.id} may not execute ${command.name}`, {
         command: command.name,
         actorId: actor.id,
+        recordId: request.recordId,
+      })
+    }
+    const available = await this.policyEvaluator.evaluate(command.availableWhen, {
+      actor,
+      session: effectiveSession,
+      record,
+      input,
+      workflow: request.context?.workflowContext,
+      entity: command.entity,
+    })
+    if (!available) {
+      throw new CommandUnavailableError(`${command.name} is not available for this record`, {
+        command: command.name,
+        entity: command.entity,
         recordId: request.recordId,
       })
     }

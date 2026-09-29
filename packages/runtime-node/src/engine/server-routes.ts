@@ -4,8 +4,8 @@ import { promises as fs } from 'node:fs'
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
-import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
-import { CommandExecutor, DomainError, HTMLRenderer, PermissionManager, commandOperationId, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
+import type { ActionBarAction, Blueprint, Command } from '@zebric/runtime-core'
+import { CommandExecutor, DomainError, HTMLRenderer, PermissionManager, ValidationFailureError, commandOperationId, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
@@ -1083,6 +1083,43 @@ export function registerCommandRoutes(
 
   for (const command of deps.blueprint.commands ?? []) {
     const operationId = commandOperationId(command.name)
+    app.post(`/commands/${operationId}/:id`, async c => {
+      const body = await parseActionRequestBody(c)
+      const redirectTarget = resolveActionRedirect(
+        typeof body.redirect === 'string' ? body.redirect : undefined,
+        c.req.header('referer'),
+      )
+      const session = await deps.sessionManager.getSession(c.req.raw)
+      if (!session) {
+        const origin = new URL(c.req.url).origin
+        return c.redirect(`/auth/sign-in?callbackURL=${encodeURIComponent(origin + redirectTarget)}`, 303)
+      }
+      try {
+        const input = coerceCommandFormInput(command, body)
+        const result = await deps.commandExecutor.execute({
+          command: command.name,
+          recordId: c.req.param('id'),
+          input,
+          context: {
+            session,
+            source: 'ui',
+            correlationId: getCorrelationId(c),
+          },
+        })
+        await triggerEntityWorkflows(command.entity, 'update', undefined, result.record, deps.workflowManager, {
+          correlationId: getCorrelationId(c),
+          requestId: getRequestId(c),
+          session,
+        })
+        setFlashMessage(c, `${command.label ?? command.name} completed.`, 'success')
+        return c.redirect(redirectTarget, 303)
+      } catch (error) {
+        const message = error instanceof DomainError ? error.message : `Failed to execute ${command.label ?? command.name}`
+        setFlashMessage(c, message, 'error')
+        return c.redirect(redirectTarget, 303)
+      }
+    })
+
     app.post(`/api/commands/${operationId}/:id`, async c => {
       const session = await resolveEntityApiSession(c, deps.sessionManager, deps.apiKeys)
       if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
@@ -1147,6 +1184,39 @@ export function registerCommandRoutes(
       }
     })
   }
+}
+
+function coerceCommandFormInput(command: Command, body: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {}
+  for (const [name, field] of Object.entries(command.input ?? {})) {
+    const raw = body[name]
+    if (raw === undefined || raw === null || raw === '') continue
+    if (Array.isArray(raw)) {
+      throw new ValidationFailureError(`Command input ${name} must have one value`)
+    }
+    if (field.type === 'Integer') {
+      const value = Number(raw)
+      if (!Number.isInteger(value)) throw new ValidationFailureError(`Invalid integer for ${name}`)
+      result[name] = value
+    } else if (field.type === 'Float') {
+      const value = Number(raw)
+      if (!Number.isFinite(value)) throw new ValidationFailureError(`Invalid number for ${name}`)
+      result[name] = value
+    } else if (field.type === 'Boolean') {
+      if (raw !== 'true' && raw !== 'false') throw new ValidationFailureError(`Invalid boolean for ${name}`)
+      result[name] = raw === 'true'
+    } else if (field.type === 'JSON') {
+      if (typeof raw !== 'string') throw new ValidationFailureError(`Invalid JSON for ${name}`)
+      try {
+        result[name] = JSON.parse(raw)
+      } catch {
+        throw new ValidationFailureError(`Invalid JSON for ${name}`)
+      }
+    } else {
+      result[name] = String(raw)
+    }
+  }
+  return result
 }
 
 export function registerAuditRoutes(
@@ -1241,6 +1311,8 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
         label: command.label,
         description: command.description,
         input: command.input ?? {},
+        confirm: command.confirm,
+        style: command.style,
         scopes: command.scopes ?? [],
       })),
       capabilities: {

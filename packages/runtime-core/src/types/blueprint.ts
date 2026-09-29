@@ -124,6 +124,7 @@ export interface CommandInputField {
   type: FieldType
   required?: boolean
   values?: string[]
+  label?: string
   description?: string
 }
 
@@ -132,6 +133,12 @@ export interface Command {
   entity: string
   description?: string
   label?: string
+  /** Record/actor condition controlling whether generated UI offers the command. */
+  availableWhen?: AccessCondition
+  /** Confirmation prompt shown before submitting the command. */
+  confirm?: string
+  /** Semantic presentation hint for generated command actions. */
+  style?: 'primary' | 'secondary' | 'danger' | 'ghost'
   input?: Record<string, CommandInputField>
   policy?: AccessCondition
   mutations?: Record<string, unknown>

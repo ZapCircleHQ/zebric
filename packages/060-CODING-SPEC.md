@@ -45,7 +45,7 @@ The release is successful if the examples become simpler, not merely if they con
 
 2. Architectural principle: commands over CRUD
 
-Status: In Progress
+Status: Ready for Testing
 
 Today, an application can often express:
 
@@ -678,6 +678,8 @@ Where an identifier truly cannot be supported, fail during blueprint validation 
 
 20. UI implications
 
+Status: Ready for Testing
+
 0.6.0 is not primarily a UI release, but command-centric applications require UI support.
 
 Generated UI should understand commands.
@@ -1049,6 +1051,8 @@ Implement modular blueprint loading and validation.
 Do not do this before core semantics stabilize.
 
 Phase 6 — UI
+
+Status: Ready for Testing
 
 Add command metadata and generated command actions to Zazzle/runtime UI.
 

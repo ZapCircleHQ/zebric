@@ -3,7 +3,7 @@ import type { Blueprint } from '../types/blueprint.js'
 import type { QueryExecutorPort, RequestContext } from '../routing/request-ports.js'
 import { CommandExecutor } from './executor.js'
 import { assertProtectedMutation } from './protection.js'
-import { ProtectedFieldMutationError, ValidationFailureError } from '../errors/domain-errors.js'
+import { CommandUnavailableError, ProtectedFieldMutationError, ValidationFailureError } from '../errors/domain-errors.js'
 
 const blueprint: Blueprint = {
   version: '1',
@@ -54,6 +54,29 @@ class MemoryQueryExecutor implements QueryExecutorPort {
 }
 
 describe('CommandExecutor', () => {
+  it('uses command policy and availability metadata to decide whether UI may offer it', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    const availabilityBlueprint: Blueprint = {
+      ...blueprint,
+      commands: [{ ...blueprint.commands![0]!, availableWhen: 'record.status == "pending"' }],
+    }
+    const executor = new CommandExecutor(availabilityBlueprint, { queryExecutor })
+    const context = {
+      session: {
+        id: 'session-1', userId: 'sarah',
+        user: { id: 'sarah', email: 'sarah@example.test' },
+        createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000),
+      },
+      source: 'ui' as const,
+    }
+
+    await expect(executor.isAvailable('ApproveRequest', queryExecutor.record, context)).resolves.toBe(true)
+    await expect(executor.isAvailable(
+      'ApproveRequest', { ...queryExecutor.record, status: 'approved' }, context,
+    )).resolves.toBe(false)
+    await expect(executor.isAvailable('MissingCommand', queryExecutor.record, context)).resolves.toBe(false)
+  })
+
   it('executes an authorized command through the protected mutation boundary', async () => {
     const queryExecutor = new MemoryQueryExecutor()
     const publish = vi.fn()
@@ -105,6 +128,21 @@ describe('CommandExecutor', () => {
       actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
     })).rejects.toBeInstanceOf(ProtectedFieldMutationError)
     expect(queryExecutor.record.status).toBe('pending')
+  })
+
+  it('enforces record availability again during execution', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    queryExecutor.record.status = 'approved'
+    const executor = new CommandExecutor({
+      ...blueprint,
+      commands: [{ ...blueprint.commands![0]!, policy: true, availableWhen: 'record.status == "pending"' }],
+    }, { queryExecutor })
+
+    await expect(executor.execute({
+      command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
+    })).rejects.toBeInstanceOf(CommandUnavailableError)
+    expect(queryExecutor.record.status).toBe('approved')
   })
 
   it('validates command input before mutation', async () => {

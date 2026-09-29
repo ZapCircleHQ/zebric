@@ -132,6 +132,7 @@ export class ServerManager {
     this.agentEventBus = deps.agentEventBus ?? new AgentEventBus()
     this.getHealthStatusFn = deps.getHealthStatus
     this.commandExecutor = this.createCommandExecutor()
+    this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
     this.bindAgentEvents(this.workflowManager)
   }
@@ -207,6 +208,19 @@ export class ServerManager {
     })
   }
 
+  private bindCommandAvailability(): void {
+    if (typeof this.blueprintAdapter.setCommandAvailability !== 'function') return
+    this.blueprintAdapter.setCommandAvailability({
+      list: async ({ entity, record, session }) => {
+        const commands = (this.blueprint.commands ?? []).filter(command => command.entity === entity)
+        const availability = await Promise.all(commands.map(command =>
+          this.commandExecutor.isAvailable(command.name, record, { session, source: 'ui' })
+        ))
+        return commands.filter((_, index) => availability[index]).map(command => command.name)
+      },
+    })
+  }
+
   private bindAgentEvents(workflowManager?: WorkflowManager): void {
     if (!workflowManager || typeof workflowManager.on !== 'function') return
     const publishJob = (status: string) => (job: any) => this.agentEventBus.publish({
@@ -248,6 +262,7 @@ export class ServerManager {
     if (updates.notificationManager !== undefined) this.notificationManager = updates.notificationManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
     this.commandExecutor = this.createCommandExecutor()
+    this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
   }
 

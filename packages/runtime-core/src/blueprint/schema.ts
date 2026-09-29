@@ -117,6 +117,7 @@ const CommandInputFieldSchema = z.object({
   type: FieldTypeSchema,
   required: z.boolean().optional(),
   values: z.array(z.string()).optional(),
+  label: z.string().optional(),
   description: z.string().optional(),
 })
 
@@ -125,6 +126,9 @@ const CommandSchema = z.object({
   entity: z.string().min(1),
   description: z.string().optional(),
   label: z.string().optional(),
+  availableWhen: AccessConditionSchema.optional(),
+  confirm: z.string().min(1).optional(),
+  style: z.enum(['primary', 'secondary', 'danger', 'ghost']).optional(),
   input: z.record(StringKeySchema, CommandInputFieldSchema).optional(),
   policy: AccessConditionSchema.optional(),
   mutations: AnyRecordSchema.optional(),
