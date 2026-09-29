@@ -1,5 +1,9 @@
 import type { UserSession } from '../auth/session.js'
 
+function effectiveUserId(session?: UserSession | null): string | undefined {
+  return session?.actor?.delegatedBy ?? session?.user?.id ?? session?.userId
+}
+
 export interface QueryValueContext {
   params?: Record<string, string>
   query?: Record<string, string>
@@ -38,12 +42,14 @@ export function resolveQueryValue(value: unknown, context: QueryValueContext): u
     const key = value.slice(1, -1)
     return context.params?.[key]
       ?? context.query?.[key]
-      ?? context.session?.user?.id
-      ?? context.session?.userId
+      ?? effectiveUserId(context.session)
   }
   if (value.startsWith('$params.')) return context.params?.[value.slice(8)]
   if (value.startsWith('$query.')) return context.query?.[value.slice(7)]
-  if (value.startsWith('$currentUser.')) return context.session?.user?.[value.slice(13)]
+  if (value.startsWith('$currentUser.')) {
+    const key = value.slice(13)
+    return key === 'id' ? effectiveUserId(context.session) : context.session?.user?.[key]
+  }
 
   return value
 }

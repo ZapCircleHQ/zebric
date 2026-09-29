@@ -18,6 +18,10 @@ export enum SpanType {
   QUERY = 'query',
   BEHAVIOR = 'behavior',
   WORKFLOW = 'workflow',
+  WORKFLOW_STEP = 'workflow.step',
+  COMMAND = 'command',
+  POLICY = 'policy',
+  SERVICE = 'service',
   CACHE_LOOKUP = 'cache.lookup',
   PLUGIN = 'plugin',
 }

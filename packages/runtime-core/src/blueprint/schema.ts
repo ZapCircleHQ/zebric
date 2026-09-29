@@ -42,6 +42,8 @@ const FieldSchema = z.object({
   values: z.array(z.string()).optional(), // For Enum
   ref: z.string().optional(), // For Ref
   access: z.lazy(() => FieldAccessRulesSchema).optional(), // For field-level access control
+  write: z.literal('command-only').optional(),
+  commands: z.array(z.string().min(1)).optional(),
 })
 
 // ============================================================================
@@ -62,7 +64,7 @@ const RelationSchema = z.object({
 const AccessConditionSchema: z.ZodType<any> = z.lazy(() =>
   z.union([
     z.boolean(),
-    z.enum(['public', 'authenticated', 'owner']),
+    z.string().min(1),
     AnyRecordSchema,
     z.object({
       or: z.array(AccessConditionSchema),
@@ -101,6 +103,72 @@ const EntitySchema = z.object({
   relations: z.record(StringKeySchema, RelationSchema).optional(),
   access: AccessRulesSchema.optional(),
   indexes: z.array(IndexSchema).optional(),
+  protection: z.object({
+    fields: z.array(z.string().min(1)).min(1),
+    commands: z.array(z.string().min(1)).min(1),
+  }).optional(),
+})
+
+// ============================================================================
+// Domain Commands
+// ============================================================================
+
+const CommandInputFieldSchema = z.object({
+  type: FieldTypeSchema,
+  required: z.boolean().optional(),
+  values: z.array(z.string()).optional(),
+  description: z.string().optional(),
+})
+
+const CommandSchema = z.object({
+  name: z.string().min(1),
+  entity: z.string().min(1),
+  description: z.string().optional(),
+  label: z.string().optional(),
+  input: z.record(StringKeySchema, CommandInputFieldSchema).optional(),
+  policy: AccessConditionSchema.optional(),
+  mutations: AnyRecordSchema.optional(),
+  handler: z.string().min(1).optional(),
+  scopes: z.array(z.string().min(1)).optional(),
+}).refine(command => command.mutations != null || command.handler != null, {
+  message: 'A command must define mutations or a handler',
+})
+
+// ============================================================================
+// External Services
+// ============================================================================
+
+const ExternalValueSchemaSchema: z.ZodType<any> = z.lazy(() => z.object({
+  type: z.enum([...FieldTypeSchema.options, 'Object', 'Array']),
+  required: z.boolean().optional(),
+  values: z.array(z.string()).optional(),
+  fields: z.record(StringKeySchema, ExternalValueSchemaSchema).optional(),
+  items: ExternalValueSchemaSchema.optional(),
+  allowUnknown: z.boolean().optional(),
+}).superRefine((schema, ctx) => {
+  if (schema.type === 'Object' && !schema.fields) {
+    ctx.addIssue({ code: 'custom', path: ['fields'], message: 'Object schemas require fields' })
+  }
+  if (schema.type === 'Array' && !schema.items) {
+    ctx.addIssue({ code: 'custom', path: ['items'], message: 'Array schemas require items' })
+  }
+}))
+
+const ServiceOperationSchema = z.object({
+  description: z.string().optional(),
+  input: z.record(StringKeySchema, ExternalValueSchemaSchema).optional(),
+  result: ExternalValueSchemaSchema.optional(),
+  transform: AnyRecordSchema.optional(),
+})
+
+const ServiceConfigSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  plugin: z.string().min(1).optional(),
+  operations: z.record(StringKeySchema, ServiceOperationSchema),
+}).refine(service => Object.keys(service.operations).length > 0, {
+  path: ['operations'],
+  message: 'A service must define at least one operation',
 })
 
 // ============================================================================
@@ -668,6 +736,8 @@ export const BlueprintSchema = z.object({
   design_system: DesignSystemConfigSchema.optional(),
   notifications: NotificationsConfigSchema.optional(),
   skills: z.array(SkillConfigSchema).optional(),
+  commands: z.array(CommandSchema).optional(),
+  services: z.array(ServiceConfigSchema).optional(),
 })
 
 export type BlueprintSchemaType = z.infer<typeof BlueprintSchema>

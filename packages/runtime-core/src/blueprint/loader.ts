@@ -16,6 +16,7 @@ import {
   createVersionError,
 } from './validation-error.js'
 import { analyzeTransactionalWorkflow } from './workflow-analysis.js'
+import { validatePolicyCondition } from '../policy/evaluator.js'
 
 // Re-export for backwards compatibility
 export { BlueprintValidationError }
@@ -151,6 +152,29 @@ export class BlueprintParser {
       }
     }
 
+    // Handle first-class domain commands.
+    if (parsed.command) {
+      transformed.commands = []
+      for (const [commandName, commandDef] of Object.entries(parsed.command)) {
+        transformed.commands.push({
+          name: commandName,
+          ...(commandDef as any),
+        })
+      }
+    }
+
+    // Handle [services.<name>] and [service.<name>] declarations.
+    const serviceDefinitions = parsed.services ?? parsed.service
+    if (serviceDefinitions && !Array.isArray(serviceDefinitions)) {
+      transformed.services = []
+      for (const [serviceName, serviceDef] of Object.entries(serviceDefinitions)) {
+        transformed.services.push({
+          name: serviceName,
+          ...(serviceDef as any),
+        })
+      }
+    }
+
     // Handle plugins if present
     if (parsed.plugin) {
       transformed.plugins = []
@@ -212,6 +236,103 @@ export class BlueprintParser {
   private validateReferences(blueprint: Blueprint, file?: string): void {
     const entityNames = new Set(blueprint.entities.map((e) => e.name))
     const errors: string[] = []
+
+    const validatePolicy = (label: string, condition: any) => {
+      try {
+        validatePolicyCondition(condition)
+      } catch (error) {
+        errors.push(`${label} has an invalid expression: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    const seenCommands = new Set<string>()
+    for (const command of blueprint.commands ?? []) {
+      if (seenCommands.has(command.name)) {
+        errors.push(`Duplicate command definition "${command.name}"`)
+      }
+      seenCommands.add(command.name)
+      if (!entityNames.has(command.entity)) {
+        errors.push(`Command "${command.name}" references unknown entity "${command.entity}"`)
+      }
+      const target = blueprint.entities.find(entity => entity.name === command.entity)
+      const targetFields = new Set(target?.fields.map(field => field.name) ?? [])
+      for (const fieldName of Object.keys(command.mutations ?? {})) {
+        if (!targetFields.has(fieldName)) {
+          errors.push(`Command "${command.name}" mutates unknown field "${command.entity}.${fieldName}"`)
+        }
+      }
+      validatePolicy(`Command "${command.name}" policy`, command.policy)
+    }
+
+    const commandNames = new Set((blueprint.commands ?? []).map(command => command.name))
+    const services = new Map<string, Set<string>>()
+    for (const service of blueprint.services ?? []) {
+      if (services.has(service.name)) errors.push(`Duplicate service definition "${service.name}"`)
+      services.set(service.name, new Set(Object.keys(service.operations)))
+    }
+    const validateWorkflowSteps = (workflowName: string, steps: Array<Record<string, any>>) => {
+      for (const step of steps) {
+        if (step.type === 'command') {
+          if (typeof step.command !== 'string' || !commandNames.has(step.command)) {
+            errors.push(`Workflow "${workflowName}" references unknown command "${String(step.command)}"`)
+          }
+          if (typeof step.recordId !== 'string' || step.recordId.length === 0) {
+            errors.push(`Workflow "${workflowName}" command step requires recordId`)
+          }
+        }
+        if (step.type === 'service') {
+          const operations = typeof step.service === 'string' ? services.get(step.service) : undefined
+          if (!operations) {
+            errors.push(`Workflow "${workflowName}" references unknown service "${String(step.service)}"`)
+          } else if (typeof step.operation !== 'string' || !operations.has(step.operation)) {
+            errors.push(`Workflow "${workflowName}" references unknown service operation "${String(step.service)}.${String(step.operation)}"`)
+          }
+        }
+        if (Array.isArray(step.then)) validateWorkflowSteps(workflowName, step.then)
+        if (Array.isArray(step.else)) validateWorkflowSteps(workflowName, step.else)
+        if (Array.isArray(step.do)) validateWorkflowSteps(workflowName, step.do)
+      }
+    }
+    for (const workflow of blueprint.workflows ?? []) {
+      validateWorkflowSteps(workflow.name, workflow.steps)
+    }
+    for (const entity of blueprint.entities) {
+      const fieldNames = new Set(entity.fields.map(field => field.name))
+      for (const [action, condition] of Object.entries(entity.access ?? {})) {
+        validatePolicy(`Entity "${entity.name}" ${action} access`, condition)
+      }
+      for (const fieldName of entity.protection?.fields ?? []) {
+        if (!fieldNames.has(fieldName)) {
+          errors.push(`Entity "${entity.name}" protects unknown field "${fieldName}"`)
+        }
+      }
+      for (const commandName of entity.protection?.commands ?? []) {
+        if (!commandNames.has(commandName)) {
+          errors.push(`Entity "${entity.name}" protection references unknown command "${commandName}"`)
+        } else if (blueprint.commands?.find(command => command.name === commandName)?.entity !== entity.name) {
+          errors.push(`Entity "${entity.name}" protection references command "${commandName}" for another entity`)
+        }
+      }
+      for (const field of entity.fields) {
+        for (const [action, condition] of Object.entries(field.access ?? {})) {
+          validatePolicy(`Field "${entity.name}.${field.name}" ${action} access`, condition)
+        }
+        for (const commandName of field.commands ?? []) {
+          if (!commandNames.has(commandName)) {
+            errors.push(`Field "${entity.name}.${field.name}" references unknown command "${commandName}"`)
+          } else if (blueprint.commands?.find(command => command.name === commandName)?.entity !== entity.name) {
+            errors.push(`Field "${entity.name}.${field.name}" references command "${commandName}" for another entity`)
+          }
+        }
+      }
+    }
+    for (const [role, rule] of Object.entries(blueprint.auth?.permissions ?? {})) {
+      for (const condition of rule.allow) {
+        if (typeof condition !== 'string') {
+          validatePolicy(`Role "${role}" permission for ${condition.entity}`, condition.condition)
+        }
+      }
+    }
 
     // Check entity references in pages
     for (const page of blueprint.pages) {

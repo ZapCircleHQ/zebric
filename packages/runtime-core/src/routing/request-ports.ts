@@ -7,6 +7,8 @@
 
 import type { UserSession } from '../auth/session.js'
 import type { Query, Form } from '../types/blueprint.js'
+import type { Actor } from '../auth/actor.js'
+import type { CommandMutationAuthority } from '../commands/protection.js'
 
 /**
  * Request context passed to handlers
@@ -16,6 +18,13 @@ export interface RequestContext {
   query?: Record<string, string>
   body?: any
   session?: UserSession | null
+  actor?: Actor
+  /** Opaque authority issued only while the command pipeline is executing. */
+  commandMutation?: CommandMutationAuthority
+  source?: 'ui' | 'http' | 'mcp' | 'workflow' | 'internal'
+  workflow?: string
+  workflowContext?: Record<string, unknown>
+  correlationId?: string
 }
 
 /**
@@ -60,6 +69,8 @@ export interface QueryExecutorPort {
       context?: RequestContext
     }
   ): Promise<any[]>
+  /** Run command state changes atomically where the adapter supports transactions. */
+  transaction?<T>(fn: () => Promise<T>): Promise<T>
 }
 
 /**
@@ -205,6 +216,12 @@ export interface LogEvent {
   entityType?: string
   entityId?: string
   metadata?: Record<string, any>
+  correlationId?: string
+  requestId?: string
+  actorType?: Actor['type']
+  actorId?: string
+  workflowName?: string
+  actionName?: string
 }
 
 /** Application services consumed by the platform-neutral request handler. */
@@ -213,4 +230,29 @@ export interface RuntimePorts {
   sessionManager?: SessionManagerPort
   renderer?: RendererPort
   auditLogger?: AuditLoggerPort
+  eventPublisher?: DomainEventPublisherPort
+  executionObserver?: ExecutionObserverPort
+  services?: import('../services/registry.js').ServiceInvoker
+}
+
+export interface ExecutionObserverPort {
+  startSpan(
+    name: 'zebric.command' | 'zebric.policy' | 'zebric.workflow' | 'zebric.workflow.step' | 'zebric.service',
+    attributes: Record<string, string | number | boolean | undefined>,
+    correlationId?: string,
+  ): unknown
+  endSpan(handle: unknown, error?: unknown): void
+}
+
+export interface DomainEventPublisherPort {
+  publish(event: {
+    name: string
+    entity: string
+    recordId: string
+    command: string
+    actor: Actor
+    data?: Record<string, unknown>
+    occurredAt: string
+    correlationId?: string
+  }): void | Promise<void>
 }

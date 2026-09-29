@@ -7,6 +7,9 @@
 import type { Entity, AccessCondition, Field } from '../types/blueprint.js'
 import type { UserSession, PermissionManager } from '../auth/index.js'
 import { isSystemSession } from '../auth/index.js'
+import { actorFromSession } from '../auth/actor.js'
+import { PolicyEvaluator, requiresRecordEvaluation } from '../policy/evaluator.js'
+import { evaluateExpression } from '../policy/expression.js'
 
 export interface AccessContext {
   session?: UserSession | null
@@ -14,6 +17,7 @@ export interface AccessContext {
   entity: Entity
   data?: Record<string, any>
   permissionManager?: PermissionManager
+  policyEvaluator?: PolicyEvaluator
 }
 
 export class AccessControl {
@@ -22,7 +26,7 @@ export class AccessControl {
    * This checks both permissions (RBAC) and entity access rules
    */
   static async checkAccess(context: AccessContext): Promise<boolean> {
-    const { session, action, entity, data, permissionManager } = context
+    const { session, action, entity, data, permissionManager, policyEvaluator } = context
 
     // Background workflow execution (entity/webhook/schedule triggers) is trusted app
     // logic wired up by the blueprint author, not an end-user request - it bypasses both
@@ -62,6 +66,7 @@ export class AccessControl {
     // For read operations without specific data, allow access if we can apply row-level filters
     // This lets the query executor filter results based on the access conditions
     if (action === 'read' && !data) {
+      if (requiresRecordEvaluation(condition)) return true
       // If we can generate filter conditions, allow the query to proceed
       // The actual filtering will happen at the SQL level
       const filters = this.getFilterConditions(entity, session)
@@ -73,7 +78,12 @@ export class AccessControl {
       }
     }
 
-    return this.evaluateCondition(condition, session, data)
+    return (policyEvaluator ?? new PolicyEvaluator()).evaluate(condition, {
+      actor: actorFromSession(session),
+      session,
+      record: data,
+      entity,
+    })
   }
 
   /**
@@ -114,11 +124,12 @@ export class AccessControl {
         case 'authenticated':
           return session?.user ? null : { _impossible: true }
         case 'owner':
-          return session?.user?.id
-            ? { userId: session.user.id }
+          return effectiveUserId(session)
+            ? { userId: effectiveUserId(session) }
             : { _impossible: true }
         default:
-          return { _impossible: true }
+          // Expressions require evaluation against each returned record.
+          return null
       }
     }
 
@@ -191,10 +202,18 @@ export class AccessControl {
         case 'authenticated':
           return !!session?.user
         case 'owner':
-          if (!session?.user?.id || !data) return false
-          return data.userId === session.user.id
+          if (!effectiveUserId(session) || !data) return false
+          return data.userId === effectiveUserId(session)
         default:
-          return false
+          try {
+            const actor = actorFromSession(session)
+            return evaluateExpression(condition, {
+              actor: actor ? { ...actor, effectiveId: actor.delegatedBy ?? actor.id } : undefined,
+              record: data,
+            }) === true
+          } catch {
+            return false
+          }
       }
     }
 
@@ -220,7 +239,9 @@ export class AccessControl {
           if (!session?.user || !Object.prototype.hasOwnProperty.call(session.user, sessionKey)) {
             return false
           }
-          const sessionValue = session?.user?.[sessionKey]
+          const sessionValue = sessionKey === 'id'
+            ? effectiveUserId(session)
+            : session?.user?.[sessionKey]
           const expectedValue = this.resolveValue(value, session)
 
           if (expectedValue === undefined || sessionValue !== expectedValue) {
@@ -251,7 +272,7 @@ export class AccessControl {
   private static resolveValue(value: any, session?: UserSession | null): any {
     if (typeof value === 'string') {
       if (value === '$currentUser.id') {
-        return session?.user?.id
+        return effectiveUserId(session)
       }
       if (value.startsWith('$currentUser.')) {
         const key = value.substring(13)
@@ -350,11 +371,36 @@ export class AccessControl {
   }
 }
 
+function effectiveUserId(session?: UserSession | null): string | undefined {
+  return session?.actor?.delegatedBy ?? session?.user?.id
+}
+
 /** Enforce entity-level and RBAC access with one cross-runtime error contract. */
 export async function assertEntityAccess(context: AccessContext): Promise<void> {
   if (!await AccessControl.checkAccess(context)) {
     throw new Error(`Access denied: Cannot ${context.action} ${context.entity.name}`)
   }
+}
+
+/** Apply record-aware read expressions after adapter-level query filtering. */
+export async function filterRecordsByReadPolicy<T extends Record<string, any>>(
+  entity: Entity | undefined,
+  records: T[],
+  session?: UserSession | null,
+  policyEvaluator?: PolicyEvaluator,
+  permissionManager?: PermissionManager,
+): Promise<T[]> {
+  if (!entity || isSystemSession(session)) return records
+  const evaluator = policyEvaluator ?? new PolicyEvaluator()
+  const decisions = await Promise.all(records.map(record => AccessControl.checkAccess({
+    session,
+    entity,
+    action: 'read',
+    data: record,
+    permissionManager,
+    policyEvaluator: evaluator,
+  })))
+  return records.filter((_record, index) => decisions[index] === true)
 }
 
 /** Apply the canonical field-level write policy used by every query executor. */

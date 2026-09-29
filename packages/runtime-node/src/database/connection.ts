@@ -269,6 +269,10 @@ export class DatabaseConnection {
     return this.blueprint.entities.find(e => e.name === entityName)
   }
 
+  getBlueprint(): Blueprint {
+    return this.blueprint
+  }
+
   private canSafelyAddField(change: EntityFieldChange): boolean {
     const field = change.field
 

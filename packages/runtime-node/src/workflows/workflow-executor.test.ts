@@ -242,6 +242,42 @@ describe('WorkflowExecutor', () => {
     })
   })
 
+  describe('domain command orchestration', () => {
+    it('executes command steps through the shared command pipeline with actor context', async () => {
+      const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
+      const commandExecutor = {
+        registry: { get: () => ({ name: 'ApproveRequest', entity: 'Request' }) },
+        execute,
+      } as any
+      executor.setCommandExecutor(commandExecutor)
+      const session = { user: { id: 'approver-1' } }
+      const workflow: Workflow = {
+        name: 'request-approval', trigger: { manual: true },
+        steps: [{
+          type: 'command', command: 'ApproveRequest', recordId: '{{variables.requestId}}',
+          input: { comment: '{{variables.comment}}' }, assignTo: 'approved',
+        }],
+      }
+      const context: WorkflowContext = {
+        trigger: { type: 'manual' },
+        variables: { requestId: 'req-1', comment: 'approved by workflow' },
+        session,
+        trace: { correlationId: 'trace-1' },
+      }
+      const result = await executor.execute(workflow, context)
+      expect(result.success).toBe(true)
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+        command: 'ApproveRequest', recordId: 'req-1',
+        input: { comment: 'approved by workflow' },
+        context: expect.objectContaining({ session, source: 'workflow', workflow: 'request-approval' }),
+      }))
+      expect(context.variables.approved).toMatchObject({ status: 'approved' })
+      expect(mockEntityEventHandler).toHaveBeenCalledWith(expect.objectContaining({
+        entity: 'Request', event: 'update', after: { id: 'req-1', status: 'approved' },
+      }))
+    })
+  })
+
   describe('notifications', () => {
     it('should execute notify step', async () => {
       const workflow: Workflow = {
@@ -1034,6 +1070,93 @@ describe('WorkflowExecutor', () => {
       expect(result.success).toBe(true)
       expect(context.variables.apiResponse).toEqual({ success: true, data: 'response' })
       expect(result.result.apiResponse).toEqual({ success: true, data: 'response' })
+    })
+  })
+
+  describe('named service integration', () => {
+    it('resolves parameters, invokes the service, and assigns its typed result', async () => {
+      const services = {
+        invoke: vi.fn().mockResolvedValue({ category: 'qualified', score: 0.91 }),
+      }
+      const serviceExecutor = new WorkflowExecutor({
+        dataLayer: mockDataLayer,
+        services,
+      })
+      const context: WorkflowContext = {
+        trigger: { type: 'manual' },
+        variables: { company: 'Zebric Coffee' },
+        session: { actor: { id: 'agent-1', type: 'agent', delegatedBy: 'user-1' } },
+        trace: { correlationId: 'trace-1' },
+      }
+
+      const result = await serviceExecutor.execute({
+        name: 'classify-lead',
+        trigger: { manual: true },
+        steps: [{
+          type: 'service',
+          service: 'classifier',
+          operation: 'classify',
+          params: { company: '{{variables.company}}' },
+          assignTo: 'classification',
+        }],
+      }, context)
+
+      expect(result.success).toBe(true)
+      expect(services.invoke).toHaveBeenCalledWith('classifier', 'classify', {
+        company: 'Zebric Coffee',
+      }, expect.objectContaining({
+        actor: context.session?.actor,
+        correlationId: 'trace-1',
+        workflow: 'classify-lead',
+      }))
+      expect(context.variables.classification).toEqual({ category: 'qualified', score: 0.91 })
+    })
+
+    it('preserves the common service error code in workflow results', async () => {
+      const serviceExecutor = new WorkflowExecutor({ dataLayer: mockDataLayer })
+      const result = await serviceExecutor.execute({
+        name: 'missing-service',
+        trigger: { manual: true },
+        steps: [{ type: 'service', service: 'places', operation: 'search' }],
+      }, { trigger: { type: 'manual' }, variables: {} })
+
+      expect(result).toMatchObject({
+        success: false,
+        error: 'Service registry is not configured',
+        errorCode: 'SERVICE_FAILED',
+      })
+    })
+
+    it('passes a transformed structured result into a following command without stringifying it', async () => {
+      const classification = { category: 'qualified', evidence: ['matched-domain'] }
+      const execute = vi.fn().mockResolvedValue({ record: { id: 'lead-1', classification } })
+      const serviceExecutor = new WorkflowExecutor({
+        dataLayer: mockDataLayer,
+        services: { invoke: vi.fn().mockResolvedValue(classification) },
+        commandExecutor: {
+          registry: { get: vi.fn().mockReturnValue({ entity: 'Lead' }) },
+          execute,
+        } as any,
+      })
+
+      const result = await serviceExecutor.execute({
+        name: 'enrich-lead',
+        trigger: { manual: true },
+        steps: [
+          { type: 'service', service: 'classifier', operation: 'classify', assignTo: 'classification' },
+          {
+            type: 'command',
+            command: 'ApplyClassification',
+            recordId: 'lead-1',
+            input: { classification: '{{variables.classification}}' },
+          },
+        ],
+      }, { trigger: { type: 'manual' }, variables: {} })
+
+      expect(result.success).toBe(true)
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+        input: { classification },
+      }))
     })
   })
 

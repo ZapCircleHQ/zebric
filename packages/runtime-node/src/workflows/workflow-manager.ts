@@ -6,7 +6,8 @@
 
 import { EventEmitter } from 'node:events'
 import { createExecutionId, type Logger } from '@zebric/observability'
-import { SYSTEM_SESSION } from '@zebric/runtime-core'
+import { ServiceRegistry, SYSTEM_SESSION } from '@zebric/runtime-core'
+import type { CommandExecutor, ExecutionObserverPort } from '@zebric/runtime-core'
 import { WorkflowQueue, type WorkflowQueueOptions } from './workflow-queue.js'
 import { WorkflowExecutor } from './workflow-executor.js'
 import type { Workflow, WorkflowJob, WorkflowContext, WorkflowTrigger } from './types.js'
@@ -22,6 +23,9 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   logger?: Logger
   enqueueTransactionalAudit?: (job: WorkflowJob, workflow: Workflow) => Promise<void>
   deliverAuditOutbox?: () => Promise<void>
+  commandExecutor?: CommandExecutor
+  executionObserver?: ExecutionObserverPort
+  serviceRegistry?: ServiceRegistry
 }
 
 export class WorkflowManager extends EventEmitter {
@@ -31,12 +35,14 @@ export class WorkflowManager extends EventEmitter {
   private enqueueTransactionalAudit?: WorkflowManagerOptions['enqueueTransactionalAudit']
   private deliverAuditOutbox?: WorkflowManagerOptions['deliverAuditOutbox']
   private readonly maxEntityTriggerDepth = 5
+  private readonly serviceRegistry: ServiceRegistry
 
   constructor(options: WorkflowManagerOptions) {
     super()
     this.logger = options.logger
     this.enqueueTransactionalAudit = options.enqueueTransactionalAudit
     this.deliverAuditOutbox = options.deliverAuditOutbox
+    this.serviceRegistry = options.serviceRegistry ?? new ServiceRegistry()
 
     // Initialize queue
     this.queue = new WorkflowQueue({
@@ -54,6 +60,9 @@ export class WorkflowManager extends EventEmitter {
       emailService: options.emailService,
       httpClient: options.httpClient,
       notificationService: options.notificationService,
+      commandExecutor: options.commandExecutor,
+      executionObserver: options.executionObserver,
+      services: this.serviceRegistry,
       logger: options.logger,
       onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, workflowPath, trace, session, attribution }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
@@ -74,6 +83,15 @@ export class WorkflowManager extends EventEmitter {
 
     // Connect queue to executor
     this.setupQueueListeners()
+  }
+
+  setCommandExecutor(commandExecutor: CommandExecutor, executionObserver?: ExecutionObserverPort): void {
+    this.executor.setCommandExecutor(commandExecutor, executionObserver)
+    if (executionObserver) this.serviceRegistry.setObserver(executionObserver)
+  }
+
+  getServiceRegistry(): ServiceRegistry {
+    return this.serviceRegistry
   }
 
   /**

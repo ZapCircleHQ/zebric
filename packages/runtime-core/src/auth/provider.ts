@@ -25,12 +25,15 @@ export interface UserSession {
 }
 
 export interface AuthenticatedActor {
-  type: 'user' | 'agent' | 'system'
+  type: 'user' | 'agent' | 'service' | 'system'
   id: string
   displayName?: string
   credentialId?: string
   scopes?: string[]
   constraints?: Record<string, string[]>
+  roles?: string[]
+  delegatedBy?: string
+  metadata?: Record<string, unknown>
 }
 
 /**

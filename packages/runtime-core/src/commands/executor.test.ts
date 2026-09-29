@@ -1,0 +1,175 @@
+import { describe, expect, it, vi } from 'vitest'
+import type { Blueprint } from '../types/blueprint.js'
+import type { QueryExecutorPort, RequestContext } from '../routing/request-ports.js'
+import { CommandExecutor } from './executor.js'
+import { assertProtectedMutation } from './protection.js'
+import { ProtectedFieldMutationError, ValidationFailureError } from '../errors/domain-errors.js'
+
+const blueprint: Blueprint = {
+  version: '1',
+  project: { name: 'Commands', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+  pages: [],
+  entities: [{
+    name: 'Request',
+    fields: [
+      { name: 'id', type: 'ULID', primary_key: true },
+      { name: 'status', type: 'Enum', values: ['pending', 'approved'], write: 'command-only', commands: ['ApproveRequest'] },
+      { name: 'requestedFromId', type: 'Text' },
+      { name: 'approvedById', type: 'Text', write: 'command-only', commands: ['ApproveRequest'] },
+      { name: 'comment', type: 'Text' },
+    ],
+  }],
+  commands: [{
+    name: 'ApproveRequest',
+    entity: 'Request',
+    input: { comment: { type: 'Text', required: false } },
+    policy: 'record.requestedFromId == actor.effectiveId && record.status == "pending"',
+    mutations: {
+      status: 'approved',
+      approvedById: 'actor.id',
+      comment: 'input.comment',
+    },
+  }],
+}
+
+class MemoryQueryExecutor implements QueryExecutorPort {
+  record: Record<string, unknown> = {
+    id: 'req-1',
+    status: 'pending',
+    requestedFromId: 'sarah',
+  }
+
+  async execute(): Promise<unknown[]> { return [this.record] }
+  async create(): Promise<unknown> { throw new Error('not implemented') }
+  async delete(): Promise<void> { throw new Error('not implemented') }
+  async search(): Promise<unknown[]> { return [] }
+  async findById(): Promise<unknown> { return { ...this.record } }
+  async transaction<T>(fn: () => Promise<T>): Promise<T> { return fn() }
+
+  async update(_entity: string, _id: string, data: Record<string, unknown>, context: RequestContext): Promise<unknown> {
+    assertProtectedMutation(blueprint.entities[0], data, context)
+    this.record = { ...this.record, ...data }
+    return { ...this.record }
+  }
+}
+
+describe('CommandExecutor', () => {
+  it('executes an authorized command through the protected mutation boundary', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    const publish = vi.fn()
+    const log = vi.fn()
+    const startSpan = vi.fn((name: string) => name)
+    const endSpan = vi.fn()
+    const executor = new CommandExecutor(blueprint, {
+      queryExecutor,
+      eventPublisher: { publish },
+      auditLogger: { log },
+      executionObserver: { startSpan, endSpan },
+    })
+
+    const result = await executor.execute({
+      command: 'ApproveRequest',
+      recordId: 'req-1',
+      input: { comment: 'Looks good' },
+      actor: {
+        id: 'sales-agent',
+        type: 'agent',
+        roles: ['approver'],
+        scopes: ['requests:approve'],
+        delegatedBy: 'sarah',
+      },
+      context: { source: 'mcp', correlationId: 'trace-1' },
+    })
+
+    expect(result.record).toMatchObject({
+      status: 'approved',
+      approvedById: 'sales-agent',
+      comment: 'Looks good',
+    })
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'ApproveRequest',
+      userId: 'sarah',
+      metadata: expect.objectContaining({ delegatedBy: 'sarah', source: 'mcp' }),
+    }))
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'ApproveRequest',
+      correlationId: 'trace-1',
+    }))
+    expect(startSpan.mock.calls.map(call => call[0])).toEqual(['zebric.command', 'zebric.policy'])
+    expect(endSpan).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an actor with command permission bypass the command', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    await expect(queryExecutor.update('Request', 'req-1', { status: 'approved' }, {
+      actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
+    })).rejects.toBeInstanceOf(ProtectedFieldMutationError)
+    expect(queryExecutor.record.status).toBe('pending')
+  })
+
+  it('validates command input before mutation', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    const executor = new CommandExecutor(blueprint, { queryExecutor })
+    await expect(executor.execute({
+      command: 'ApproveRequest',
+      recordId: 'req-1',
+      input: { unexpected: true },
+      actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
+    })).rejects.toBeInstanceOf(ValidationFailureError)
+    expect(queryExecutor.record.status).toBe('pending')
+  })
+
+  it('does not publish audit or events when the transaction rolls back', async () => {
+    class RollbackExecutor extends MemoryQueryExecutor {
+      override async transaction<T>(fn: () => Promise<T>): Promise<T> {
+        const snapshot = { ...this.record }
+        await fn()
+        this.record = snapshot
+        throw new Error('commit failed')
+      }
+    }
+    const queryExecutor = new RollbackExecutor()
+    const publish = vi.fn()
+    const log = vi.fn()
+    const executor = new CommandExecutor(blueprint, {
+      queryExecutor, eventPublisher: { publish }, auditLogger: { log },
+    })
+    await expect(executor.execute({
+      command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
+    })).rejects.toThrow('commit failed')
+    expect(queryExecutor.record.status).toBe('pending')
+    expect(log).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('injects named services into application command handlers', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    const services = { invoke: vi.fn().mockResolvedValue({ score: 92 }) }
+    const handlerBlueprint: Blueprint = {
+      ...blueprint,
+      commands: [{
+        ...blueprint.commands![0]!,
+        mutations: {},
+        handler: 'commands.approve',
+      }],
+    }
+    const executor = new CommandExecutor(handlerBlueprint, { queryExecutor, services })
+    executor.registerHandler('commands.approve', async context => {
+      const result = await context.services!.invoke('risk', 'score', { id: context.record.id }) as { score: number }
+      return { comment: `Risk score: ${result.score}` }
+    })
+
+    const result = await executor.execute({
+      command: 'ApproveRequest',
+      recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: ['approver'], scopes: [] },
+      context: { correlationId: 'trace-handler' },
+    })
+
+    expect(result.record.comment).toBe('Risk score: 92')
+    expect(services.invoke).toHaveBeenCalledWith('risk', 'score', { id: 'req-1' }, expect.objectContaining({
+      correlationId: 'trace-handler',
+    }))
+  })
+})

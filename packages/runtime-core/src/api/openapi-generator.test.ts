@@ -98,6 +98,14 @@ describe('generateOpenAPISpec', () => {
       expect(createSchema.properties.title).toBeDefined()
     })
 
+    it('omits command-only fields from generic CRUD schemas', () => {
+      const blueprint = minimalBlueprint()
+      blueprint.entities[0]!.fields.find(field => field.name === 'status')!.write = 'command-only'
+      const spec = generateOpenAPISpec(blueprint)
+      expect(spec.components.schemas.IssueCreate.properties.status).toBeUndefined()
+      expect(spec.components.schemas.IssueUpdate.properties.status).toBeUndefined()
+    })
+
     it('omits write-protected fields from Create and Update but keeps them readable', () => {
       const bp = minimalBlueprint({
         entities: [{
@@ -197,11 +205,41 @@ describe('generateOpenAPISpec', () => {
     })
   })
 
+  it('generates domain command operations for HTTP and MCP discovery', () => {
+    const spec = generateOpenAPISpec(minimalBlueprint({
+      commands: [{
+        name: 'ApproveIssue',
+        entity: 'Issue',
+        label: 'Approve',
+        description: 'Approve a pending issue.',
+        scopes: ['issues.approve'],
+        input: { comment: { type: 'Text', required: true } },
+        mutations: { status: 'closed' },
+      }],
+    }))
+    const operation = spec.paths['/api/commands/approve_issue/{id}'].post
+    expect(operation).toMatchObject({
+      operationId: 'approve_issue',
+      summary: 'Approve',
+      'x-zebric-required-scopes': ['issues.approve'],
+      'x-zebric-agent-operation': {
+        command: 'ApproveIssue',
+        risk: 'write',
+        approvalRequired: true,
+      },
+    })
+    expect(operation.requestBody.content['application/json'].schema).toMatchObject({
+      required: ['comment'],
+    })
+  })
+
   describe('paths from skills', () => {
-    it('generates no paths when no skills defined', () => {
+    it('still exposes the permission-aware audit capability when no skills are defined', () => {
       const spec = generateOpenAPISpec(minimalBlueprint())
 
-      expect(spec.paths).toEqual({})
+      expect(spec.paths).toEqual({
+        '/api/audit': { get: expect.objectContaining({ operationId: 'query_audit_history' }) },
+      })
     })
 
     it('generates paths for skill actions', () => {

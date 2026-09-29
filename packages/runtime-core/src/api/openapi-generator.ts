@@ -4,7 +4,7 @@
  * Generates an OpenAPI specification from blueprint skills and entities.
  */
 
-import type { Blueprint, Entity, Field, SkillConfig, SkillAction } from '../types/blueprint.js'
+import type { Blueprint, Command, CommandInputField, Entity, Field, SkillConfig, SkillAction } from '../types/blueprint.js'
 
 export interface OpenAPISpec {
   openapi: string
@@ -50,6 +50,75 @@ function fieldToJsonSchema(field: Field): Record<string, any> {
   return schema
 }
 
+function commandInputToJsonSchema(field: CommandInputField): Record<string, any> {
+  const schema: Record<string, any> = { ...(FIELD_TYPE_MAP[field.type] || { type: 'string' }) }
+  if (field.type === 'Enum' && field.values?.length) schema.enum = field.values
+  if (field.description) schema.description = field.description
+  return schema
+}
+
+export function commandOperationId(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toLowerCase()
+}
+
+function buildCommandOperation(command: Command): Record<string, any> {
+  const properties: Record<string, any> = {}
+  const required: string[] = []
+  for (const [name, field] of Object.entries(command.input ?? {})) {
+    properties[name] = commandInputToJsonSchema(field)
+    if (field.required) required.push(name)
+  }
+  return {
+    operationId: commandOperationId(command.name),
+    tags: ['commands'],
+    summary: command.label ?? command.name,
+    ...(command.description ? { description: command.description } : {}),
+    security: [{ bearerAuth: [] }],
+    'x-zebric-agent-operation': {
+      risk: 'write',
+      approvalRequired: true,
+      idempotencyRequired: true,
+      asynchronous: false,
+      command: command.name,
+      ...(command.scopes?.length ? { requiredScopes: command.scopes } : {}),
+    },
+    ...(command.scopes?.length ? { 'x-zebric-required-scopes': command.scopes } : {}),
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+      { name: 'Idempotency-Key', in: 'header', required: false, schema: { type: 'string' } },
+      {
+        name: 'X-Agent-Run-ID', in: 'header', required: false,
+        schema: { type: 'string', minLength: 1, maxLength: 128, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$' },
+      },
+    ],
+    requestBody: {
+      required: required.length > 0,
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties,
+            ...(required.length ? { required } : {}),
+          },
+        },
+      },
+    },
+    responses: {
+      '200': { description: 'Command result' },
+      '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+      '403': agentApiErrorResponse('Command authorization failed', ['AUTHORIZATION_FAILED', 'INSUFFICIENT_SCOPE']),
+      '404': agentApiErrorResponse('Command or record not found', ['COMMAND_NOT_FOUND', 'RESOURCE_NOT_FOUND']),
+      '409': agentApiErrorResponse('Command unavailable in the current state', ['COMMAND_UNAVAILABLE', 'STATE_CONFLICT']),
+      '422': agentApiErrorResponse('Command input validation failed', ['VALIDATION_FAILED']),
+      '500': agentApiErrorResponse('Command execution failed', ['INTERNAL_ERROR']),
+    },
+  }
+}
+
 function entityToSchema(entity: Entity): Record<string, any> {
   const properties: Record<string, any> = {}
   const required: string[] = []
@@ -87,7 +156,8 @@ function isWriteProtectedField(field: Field): boolean {
   return (
     field.primary_key === true ||
     AUTO_MANAGED_FIELDS.has(field.name) ||
-    field.access?.write === false
+    field.access?.write === false ||
+    field.write === 'command-only'
   )
 }
 
@@ -460,6 +530,11 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
       }
     }
   }
+  for (const command of blueprint.commands ?? []) {
+    paths[`/api/commands/${commandOperationId(command.name)}/{id}`] = {
+      post: buildCommandOperation(command),
+    }
+  }
   if (blueprint.workflows?.length) {
     paths['/api/jobs/{id}'] = {
       get: {
@@ -483,6 +558,32 @@ export function generateOpenAPISpec(blueprint: Blueprint, baseUrl?: string): Ope
         },
       },
     }
+  }
+  paths['/api/audit'] = {
+    get: {
+      operationId: 'query_audit_history',
+      tags: ['audit'],
+      description: 'Query authorized audit history for one domain record.',
+      security: [{ bearerAuth: [] }],
+      'x-zebric-agent-operation': {
+        risk: 'read', approvalRequired: false, idempotencyRequired: false, asynchronous: false,
+      },
+      parameters: [
+        { name: 'entity', in: 'query', required: true, schema: { type: 'string' } },
+        { name: 'recordId', in: 'query', required: true, schema: { type: 'string' } },
+        { name: 'command', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'workflow', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'actorId', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 200 } },
+      ],
+      responses: {
+        '200': { description: 'Authorized audit entries' },
+        '400': agentApiErrorResponse('Invalid query', ['INVALID_QUERY']),
+        '401': agentApiErrorResponse('Authentication required', ['AUTHENTICATION_REQUIRED']),
+        '403': agentApiErrorResponse('Audit history access denied', ['AUTHORIZATION_FAILED']),
+        '404': agentApiErrorResponse('Record not found', ['RESOURCE_NOT_FOUND']),
+      },
+    },
   }
 
   const spec: OpenAPISpec = {

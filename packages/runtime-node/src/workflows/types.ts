@@ -15,7 +15,17 @@ export interface WorkflowTrigger {
 }
 
 export interface WorkflowStep {
-  type: 'query' | 'email' | 'webhook' | 'plugin' | 'condition' | 'loop' | 'delay' | 'notify'
+  type: 'query' | 'command' | 'service' | 'email' | 'webhook' | 'plugin' | 'condition' | 'loop' | 'delay' | 'notify'
+
+  // Domain command step
+  command?: string
+  recordId?: string
+  input?: Record<string, any>
+
+  // Named external service step
+  service?: string
+  operation?: string
+  params?: Record<string, any>
 
   // Query step
   entity?: string
@@ -38,8 +48,6 @@ export interface WorkflowStep {
   // Plugin step
   plugin?: string
   action_name?: string
-  params?: Record<string, any>
-
   // Condition step
   if?: Record<string, any>
   then?: WorkflowStep[]
@@ -112,6 +120,7 @@ export interface WorkflowExecutionResult {
   success: boolean
   result?: any
   error?: string
+  errorCode?: import('@zebric/runtime-core').DomainErrorCode
   logs: WorkflowLog[]
 }
 

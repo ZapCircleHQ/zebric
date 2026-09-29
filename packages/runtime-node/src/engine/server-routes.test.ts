@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
-import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
+import { AuthorizationFailureError, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
 import { registerSearchRoutes, type BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
+import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerCommandRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
 import { createApiKeyRegistry } from './server-security.js'
 import { AgentEventBus } from './agent-event-bus.js'
 
@@ -74,6 +74,71 @@ describe('agent discovery routes', () => {
     }, { port: 3000 } as any)
     const changedContract = (await (await changed.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
     expect(changedContract.fingerprint).not.toBe(firstContract.fingerprint)
+  })
+
+  it('publishes self-describing command capabilities', async () => {
+    const app = new Hono()
+    registerOpenAPIRoute(app, {
+      version: '0.6.0',
+      project: { name: 'Commands', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+      entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
+      pages: [],
+      commands: [{
+        name: 'ApproveRequest', entity: 'Request', label: 'Approve',
+        input: { comment: { type: 'Text', required: false } }, mutations: { status: 'approved' },
+      }],
+    }, { port: 3000 } as any)
+    const body = await (await app.request('/.well-known/zebric-agent.json')).json() as any
+    expect(body.capabilities.domainCommands).toBe(true)
+    expect(body.commands).toEqual([expect.objectContaining({
+      name: 'ApproveRequest', operationId: 'approve_request', entity: 'Request', label: 'Approve',
+    })])
+  })
+})
+
+describe('domain command HTTP routes', () => {
+  const blueprint = {
+    version: '0.6.0',
+    project: { name: 'Commands', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+    entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
+    pages: [],
+    commands: [{ name: 'ApproveRequest', entity: 'Request', mutations: { status: 'approved' } }],
+  } as any
+
+  it('invokes the shared command executor with HTTP context', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => session } as any,
+      queryExecutor: {} as any,
+      apiKeys: new Map(),
+    } as any)
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comment: 'ok' }),
+    })
+    expect(response.status).toBe(200)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest', recordId: 'req-1', input: { comment: 'ok' },
+      context: expect.objectContaining({ session, source: 'http' }),
+    }))
+  })
+
+  it('maps shared authorization errors consistently', async () => {
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute: async () => { throw new AuthorizationFailureError('denied') } } as any,
+      sessionManager: { getSession: async () => ({ id: 's1', user: { id: 'u1', email: 'u@example.test' } }) } as any,
+      apiKeys: new Map(),
+    })
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: 'AUTHORIZATION_FAILED' } })
   })
 })
 

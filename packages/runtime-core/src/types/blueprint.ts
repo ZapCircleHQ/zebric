@@ -20,6 +20,8 @@ export interface Blueprint {
   design_system?: DesignSystemConfig
   notifications?: NotificationsConfig
   skills?: SkillConfig[]
+  commands?: Command[]
+  services?: ServiceConfig[]
 }
 
 export interface ProjectConfig {
@@ -41,6 +43,12 @@ export interface Entity {
   relations?: Record<string, Relation>
   access?: AccessRules
   indexes?: Index[]
+  protection?: EntityProtection
+}
+
+export interface EntityProtection {
+  fields: string[]
+  commands: string[]
 }
 
 export interface Field {
@@ -55,6 +63,10 @@ export interface Field {
   values?: string[] // For Enum type
   ref?: string // For Ref type (e.g., "User.id")
   access?: FieldAccessRules
+  /** Restrict writes to the domain-command execution pipeline. */
+  write?: 'command-only'
+  /** Optional command allow-list for a command-only field. */
+  commands?: string[]
 }
 
 export type FieldType =
@@ -103,6 +115,60 @@ export type AccessCondition =
   | { [key: string]: any }
   | { or: AccessCondition[] }
   | { and: AccessCondition[] }
+
+// ============================================================================
+// Domain Commands
+// ============================================================================
+
+export interface CommandInputField {
+  type: FieldType
+  required?: boolean
+  values?: string[]
+  description?: string
+}
+
+export interface Command {
+  name: string
+  entity: string
+  description?: string
+  label?: string
+  input?: Record<string, CommandInputField>
+  policy?: AccessCondition
+  mutations?: Record<string, unknown>
+  handler?: string
+  scopes?: string[]
+}
+
+// ============================================================================
+// External Services
+// ============================================================================
+
+export type ExternalValueType = FieldType | 'Object' | 'Array'
+
+export interface ExternalValueSchema {
+  type: ExternalValueType
+  required?: boolean
+  values?: string[]
+  fields?: Record<string, ExternalValueSchema>
+  items?: ExternalValueSchema
+  allowUnknown?: boolean
+}
+
+export interface ServiceOperation {
+  description?: string
+  input?: Record<string, ExternalValueSchema>
+  result?: ExternalValueSchema
+  /** Projection applied after the external result has passed validation. */
+  transform?: Record<string, unknown>
+}
+
+export interface ServiceConfig {
+  name: string
+  description?: string
+  /** Plugin integration name. Defaults to the service name. */
+  plugin?: string
+  operations: Record<string, ServiceOperation>
+}
 
 // ============================================================================
 // Pages
@@ -532,7 +598,13 @@ export interface WorkflowTrigger {
 }
 
 export interface WorkflowStep {
-  type: 'email' | 'webhook' | 'plugin' | 'delay' | 'condition' | 'notify'
+  type: 'query' | 'command' | 'service' | 'email' | 'webhook' | 'plugin' | 'delay' | 'condition' | 'loop' | 'notify'
+  command?: string
+  recordId?: string
+  input?: Record<string, any>
+  service?: string
+  operation?: string
+  params?: Record<string, any>
   [key: string]: any
 }
 

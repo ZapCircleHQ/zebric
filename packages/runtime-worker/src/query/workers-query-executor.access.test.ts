@@ -27,6 +27,7 @@ const blueprint: Blueprint = {
         { name: 'id', type: 'ULID', primary_key: true },
         { name: 'title', type: 'Text', required: true },
         { name: 'body', type: 'LongText' },
+        { name: 'status', type: 'Text', write: 'command-only', commands: ['ApproveDoc'] },
         { name: 'userId', type: 'Text', access: { write: false } },
         { name: 'assigneeId', type: 'Text', access: { write: false } },
         { name: 'region', type: 'Text', access: { write: 'authenticated' } },
@@ -47,6 +48,19 @@ const blueprint: Blueprint = {
         { name: 'text', type: 'Text' },
       ],
     },
+    {
+      name: 'PolicyDoc',
+      fields: [
+        { name: 'id', type: 'ULID', primary_key: true },
+        { name: 'title', type: 'Text' },
+        { name: 'ownerId', type: 'Text' },
+      ],
+      access: {
+        read: 'record.ownerId == actor.effectiveId',
+        create: true,
+        update: 'record.ownerId == actor.effectiveId',
+      },
+    },
   ],
   pages: [],
 }
@@ -60,10 +74,11 @@ describe('WorkersQueryExecutor access control', () => {
     adapter = new D1Adapter(db as any)
     await adapter.migrate([
       `CREATE TABLE IF NOT EXISTS Doc (
-        id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT,
+        id TEXT PRIMARY KEY, title TEXT NOT NULL, body TEXT, status TEXT,
         userId TEXT, assigneeId TEXT, region TEXT, secret TEXT
       )`,
       `CREATE TABLE IF NOT EXISTS Note (id TEXT PRIMARY KEY, text TEXT)`,
+      `CREATE TABLE IF NOT EXISTS PolicyDoc (id TEXT PRIMARY KEY, title TEXT, ownerId TEXT)`,
     ])
     executor = new WorkersQueryExecutor(adapter, blueprint)
   })
@@ -193,6 +208,12 @@ describe('WorkersQueryExecutor access control', () => {
       expect(updated.assigneeId).toBe('user-9')
     })
 
+    it('rejects a direct write to a command-only field', async () => {
+      await seedDoc({ id: 'doc-command', userId: 'user-1' })
+      await expect(executor.update('Doc', 'doc-command', { status: 'approved' }, member))
+        .rejects.toMatchObject({ code: 'PROTECTED_FIELD_MUTATION' })
+    })
+
     it('honours a conditional write rule', async () => {
       // 'region' is writable only by an authenticated principal.
       await seedDoc({ id: 'doc-1', userId: 'user-1', region: 'us' })
@@ -213,6 +234,30 @@ describe('WorkersQueryExecutor access control', () => {
       const result = await executor.update('Doc', 'doc-1', { assigneeId: 'attacker' }, member)
       expect(result.assigneeId).toBe('user-9')
       expect(result.title).toBe('Seed')
+    })
+  })
+
+  describe('record-aware expression policies', () => {
+    const delegated = ctx({
+      user: { id: 'sales-agent', email: 'agent@example.test', roles: ['agent'] },
+      actor: { id: 'sales-agent', type: 'agent', roles: ['agent'], delegatedBy: 'user-1' },
+    })
+
+    beforeEach(async () => {
+      await adapter.query('INSERT INTO PolicyDoc (id, title, ownerId) VALUES (?, ?, ?)', ['mine', 'Mine', 'user-1'])
+      await adapter.query('INSERT INTO PolicyDoc (id, title, ownerId) VALUES (?, ?, ?)', ['theirs', 'Theirs', 'user-2'])
+    })
+
+    it('filters reads using delegated effective identity', async () => {
+      const rows = await executor.execute({ entity: 'PolicyDoc' }, delegated)
+      expect(rows.map((row: any) => row.id)).toEqual(['mine'])
+    })
+
+    it('enforces the same policy for updates', async () => {
+      await expect(executor.update('PolicyDoc', 'mine', { title: 'Updated' }, delegated))
+        .resolves.toMatchObject({ title: 'Updated' })
+      await expect(executor.update('PolicyDoc', 'theirs', { title: 'Blocked' }, delegated))
+        .rejects.toThrow('Access denied')
     })
   })
 })

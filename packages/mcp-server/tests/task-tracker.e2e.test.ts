@@ -75,6 +75,7 @@ describe('Task Tracker flagship MCP example', () => {
     try {
       const listedTools = await client.listTools()
       expect(listedTools.tools.map(tool => tool.name).sort()).toEqual([
+        'task_tracker_query_audit_history',
         'task_tracker_task_tracker_create_task',
         'task_tracker_task_tracker_delete_task',
         'task_tracker_task_tracker_get_task',

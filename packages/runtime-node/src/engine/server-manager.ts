@@ -2,13 +2,13 @@ import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import type { Context } from 'hono'
 import type { NotificationManager } from '@zebric/notifications'
-import type { AuditLogger } from '../security/index.js'
+import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
 import { createRequestId, type Logger } from '@zebric/observability'
 import {
   createHonoLoggerMiddleware,
 } from '@zebric/observability/hono'
-import type { AuthProvider, SessionManager } from '@zebric/runtime-core'
-import type { Blueprint } from '@zebric/runtime-core'
+import type { AuthProvider, ExecutionObserverPort, SessionManager } from '@zebric/runtime-core'
+import { CommandExecutor, type Blueprint, type CommandHandler } from '@zebric/runtime-core'
 import type { EngineConfig, EngineState } from '../types/index.js'
 import type { SchemaDiffResult } from '../database/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
@@ -38,12 +38,15 @@ import {
   registerWorkflowJobRoutes,
   registerAgentEventStreamRoute,
   registerAPIRoutes,
+  registerAuditRoutes,
+  registerCommandRoutes,
   registerOpenAPIRoute,
   registerPageRoutes,
   registerWidgetRoutes,
 } from './server-routes.js'
 import { registerSearchRoutes } from '@zebric/runtime-hono'
 import { AgentEventBus } from './agent-event-bus.js'
+import { createServiceRegistry } from '../services/service-registry.js'
 
 export interface ServerManagerDependencies {
   blueprint: Blueprint
@@ -108,6 +111,7 @@ export class ServerManager {
   private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
   private readonly agentEventBus: AgentEventBus
+  private commandExecutor: CommandExecutor
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -125,9 +129,82 @@ export class ServerManager {
     this.errorHandler = deps.errorHandler
     this.notificationManager = deps.notificationManager
     this.auditLogger = deps.auditLogger
-    this.getHealthStatusFn = deps.getHealthStatus
     this.agentEventBus = deps.agentEventBus ?? new AgentEventBus()
+    this.getHealthStatusFn = deps.getHealthStatus
+    this.commandExecutor = this.createCommandExecutor()
+    this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
     this.bindAgentEvents(this.workflowManager)
+  }
+
+  private commandExecutionObserver(): ExecutionObserverPort {
+    return {
+      startSpan: (name, attributes, correlationId) => {
+        if (!correlationId) return undefined
+        const ownsTrace = typeof (this.tracer as any).getTrace === 'function'
+          ? !(this.tracer as any).getTrace(correlationId)
+          : false
+        if (ownsTrace) this.tracer.startTrace(correlationId, 'INTERNAL', name)
+        const spanType = {
+          'zebric.command': SpanType.COMMAND,
+          'zebric.policy': SpanType.POLICY,
+          'zebric.workflow': SpanType.WORKFLOW,
+          'zebric.workflow.step': SpanType.WORKFLOW_STEP,
+          'zebric.service': SpanType.SERVICE,
+        }[name]
+        return {
+          spanId: this.tracer.startSpan(correlationId, spanType, name, attributes),
+          traceId: correlationId,
+          ownsTrace,
+        }
+      },
+      endSpan: (handle, error) => {
+        if (!handle || typeof handle !== 'object') return
+        const span = handle as { spanId: string; traceId: string; ownsTrace: boolean }
+        if (!span.spanId) return
+        this.tracer.endSpan(span.spanId, error ? SpanStatus.ERROR : SpanStatus.OK, error
+          ? { error: error instanceof Error ? error.message : String(error) }
+          : {})
+        if (span.ownsTrace) this.tracer.endTrace(
+          span.traceId,
+          error ? 500 : 200,
+          error instanceof Error ? error.message : error ? String(error) : undefined,
+        )
+      },
+    }
+  }
+
+  private createCommandExecutor(): CommandExecutor {
+    const services = this.workflowManager?.getServiceRegistry?.()
+      ?? createServiceRegistry(this.blueprint, this.plugins, this.commandExecutionObserver())
+    return new CommandExecutor(this.blueprint, {
+      queryExecutor: this.queryExecutor,
+      services,
+      auditLogger: this.auditLogger ? {
+        log: event => this.auditLogger!.log({
+          ...event,
+          eventType: AuditEventType.DOMAIN_COMMAND,
+          severity: AuditSeverity.INFO,
+        }),
+      } : undefined,
+      eventPublisher: {
+        publish: event => {
+          this.agentEventBus.publish({
+            type: `domain.${event.name}`,
+            subject: `${event.entity}:${event.recordId}`,
+            audienceId: event.actor.credentialId,
+            data: {
+              command: event.command,
+              entity: event.entity,
+              recordId: event.recordId,
+              actor: { id: event.actor.id, type: event.actor.type },
+              delegatedBy: event.actor.delegatedBy,
+              correlationId: event.correlationId,
+            },
+          })
+        },
+      },
+      executionObserver: this.commandExecutionObserver(),
+    })
   }
 
   private bindAgentEvents(workflowManager?: WorkflowManager): void {
@@ -150,6 +227,10 @@ export class ServerManager {
     }))
   }
 
+  registerCommandHandler(reference: string, handler: CommandHandler): void {
+    this.commandExecutor.registerHandler(reference, handler)
+  }
+
   updateDependencies(updates: Partial<ServerManagerDependencies>): void {
     if (updates.blueprint) this.blueprint = updates.blueprint
     if (updates.config) this.config = updates.config
@@ -166,6 +247,8 @@ export class ServerManager {
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
     if (updates.notificationManager !== undefined) this.notificationManager = updates.notificationManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
+    this.commandExecutor = this.createCommandExecutor()
+    this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
   }
 
   async start(): Promise<ServerType> {
@@ -328,6 +411,19 @@ export class ServerManager {
       sessionManager: this.sessionManager,
       queryExecutor: this.queryExecutor,
       workflowManager: this.workflowManager,
+      apiKeys: this.apiKeys,
+    })
+    registerCommandRoutes(this.app, {
+      blueprint: this.blueprint,
+      commandExecutor: this.commandExecutor,
+      sessionManager: this.sessionManager,
+      workflowManager: this.workflowManager,
+      apiKeys: this.apiKeys,
+    })
+    registerAuditRoutes(this.app, {
+      auditLogger: this.auditLogger,
+      sessionManager: this.sessionManager,
+      queryExecutor: this.queryExecutor,
       apiKeys: this.apiKeys,
     })
     registerWidgetRoutes(this.app, {

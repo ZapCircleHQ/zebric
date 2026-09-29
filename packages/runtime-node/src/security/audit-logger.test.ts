@@ -48,4 +48,23 @@ describe('AuditLogger agent attribution', () => {
     )
     stderr.mockRestore()
   })
+
+  it('returns a bounded filtered application-facing history view', () => {
+    root = mkdtempSync(join(tmpdir(), 'zebric-audit-'))
+    const logger = new AuditLogger({ logPath: join(root, 'audit.log') })
+    logger.log({
+      eventType: AuditEventType.DOMAIN_COMMAND, action: 'ApproveRequest', actionName: 'ApproveRequest',
+      entityType: 'Request', entityId: 'req-1', actorId: 'approver-1', success: true,
+      metadata: { command: 'ApproveRequest', mutation: { status: 'approved' } },
+    })
+    logger.log({
+      eventType: AuditEventType.DOMAIN_COMMAND, action: 'ApproveRequest', actionName: 'ApproveRequest',
+      entityType: 'Request', entityId: 'req-2', actorId: 'approver-2', success: true,
+    })
+    expect(logger.query({ entityType: 'Request', entityId: 'req-1', command: 'ApproveRequest' }))
+      .toEqual([expect.objectContaining({
+        entityId: 'req-1', actorId: 'approver-1',
+        metadata: expect.objectContaining({ mutation: { status: 'approved' } }),
+      })])
+  })
 })

@@ -5,7 +5,7 @@ import { createHash, createHmac, timingSafeEqual } from 'node:crypto'
 import type { NotificationManager } from '@zebric/notifications'
 import type { AuthProvider, SessionManager, UserSession } from '@zebric/runtime-core'
 import type { ActionBarAction, Blueprint } from '@zebric/runtime-core'
-import { HTMLRenderer, PermissionManager, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
+import { CommandExecutor, DomainError, HTMLRenderer, PermissionManager, commandOperationId, evaluateCondition, generateOpenAPISpec, getInjectedCsrfTokenFromRequest } from '@zebric/runtime-core'
 import type { EngineConfig } from '../types/index.js'
 import type { WorkflowManager } from '../workflows/index.js'
 import type { QueryExecutor } from '../database/index.js'
@@ -1069,6 +1069,138 @@ export function registerAPIRoutes(
   }
 }
 
+export function registerCommandRoutes(
+  app: Hono,
+  deps: {
+    blueprint: Blueprint
+    commandExecutor: CommandExecutor
+    sessionManager: SessionManager
+    workflowManager?: WorkflowManager
+    apiKeys: ReadonlyMap<string, { name: string }>
+  },
+): void {
+  const idempotency = new Map<string, { fingerprint: string; response: Promise<Response> }>()
+
+  for (const command of deps.blueprint.commands ?? []) {
+    const operationId = commandOperationId(command.name)
+    app.post(`/api/commands/${operationId}/:id`, async c => {
+      const session = await resolveEntityApiSession(c, deps.sessionManager, deps.apiKeys)
+      if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+      if (!agentHasScopes(session, command.scopes ?? [])) {
+        return agentApiError(c, 403, 'INSUFFICIENT_SCOPE', 'The credential lacks required command scopes', {
+          details: { requiredScopes: command.scopes ?? [] },
+        })
+      }
+
+      try {
+        const attribution = resolveAgentAttribution(c, session)
+        const input = await tryParseBody(c.req.raw.clone())
+        if (input != null && (typeof input !== 'object' || Array.isArray(input))) {
+          return agentApiError(c, 422, 'VALIDATION_FAILED', 'Command input must be a JSON object')
+        }
+        const execute = async (): Promise<Response> => {
+          const result = await deps.commandExecutor.execute({
+            command: command.name,
+            recordId: c.req.param('id'),
+            input: (input ?? {}) as Record<string, unknown>,
+            context: {
+              session,
+              source: session.actor?.type === 'agent' ? 'mcp' : 'http',
+              correlationId: getCorrelationId(c),
+            },
+          })
+          await triggerEntityWorkflows(command.entity, 'update', undefined, result.record, deps.workflowManager, {
+            correlationId: getCorrelationId(c),
+            requestId: getRequestId(c),
+            session,
+            attribution,
+          })
+          return Response.json(result)
+        }
+
+        const key = c.req.header('idempotency-key')
+        if (!key) return await execute()
+        const fingerprint = createHash('sha256')
+          .update(`${command.name}\n${c.req.param('id')}\n${JSON.stringify(input ?? {})}`)
+          .digest('hex')
+        const scope = `${sessionSecurityId(session) ?? 'anonymous'}:${key}`
+        const previous = idempotency.get(scope)
+        if (previous) {
+          if (previous.fingerprint !== fingerprint) {
+            return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different command input')
+          }
+          return (await previous.response).clone()
+        }
+        const response = execute()
+        idempotency.set(scope, { fingerprint, response })
+        return (await response).clone()
+      } catch (error) {
+        if (error instanceof DomainError) {
+          const status = commandErrorStatus(error)
+          return agentApiError(c, status, error.code, error.message, { details: error.details })
+        }
+        const message = error instanceof Error ? error.message : String(error)
+        if (message.startsWith('Invalid agent attribution:')) {
+          return agentApiError(c, 400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required')
+        }
+        return agentApiError(c, 500, 'INTERNAL_ERROR', 'Command execution failed', { retryable: true })
+      }
+    })
+  }
+}
+
+export function registerAuditRoutes(
+  app: Hono,
+  deps: {
+    auditLogger?: AuditLogger
+    sessionManager: SessionManager
+    queryExecutor: QueryExecutor
+    apiKeys: ReadonlyMap<string, { name: string }>
+  },
+): void {
+  if (!deps.auditLogger) return
+  app.get('/api/audit', async c => {
+    const session = await resolveEntityApiSession(c, deps.sessionManager, deps.apiKeys)
+    if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+    const entity = c.req.query('entity')
+    const recordId = c.req.query('recordId')
+    if (!entity || !recordId) {
+      return agentApiError(c, 400, 'INVALID_QUERY', 'entity and recordId are required')
+    }
+    try {
+      const record = await deps.queryExecutor.findById(entity, recordId, { session })
+      if (!record) return agentApiError(c, 404, 'RESOURCE_NOT_FOUND', 'The audited record was not found')
+      const limit = Number.parseInt(c.req.query('limit') ?? '', 10)
+      return Response.json(deps.auditLogger!.query({
+        entityType: entity,
+        entityId: recordId,
+        command: c.req.query('command'),
+        workflow: c.req.query('workflow'),
+        actorId: c.req.query('actorId'),
+        limit: Number.isFinite(limit) ? limit : undefined,
+      }))
+    } catch (error) {
+      if (error instanceof DomainError && error.code === 'AUTHORIZATION_FAILED') {
+        return agentApiError(c, 403, error.code, error.message)
+      }
+      if (error instanceof Error && error.message.includes('Access denied')) {
+        return agentApiError(c, 403, 'AUTHORIZATION_FAILED', 'Audit history access denied')
+      }
+      return agentApiError(c, 500, 'INTERNAL_ERROR', 'Audit history query failed')
+    }
+  })
+}
+
+function commandErrorStatus(error: DomainError): 403 | 404 | 409 | 422 | 500 {
+  if (error.code === 'AUTHORIZATION_FAILED') return 403
+  if (error.code === 'VALIDATION_FAILED' || error.code === 'EXTERNAL_RESULT_VALIDATION_FAILED') return 422
+  if (error.code === 'COMMAND_UNAVAILABLE') {
+    return error.message.startsWith('Unknown command:') || error.message.toLowerCase().includes('was not found') ? 404 : 409
+  }
+  if (error.code === 'PROTECTED_FIELD_MUTATION') return 409
+  return 500
+}
+
 async function resolveEntityApiSession(
   c: any,
   sessionManager: SessionManager,
@@ -1102,12 +1234,23 @@ export function registerOpenAPIRoute(app: Hono, blueprint: Blueprint, config: En
       contract,
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
       skills: blueprint.skills?.map(skill => skill.name) ?? [],
+      commands: (blueprint.commands ?? []).map(command => ({
+        name: command.name,
+        operationId: commandOperationId(command.name),
+        entity: command.entity,
+        label: command.label,
+        description: command.description,
+        input: command.input ?? {},
+        scopes: command.scopes ?? [],
+      })),
       capabilities: {
         workflowJobs: Boolean(blueprint.workflows?.length),
         idempotency: true,
         eventStream,
         transactionalWorkflows: true,
         d1BatchWorkflows: false,
+        domainCommands: Boolean(blueprint.commands?.length),
+        auditHistory: true,
       },
     }, {
       headers: {

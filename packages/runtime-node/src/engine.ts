@@ -19,7 +19,7 @@ import { MetricsRegistry, type MetricSnapshot } from './monitoring/metrics.js'
 import { RequestTracer } from './monitoring/request-tracer.js'
 import type { CachePort } from './cache/index.js'
 import { ErrorHandler } from './errors/index.js'
-import type { AuthProvider, EngineAPI } from '@zebric/runtime-core'
+import type { AuthProvider, CommandHandler, EngineAPI, ServiceHandler, ServiceRegistry } from '@zebric/runtime-core'
 import { PluginAPIProvider, SubsystemInitializer, ServerManager, AdminServer } from './engine/index.js'
 import { FileStorage } from './storage/index.js'
 import type { Blueprint } from '@zebric/runtime-core'
@@ -533,6 +533,22 @@ export class ZebricEngine extends EventEmitter {
    */
   getMetrics(): MetricSnapshot {
     return this.metrics.getSnapshot()
+  }
+
+  /** Access the application service boundary for explicit TypeScript integrations. */
+  getServiceRegistry(): ServiceRegistry | undefined {
+    return this.workflowManager?.getServiceRegistry()
+  }
+
+  registerService(service: string, operation: string, handler: ServiceHandler): void {
+    const registry = this.getServiceRegistry()
+    if (!registry) throw new Error('Service registry is not initialized')
+    registry.register(service, operation, handler)
+  }
+
+  registerCommandHandler(reference: string, handler: CommandHandler): void {
+    if (!this.serverManager) throw new Error('Command executor is not initialized')
+    this.serverManager.registerCommandHandler(reference, handler)
   }
 
   /**
