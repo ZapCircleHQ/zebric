@@ -1,0 +1,1846 @@
+version = "0.1.0"
+
+[project]
+name = "Idea to Operations"
+version = "0.1.0"
+description = "Northstar Labs takes ambiguous ideas through discovery, decision, delivery, launch, and ongoing operations with humans and agents sharing the same governed lifecycle."
+
+[project.runtime]
+min_version = "0.5.0"
+
+[ux]
+pattern = "queue-detail@v1"
+
+[ux.interaction]
+selection = "single"
+row_click = "open-detail"
+edit_mode = "page"
+primary_action_position = "sticky-footer"
+confirm_destructive = true
+
+[ux.data]
+mode = "table"
+density = "compact"
+pagination = "server"
+filters = "top-bar"
+
+[ux.system.feedback]
+success = "toast"
+error = "inline"
+
+[ux.navigation]
+model = "sidebar"
+primary = ["Portfolio", "Attention", "Decisions", "Milestones", "Launches", "Operations", "Observations"]
+
+[ux.responsive]
+mode = "desktop-first"
+collapse_sidebar = true
+
+[design_system]
+name = "idea-to-operations"
+extends = "minimal"
+tokens = { primary = "#1d3557", accent = "#e76f51", radius = "0.65rem", font = "Inter, ui-sans-serif, system-ui, sans-serif" }
+
+[design_adapter]
+name = "default"
+version = "1.0"
+
+[design_adapter.roles]
+primary-action = "buttonPrimary"
+secondary-action = "buttonSecondary"
+destructive-action = "buttonSecondary"
+surface-default = "body"
+surface-elevated = "card"
+feedback-error = "errorState"
+
+# ---------------------------------------------------------------------------
+# Identity. Role "user" is the contributor role and is also the fallback role
+# for API-key (agent) principals, so agents can prepare work but hold no
+# authority: every stage-changing or decision-recording command is gated to
+# decision_maker / initiative_owner / operational_owner / admin.
+# ---------------------------------------------------------------------------
+
+[entity.User]
+fields = [
+  { name = "id", type = "Text", primary_key = true },
+  { name = "email", type = "Email", required = true, unique = true },
+  { name = "name", type = "Text", required = true },
+  { name = "role", type = "Enum", values = ["user", "initiative_owner", "decision_maker", "operational_owner", "admin"], default = "user" },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+# ---------------------------------------------------------------------------
+# Core: Initiative
+# ---------------------------------------------------------------------------
+
+[entity.Initiative]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true, index = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "stage", type = "Enum", values = ["idea", "discovery", "proposal", "approved", "planning", "building", "launch", "operating", "retired"], default = "idea", index = true },
+  { name = "health", type = "Enum", values = ["healthy", "attention", "at_risk", "blocked"], default = "healthy", index = true },
+  { name = "healthReason", type = "Text", nullable = true },
+  { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "ownerId", type = "Text", nullable = true, index = true },
+  { name = "ownerName", type = "Text", nullable = true },
+  { name = "sponsorId", type = "Text", nullable = true },
+  { name = "sponsorName", type = "Text", nullable = true },
+  { name = "createdById", type = "Text", nullable = true },
+  { name = "createdByName", type = "Text", nullable = true },
+  { name = "problemStatement", type = "LongText", nullable = true },
+  { name = "expectedOutcome", type = "LongText", nullable = true },
+  { name = "successCriteria", type = "LongText", nullable = true },
+  { name = "recommendedApproach", type = "LongText", nullable = true },
+  { name = "targetLaunchDate", type = "DateTime", nullable = true, index = true },
+  { name = "planApprovedAt", type = "DateTime", nullable = true },
+  { name = "launchApprovedAt", type = "DateTime", nullable = true },
+  { name = "operationalOwnerId", type = "Text", nullable = true, index = true },
+  { name = "operationalOwnerName", type = "Text", nullable = true },
+  { name = "runbookUrl", type = "Text", nullable = true },
+  { name = "launchedAt", type = "DateTime", nullable = true },
+  { name = "retiredAt", type = "DateTime", nullable = true },
+  { name = "retirementReason", type = "LongText", nullable = true },
+  { name = "sourceObservationId", type = "Text", nullable = true, index = true },
+  { name = "sourceCapabilityId", type = "Text", nullable = true, index = true },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Initiative.relations]
+evidence = { type = "hasMany", entity = "Evidence", foreign_key = "initiativeId" }
+milestones = { type = "hasMany", entity = "Milestone", foreign_key = "initiativeId" }
+decisions = { type = "hasMany", entity = "Decision", foreign_key = "initiativeId" }
+risks = { type = "hasMany", entity = "Risk", foreign_key = "initiativeId" }
+
+# Stage and lifecycle fields are only meant to change through workflows, but
+# workflows write with the caller's update permission (ZEBRIC_GAPS G-03), so
+# update is granted to the roles that legitimately run commands. The plain
+# contributor/agent role has no Initiative.update at all.
+[entity.Initiative.access]
+read = "authenticated"
+create = "authenticated"
+# An unowned idea has no ownerId yet, so record-ownership alone would stop any
+# owner from claiming it; the (role AND stage = idea) branch lets initiative_owner
+# run StartDiscovery. Once owned, only the owner (or decision maker) can update.
+update = { or = [{ "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }, { ownerId = "$currentUser.id" }, { operationalOwnerId = "$currentUser.id" }, { and = [{ "$currentUser.role" = "initiative_owner" }, { stage = "idea" }] }] }
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Discovery material
+# ---------------------------------------------------------------------------
+
+[entity.Evidence]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "type", type = "Enum", values = ["customer_request", "support_ticket", "research", "analytics", "experiment", "market_research", "internal_observation", "agent_research", "other"], required = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "summary", type = "LongText" },
+  { name = "sourceUrl", type = "Text", nullable = true },
+  { name = "submittedById", type = "Text", nullable = true },
+  { name = "submittedByName", type = "Text", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Evidence.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+
+[entity.Evidence.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Assumption]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "statement", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["open", "validated", "invalidated", "resolved"], default = "open", index = true },
+  { name = "resolution", type = "LongText", nullable = true },
+  { name = "blocksProgression", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "resolvedAt", type = "DateTime", nullable = true }
+]
+
+[entity.Assumption.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.OpenQuestion]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "question", type = "LongText", required = true },
+  { name = "status", type = "Enum", values = ["open", "validated", "invalidated", "resolved"], default = "open", index = true },
+  { name = "answer", type = "LongText", nullable = true },
+  { name = "blocksProgression", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" },
+  { name = "resolvedAt", type = "DateTime", nullable = true }
+]
+
+[entity.OpenQuestion.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Alternative]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText" },
+  { name = "advantages", type = "LongText", nullable = true },
+  { name = "disadvantages", type = "LongText", nullable = true },
+  { name = "estimatedEffort", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["considering", "recommended", "rejected", "selected"], default = "considering", index = true }
+]
+
+[entity.Alternative.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Decisions are first-class, not comments.
+# ---------------------------------------------------------------------------
+
+[entity.Decision]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "kind", type = "Enum", values = ["approve_initiative", "select_approach", "approve_launch", "scope_change", "retire"], required = true, index = true },
+  { name = "question", type = "Text", required = true },
+  { name = "context", type = "LongText" },
+  { name = "status", type = "Enum", values = ["requested", "decided", "superseded"], default = "requested", index = true },
+  { name = "outcome", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", index = true },
+  { name = "decision", type = "LongText", nullable = true },
+  { name = "rationale", type = "LongText", nullable = true },
+  { name = "selectedAlternativeId", type = "Text", nullable = true },
+  { name = "requestedById", type = "Text", nullable = true },
+  { name = "requestedByName", type = "Text", nullable = true },
+  { name = "decidedById", type = "Text", nullable = true },
+  { name = "decidedByName", type = "Text", nullable = true },
+  { name = "decidedAt", type = "DateTime", nullable = true },
+  { name = "dueDate", type = "DateTime", nullable = true, index = true },
+  { name = "requestedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Decision.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+
+[entity.Decision.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Planning
+# ---------------------------------------------------------------------------
+
+[entity.Milestone]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", nullable = true },
+  { name = "ownerId", type = "Text", nullable = true },
+  { name = "ownerName", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["planned", "active", "blocked", "completed", "cancelled"], default = "planned", index = true },
+  { name = "isDraft", type = "Boolean", default = false },
+  { name = "targetDate", type = "DateTime", nullable = true, index = true },
+  { name = "completedAt", type = "DateTime", nullable = true }
+]
+
+[entity.Milestone.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+tasks = { type = "hasMany", entity = "Task", foreign_key = "milestoneId" }
+
+[entity.Milestone.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "milestoneId", type = "Text", nullable = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", nullable = true },
+  { name = "assignedToId", type = "Text", nullable = true, index = true },
+  { name = "assignedToName", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["todo", "in_progress", "blocked", "done", "cancelled"], default = "todo", index = true },
+  { name = "kind", type = "Enum", values = ["work", "planning", "review", "operations"], default = "work" },
+  { name = "dueDate", type = "DateTime", nullable = true }
+]
+
+[entity.Task.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "operational_owner" }, { "$currentUser.role" = "admin" }, { assignedToId = "$currentUser.id" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# Polymorphic (initiative or milestone) edges. Zebric has no polymorphic Ref,
+# so both sides are typed Text pairs; see ZEBRIC_GAPS.md.
+[entity.Dependency]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "sourceType", type = "Enum", values = ["initiative", "milestone"], required = true },
+  { name = "sourceId", type = "Text", required = true, index = true },
+  { name = "sourceLabel", type = "Text", required = true },
+  { name = "targetType", type = "Enum", values = ["initiative", "milestone"], required = true },
+  { name = "targetId", type = "Text", required = true, index = true },
+  { name = "targetLabel", type = "Text", required = true },
+  { name = "type", type = "Enum", values = ["blocks_launch", "blocks_start", "informs"], default = "blocks_launch" },
+  { name = "status", type = "Enum", values = ["open", "satisfied", "waived"], default = "open", index = true },
+  { name = "description", type = "LongText", nullable = true }
+]
+
+[entity.Dependency.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Risk]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", nullable = true },
+  { name = "likelihood", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "impact", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
+  { name = "mitigation", type = "LongText", nullable = true },
+  { name = "ownerId", type = "Text", nullable = true },
+  { name = "ownerName", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["open", "mitigated", "accepted", "closed"], default = "open", index = true }
+]
+
+[entity.Risk.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+
+[entity.Risk.access]
+read = "authenticated"
+create = "authenticated"
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Launch and operations
+# ---------------------------------------------------------------------------
+
+[entity.ReadinessCheck]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "category", type = "Enum", values = ["engineering", "security", "support", "documentation", "analytics", "operations", "communications"], required = true },
+  { name = "title", type = "Text", required = true },
+  { name = "status", type = "Enum", values = ["pending", "ready", "waived", "blocked"], default = "pending", index = true },
+  { name = "ownerId", type = "Text", nullable = true },
+  { name = "ownerName", type = "Text", nullable = true },
+  { name = "notes", type = "LongText", nullable = true },
+  { name = "completedAt", type = "DateTime", nullable = true }
+]
+
+[entity.ReadinessCheck.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+
+[entity.ReadinessCheck.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "operational_owner" }, { "$currentUser.role" = "admin" }, { ownerId = "$currentUser.id" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.OperationalCapability]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "name", type = "Text", required = true },
+  { name = "description", type = "LongText", nullable = true },
+  { name = "ownerId", type = "Text", nullable = true, index = true },
+  { name = "ownerName", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["healthy", "degraded", "attention", "retiring", "retired"], default = "healthy", index = true },
+  { name = "runbookUrl", type = "Text", nullable = true },
+  { name = "launchedAt", type = "DateTime", nullable = true },
+  { name = "reviewCadence", type = "Enum", values = ["weekly", "monthly", "quarterly"], default = "monthly" },
+  { name = "lastReviewedAt", type = "DateTime", nullable = true, index = true },
+  { name = "nextReviewDue", type = "DateTime", nullable = true, index = true }
+]
+
+[entity.OperationalCapability.relations]
+initiative = { type = "belongsTo", entity = "Initiative", foreign_key = "initiativeId" }
+metrics = { type = "hasMany", entity = "Metric", foreign_key = "capabilityId" }
+observations = { type = "hasMany", entity = "Observation", foreign_key = "capabilityId" }
+
+[entity.OperationalCapability.access]
+read = "authenticated"
+# initiative_owner can create because TransitionToOperations creates the capability
+# under the caller's own authority (ZEBRIC_GAPS G-04).
+create = { or = [{ "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "initiative_owner" }, { "$currentUser.role" = "operational_owner" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "decision_maker" }, { "$currentUser.role" = "admin" }, { ownerId = "$currentUser.id" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Metric]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "capabilityId", type = "Ref", ref = "OperationalCapability.id", required = true, index = true },
+  { name = "name", type = "Text", required = true },
+  { name = "description", type = "Text", nullable = true },
+  { name = "target", type = "Text", required = true },
+  { name = "currentValue", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["on_target", "watch", "off_target"], default = "on_target", index = true },
+  { name = "updatedAt", type = "DateTime", default = "now" }
+]
+
+[entity.Metric.access]
+read = "authenticated"
+create = { or = [{ "$currentUser.role" = "operational_owner" }, { "$currentUser.role" = "admin" }] }
+update = { or = [{ "$currentUser.role" = "operational_owner" }, { "$currentUser.role" = "admin" }] }
+delete = { "$currentUser.role" = "admin" }
+
+[entity.Observation]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "capabilityId", type = "Ref", ref = "OperationalCapability.id", required = true, index = true },
+  { name = "title", type = "Text", required = true },
+  { name = "description", type = "LongText", nullable = true },
+  { name = "severity", type = "Enum", values = ["low", "medium", "high"], default = "medium", index = true },
+  { name = "status", type = "Enum", values = ["open", "incident", "improvement", "converted", "dismissed"], default = "open", index = true },
+  { name = "createdById", type = "Text", nullable = true },
+  { name = "createdByName", type = "Text", nullable = true },
+  { name = "resultingInitiativeId", type = "Text", nullable = true },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+
+[entity.Observation.relations]
+capability = { type = "belongsTo", entity = "OperationalCapability", foreign_key = "capabilityId" }
+
+# update is open to authenticated principals only because a workflow on an
+# Observation needs the caller to hold Observation.update (ZEBRIC_GAPS G-04):
+# agents must run CreateInitiativeFromObservation but should not edit observations.
+[entity.Observation.access]
+read = "authenticated"
+create = "authenticated"
+update = "authenticated"
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Application activity ("how did we get here?"). Immutable. Framework audit is
+# not queryable from pages, so meaningful lifecycle events are projected here.
+# ---------------------------------------------------------------------------
+
+[entity.Activity]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "initiativeId", type = "Text", required = true, index = true },
+  { name = "type", type = "Enum", values = ["idea_submitted", "evidence_added", "stage_change", "proposal_submitted", "decision_requested", "decision_recorded", "milestone_completed", "risk_opened", "launch_requested", "readiness_completed", "launch_approved", "capability_created", "observation_recorded", "review_due", "health_change", "note"], required = true, index = true },
+  { name = "summary", type = "LongText", required = true },
+  { name = "command", type = "Text", nullable = true },
+  { name = "actorName", type = "Text", required = true },
+  { name = "actorId", type = "Text", nullable = true },
+  { name = "occurredAt", type = "DateTime", default = "now", index = true }
+]
+
+[entity.Activity.access]
+read = "authenticated"
+create = "authenticated"
+update = false
+delete = { "$currentUser.role" = "admin" }
+
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
+[page."/"]
+title = "Portfolio"
+auth = "required"
+layout = "custom"
+
+[page."/".query.initiatives]
+entity = "Initiative"
+orderBy = { updatedAt = "desc" }
+limit = 100
+
+[page."/".query.milestones]
+entity = "Milestone"
+where = { status = { "$in" = ["planned", "active", "blocked"] } }
+limit = 200
+
+[page."/".template]
+engine = "liquid"
+type = "file"
+source = "templates/portfolio.liquid"
+
+[page."/ideas/new"]
+title = "Submit an idea"
+auth = "required"
+layout = "form"
+
+[page."/ideas/new".form]
+entity = "Initiative"
+method = "create"
+fields = [
+  { name = "title", type = "text", label = "Idea", required = true },
+  { name = "summary", type = "textarea", label = "What is the idea and why might it matter?", required = true },
+  { name = "createdById", type = "hidden", default = "$currentUser.id" },
+  { name = "createdByName", type = "hidden", default = "$currentUser.name" }
+]
+
+[page."/ideas/new".form.onSuccess]
+redirect = "/"
+message = "Idea submitted."
+
+[page."/initiatives/:id"]
+title = "Initiative"
+auth = "required"
+layout = "custom"
+
+[page."/initiatives/:id".query.initiative]
+entity = "Initiative"
+where = { id = "$params.id" }
+
+[page."/initiatives/:id".query.evidence]
+entity = "Evidence"
+where = { initiativeId = "$params.id" }
+orderBy = { createdAt = "desc" }
+limit = 100
+
+[page."/initiatives/:id".query.questions]
+entity = "OpenQuestion"
+where = { initiativeId = "$params.id" }
+limit = 100
+
+[page."/initiatives/:id".query.assumptions]
+entity = "Assumption"
+where = { initiativeId = "$params.id" }
+limit = 100
+
+[page."/initiatives/:id".query.alternatives]
+entity = "Alternative"
+where = { initiativeId = "$params.id" }
+limit = 50
+
+[page."/initiatives/:id".query.decisions]
+entity = "Decision"
+where = { initiativeId = "$params.id" }
+orderBy = { requestedAt = "desc" }
+limit = 50
+
+[page."/initiatives/:id".query.milestones]
+entity = "Milestone"
+where = { initiativeId = "$params.id" }
+orderBy = { targetDate = "asc" }
+limit = 100
+
+[page."/initiatives/:id".query.tasks]
+entity = "Task"
+where = { initiativeId = "$params.id" }
+limit = 200
+
+[page."/initiatives/:id".query.risks]
+entity = "Risk"
+where = { initiativeId = "$params.id" }
+limit = 100
+
+[page."/initiatives/:id".query.readiness]
+entity = "ReadinessCheck"
+where = { initiativeId = "$params.id" }
+limit = 50
+
+[page."/initiatives/:id".query.capability]
+entity = "OperationalCapability"
+where = { initiativeId = "$params.id" }
+limit = 5
+
+[page."/initiatives/:id".query.metrics]
+entity = "Metric"
+limit = 300
+
+[page."/initiatives/:id".query.observations]
+entity = "Observation"
+limit = 300
+
+[page."/initiatives/:id".query.blockedBy]
+entity = "Dependency"
+where = { sourceId = "$params.id" }
+limit = 50
+
+[page."/initiatives/:id".query.blocking]
+entity = "Dependency"
+where = { targetId = "$params.id" }
+limit = 50
+
+[page."/initiatives/:id".query.activity]
+entity = "Activity"
+where = { initiativeId = "$params.id" }
+orderBy = { occurredAt = "desc" }
+limit = 100
+
+[page."/initiatives/:id".template]
+engine = "liquid"
+type = "file"
+source = "templates/initiative-detail.liquid"
+
+[page."/initiatives/:id".actionBar]
+title = "Lifecycle commands"
+statusField = "stage"
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Start discovery"
+workflow = "StartDiscovery"
+style = "primary"
+visibleWhen = { stage = "idea" }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Submit proposal"
+workflow = "SubmitProposal"
+style = "primary"
+visibleWhen = { stage = "discovery" }
+
+[[page."/initiatives/:id".actionBar.secondaryActions]]
+label = "Request decision"
+workflow = "RequestDecision"
+style = "secondary"
+visibleWhen = { stage = ["proposal", "launch", "operating", "building", "planning"] }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Approve initiative"
+workflow = "ApproveInitiative"
+style = "primary"
+visibleWhen = { stage = "proposal" }
+
+[[page."/initiatives/:id".actionBar.secondaryActions]]
+label = "Create plan"
+workflow = "CreatePlan"
+style = "secondary"
+visibleWhen = { stage = "planning" }
+
+[[page."/initiatives/:id".actionBar.secondaryActions]]
+label = "Approve plan"
+workflow = "ApprovePlan"
+style = "secondary"
+visibleWhen = { stage = "planning" }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Start building"
+workflow = "StartBuilding"
+style = "primary"
+visibleWhen = { stage = "planning" }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Request launch review"
+workflow = "RequestLaunchReview"
+style = "primary"
+visibleWhen = { stage = "building" }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Approve launch"
+workflow = "ApproveLaunch"
+style = "primary"
+visibleWhen = { stage = "launch" }
+
+[[page."/initiatives/:id".actionBar.actions]]
+label = "Transition to operations"
+workflow = "TransitionToOperations"
+style = "primary"
+visibleWhen = { stage = "launch" }
+
+[page."/attention"]
+title = "Attention"
+auth = "required"
+layout = "custom"
+
+[page."/attention".query.initiatives]
+entity = "Initiative"
+limit = 200
+
+[page."/attention".query.milestones]
+entity = "Milestone"
+where = { status = { "$in" = ["planned", "active", "blocked"] } }
+limit = 200
+include = ["initiative"]
+
+[page."/attention".query.decisions]
+entity = "Decision"
+where = { status = "requested" }
+limit = 100
+include = ["initiative"]
+
+[page."/attention".query.risks]
+entity = "Risk"
+where = { status = "open", impact = "high" }
+limit = 100
+include = ["initiative"]
+
+[page."/attention".query.readiness]
+entity = "ReadinessCheck"
+where = { status = { "$in" = ["pending", "blocked"] } }
+limit = 200
+include = ["initiative"]
+
+[page."/attention".query.capabilities]
+entity = "OperationalCapability"
+limit = 100
+include = ["initiative"]
+
+[page."/attention".query.observations]
+entity = "Observation"
+where = { status = "open" }
+limit = 100
+
+[page."/attention".template]
+engine = "liquid"
+type = "file"
+source = "templates/attention.liquid"
+
+[page."/decisions"]
+title = "Decisions"
+auth = "required"
+layout = "custom"
+
+[page."/decisions".query.decisions]
+entity = "Decision"
+orderBy = { requestedAt = "desc" }
+limit = 200
+include = ["initiative"]
+
+[page."/decisions".template]
+engine = "liquid"
+type = "file"
+source = "templates/decisions.liquid"
+
+[page."/decisions".actionBar]
+title = "Decision commands"
+statusField = "status"
+
+[[page."/decisions".actionBar.actions]]
+label = "Record decision"
+workflow = "RecordDecision"
+style = "primary"
+visibleWhen = { status = "requested" }
+
+[page."/launches"]
+title = "Launches"
+auth = "required"
+layout = "custom"
+
+[page."/launches".query.readiness]
+entity = "ReadinessCheck"
+limit = 300
+include = ["initiative"]
+
+[page."/launches".query.initiatives]
+entity = "Initiative"
+where = { stage = { "$in" = ["building", "launch"] } }
+limit = 50
+
+[page."/launches".query.dependencies]
+entity = "Dependency"
+where = { status = "open" }
+limit = 200
+
+[page."/launches".template]
+engine = "liquid"
+type = "file"
+source = "templates/launches.liquid"
+
+[page."/launches".actionBar]
+title = "Readiness commands"
+statusField = "status"
+
+[[page."/launches".actionBar.actions]]
+label = "Mark ready or waive"
+workflow = "CompleteReadinessCheck"
+style = "primary"
+visibleWhen = { status = ["pending", "blocked"] }
+
+[page."/milestones"]
+title = "Milestones"
+auth = "required"
+layout = "custom"
+
+[page."/milestones".query.milestones]
+entity = "Milestone"
+orderBy = { targetDate = "asc" }
+limit = 300
+include = ["initiative"]
+
+[page."/milestones".template]
+engine = "liquid"
+type = "file"
+source = "templates/milestones.liquid"
+
+[page."/milestones".actionBar]
+title = "Milestone commands"
+statusField = "status"
+
+[[page."/milestones".actionBar.actions]]
+label = "Complete milestone"
+workflow = "CompleteMilestone"
+style = "primary"
+visibleWhen = { status = ["planned", "active", "blocked"] }
+
+[page."/operations"]
+title = "Operations"
+auth = "required"
+layout = "custom"
+
+[page."/operations".query.capabilities]
+entity = "OperationalCapability"
+limit = 100
+include = ["initiative"]
+
+# hasMany include is not hydrated on pages (ZEBRIC_GAPS G-09), so metrics and
+# observations are separate queries joined by capabilityId in the template.
+[page."/operations".query.metrics]
+entity = "Metric"
+limit = 300
+
+[page."/operations".query.observations]
+entity = "Observation"
+orderBy = { createdAt = "desc" }
+limit = 300
+
+[page."/operations".template]
+engine = "liquid"
+type = "file"
+source = "templates/operations.liquid"
+
+[page."/operations".actionBar]
+title = "Operations commands"
+statusField = "status"
+
+[[page."/operations".actionBar.actions]]
+label = "Record observation"
+workflow = "RecordObservation"
+style = "primary"
+
+[[page."/operations".actionBar.secondaryActions]]
+label = "Retire capability"
+workflow = "RetireCapability"
+style = "secondary"
+visibleWhen = { status = ["healthy", "degraded", "attention", "retiring"] }
+
+[page."/observations"]
+title = "Observations"
+auth = "required"
+layout = "custom"
+
+[page."/observations".query.observations]
+entity = "Observation"
+orderBy = { createdAt = "desc" }
+limit = 200
+include = ["capability"]
+
+[page."/observations".template]
+engine = "liquid"
+type = "file"
+source = "templates/observations.liquid"
+
+[page."/observations".actionBar]
+title = "Observation commands"
+statusField = "status"
+
+[[page."/observations".actionBar.actions]]
+label = "Create initiative from observation"
+workflow = "CreateInitiativeFromObservation"
+style = "primary"
+visibleWhen = { status = ["open", "improvement"] }
+
+
+# ---------------------------------------------------------------------------
+# Domain commands. Every stage change is a workflow with a stage precondition,
+# a role precondition, and a compare-and-set update. Each writes an Activity.
+# ---------------------------------------------------------------------------
+
+[workflow.StartDiscovery]
+description = "idea -> discovery. Requires an owner and a problem statement."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "idea", "session.user.role" = ["initiative_owner", "decision_maker", "admin"], "variables.data.payload.ownerId" = { "$gt" = "" }, "variables.data.payload.problemStatement" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.StartDiscovery.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "idea" }
+data = { stage = "discovery", ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", problemStatement = "{{ variables.data.payload.problemStatement }}" }
+
+[[workflow.StartDiscovery.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "stage_change", summary = "Discovery started; owner {{ variables.data.payload.ownerName }}", command = "startDiscovery", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.SubmitProposal]
+description = "discovery -> proposal. Owner, sponsor, expected outcome, success criteria and recommended approach must exist. Opens a decision request."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "discovery", "session.user.role" = ["initiative_owner", "admin"], "variables.data.record.ownerId" = { "$gt" = "" }, "variables.data.record.sponsorId" = { "$gt" = "" }, "variables.data.record.expectedOutcome" = { "$gt" = "" }, "variables.data.record.successCriteria" = { "$gt" = "" }, "variables.data.record.recommendedApproach" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.SubmitProposal.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "discovery" }
+data = { stage = "proposal" }
+
+[[workflow.SubmitProposal.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "proposal_submitted", summary = "Proposal submitted: {{ variables.data.record.recommendedApproach }}", command = "submitProposal", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Automation: a proposal entering the proposal stage opens exactly one decision
+# request and notifies decision makers (via the console adapter in the demo).
+[workflow.OpenApprovalDecision]
+description = "Proposal submitted -> create the approval decision request."
+trigger = { entity = "Initiative", event = "update", condition = { "before.stage" = "discovery", "after.stage" = "proposal" } }
+
+[[workflow.OpenApprovalDecision.steps]]
+type = "query"
+entity = "Decision"
+action = "create"
+data = { initiativeId = "{{ variables.after.id }}", kind = "approve_initiative", question = "Approve {{ variables.after.title }}?", context = "{{ variables.after.expectedOutcome }}", requestedById = "{{ variables.after.ownerId }}", requestedByName = "{{ variables.after.ownerName }}" }
+
+[[workflow.OpenApprovalDecision.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.after.id }}", type = "decision_requested", summary = "Approval decision requested (automation)", command = "openApprovalDecision", actorName = "System" }
+
+[[workflow.OpenApprovalDecision.steps]]
+type = "notify"
+message = "Decision requested for {{ variables.after.title }}"
+
+# Agent-facing "prepare" commands are workflows, not raw skill `create` actions:
+# a skill create accepts undeclared body fields (a caller could set stage,
+# status or outcome), whereas a workflow writes only the fields it names.
+[workflow.SubmitIdea]
+description = "Create a lightweight idea. Only title and summary are accepted; stage and health cannot be supplied."
+trigger = { manual = true }
+precondition = { "variables.data.payload.title" = { "$gt" = "" }, "variables.data.payload.summary" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.SubmitIdea.steps]]
+type = "query"
+entity = "Initiative"
+action = "create"
+assignTo = "idea"
+data = { title = "{{ variables.data.payload.title }}", summary = "{{ variables.data.payload.summary }}", createdById = "{{ variables.data.session.user.id }}", createdByName = "{{ variables.data.session.user.name }}" }
+
+[[workflow.SubmitIdea.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.idea.id }}", type = "idea_submitted", summary = "Idea submitted: {{ variables.data.payload.title }}", command = "submitIdea", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.DraftMilestone]
+description = "Add a draft milestone to an approved or in-flight initiative. Status is always planned and isDraft true; completion only happens through CompleteMilestone."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = ["approved", "planning", "building"], "variables.data.payload.title" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.DraftMilestone.steps]]
+type = "query"
+entity = "Milestone"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", status = "planned", isDraft = true }
+
+[[workflow.DraftMilestone.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "note", summary = "Draft milestone proposed: {{ variables.data.payload.title }}", command = "draftMilestone", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.RequestDecision]
+description = "Create a decision request. Open to agents: preparing a decision is not making it."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.RequestDecision.steps]]
+type = "query"
+entity = "Decision"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", kind = "{{ variables.data.payload.kind }}", question = "{{ variables.data.payload.question }}", context = "{{ variables.data.payload.context }}", requestedById = "{{ variables.data.session.user.id }}", requestedByName = "{{ variables.data.session.user.name }}" }
+
+[[workflow.RequestDecision.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "decision_requested", summary = "Decision requested: {{ variables.data.payload.question }}", command = "requestDecision", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.RecordDecision]
+description = "Record the human decision. Only a decision maker or admin can run this; agent API keys cannot."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = "requested", "session.user.role" = ["decision_maker", "admin"], "variables.data.payload.outcome" = ["approved", "rejected"], "variables.data.payload.decision" = { "$gt" = "" }, "variables.data.payload.rationale" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.RecordDecision.steps]]
+type = "query"
+entity = "Decision"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "requested" }
+data = { status = "decided", outcome = "{{ variables.data.payload.outcome }}", decision = "{{ variables.data.payload.decision }}", rationale = "{{ variables.data.payload.rationale }}", selectedAlternativeId = "{{ variables.data.payload.selectedAlternativeId }}", decidedById = "{{ variables.data.session.user.id }}", decidedByName = "{{ variables.data.session.user.name }}", decidedAt = "now" }
+
+[[workflow.RecordDecision.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.initiativeId }}", type = "decision_recorded", summary = "{{ variables.data.session.user.name }} decided ({{ variables.data.payload.outcome }}): {{ variables.data.record.question }}", command = "recordDecision", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Runs on an Initiative record; payload.decisionId names the authorizing decision.
+# The Decision update is a compare-and-set that doubles as an existence assertion:
+# if no decided+approved approve_initiative decision exists for this initiative it
+# raises a conflict and the transaction rolls back (ZEBRIC_GAPS G-05: no assert step).
+[workflow.ApproveInitiative]
+description = "proposal -> approved. Requires a recorded, approved decision authorizing this initiative."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "proposal", "session.user.role" = ["decision_maker", "admin"] }
+transactional = true
+
+[[workflow.ApproveInitiative.steps]]
+type = "query"
+entity = "Decision"
+action = "update"
+where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.id }}", kind = "approve_initiative", status = "decided", outcome = "approved" }
+data = { status = "decided" }
+
+[[workflow.ApproveInitiative.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "proposal" }
+data = { stage = "approved" }
+
+[[workflow.ApproveInitiative.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "stage_change", summary = "Initiative approved by {{ variables.data.session.user.name }}", command = "approveInitiative", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.BeginPlanning]
+description = "Approval recorded -> move to planning and create the planning checklist."
+trigger = { entity = "Initiative", event = "update", condition = { "before.stage" = "proposal", "after.stage" = "approved" } }
+
+[[workflow.BeginPlanning.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.after.id }}", stage = "approved" }
+data = { stage = "planning" }
+
+[[workflow.BeginPlanning.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { initiativeId = "{{ variables.after.id }}", title = "Draft milestones for {{ variables.after.title }}", kind = "planning", assignedToId = "{{ variables.after.ownerId }}", assignedToName = "{{ variables.after.ownerName }}" }
+
+[[workflow.BeginPlanning.steps]]
+type = "query"
+entity = "Task"
+action = "create"
+data = { initiativeId = "{{ variables.after.id }}", title = "Set target launch date", kind = "planning", assignedToId = "{{ variables.after.ownerId }}", assignedToName = "{{ variables.after.ownerName }}" }
+
+[[workflow.BeginPlanning.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.after.id }}", type = "stage_change", summary = "Planning began with checklist (automation)", command = "beginPlanning", actorName = "System" }
+
+[workflow.CreatePlan]
+description = "Add the first milestone and set the target launch date while planning."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "planning", "session.user.role" = ["initiative_owner", "decision_maker", "admin"], "variables.data.payload.targetLaunchDate" = { "$gt" = "" }, "variables.data.payload.milestoneTitle" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.CreatePlan.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "planning" }
+data = { targetLaunchDate = "{{ variables.data.payload.targetLaunchDate }}" }
+
+[[workflow.CreatePlan.steps]]
+type = "query"
+entity = "Milestone"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.milestoneTitle }}", targetDate = "{{ variables.data.payload.milestoneDate }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", status = "planned" }
+
+[[workflow.CreatePlan.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "note", summary = "Plan drafted with first milestone {{ variables.data.payload.milestoneTitle }}", command = "createPlan", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.ApprovePlan]
+description = "Decision maker approves the plan."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "planning", "session.user.role" = ["decision_maker", "admin"] }
+transactional = true
+
+[[workflow.ApprovePlan.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "planning" }
+data = { planApprovedAt = "now" }
+
+[[workflow.ApprovePlan.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "note", summary = "Plan approved by {{ variables.data.session.user.name }}", command = "approvePlan", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.StartBuilding]
+description = "planning -> building. Requires an owner, target launch date and approved plan."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "planning", "session.user.role" = ["initiative_owner", "decision_maker", "admin"], "variables.data.record.ownerId" = { "$gt" = "" }, "variables.data.record.targetLaunchDate" = { "$gt" = "" }, "variables.data.record.planApprovedAt" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.StartBuilding.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "planning" }
+data = { stage = "building" }
+
+[[workflow.StartBuilding.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "stage_change", summary = "Building started", command = "startBuilding", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.CompleteMilestone]
+description = "Complete a milestone."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["planned", "active", "blocked"], "session.user.role" = ["initiative_owner", "decision_maker", "admin"] }
+transactional = true
+
+[[workflow.CompleteMilestone.steps]]
+type = "query"
+entity = "Milestone"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
+data = { status = "completed", completedAt = "now" }
+
+[[workflow.CompleteMilestone.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.initiativeId }}", type = "milestone_completed", summary = "Milestone completed: {{ variables.data.record.title }}", command = "completeMilestone", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Health automation. Zebric has no aggregates or computed fields, so health is a
+# stored projection nudged by events. It can raise health problems but cannot
+# recompute (clear) them because it cannot count remaining blockers.
+[workflow.MilestoneBlockedHealth]
+description = "Milestone blocked -> initiative health blocked."
+trigger = { entity = "Milestone", event = "update", condition = { "after.status" = "blocked" } }
+
+[[workflow.MilestoneBlockedHealth.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.after.initiativeId }}" }
+data = { health = "blocked", healthReason = "Milestone blocked: {{ variables.after.title }}" }
+
+[[workflow.MilestoneBlockedHealth.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.after.initiativeId }}", type = "health_change", summary = "Health set to blocked: milestone {{ variables.after.title }} is blocked (automation)", command = "milestoneBlockedHealth", actorName = "System" }
+
+[workflow.HighRiskHealth]
+description = "High-impact, high-likelihood risk opened -> initiative at risk."
+trigger = { entity = "Risk", event = "create", condition = { "after.impact" = "high", "after.likelihood" = "high" } }
+
+[[workflow.HighRiskHealth.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.after.initiativeId }}" }
+data = { health = "at_risk", healthReason = "High risk opened: {{ variables.after.title }}" }
+
+[[workflow.HighRiskHealth.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.after.initiativeId }}", type = "risk_opened", summary = "High risk opened: {{ variables.after.title }} (automation)", command = "highRiskHealth", actorName = "System" }
+
+[workflow.RequestLaunchReview]
+description = "building -> launch. All implementation milestones must be completed; generates readiness checks."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "building", "session.user.role" = ["initiative_owner", "decision_maker", "admin"] }
+transactional = true
+
+# Milestone completion is asserted by finding non-complete milestones and raising a
+# deliberate conflict when any exist (no count/assert step; see ZEBRIC_GAPS G-05).
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "Milestone"
+action = "find"
+where = { initiativeId = "{{ variables.data.record.id }}", status = { "$in" = ["planned", "active", "blocked"] } }
+assignTo = "openMilestones"
+
+[[workflow.RequestLaunchReview.steps]]
+type = "condition"
+if = { "variables.openMilestones.0.id" = { "$gt" = "" } }
+then = [
+  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__milestones_incomplete__" }, data = { health = "attention" } }
+]
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "building" }
+data = { stage = "launch" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", category = "engineering", title = "Production deploy and rollback verified", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", category = "security", title = "Security review complete", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", category = "support", title = "Support team trained", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", category = "documentation", title = "Customer documentation published", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", category = "operations", title = "Runbook and on-call owner assigned", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
+
+[[workflow.RequestLaunchReview.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "launch_requested", summary = "Launch review requested; 5 readiness checks generated", command = "requestLaunchReview", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.CompleteReadinessCheck]
+description = "Mark a readiness check ready, or waive it (waiving requires a decision maker)."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["pending", "blocked"], "variables.data.payload.status" = ["ready", "waived"], "$or" = [{ "variables.data.payload.status" = "ready" }, { "session.user.role" = ["decision_maker", "admin"] }] }
+transactional = true
+
+[[workflow.CompleteReadinessCheck.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
+data = { status = "{{ variables.data.payload.status }}", notes = "{{ variables.data.payload.notes }}", completedAt = "now" }
+
+[[workflow.CompleteReadinessCheck.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.initiativeId }}", type = "readiness_completed", summary = "Readiness check {{ variables.data.payload.status }}: {{ variables.data.record.title }}", command = "completeReadinessCheck", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.ApproveLaunch]
+description = "Record launch approval. Requires an approved approve_launch decision and all readiness checks ready or waived."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "launch", "session.user.role" = ["decision_maker", "admin"], "variables.data.payload.operationalOwnerId" = { "$gt" = "" }, "variables.data.payload.runbookUrl" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.ApproveLaunch.steps]]
+type = "query"
+entity = "ReadinessCheck"
+action = "find"
+where = { initiativeId = "{{ variables.data.record.id }}", status = { "$in" = ["pending", "blocked"] } }
+assignTo = "unresolvedChecks"
+
+[[workflow.ApproveLaunch.steps]]
+type = "condition"
+if = { "variables.unresolvedChecks.0.id" = { "$gt" = "" } }
+then = [
+  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__readiness_incomplete__" }, data = { health = "blocked" } }
+]
+
+# Dependencies gate the transition: any open blocks_launch edge out of this
+# initiative refuses approval (same find + deliberate-conflict assertion).
+[[workflow.ApproveLaunch.steps]]
+type = "query"
+entity = "Dependency"
+action = "find"
+where = { sourceId = "{{ variables.data.record.id }}", type = "blocks_launch", status = "open" }
+assignTo = "openDependencies"
+
+[[workflow.ApproveLaunch.steps]]
+type = "condition"
+if = { "variables.openDependencies.0.id" = { "$gt" = "" } }
+then = [
+  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__dependency_open__" }, data = { health = "blocked" } }
+]
+
+[[workflow.ApproveLaunch.steps]]
+type = "query"
+entity = "Decision"
+action = "update"
+where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.id }}", kind = "approve_launch", status = "decided", outcome = "approved" }
+data = { status = "decided" }
+
+[[workflow.ApproveLaunch.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "launch" }
+data = { launchApprovedAt = "now", operationalOwnerId = "{{ variables.data.payload.operationalOwnerId }}", operationalOwnerName = "{{ variables.data.payload.operationalOwnerName }}", runbookUrl = "{{ variables.data.payload.runbookUrl }}" }
+
+[[workflow.ApproveLaunch.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "launch_approved", summary = "Launch approved by {{ variables.data.session.user.name }}", command = "approveLaunch", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.TransitionToOperations]
+description = "launch -> operating. Requires launch approval, operational owner, runbook. Creates the OperationalCapability."
+trigger = { manual = true }
+precondition = { "variables.data.record.stage" = "launch", "session.user.role" = ["initiative_owner", "decision_maker", "admin"], "variables.data.record.launchApprovedAt" = { "$gt" = "" }, "variables.data.record.operationalOwnerId" = { "$gt" = "" }, "variables.data.record.runbookUrl" = { "$gt" = "" } }
+transactional = true
+
+[[workflow.TransitionToOperations.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.id }}", stage = "launch" }
+data = { stage = "operating", launchedAt = "now", health = "healthy", healthReason = "" }
+
+[[workflow.TransitionToOperations.steps]]
+type = "query"
+entity = "OperationalCapability"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", name = "{{ variables.data.record.title }}", description = "{{ variables.data.record.summary }}", ownerId = "{{ variables.data.record.operationalOwnerId }}", ownerName = "{{ variables.data.record.operationalOwnerName }}", runbookUrl = "{{ variables.data.record.runbookUrl }}", launchedAt = "now", reviewCadence = "monthly" }
+
+[[workflow.TransitionToOperations.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "capability_created", summary = "Now operating; owner {{ variables.data.record.operationalOwnerName }}", command = "transitionToOperations", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Workflow composition: reaching operations satisfies every dependency that was
+# waiting on this initiative, so dependents can proceed without manual cleanup.
+[workflow.SatisfyDependencies]
+description = "Initiative starts operating -> mark dependencies on it satisfied."
+trigger = { entity = "Initiative", event = "update", condition = { "before.stage" = "launch", "after.stage" = "operating" } }
+
+[[workflow.SatisfyDependencies.steps]]
+type = "query"
+entity = "Dependency"
+action = "find"
+where = { targetId = "{{ variables.after.id }}", status = "open" }
+assignTo = "waiting"
+
+[[workflow.SatisfyDependencies.steps]]
+type = "loop"
+items = "{{ variables.waiting }}"
+do = [
+  { type = "query", entity = "Dependency", action = "update", where = { id = "{{ variables.item.id }}", status = "open" }, data = { status = "satisfied" } },
+  { type = "query", entity = "Activity", action = "create", data = { initiativeId = "{{ variables.item.sourceId }}", type = "note", summary = "Dependency satisfied: {{ variables.item.targetLabel }} is now operating (automation)", command = "satisfyDependencies", actorName = "System" } }
+]
+
+[workflow.RecordObservation]
+description = "Record an operational observation against a capability."
+trigger = { manual = true }
+transactional = true
+
+[[workflow.RecordObservation.steps]]
+type = "query"
+entity = "Observation"
+action = "create"
+data = { capabilityId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", severity = "{{ variables.data.payload.severity }}", createdById = "{{ variables.data.session.user.id }}", createdByName = "{{ variables.data.session.user.name }}" }
+
+[[workflow.RecordObservation.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.initiativeId }}", type = "observation_recorded", summary = "Observation recorded: {{ variables.data.payload.title }}", command = "recordObservation", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Provenance closes the loop: the new Idea carries sourceObservationId and
+# sourceCapabilityId; the Observation is marked converted with the new id.
+[workflow.CreateInitiativeFromObservation]
+description = "Turn an open observation into a new draft Idea, retaining provenance. Open to agents (creates an idea only)."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["open", "improvement"] }
+transactional = true
+
+[[workflow.CreateInitiativeFromObservation.steps]]
+type = "query"
+entity = "Initiative"
+action = "create"
+assignTo = "idea"
+data = { title = "{{ variables.data.payload.title }}", summary = "{{ variables.data.record.description }}", sourceObservationId = "{{ variables.data.record.id }}", sourceCapabilityId = "{{ variables.data.record.capabilityId }}", createdById = "{{ variables.data.session.user.id }}", createdByName = "{{ variables.data.session.user.name }}" }
+
+[[workflow.CreateInitiativeFromObservation.steps]]
+type = "query"
+entity = "Observation"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "converted", resultingInitiativeId = "{{ variables.idea.id }}" }
+
+[[workflow.CreateInitiativeFromObservation.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.idea.id }}", type = "idea_submitted", summary = "Idea created from operational observation: {{ variables.data.record.title }}", command = "createInitiativeFromObservation", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+[workflow.RetireCapability]
+description = "Retire an operating capability. Requires an approved retire decision."
+trigger = { manual = true }
+precondition = { "variables.data.record.status" = ["healthy", "degraded", "attention", "retiring"], "session.user.role" = ["decision_maker", "admin"] }
+transactional = true
+
+[[workflow.RetireCapability.steps]]
+type = "query"
+entity = "Decision"
+action = "update"
+where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.initiativeId }}", kind = "retire", status = "decided", outcome = "approved" }
+data = { status = "decided" }
+
+[[workflow.RetireCapability.steps]]
+type = "query"
+entity = "OperationalCapability"
+action = "update"
+where = { id = "{{ variables.data.record.id }}" }
+data = { status = "retired" }
+
+[[workflow.RetireCapability.steps]]
+type = "query"
+entity = "Initiative"
+action = "update"
+where = { id = "{{ variables.data.record.initiativeId }}", stage = "operating" }
+data = { stage = "retired", retiredAt = "now", retirementReason = "{{ variables.data.payload.reason }}" }
+
+[[workflow.RetireCapability.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.initiativeId }}", type = "stage_change", summary = "Capability and initiative retired: {{ variables.data.payload.reason }}", command = "retireCapability", actorName = "{{ variables.data.session.user.name }}", actorId = "{{ variables.data.session.user.id }}" }
+
+# Time-driven review. Blueprint parses `schedule`, but the runtime never calls
+# WorkflowManager.triggerSchedule, so this never fires by itself (ZEBRIC_GAPS
+# G-06). It can be run by hand from the Operations page to prove the body.
+[workflow.OperationalReviewDue]
+description = "Capability due for review -> create review work for its owner."
+trigger = { schedule = "0 9 * * 1" }
+
+[[workflow.OperationalReviewDue.steps]]
+type = "query"
+entity = "OperationalCapability"
+action = "find"
+where = { status = { "$in" = ["healthy", "degraded", "attention"] } }
+assignTo = "capabilities"
+
+[[workflow.OperationalReviewDue.steps]]
+type = "loop"
+items = "{{ variables.capabilities }}"
+do = [
+  { type = "query", entity = "Task", action = "create", data = { initiativeId = "{{ variables.item.initiativeId }}", title = "Operational review: {{ variables.item.name }}", kind = "operations", assignedToId = "{{ variables.item.ownerId }}", assignedToName = "{{ variables.item.ownerName }}" } }
+]
+
+# ---------------------------------------------------------------------------
+# Agent surface. Semantic tools; read scopes are separate from write scopes and
+# no skill action exposes approve/decide/launch/retire.
+# ---------------------------------------------------------------------------
+
+[skill.ops]
+description = "Operate the Northstar idea-to-operations lifecycle. Agents can read everything, add discovery material, prepare drafts and decision requests, and create ideas from observations. Approving, deciding, launching and retiring are human-only."
+auth = "required"
+
+[[skill.ops.actions]]
+name = "list_initiatives"
+description = "List initiatives. Filter by stage (idea, discovery, proposal, approved, planning, building, launch, operating, retired) or health (healthy, attention, at_risk, blocked)."
+method = "GET"
+path = "/api/agent/initiatives"
+entity = "Initiative"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.stage]
+type = "Enum"
+values = ["idea", "discovery", "proposal", "approved", "planning", "building", "launch", "operating", "retired"]
+required = false
+[skill.ops.actions.query.health]
+type = "Enum"
+values = ["healthy", "attention", "at_risk", "blocked"]
+required = false
+
+[[skill.ops.actions]]
+name = "get_initiative"
+description = "Get one initiative with its stage, owner, sponsor, outcome, success criteria, health and health reason."
+method = "GET"
+path = "/api/agent/initiatives/{id}"
+entity = "Initiative"
+action = "get"
+scopes = ["ops.read"]
+risk = "read"
+
+[[skill.ops.actions]]
+name = "list_evidence"
+description = "List evidence supporting an initiative (why are we doing this?)."
+method = "GET"
+path = "/api/agent/evidence"
+entity = "Evidence"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+
+[[skill.ops.actions]]
+name = "add_evidence"
+description = "Attach evidence to an initiative."
+method = "POST"
+path = "/api/agent/evidence"
+entity = "Evidence"
+action = "create"
+scopes = ["ops.discovery.write"]
+risk = "write"
+body = { initiativeId = "Ref", type = "Text", title = "Text", summary = "Text", sourceUrl = "Text" }
+
+[[skill.ops.actions]]
+name = "list_open_questions"
+description = "List open questions. Filter by initiative and status=open to find what blocks progression."
+method = "GET"
+path = "/api/agent/questions"
+entity = "OpenQuestion"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["open", "validated", "invalidated", "resolved"]
+required = false
+
+[[skill.ops.actions]]
+name = "add_question"
+description = "Record an open question against an initiative."
+method = "POST"
+path = "/api/agent/questions"
+entity = "OpenQuestion"
+action = "create"
+scopes = ["ops.discovery.write"]
+risk = "write"
+body = { initiativeId = "Ref", question = "Text", blocksProgression = "Boolean" }
+
+[[skill.ops.actions]]
+name = "list_assumptions"
+description = "List assumptions. Filter by initiative and status."
+method = "GET"
+path = "/api/agent/assumptions"
+entity = "Assumption"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["open", "validated", "invalidated", "resolved"]
+required = false
+
+[[skill.ops.actions]]
+name = "add_assumption"
+description = "Record an assumption against an initiative."
+method = "POST"
+path = "/api/agent/assumptions"
+entity = "Assumption"
+action = "create"
+scopes = ["ops.discovery.write"]
+risk = "write"
+body = { initiativeId = "Ref", statement = "Text", blocksProgression = "Boolean" }
+
+[[skill.ops.actions]]
+name = "list_alternatives"
+description = "List alternatives considered for an initiative."
+method = "GET"
+path = "/api/agent/alternatives"
+entity = "Alternative"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+
+[[skill.ops.actions]]
+name = "add_alternative"
+description = "Add an alternative approach to an initiative."
+method = "POST"
+path = "/api/agent/alternatives"
+entity = "Alternative"
+action = "create"
+scopes = ["ops.discovery.write"]
+risk = "write"
+body = { initiativeId = "Ref", title = "Text", description = "Text", advantages = "Text", disadvantages = "Text", estimatedEffort = "Text" }
+
+[[skill.ops.actions]]
+name = "list_decisions"
+description = "List decisions (requested, decided, superseded). Use status=requested for decisions awaiting a human."
+method = "GET"
+path = "/api/agent/decisions"
+entity = "Decision"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["requested", "decided", "superseded"]
+required = false
+
+[[skill.ops.actions]]
+name = "request_decision"
+description = "Prepare a decision request for a human decision maker. This does not make the decision."
+method = "POST"
+path = "/api/agent/initiatives/{id}/decision-requests"
+entity = "Initiative"
+workflow = "RequestDecision"
+scopes = ["ops.decision.prepare"]
+risk = "write"
+body = { kind = "Text", question = "Text", context = "Text" }
+
+[[skill.ops.actions]]
+name = "list_milestones"
+description = "List milestones. Filter by initiative or status (planned, active, blocked, completed, cancelled)."
+method = "GET"
+path = "/api/agent/milestones"
+entity = "Milestone"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["planned", "active", "blocked", "completed", "cancelled"]
+required = false
+
+[[skill.ops.actions]]
+name = "draft_milestone"
+description = "Create a draft milestone (isDraft=true) for an approved initiative. A human owner promotes or completes it."
+method = "POST"
+path = "/api/agent/initiatives/{id}/draft-milestones"
+entity = "Initiative"
+workflow = "DraftMilestone"
+scopes = ["ops.plan.draft"]
+risk = "write"
+body = { title = "Text", description = "Text" }
+
+[[skill.ops.actions]]
+name = "list_tasks"
+description = "List tasks for an initiative."
+method = "GET"
+path = "/api/agent/tasks"
+entity = "Task"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+
+[[skill.ops.actions]]
+name = "list_risks"
+description = "List risks; filter by initiative or status=open."
+method = "GET"
+path = "/api/agent/risks"
+entity = "Risk"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["open", "mitigated", "accepted", "closed"]
+required = false
+
+[[skill.ops.actions]]
+name = "list_dependencies"
+description = "List dependencies. Filter by status=open to find unresolved blockers. sourceId depends on targetId."
+method = "GET"
+path = "/api/agent/dependencies"
+entity = "Dependency"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.sourceId]
+type = "Text"
+required = false
+[skill.ops.actions.query.targetId]
+type = "Text"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["open", "satisfied", "waived"]
+required = false
+
+[[skill.ops.actions]]
+name = "list_readiness_checks"
+description = "List launch readiness checks for an initiative; status pending or blocked means not ready."
+method = "GET"
+path = "/api/agent/readiness"
+entity = "ReadinessCheck"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["pending", "ready", "waived", "blocked"]
+required = false
+
+[[skill.ops.actions]]
+name = "list_capabilities"
+description = "List operational capabilities with status and next review."
+method = "GET"
+path = "/api/agent/capabilities"
+entity = "OperationalCapability"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["healthy", "degraded", "attention", "retiring", "retired"]
+required = false
+
+[[skill.ops.actions]]
+name = "list_metrics"
+description = "List operational metrics with target, current value and status."
+method = "GET"
+path = "/api/agent/metrics"
+entity = "Metric"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.capabilityId]
+type = "Ref"
+required = false
+
+[[skill.ops.actions]]
+name = "list_observations"
+description = "List operational observations. Filter status=open for unresolved ones."
+method = "GET"
+path = "/api/agent/observations"
+entity = "Observation"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.capabilityId]
+type = "Ref"
+required = false
+[skill.ops.actions.query.status]
+type = "Enum"
+values = ["open", "incident", "improvement", "converted", "dismissed"]
+required = false
+
+[[skill.ops.actions]]
+name = "create_initiative_from_observation"
+description = "Turn an open observation into a new draft Idea that keeps provenance to the observation and capability."
+method = "POST"
+path = "/api/agent/observations/{id}/create-initiative"
+entity = "Observation"
+workflow = "CreateInitiativeFromObservation"
+scopes = ["ops.observation.convert"]
+risk = "write"
+body = { title = "Text" }
+
+[[skill.ops.actions]]
+name = "list_activity"
+description = "Read the activity trail for an initiative: how did we get here?"
+method = "GET"
+path = "/api/agent/activity"
+entity = "Activity"
+action = "list"
+scopes = ["ops.read"]
+risk = "read"
+[skill.ops.actions.query.initiativeId]
+type = "Text"
+required = false
+
+[[skill.ops.actions]]
+name = "submit_idea"
+description = "Submit a new lightweight idea (title + summary)."
+method = "POST"
+path = "/api/agent/ideas"
+entity = "Initiative"
+workflow = "SubmitIdea"
+scopes = ["ops.idea.create"]
+risk = "write"
+body = { title = "Text", summary = "Text" }
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+[notifications]
+default = "console"
+
+[[notifications.adapters]]
+name = "console"
+type = "console"
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+[auth.pages.signIn]
+engine = "liquid"
+type = "file"
+source = "templates/sign-in.liquid"
+
+[auth.permissions]
+user = { allow = ["Initiative.read", "Initiative.create", "Evidence.read", "Evidence.create", "Assumption.read", "Assumption.create", "OpenQuestion.read", "OpenQuestion.create", "Alternative.read", "Alternative.create", "Decision.read", "Decision.create", "Milestone.read", "Milestone.create", "Task.read", "Task.create", "Task.update", "Dependency.read", "Dependency.create", "Risk.read", "Risk.create", "ReadinessCheck.read", "OperationalCapability.read", "Metric.read", "Observation.read", "Observation.create", "Observation.update", "Activity.read", "Activity.create"] }
+initiative_owner = { allow = ["Initiative.read", "Initiative.create", "Initiative.update", "Evidence.*", "Assumption.*", "OpenQuestion.*", "Alternative.*", "Decision.read", "Decision.create", "Milestone.*", "Task.*", "Dependency.*", "Risk.*", "ReadinessCheck.*", "OperationalCapability.read", "OperationalCapability.create", "Metric.read", "Observation.read", "Observation.create", "Activity.read", "Activity.create"] }
+decision_maker = { allow = ["Initiative.read", "Initiative.create", "Initiative.update", "Evidence.read", "Evidence.create", "Assumption.*", "OpenQuestion.*", "Alternative.*", "Decision.*", "Milestone.*", "Task.*", "Dependency.*", "Risk.*", "ReadinessCheck.*", "OperationalCapability.*", "Metric.read", "Observation.*", "Activity.read", "Activity.create"] }
+operational_owner = { allow = ["Initiative.read", "Initiative.create", "Initiative.update", "Evidence.read", "Evidence.create", "Assumption.read", "OpenQuestion.read", "Alternative.read", "Decision.read", "Decision.create", "Milestone.read", "Task.*", "Dependency.read", "Risk.read", "ReadinessCheck.read", "ReadinessCheck.update", "OperationalCapability.*", "Metric.*", "Observation.*", "Activity.read", "Activity.create"] }
+admin = { allow = ["*.*"] }
+
+[[auth.apiKeys]]
+name = "ops-agent"
+keyEnv = "OPS_AGENT_API_KEY"
+agentId = "ops-agent"
+credentialId = "ops-demo-credential"
+displayName = "Operations Agent"
+scopes = ["ops.read", "ops.discovery.write", "ops.decision.prepare", "ops.plan.draft", "ops.observation.convert", "ops.idea.create"]
+
+[ui]
+render_mode = "server"
+theme = "default"
+progressive_enhancement = "alpine"
+view_transitions = true
