@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
-import { AuthorizationFailureError, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
+import {
+  AuthorizationFailureError,
+  CommandUnavailableError,
+  ExpressionEvaluationError,
+  ExternalResultValidationError,
+  ProtectedFieldMutationError,
+  ServiceFailureError,
+  ValidationFailureError,
+  WorkflowFailureError,
+  injectCsrfTokenIntoRequest,
+} from '@zebric/runtime-core'
 import { registerSearchRoutes, type BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerCommandRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
+import { commandErrorStatus, registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerCommandRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
 import { createApiKeyRegistry } from './server-security.js'
 import { AgentEventBus } from './agent-event-bus.js'
 
@@ -176,6 +186,48 @@ describe('domain command HTTP routes', () => {
     })
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: 'AUTHORIZATION_FAILED' } })
+  })
+
+  it.each([
+    [new AuthorizationFailureError('denied'), 403],
+    [new ValidationFailureError('invalid'), 422],
+    [new ExternalResultValidationError('invalid result'), 422],
+    [new CommandUnavailableError('not in this state'), 409],
+    [new CommandUnavailableError('Request req-1 was not found'), 404],
+    [new ProtectedFieldMutationError('Request', ['status']), 409],
+    [new WorkflowFailureError('workflow failed'), 500],
+    [new ServiceFailureError('service failed'), 500],
+    [new ExpressionEvaluationError('expression failed'), 500],
+  ])('maps the shared %s error to HTTP %s', (error, status) => {
+    expect(commandErrorStatus(error)).toBe(status)
+  })
+
+  it('identifies API-key command calls as MCP while retaining the shared executor', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1' } }))
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => null } as any,
+      apiKeys: testApiKeys([]),
+    })
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer secret-key',
+        'content-type': 'application/json',
+        'x-agent-run-id': 'command-test-run',
+      },
+      body: '{}',
+    })
+
+    expect(response.status).toBe(200)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest',
+      context: expect.objectContaining({ source: 'mcp', session: expect.objectContaining({
+        actor: expect.objectContaining({ type: 'agent' }),
+      }) }),
+    }))
   })
 })
 

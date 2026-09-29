@@ -1261,7 +1261,7 @@ export function registerAuditRoutes(
   })
 }
 
-function commandErrorStatus(error: DomainError): 403 | 404 | 409 | 422 | 500 {
+export function commandErrorStatus(error: DomainError): 403 | 404 | 409 | 422 | 500 {
   if (error.code === 'AUTHORIZATION_FAILED') return 403
   if (error.code === 'VALIDATION_FAILED' || error.code === 'EXTERNAL_RESULT_VALIDATION_FAILED') return 422
   if (error.code === 'COMMAND_UNAVAILABLE') {

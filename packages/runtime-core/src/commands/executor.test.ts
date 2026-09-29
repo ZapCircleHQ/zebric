@@ -184,6 +184,8 @@ describe('CommandExecutor', () => {
   it('injects named services into application command handlers', async () => {
     const queryExecutor = new MemoryQueryExecutor()
     const services = { invoke: vi.fn().mockResolvedValue({ score: 92 }) }
+    const publish = vi.fn()
+    const log = vi.fn()
     const handlerBlueprint: Blueprint = {
       ...blueprint,
       commands: [{
@@ -192,9 +194,14 @@ describe('CommandExecutor', () => {
         handler: 'commands.approve',
       }],
     }
-    const executor = new CommandExecutor(handlerBlueprint, { queryExecutor, services })
+    const executor = new CommandExecutor(handlerBlueprint, {
+      queryExecutor, services, eventPublisher: { publish }, auditLogger: { log },
+    })
     executor.registerHandler('commands.approve', async context => {
       const result = await context.services!.invoke('risk', 'score', { id: context.record.id }) as { score: number }
+      await context.db.findById('Request', String(context.record.id))
+      context.events.publish({ name: 'RiskScored', data: { score: result.score } })
+      context.audit.log({ action: 'risk.scored', metadata: { score: result.score } })
       return { comment: `Risk score: ${result.score}` }
     })
 
@@ -209,5 +216,39 @@ describe('CommandExecutor', () => {
     expect(services.invoke).toHaveBeenCalledWith('risk', 'score', { id: 'req-1' }, expect.objectContaining({
       correlationId: 'trace-handler',
     }))
+    expect(log).toHaveBeenCalledWith(expect.objectContaining({ action: 'risk.scored' }))
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'RiskScored', command: 'ApproveRequest', recordId: 'req-1',
+    }))
+  })
+
+  it('discards handler audit entries and events when the transaction rolls back', async () => {
+    class RollbackExecutor extends MemoryQueryExecutor {
+      override async transaction<T>(fn: () => Promise<T>): Promise<T> {
+        await fn()
+        throw new Error('commit failed')
+      }
+    }
+    const publish = vi.fn()
+    const log = vi.fn()
+    const handlerBlueprint: Blueprint = {
+      ...blueprint,
+      commands: [{ ...blueprint.commands![0]!, mutations: {}, handler: 'commands.approve' }],
+    }
+    const executor = new CommandExecutor(handlerBlueprint, {
+      queryExecutor: new RollbackExecutor(), eventPublisher: { publish }, auditLogger: { log },
+    })
+    executor.registerHandler('commands.approve', context => {
+      context.events.publish({ name: 'ShouldNotPublish' })
+      context.audit.log({ action: 'should.not.log' })
+      return { status: 'approved' }
+    })
+
+    await expect(executor.execute({
+      command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: [], scopes: [] },
+    })).rejects.toThrow('commit failed')
+    expect(publish).not.toHaveBeenCalled()
+    expect(log).not.toHaveBeenCalled()
   })
 })

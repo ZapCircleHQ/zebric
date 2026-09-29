@@ -228,6 +228,10 @@ export class ZebricEngine extends EventEmitter {
         notificationManager: this.notificationManager,
         getHealthStatus: () => this.getHealth(),
         agentEventBus: this.agentEventBus,
+        commandSourceFiles: new Map((this.blueprint.commands ?? []).flatMap(command => {
+          const source = this.loader.getSourceLocation('command', command.name)?.file
+          return source ? [[command.name, source] as const] : []
+        })),
       })
 
       this.server = await this.serverManager.start()

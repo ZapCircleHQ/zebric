@@ -47,6 +47,7 @@ import {
 import { registerSearchRoutes } from '@zebric/runtime-hono'
 import { AgentEventBus } from './agent-event-bus.js'
 import { createServiceRegistry } from '../services/service-registry.js'
+import { isFileHandlerReference, loadCommandHandler } from '../commands/command-handler-loader.js'
 
 export interface ServerManagerDependencies {
   blueprint: Blueprint
@@ -67,6 +68,8 @@ export interface ServerManagerDependencies {
   auditLogger?: AuditLogger
   getHealthStatus?: () => Promise<any>
   agentEventBus?: AgentEventBus
+  /** Source TOML file for each command, used for directory-relative handler files. */
+  commandSourceFiles?: ReadonlyMap<string, string>
 }
 
 function getCorrelationId(c: Context): string | undefined {
@@ -112,6 +115,7 @@ export class ServerManager {
   private csrfCookieName = 'csrf-token'
   private readonly agentEventBus: AgentEventBus
   private commandExecutor: CommandExecutor
+  private commandSourceFiles: ReadonlyMap<string, string>
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -131,6 +135,7 @@ export class ServerManager {
     this.auditLogger = deps.auditLogger
     this.agentEventBus = deps.agentEventBus ?? new AgentEventBus()
     this.getHealthStatusFn = deps.getHealthStatus
+    this.commandSourceFiles = deps.commandSourceFiles ?? new Map()
     this.commandExecutor = this.createCommandExecutor()
     this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
@@ -245,6 +250,23 @@ export class ServerManager {
     this.commandExecutor.registerHandler(reference, handler)
   }
 
+  private async loadFileCommandHandlers(): Promise<void> {
+    for (const command of this.blueprint.commands ?? []) {
+      if (!command.handler || !isFileHandlerReference(command.handler)) continue
+      const sourceFile = this.commandSourceFiles.get(command.name) ?? this.config.blueprintPath
+      try {
+        this.commandExecutor.registerHandler(command.handler, await loadCommandHandler({
+          command,
+          sourceFile,
+          rootBlueprintPath: this.config.blueprintPath,
+        }))
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`Unable to load handler for command ${command.name}: ${message}`, { cause: error })
+      }
+    }
+  }
+
   updateDependencies(updates: Partial<ServerManagerDependencies>): void {
     if (updates.blueprint) this.blueprint = updates.blueprint
     if (updates.config) this.config = updates.config
@@ -261,12 +283,14 @@ export class ServerManager {
     if (updates.errorHandler) this.errorHandler = updates.errorHandler
     if (updates.notificationManager !== undefined) this.notificationManager = updates.notificationManager
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
+    if (updates.commandSourceFiles) this.commandSourceFiles = updates.commandSourceFiles
     this.commandExecutor = this.createCommandExecutor()
     this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
   }
 
   async start(): Promise<ServerType> {
+    await this.loadFileCommandHandlers()
     this.app = new Hono()
     this.app.onError(this.errorHandler.toHonoHandler())
     this.apiKeys = initApiKeys(this.blueprint)

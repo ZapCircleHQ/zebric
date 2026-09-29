@@ -327,6 +327,8 @@ Where feasible, validate expressions at blueprint load/build time.
 
 9. TypeScript escape hatch
 
+Status: Ready for Testing
+
 Some business logic will remain too complicated for declarative expressions.
 
 Make the escape hatch intentional.
@@ -664,6 +666,8 @@ Simple composition is sufficient.
 
 19. Database identifier correctness
 
+Status: Ready for Testing
+
 Ridgeline exposed failures around SQL reserved words such as Order.
 
 Generated database identifiers must be safely quoted or mapped.
@@ -774,7 +778,7 @@ should eventually be able to move coherently between domain history and operatio
 
 23. Error model
 
-Status: In Progress
+Status: Ready for Testing
 
 Create consistent framework errors for at least:
 
@@ -921,6 +925,8 @@ This should become one of the best demonstrations of the 0.6 architecture.
 
 30. Backward compatibility
 
+Status: Ready for Testing
+
 Do not break basic 0.5 blueprints unnecessarily.
 
 CRUD applications should continue to work.
@@ -939,7 +945,7 @@ If semantics must change:
 
 31. Testing strategy
 
-Status: In Progress
+Status: Ready for Testing
 
 Add framework-level tests for the new abstractions rather than relying solely on examples.
 

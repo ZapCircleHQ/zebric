@@ -1,8 +1,8 @@
 import type { Actor } from '../auth/actor.js'
 import { actorFromSession, sessionWithActor } from '../auth/actor.js'
 import { SYSTEM_SESSION } from '../auth/provider.js'
-import type { Blueprint, Command, CommandInputField } from '../types/blueprint.js'
-import type { QueryExecutorPort, RequestContext, RuntimePorts } from '../routing/request-ports.js'
+import type { Blueprint, Command, CommandInputField, Query } from '../types/blueprint.js'
+import type { LogEvent, QueryExecutorPort, RequestContext, RuntimePorts } from '../routing/request-ports.js'
 import {
   AuthorizationFailureError,
   CommandUnavailableError,
@@ -31,9 +31,32 @@ export interface CommandHandlerContext {
   input: Record<string, unknown>
   record: Record<string, unknown>
   command: Command
+  db: CommandDatabase
   services?: ServiceInvoker
+  events: CommandEvents
+  audit: CommandAudit
   correlationId?: string
   workflow?: string
+}
+
+/** Actor-scoped data access available to an application command handler. */
+export interface CommandDatabase {
+  query(query: Query): Promise<unknown>
+  findById(entity: string, id: string): Promise<unknown>
+  create(entity: string, data: Record<string, unknown>): Promise<unknown>
+  update(entity: string, id: string, data: Record<string, unknown>): Promise<unknown>
+  delete(entity: string, id: string): Promise<unknown>
+  search(entity: string, fields: string[], query: string, options?: { limit?: number; filter?: Record<string, unknown> }): Promise<unknown[]>
+}
+
+export interface CommandEvents {
+  /** Queues an application event and publishes it only after the command commits. */
+  publish(event: { name: string; entity?: string; recordId?: string; data?: Record<string, unknown> }): void
+}
+
+export interface CommandAudit {
+  /** Queues an application audit entry and writes it only after the command commits. */
+  log(entry: { action: string; resource?: string; success?: boolean; metadata?: Record<string, unknown> }): void
 }
 
 export type CommandHandler = (
@@ -169,6 +192,8 @@ export class CommandExecutor {
     }
 
     let committedMutations: Record<string, unknown> = {}
+    const queuedEvents: Parameters<NonNullable<RuntimePorts['eventPublisher']>['publish']>[0][] = []
+    const queuedAuditEntries: LogEvent[] = []
     const operation = async () => {
       const mutations = resolveMutations(command.mutations ?? {}, actor, record, input)
       if (command.handler) {
@@ -192,12 +217,66 @@ export class CommandExecutor {
             },
           ),
         }
+        const handlerContext: RequestContext = {
+          ...request.context,
+          session: effectiveSession,
+          actor,
+        }
+        const db: CommandDatabase = {
+          query: query => this.ports.queryExecutor.execute(query, handlerContext),
+          findById: (entity, id) => this.ports.queryExecutor.findById(entity, id, { session: effectiveSession }),
+          create: (entity, data) => this.ports.queryExecutor.create(entity, data, handlerContext),
+          update: (entity, id, data) => this.ports.queryExecutor.update(entity, id, data, handlerContext),
+          delete: (entity, id) => this.ports.queryExecutor.delete(entity, id, handlerContext),
+          search: (entity, fields, query, options) => this.ports.queryExecutor.search(entity, fields, query, {
+            ...options,
+            context: handlerContext,
+          }),
+        }
         Object.assign(mutations, await handler({
           actor,
           input,
           record,
           command,
+          db,
           services,
+          events: {
+            publish: event => queuedEvents.push({
+              name: event.name,
+              entity: event.entity ?? command.entity,
+              recordId: event.recordId ?? request.recordId,
+              command: command.name,
+              actor,
+              data: event.data,
+              occurredAt: new Date().toISOString(),
+              correlationId: request.context?.correlationId,
+            }),
+          },
+          audit: {
+            log: entry => queuedAuditEntries.push({
+              eventType: 'domain.command.application',
+              severity: 'info',
+              action: entry.action,
+              resource: entry.resource ?? `${command.entity}:${request.recordId}`,
+              success: entry.success ?? true,
+              userId: actor.delegatedBy ?? actor.id,
+              entityType: command.entity,
+              entityId: request.recordId,
+              metadata: {
+                ...entry.metadata,
+                actor: { id: actor.id, type: actor.type },
+                delegatedBy: actor.delegatedBy,
+                command: command.name,
+                workflow: request.context?.workflow,
+                source: request.context?.source,
+              },
+              correlationId: request.context?.correlationId,
+              actorType: actor.type,
+              actorId: actor.id,
+              workflowName: request.context?.workflow,
+              actionName: entry.action,
+            }),
+          },
           correlationId: request.context?.correlationId,
           workflow: request.context?.workflow,
         }) ?? {})
@@ -240,6 +319,7 @@ export class CommandExecutor {
       workflowName: request.context?.workflow,
       actionName: command.name,
     })
+    for (const entry of queuedAuditEntries) this.ports.auditLogger?.log(entry)
     await this.ports.eventPublisher?.publish({
       name: command.name,
       entity: command.entity,
@@ -250,6 +330,7 @@ export class CommandExecutor {
       occurredAt,
       correlationId: request.context?.correlationId,
     })
+    for (const event of queuedEvents) await this.ports.eventPublisher?.publish(event)
 
     return { command: command.name, record: updated }
   }

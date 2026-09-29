@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Hono } from 'hono'
 import path from 'node:path'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { createLogger } from '@zebric/observability'
 import type { LogRecord } from '@zebric/observability'
 import { ServerManager } from './server-manager.js'
@@ -25,6 +27,7 @@ function stubDeps(overrides: Record<string, any> = {}) {
       auth: overrides.auth ?? undefined,
       skills: overrides.skills ?? undefined,
       workflows: overrides.workflows ?? undefined,
+      commands: overrides.commands ?? undefined,
     },
     config: { port: 0, host: '127.0.0.1', ...overrides.config },
     state: { status: 'running' },
@@ -65,6 +68,48 @@ function stubDeps(overrides: Record<string, any> = {}) {
     ...overrides,
   } as any
 }
+
+describe('command handler files', () => {
+  it('registers a handler relative to the TOML file that declares the command', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'zebric-server-command-'))
+    const commandDir = path.join(root, 'domain', 'requests')
+    await mkdir(commandDir, { recursive: true })
+    const blueprintPath = path.join(root, 'blueprint.toml')
+    const sourceFile = path.join(commandDir, 'commands.toml')
+    await writeFile(blueprintPath, 'version = "1"\n')
+    await writeFile(sourceFile, '[command.ApproveRequest]\n')
+    await writeFile(path.join(commandDir, 'approve.mjs'), 'export default () => ({ status: "approved" })\n')
+    const record = { id: 'req-1', status: 'pending' }
+    const update = vi.fn(async (_entity, _id, data) => ({ ...record, ...data }))
+    const manager = new ServerManager(stubDeps({
+      config: { blueprintPath },
+      entities: [{ name: 'Request', fields: [
+        { name: 'id', type: 'ULID', primary_key: true },
+        { name: 'status', type: 'Text', write: 'command-only', commands: ['ApproveRequest'] },
+      ] }],
+      commands: [{
+        name: 'ApproveRequest', entity: 'Request', handler: './approve.mjs', mutations: {},
+      }],
+      commandSourceFiles: new Map([['ApproveRequest', sourceFile]]),
+      queryExecutor: {
+        findById: async () => record,
+        update,
+        transaction: async (fn: () => Promise<unknown>) => fn(),
+      },
+    }))
+
+    await (manager as any).loadFileCommandHandlers()
+    const result = await (manager as any).commandExecutor.execute({
+      command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'user-1', type: 'user', roles: [], scopes: [] },
+    })
+
+    expect(result.record).toMatchObject({ status: 'approved' })
+    expect(update).toHaveBeenCalledWith('Request', 'req-1', { status: 'approved' }, expect.objectContaining({
+      commandMutation: expect.anything(),
+    }))
+  })
+})
 
 /**
  * Initialize the Hono app inside a ServerManager without starting a TCP server.
