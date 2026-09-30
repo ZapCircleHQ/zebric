@@ -22,6 +22,7 @@ function testApiKeys(scopes: string[], name = 'roadmap-agent') {
     agentId: name,
     credentialId: `${name}-credential`,
     displayName: name,
+    roles: [],
     scopes,
   } }])
 }

@@ -25,7 +25,12 @@ export function actorFromSession(session?: UserSession | null): Actor | null {
     scopes: [...new Set(session.actor?.scopes ?? [])],
     credentialId: session.actor?.credentialId,
     delegatedBy: session.actor?.delegatedBy,
-    metadata: session.actor?.metadata,
+    metadata: {
+      email: session.user.email,
+      name: session.user.name,
+      role: session.user.role,
+      ...session.actor?.metadata,
+    },
   }
 }
 

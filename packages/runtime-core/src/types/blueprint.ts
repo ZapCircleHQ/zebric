@@ -625,6 +625,8 @@ export interface ApiKeyConfig {
   agentId?: string
   credentialId?: string
   displayName?: string
+  /** Application roles granted to this non-human principal. */
+  roles?: string[]
   scopes?: string[]
   constraints?: Record<string, string[]>
 }

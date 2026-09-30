@@ -577,6 +577,7 @@ const ApiKeyConfigSchema = z.object({
   agentId: z.string().optional(),
   credentialId: z.string().optional(),
   displayName: z.string().optional(),
+  roles: z.array(z.string()).optional(),
   scopes: z.array(z.string()).optional(),
   constraints: z.record(z.string(), z.array(z.string())).optional(),
 })

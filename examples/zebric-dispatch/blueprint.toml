@@ -1,12 +1,12 @@
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "Zebric Dispatch"
-version = "1.0.0"
+version = "0.6.0"
 description = "An agent-native operations desk where humans and agents share governed workflows."
 
 [project.runtime]
-min_version = "0.2.3"
+min_version = "0.6.0"
 
 [ux]
 pattern = "queue-detail@v1"
@@ -96,18 +96,18 @@ fields = [
   { name = "requestNumber", type = "Text", index = true },
   { name = "title", type = "Text", required = true },
   { name = "description", type = "LongText", required = true },
-  { name = "status", type = "Enum", values = ["new", "triaged", "in_progress", "waiting", "completed", "cancelled"], default = "new", index = true },
+  { name = "status", type = "Enum", values = ["new", "triaged", "in_progress", "waiting", "completed", "cancelled"], default = "new", index = true, write = "command-only", commands = ["TriageRequestState", "StartGeneralRequestWork", "StartProtectedRequestWork", "RequestApprovalForRequest", "ApproveRequestState", "RejectRequestState", "WaitRequest", "CompleteGeneralRequestState", "CompleteProtectedRequestState", "CancelRequestState"] },
   { name = "priority", type = "Enum", values = ["low", "normal", "high", "urgent"], default = "normal", index = true },
   { name = "categoryId", type = "Ref", ref = "RequestCategory.id", required = true, index = true },
   { name = "workflowKey", type = "Enum", values = ["general", "access", "purchase"], default = "general", index = true },
-  { name = "approvalState", type = "Enum", values = ["not_required", "pending", "approved", "rejected"], default = "not_required", index = true },
+  { name = "approvalState", type = "Enum", values = ["not_required", "pending", "approved", "rejected"], default = "not_required", index = true, write = "command-only", commands = ["RequestApprovalForRequest", "ApproveRequestState", "RejectRequestState"] },
   { name = "requesterId", type = "Ref", ref = "User.id", required = true, index = true },
   { name = "requesterName", type = "Text" },
   { name = "assigneeId", type = "Text", index = true },
   { name = "assigneeName", type = "Text" },
   { name = "createdAt", type = "DateTime", default = "now" },
   { name = "updatedAt", type = "DateTime", default = "now" },
-  { name = "completedAt", type = "DateTime", nullable = true }
+  { name = "completedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["CompleteGeneralRequestState", "CompleteProtectedRequestState"] }
 ]
 
 [entity.Request.relations]
@@ -151,12 +151,12 @@ fields = [
   { name = "requestedById", type = "Text", required = true },
   { name = "requestedByName", type = "Text" },
   { name = "requestedByType", type = "Enum", values = ["user", "agent", "system"], default = "user" },
-  { name = "status", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", index = true },
+  { name = "status", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", index = true, write = "command-only", commands = ["ApproveApproval", "RejectApproval"] },
   { name = "reason", type = "LongText" },
-  { name = "decidedById", type = "Text" },
-  { name = "decidedByName", type = "Text" },
+  { name = "decidedById", type = "Text", write = "command-only", commands = ["ApproveApproval", "RejectApproval"] },
+  { name = "decidedByName", type = "Text", write = "command-only", commands = ["ApproveApproval", "RejectApproval"] },
   { name = "createdAt", type = "DateTime", default = "now" },
-  { name = "decidedAt", type = "DateTime", nullable = true }
+  { name = "decidedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["ApproveApproval", "RejectApproval"] }
 ]
 
 [entity.Approval.relations]
@@ -191,6 +191,104 @@ read = "authenticated"
 create = "authenticated"
 update = false
 delete = { "$currentUser.role" = "admin" }
+
+# Domain commands -------------------------------------------------------------
+# Public workflows still add the business-readable activity/approval records.
+# Every protected Request/Approval write converges on these commands, so CRUD,
+# HTTP, MCP, UI, and workflow execution share the same authorization boundary.
+
+[command.TriageRequestState]
+entity = "Request"
+label = "Triage"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'new'"
+mutations = { status = "triaged" }
+
+[command.StartGeneralRequestWork]
+entity = "Request"
+label = "Start work"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.workflowKey == 'general' && record.status in ['triaged', 'waiting']"
+mutations = { status = "in_progress" }
+
+[command.StartProtectedRequestWork]
+entity = "Request"
+label = "Start approved work"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.workflowKey in ['access', 'purchase'] && record.status in ['triaged', 'waiting'] && record.approvalState == 'approved'"
+mutations = { status = "in_progress" }
+
+[command.RequestApprovalForRequest]
+entity = "Request"
+policy = "workflow.data.record.id == record.id"
+availableWhen = "record.workflowKey in ['access', 'purchase'] && record.approvalState in ['not_required', 'rejected']"
+mutations = { status = "waiting", approvalState = "pending" }
+
+[command.ApproveRequestState]
+entity = "Request"
+policy = "actor.roles contains 'admin' || (actor.roles contains 'approver' && record.approvals.requestedFromId contains actor.effectiveId)"
+availableWhen = "record.approvalState == 'pending'"
+mutations = { status = "in_progress", approvalState = "approved" }
+
+[command.RejectRequestState]
+entity = "Request"
+policy = "actor.roles contains 'admin' || (actor.roles contains 'approver' && record.approvals.requestedFromId contains actor.effectiveId)"
+availableWhen = "record.approvalState == 'pending'"
+mutations = { status = "cancelled", approvalState = "rejected" }
+
+[command.WaitRequest]
+entity = "Request"
+label = "Mark waiting"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'in_progress'"
+mutations = { status = "waiting" }
+
+[command.CompleteGeneralRequestState]
+entity = "Request"
+label = "Complete"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.workflowKey == 'general' && record.status == 'in_progress'"
+mutations = { status = "completed", completedAt = "now" }
+
+[command.CompleteProtectedRequestState]
+entity = "Request"
+label = "Complete approved work"
+policy = "actor.roles contains 'operator' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'in_progress' && (record.workflowKey == 'general' || (record.workflowKey in ['access', 'purchase'] && record.approvalState == 'approved'))"
+mutations = { status = "completed", completedAt = "now" }
+
+[command.CancelRequestState]
+entity = "Request"
+label = "Cancel request"
+style = "danger"
+confirm = "Cancel this request?"
+policy = "actor.roles contains 'admin' || actor.roles contains 'operator' || record.requesterId == actor.effectiveId"
+availableWhen = "record.status in ['new', 'triaged', 'in_progress', 'waiting']"
+mutations = { status = "cancelled" }
+
+[command.ApproveApproval]
+entity = "Approval"
+policy = "actor.roles contains 'admin' || (actor.roles contains 'approver' && record.requestedFromId == actor.effectiveId)"
+availableWhen = "record.status == 'pending'"
+mutations = { status = "approved", decidedById = "actor.effectiveId", decidedByName = "input.decidedByName", decidedAt = "now" }
+
+[command.ApproveApproval.input.decidedByName]
+type = "Text"
+required = false
+
+[command.RejectApproval]
+entity = "Approval"
+policy = "actor.roles contains 'admin' || (actor.roles contains 'approver' && record.requestedFromId == actor.effectiveId)"
+availableWhen = "record.status == 'pending'"
+mutations = { status = "rejected", decidedById = "actor.effectiveId", decidedByName = "input.decidedByName", decidedAt = "now", reason = "input.reason" }
+
+[command.RejectApproval.input.reason]
+type = "LongText"
+required = false
+
+[command.RejectApproval.input.decidedByName]
+type = "Text"
+required = false
 
 # Human surfaces --------------------------------------------------------------
 
@@ -562,11 +660,9 @@ precondition = { "variables.data.record.status" = "new" }
 transactional = true
 
 [[workflow.TriageRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "new" }
-data = { status = "triaged" }
+type = "command"
+command = "TriageRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.TriageRequest.steps]]
 type = "query"
@@ -598,11 +694,9 @@ precondition = { "variables.data.record.workflowKey" = "general", "variables.dat
 transactional = true
 
 [[workflow.StartGeneralWork.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "in_progress" }
+type = "command"
+command = "StartGeneralRequestWork"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.StartGeneralWork.steps]]
 type = "query"
@@ -616,11 +710,9 @@ precondition = { "variables.data.record.workflowKey" = ["access", "purchase"], "
 transactional = true
 
 [[workflow.StartProtectedWork.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", approvalState = "approved" }
-data = { status = "in_progress" }
+type = "command"
+command = "StartProtectedRequestWork"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.StartProtectedWork.steps]]
 type = "query"
@@ -637,14 +729,12 @@ transactional = true
 type = "query"
 entity = "Approval"
 action = "create"
-data = { requestId = "{{ variables.data.record.id }}", requestedFromId = "{{ variables.data.payload.requestedFromId }}", requestedFromName = "{{ variables.data.payload.requestedFromName }}", requestedById = "{{ variables.data.session.user.id }}", requestedByName = "{{ variables.data.session.user.name }}", requestedByType = "user", status = "pending", reason = "{{ variables.data.payload.reason }}" }
+data = { requestId = "{{ variables.data.record.id }}", requestedFromId = "{{ variables.data.payload.requestedFromId }}", requestedFromName = "{{ variables.data.payload.requestedFromName }}", requestedById = "{{ variables.data.session.user.id }}", requestedByName = "{{ variables.data.session.user.name }}", requestedByType = "user", reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.RequestHumanApproval.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "waiting", approvalState = "pending" }
+type = "command"
+command = "RequestApprovalForRequest"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.RequestHumanApproval.steps]]
 type = "query"
@@ -658,18 +748,15 @@ precondition = { "variables.data.record.approvalState" = "pending", "session.use
 transactional = true
 
 [[workflow.ApproveRequest.steps]]
-type = "query"
-entity = "Approval"
-action = "update"
-where = { id = "{{ variables.data.payload.approvalId }}", status = "pending" }
-data = { status = "approved", decidedById = "{{ variables.data.session.user.id }}", decidedByName = "{{ variables.data.session.user.name }}", decidedAt = "now" }
+type = "command"
+command = "ApproveApproval"
+recordId = "{{ variables.data.payload.approvalId }}"
+input = { decidedByName = "{{ variables.data.session.user.name }}" }
 
 [[workflow.ApproveRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", approvalState = "pending" }
-data = { status = "in_progress", approvalState = "approved" }
+type = "command"
+command = "ApproveRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.ApproveRequest.steps]]
 type = "query"
@@ -683,18 +770,15 @@ precondition = { "variables.data.record.approvalState" = "pending", "session.use
 transactional = true
 
 [[workflow.RejectRequest.steps]]
-type = "query"
-entity = "Approval"
-action = "update"
-where = { id = "{{ variables.data.payload.approvalId }}", status = "pending" }
-data = { status = "rejected", decidedById = "{{ variables.data.session.user.id }}", decidedByName = "{{ variables.data.session.user.name }}", decidedAt = "now", reason = "{{ variables.data.payload.reason }}" }
+type = "command"
+command = "RejectApproval"
+recordId = "{{ variables.data.payload.approvalId }}"
+input = { decidedByName = "{{ variables.data.session.user.name }}", reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.RejectRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", approvalState = "pending" }
-data = { status = "cancelled", approvalState = "rejected" }
+type = "command"
+command = "RejectRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.RejectRequest.steps]]
 type = "query"
@@ -708,11 +792,9 @@ precondition = { "variables.data.record.status" = "in_progress" }
 transactional = true
 
 [[workflow.MarkRequestWaiting.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "in_progress" }
-data = { status = "waiting" }
+type = "command"
+command = "WaitRequest"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.MarkRequestWaiting.steps]]
 type = "query"
@@ -726,11 +808,9 @@ precondition = { "variables.data.record.workflowKey" = "general", "variables.dat
 transactional = true
 
 [[workflow.CompleteGeneralRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "in_progress", workflowKey = "general" }
-data = { status = "completed", completedAt = "now" }
+type = "command"
+command = "CompleteGeneralRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.CompleteGeneralRequest.steps]]
 type = "query"
@@ -744,11 +824,9 @@ precondition = { "variables.data.record.workflowKey" = ["access", "purchase"], "
 transactional = true
 
 [[workflow.CompleteProtectedRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "in_progress", approvalState = "approved" }
-data = { status = "completed", completedAt = "now" }
+type = "command"
+command = "CompleteProtectedRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.CompleteProtectedRequest.steps]]
 type = "query"
@@ -762,11 +840,9 @@ precondition = { "variables.data.record.status" = ["new", "triaged", "in_progres
 transactional = true
 
 [[workflow.CancelRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "cancelled" }
+type = "command"
+command = "CancelRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.CancelRequest.steps]]
 type = "query"
@@ -812,14 +888,12 @@ transactional = true
 type = "query"
 entity = "Approval"
 action = "create"
-data = { requestId = "{{ variables.data.record.id }}", requestedFromId = "{{ variables.data.payload.requestedFromId }}", requestedFromName = "{{ variables.data.payload.requestedFromName }}", requestedById = "{{ variables.data.session.user.id }}", requestedByName = "{{ variables.data.session.user.name }}", requestedByType = "agent", status = "pending", reason = "{{ variables.data.payload.reason }}" }
+data = { requestId = "{{ variables.data.record.id }}", requestedFromId = "{{ variables.data.payload.requestedFromId }}", requestedFromName = "{{ variables.data.payload.requestedFromName }}", requestedById = "{{ variables.data.session.user.id }}", requestedByName = "{{ variables.data.session.user.name }}", requestedByType = "agent", reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.AgentRequestApproval.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "waiting", approvalState = "pending" }
+type = "command"
+command = "RequestApprovalForRequest"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.AgentRequestApproval.steps]]
 type = "query"
@@ -833,11 +907,9 @@ precondition = { "variables.data.record.workflowKey" = ["access", "purchase"], "
 transactional = true
 
 [[workflow.AgentStartProtectedWork.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", approvalState = "approved" }
-data = { status = "in_progress" }
+type = "command"
+command = "StartProtectedRequestWork"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.AgentStartProtectedWork.steps]]
 type = "query"
@@ -851,11 +923,9 @@ precondition = { "$or" = [{ "variables.data.record.workflowKey" = "general", "va
 transactional = true
 
 [[workflow.AgentCompleteRequest.steps]]
-type = "query"
-entity = "Request"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "in_progress" }
-data = { status = "completed", completedAt = "now" }
+type = "command"
+command = "CompleteProtectedRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.AgentCompleteRequest.steps]]
 type = "query"
@@ -1039,6 +1109,7 @@ keyEnv = "DISPATCH_AGENT_API_KEY"
 agentId = "dispatch-operator-agent"
 credentialId = "dispatch-demo-credential"
 displayName = "Dispatch Agent"
+roles = ["operator"]
 scopes = ["dispatch.requests.read", "dispatch.requests.create", "dispatch.requests.assign", "dispatch.requests.transition", "dispatch.comments.create", "dispatch.approvals.request"]
 
 [ui]

@@ -1,5 +1,12 @@
 # Idea to Operations: Zebric gap ledger
 
+## 0.6.0 migration update
+
+- Fixed: Initiative stage is command-only and every stage workflow invokes the command pipeline.
+- Fixed: the operations key has an explicit preparation-only `user` role and cannot run human approvals.
+- Improved: direct HTTP/MCP commands return synchronous shared domain errors and emit framework audit/events.
+- Still open: schedules, aggregates/projections, durable workflow outcomes, audit projection, and trusted delegated-human binding.
+
 This is the implementation ledger for `examples/idea-to-operations`, written while
 building it against Zebric 0.5.0. Every entry was observed running the example
 (`scenarios/lifecycle-smoke.sh` exercises most of them) or read directly from

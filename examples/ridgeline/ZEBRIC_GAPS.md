@@ -1,5 +1,12 @@
 # Zebric gaps found while building Ridgeline Coffee
 
+## 0.6.0 migration update
+
+- Fixed: SQL-safe identifiers and reserved-name regression coverage.
+- Fixed: order, shipment, and subscription lifecycle fields are command-only and transactional workflows invoke commands.
+- Fixed: the Ridgeline API key declares its `staff` role rather than relying on a fallback grant.
+- Still open: queryable auth users, richer order validation, aggregate inventory expressions, and audit projections.
+
 This is the dogfooding ledger for the Zebric reimplementation of [Ridgeline
 Coffee](../../../ridgeline), a Flask teaching app for a coffee roaster with
 wholesale and retail customers. `ZEBRIC_GAP_ANALYSIS.md` in that repository is

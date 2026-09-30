@@ -36,6 +36,24 @@ describe('transactional workflow analysis', () => {
     expect(analysis.reasons).toContain('workflow.Test.steps[1] depends on intermediate result "column"')
   })
 
+  it('allows commands in transactional workflows without treating them as D1 batches', () => {
+    const analysis = analyzeTransactionalWorkflow(workflow([{
+      type: 'command', command: 'ApproveRequest', recordId: '{{ variables.requestId }}',
+    }]))
+    expect(analysis.databaseOnly).toBe(true)
+    expect(analysis.d1BatchEligible).toBe(false)
+  })
+
+  it('rejects handler commands in transactional workflows', () => {
+    const analysis = analyzeTransactionalWorkflow(workflow([{
+      type: 'command', command: 'ResolveConflict', recordId: '{{ variables.id }}',
+    }]), [{ name: 'ResolveConflict', entity: 'Conflict', handler: 'commands.resolve' }])
+    expect(analysis.databaseOnly).toBe(false)
+    expect(analysis.reasons).toContain(
+      'workflow.Test.steps[0] invokes a command handler with unrestricted effects',
+    )
+  })
+
   it('rejects external effects in transactional Blueprints', () => {
     expect(() => new BlueprintParser().parse(`
       version = "1.0.0"

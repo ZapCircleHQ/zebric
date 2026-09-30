@@ -1,5 +1,12 @@
 # Zebric gaps found while building Dispatch
 
+## 0.6.0 migration update
+
+- Fixed: Request and Approval lifecycle fields are command-only and transition workflows invoke domain commands.
+- Fixed: approval decisions compare `requestedFromId` with the effective actor, including relation-aware Request authorization.
+- Fixed: the Dispatch API key declares the `operator` role explicitly.
+- Still open: audit projection, contextual forms, auth-user lookup, derived category selection, query UX, and sequences.
+
 This is the dogfooding ledger for the updated Dispatch PRD. Priorities describe impact on the next Zebric release, not shortcuts to add more Dispatch-specific code.
 
 ## Gap summary

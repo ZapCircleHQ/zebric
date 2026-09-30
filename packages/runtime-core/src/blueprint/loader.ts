@@ -499,7 +499,7 @@ export class BlueprintParser {
           )
         }
         if (workflow.transactional) {
-          const analysis = analyzeTransactionalWorkflow(workflow)
+          const analysis = analyzeTransactionalWorkflow(workflow, blueprint.commands)
           if (!analysis.databaseOnly) {
             errors.push(
               `Transactional workflow "${workflow.name}" must contain only database query steps: ${analysis.reasons.join('; ')}`

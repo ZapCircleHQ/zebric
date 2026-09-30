@@ -55,11 +55,25 @@ describe('initApiKeys', () => {
       agentId: 'test-agent',
       credentialId: 'test-agent',
       displayName: 'test-agent',
+      roles: [],
       scopes: [],
     }])
     expect([...apiKeys.keys()][0]).not.toContain('secret-key-123')
 
     delete process.env.TEST_AGENT_KEY
+  })
+
+  it('binds declared application roles to API-key actors and sessions', () => {
+    process.env.ROLE_AGENT_KEY = 'role-secret'
+    const apiKeys = initApiKeys(makeBlueprint({
+      providers: ['email'],
+      apiKeys: [{ name: 'operator-key', keyEnv: 'ROLE_AGENT_KEY', roles: ['operator'] }],
+    }))
+
+    const session = resolveApiKeySession('role-secret', apiKeys)
+    expect(session?.actor?.roles).toEqual(['operator'])
+    expect(session?.user.roles).toEqual(['operator'])
+    delete process.env.ROLE_AGENT_KEY
   })
 
   it('warns and skips when env var is not set', () => {
@@ -108,6 +122,7 @@ describe('resolveApiKeySession', () => {
       id: 'test-agent',
       credentialId: 'test-agent',
       displayName: 'test-agent',
+      roles: [],
       scopes: [],
     })
   })
@@ -123,7 +138,7 @@ describe('resolveApiKeySession', () => {
 describe('resolveAgentAttribution', () => {
   const session = resolveApiKeySession('key', createApiKeyRegistry([{ token: 'key', credential: {
     name: 'qa-key', agentId: 'qa-agent', credentialId: 'credential-7',
-    displayName: 'QA Agent', scopes: [],
+    displayName: 'QA Agent', roles: [], scopes: [],
   } }]))!
 
   it('binds the authenticated agent and credential to a bounded run ID', () => {
@@ -146,7 +161,7 @@ describe('resolveAgentAttribution', () => {
 
 function registry(token: string, name: string) {
   return createApiKeyRegistry([{ token, credential: {
-    name, agentId: name, credentialId: name, displayName: name, scopes: [],
+    name, agentId: name, credentialId: name, displayName: name, roles: [], scopes: [],
   } }])
 }
 

@@ -25,7 +25,13 @@ post_auth() {
 }
 
 # add <collection> <<JSON ... JSON  -- reads one JSON document from stdin.
-add() { post_json "/api/$1" "$(cat)" >/dev/null; }
+# Lifecycle stage is command-only in 0.6. Trusted fixtures restore their
+# historical snapshots in SQL after creating records at the safe default.
+add() {
+  local payload
+  payload="$(sed -E 's/"stage":"[^"]+",//g')"
+  post_json "/api/$1" "$payload" >/dev/null
+}
 
 echo "Provisioning Northstar demo identities..."
 for entry in "casey@northstar.local:Casey Admin" "dana@northstar.local:Dana Whitfield" "owen@northstar.local:Owen Park" "olivia@northstar.local:Olivia Reyes" "sam@northstar.local:Sam Ito"; do
@@ -360,6 +366,14 @@ for spec in \
 {"id":"act_$i","initiativeId":"$init","type":"$type","summary":"$summary","actorName":"$actor","occurredAt":"$at"}
 JSON
 done
+
+sqlite3 "$DB_PATH" <<SQL
+UPDATE initiative SET stage = 'discovery' WHERE id = 'init_csv_export';
+UPDATE initiative SET stage = 'proposal' WHERE id = 'init_usage_billing';
+UPDATE initiative SET stage = 'building' WHERE id = 'init_portal';
+UPDATE initiative SET stage = 'launch' WHERE id = 'init_api_v2';
+UPDATE initiative SET stage = 'operating' WHERE id IN ('init_sso','init_data_export');
+SQL
 
 echo "Northstar demo data created. Sign in as any of:"
 echo "  casey@northstar.local (admin)   dana@northstar.local (decision maker)"
