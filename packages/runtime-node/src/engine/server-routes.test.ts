@@ -138,6 +138,55 @@ describe('domain command HTTP routes', () => {
     }))
   })
 
+  describe('Idempotency-Key handling', () => {
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const setup = (execute: any) => {
+      const app = new Hono()
+      registerCommandRoutes(app, {
+        blueprint,
+        commandExecutor: { execute } as any,
+        sessionManager: { getSession: async () => session } as any,
+        apiKeys: new Map(),
+      })
+      return (key: string, body: unknown = { comment: 'ok' }) => app.request('/api/commands/approve_request/req-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key },
+        body: JSON.stringify(body),
+      })
+    }
+    const result = { command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }
+
+    it('replays the first response for a repeated key without re-executing', async () => {
+      const execute = vi.fn(async () => result)
+      const post = setup(execute)
+      expect((await post('k1')).status).toBe(200)
+      expect(await (await post('k1')).json()).toEqual(result)
+      expect(execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects key reuse with different input', async () => {
+      const execute = vi.fn(async () => result)
+      const post = setup(execute)
+      await post('k1', { comment: 'a' })
+      const response = await post('k1', { comment: 'b' })
+      expect(response.status).toBe(409)
+      expect((await response.json() as any).error.code).toBe('IDEMPOTENCY_KEY_REUSE')
+      expect(execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('lets a retry with the same key run again after a failed execution', async () => {
+      const execute = vi.fn()
+        .mockRejectedValueOnce(new Error('database unavailable'))
+        .mockResolvedValueOnce(result)
+      const post = setup(execute)
+      expect((await post('k1')).status).toBe(500)
+      const retry = await post('k1')
+      expect(retry.status).toBe(200)
+      expect(await retry.json()).toEqual(result)
+      expect(execute).toHaveBeenCalledTimes(2)
+    })
+  })
+
   it('executes generated UI command forms with typed input and redirects with flash feedback', async () => {
     const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
     const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }

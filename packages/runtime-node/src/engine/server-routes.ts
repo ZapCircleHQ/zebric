@@ -15,6 +15,7 @@ import {
   registerWidgetRoutes as registerSharedWidgetRoutes,
 } from '@zebric/runtime-hono'
 import { agentApiError } from './agent-api-error.js'
+import { IdempotencyCache } from './idempotency-cache.js'
 import type { AgentEventBus } from './agent-event-bus.js'
 import {
   getMimeType,
@@ -661,7 +662,7 @@ export function registerSkillRoutes(
   }
 
   const entityNames = new Set(blueprint.entities.map(e => e.name.toLowerCase()))
-  const idempotency = new Map<string, { fingerprint: string; response: Promise<Response> }>()
+  const idempotency = new IdempotencyCache()
 
   for (const skill of blueprint.skills) {
     for (const action of skill.actions) {
@@ -756,17 +757,11 @@ export function registerSkillRoutes(
             .update(`${action.method}\n${requestTarget}\n${requestBody}`)
             .digest('hex')
           const scope = `${sessionSecurityId(session) || 'anonymous'}:${idempotencyKey}`
-          const existing = idempotency.get(scope)
-          if (existing) {
-            if (existing.fingerprint !== fingerprint) {
-              return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different request input')
-            }
-            return (await existing.response).clone()
+          const result = await idempotency.run(scope, fingerprint, executeAction)
+          if (result.conflict) {
+            return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different request input')
           }
-
-          const response = executeAction()
-          idempotency.set(scope, { fingerprint, response })
-          return (await response).clone()
+          return result.response
         } catch (error) {
           console.error(`Skill route error (${skill.name}/${action.name}):`, error)
           const message = error instanceof Error ? error.message : 'Unknown error'
@@ -1079,7 +1074,7 @@ export function registerCommandRoutes(
     apiKeys: ReadonlyMap<string, { name: string }>
   },
 ): void {
-  const idempotency = new Map<string, { fingerprint: string; response: Promise<Response> }>()
+  const idempotency = new IdempotencyCache()
 
   for (const command of deps.blueprint.commands ?? []) {
     const operationId = commandOperationId(command.name)
@@ -1161,16 +1156,11 @@ export function registerCommandRoutes(
           .update(`${command.name}\n${c.req.param('id')}\n${JSON.stringify(input ?? {})}`)
           .digest('hex')
         const scope = `${sessionSecurityId(session) ?? 'anonymous'}:${key}`
-        const previous = idempotency.get(scope)
-        if (previous) {
-          if (previous.fingerprint !== fingerprint) {
-            return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different command input')
-          }
-          return (await previous.response).clone()
+        const result = await idempotency.run(scope, fingerprint, execute)
+        if (result.conflict) {
+          return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different command input')
         }
-        const response = execute()
-        idempotency.set(scope, { fingerprint, response })
-        return (await response).clone()
+        return result.response
       } catch (error) {
         if (error instanceof DomainError) {
           const status = commandErrorStatus(error)
