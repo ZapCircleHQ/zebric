@@ -116,6 +116,7 @@ export class ServerManager {
   private readonly agentEventBus: AgentEventBus
   private commandExecutor: CommandExecutor
   private commandSourceFiles: ReadonlyMap<string, string>
+  private readonly commandHandlers = new Map<string, CommandHandler>()
 
   constructor(deps: ServerManagerDependencies) {
     this.blueprint = deps.blueprint
@@ -182,7 +183,7 @@ export class ServerManager {
   private createCommandExecutor(): CommandExecutor {
     const services = this.workflowManager?.getServiceRegistry?.()
       ?? createServiceRegistry(this.blueprint, this.plugins, this.commandExecutionObserver())
-    return new CommandExecutor(this.blueprint, {
+    const executor = new CommandExecutor(this.blueprint, {
       queryExecutor: this.queryExecutor,
       services,
       auditLogger: this.auditLogger ? {
@@ -211,6 +212,8 @@ export class ServerManager {
       },
       executionObserver: this.commandExecutionObserver(),
     })
+    for (const [reference, handler] of this.commandHandlers) executor.registerHandler(reference, handler)
+    return executor
   }
 
   private bindCommandAvailability(): void {
@@ -247,6 +250,7 @@ export class ServerManager {
   }
 
   registerCommandHandler(reference: string, handler: CommandHandler): void {
+    this.commandHandlers.set(reference, handler)
     this.commandExecutor.registerHandler(reference, handler)
   }
 
@@ -267,7 +271,7 @@ export class ServerManager {
     }
   }
 
-  updateDependencies(updates: Partial<ServerManagerDependencies>): void {
+  async updateDependencies(updates: Partial<ServerManagerDependencies>): Promise<void> {
     if (updates.blueprint) this.blueprint = updates.blueprint
     if (updates.config) this.config = updates.config
     if (updates.state) this.state = updates.state
@@ -285,6 +289,7 @@ export class ServerManager {
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
     if (updates.commandSourceFiles) this.commandSourceFiles = updates.commandSourceFiles
     this.commandExecutor = this.createCommandExecutor()
+    await this.loadFileCommandHandlers()
     this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
   }
@@ -455,6 +460,8 @@ export class ServerManager {
     registerCommandRoutes(this.app, {
       blueprint: this.blueprint,
       commandExecutor: this.commandExecutor,
+      getBlueprint: () => this.blueprint,
+      getCommandExecutor: () => this.commandExecutor,
       sessionManager: this.sessionManager,
       workflowManager: this.workflowManager,
       apiKeys: this.apiKeys,

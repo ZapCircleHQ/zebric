@@ -77,6 +77,33 @@ describe('CommandExecutor', () => {
     await expect(executor.isAvailable('MissingCommand', queryExecutor.record, context)).resolves.toBe(false)
   })
 
+  it('defers input-dependent policy and availability checks until submission', async () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    const inputBlueprint: Blueprint = {
+      ...blueprint,
+      commands: [{
+        ...blueprint.commands![0]!,
+        input: { stage: { type: 'Text', required: true } },
+        policy: 'actor.id == "sarah" && input.stage == "approved"',
+        availableWhen: 'input.stage != record.status',
+        mutations: { status: 'input.stage' },
+      }],
+    }
+    const executor = new CommandExecutor(inputBlueprint, { queryExecutor })
+    const actor = { id: 'sarah', type: 'user' as const, roles: [], scopes: [] }
+
+    await expect(executor.isAvailable('ApproveRequest', queryExecutor.record, { actor })).resolves.toBe(true)
+    await expect(executor.isAvailable('ApproveRequest', queryExecutor.record, {
+      actor: { id: 'someone-else', type: 'user', roles: [], scopes: [] },
+    })).resolves.toBe(false)
+    await expect(executor.execute({
+      command: 'ApproveRequest', recordId: 'req-1', actor, input: { stage: 'pending' },
+    })).rejects.toThrow('may not execute')
+    await expect(executor.execute({
+      command: 'ApproveRequest', recordId: 'req-1', actor, input: { stage: 'approved' },
+    })).resolves.toMatchObject({ record: { status: 'approved' } })
+  })
+
   it('executes an authorized command through the protected mutation boundary', async () => {
     const queryExecutor = new MemoryQueryExecutor()
     const publish = vi.fn()
@@ -250,5 +277,46 @@ describe('CommandExecutor', () => {
     })).rejects.toThrow('commit failed')
     expect(publish).not.toHaveBeenCalled()
     expect(log).not.toHaveBeenCalled()
+  })
+
+  it('defers command side effects to an enclosing transaction commit', async () => {
+    class NestedTransactionExecutor extends MemoryQueryExecutor {
+      private active = false
+      private effects: Array<() => Promise<void> | void> = []
+      override async transaction<T>(fn: () => Promise<T>): Promise<T> {
+        if (this.active) return fn()
+        this.active = true
+        try {
+          const result = await fn()
+          for (const effect of this.effects) await effect()
+          return result
+        } finally {
+          this.effects = []
+          this.active = false
+        }
+      }
+      async afterCommit(effect: () => Promise<void> | void): Promise<void> {
+        if (this.active) this.effects.push(effect)
+        else await effect()
+      }
+    }
+    const queryExecutor = new NestedTransactionExecutor()
+    const publish = vi.fn()
+    const log = vi.fn()
+    const executor = new CommandExecutor(blueprint, {
+      queryExecutor, eventPublisher: { publish }, auditLogger: { log },
+    })
+
+    await expect(queryExecutor.transaction(async () => {
+      await executor.execute({
+        command: 'ApproveRequest', recordId: 'req-1',
+        actor: { id: 'sarah', type: 'user', roles: [], scopes: [] },
+      })
+      expect(log).not.toHaveBeenCalled()
+      expect(publish).not.toHaveBeenCalled()
+      throw new Error('later workflow step failed')
+    })).rejects.toThrow('later workflow step failed')
+    expect(log).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
   })
 })

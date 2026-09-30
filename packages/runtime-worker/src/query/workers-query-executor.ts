@@ -7,7 +7,7 @@
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
-import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
@@ -46,7 +46,12 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const combinedWhere = query.where && accessFilter
       ? { and: [query.where, accessFilter] }
       : query.where || accessFilter || undefined
-    const securedQuery = { ...query, where: combinedWhere }
+    const paginateAfterPolicy = !isSystemSession(context.session)
+      && (requiresRecordEvaluation(entity.access?.read)
+        || this.permissionManager.requiresRecordCheck(entity.name, 'read'))
+    const securedQuery = paginateAfterPolicy
+      ? { ...query, where: combinedWhere, limit: undefined, offset: undefined }
+      : { ...query, where: combinedWhere }
     const allowedFields = new Set(entity.fields.map(field => field.name))
     const compiledWhere = this.compilePredicate(normalizeQueryWhere(securedQuery.where, context, { allowedFields }))
     const sql = this.buildSelectQuery(securedQuery, compiledWhere.sql)
@@ -60,7 +65,10 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       this.policyEvaluator,
       this.permissionManager,
     )
-    return filterReadableFields(entity, secured, context.session)
+    const paginated = paginateAfterPolicy
+      ? secured.slice(query.offset ?? 0, query.limit == null ? undefined : (query.offset ?? 0) + query.limit)
+      : secured
+    return filterReadableFields(entity, paginated, context.session)
   }
 
   /**
@@ -284,7 +292,10 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
-    const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql} LIMIT ${limit}`
+    const limitAfterPolicy = !isSystemSession(options.context?.session)
+      && (requiresRecordEvaluation(entityDef.access?.read)
+        || this.permissionManager.requiresRecordCheck(entityName, 'read'))
+    const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql}${limitAfterPolicy ? '' : ` LIMIT ${limit}`}`
 
     const result = await this.adapter.query(sql, params)
     const secured = await filterRecordsByReadPolicy(
@@ -294,7 +305,11 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       this.policyEvaluator,
       this.permissionManager,
     )
-    return filterReadableFields(entityDef, secured, options.context?.session)
+    return filterReadableFields(
+      entityDef,
+      limitAfterPolicy ? secured.slice(0, limit) : secured,
+      options.context?.session,
+    )
   }
 
   // ==========================================================================

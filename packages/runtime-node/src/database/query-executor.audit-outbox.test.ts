@@ -52,6 +52,28 @@ describe('QueryExecutor audit outbox', () => {
     await executor.markAuditOutboxDelivered('committed')
     expect(await executor.listPendingAuditOutbox()).toEqual([])
   })
+
+  it('runs nested after-commit effects only after the outer transaction commits', async () => {
+    const executor = await setup()
+    const calls: string[] = []
+    await executor.transaction(async () => {
+      await executor.transaction(async () => {
+        await executor.afterCommit(async () => {
+          // Post-commit effects may safely use the executor without waiting on themselves.
+          await executor.listPendingAuditOutbox()
+          calls.push('committed')
+        })
+      })
+      expect(calls).toEqual([])
+    })
+    expect(calls).toEqual(['committed'])
+
+    await expect(executor.transaction(async () => {
+      await executor.afterCommit(() => { calls.push('rolled-back') })
+      throw new Error('rollback')
+    })).rejects.toThrow('rollback')
+    expect(calls).toEqual(['committed'])
+  })
 })
 
 const blueprint: Blueprint = {

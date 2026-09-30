@@ -138,6 +138,34 @@ describe('domain command HTTP routes', () => {
     }))
   })
 
+  it('dispatches command routes from reloadable blueprint and executor state', async () => {
+    const initialExecute = vi.fn()
+    const reloadedExecute = vi.fn(async () => ({ command: 'CloseRequest', record: { id: 'req-1' } }))
+    let currentBlueprint: any = blueprint
+    let currentExecutor: any = { execute: initialExecute }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: currentExecutor,
+      getBlueprint: () => currentBlueprint,
+      getCommandExecutor: () => currentExecutor,
+      sessionManager: { getSession: async () => ({ id: 's1', user: { id: 'user-1', email: 'u@example.test' } }) } as any,
+      apiKeys: new Map(),
+    })
+
+    currentBlueprint = {
+      ...blueprint,
+      commands: [{ name: 'CloseRequest', entity: 'Request', mutations: { status: 'closed' } }],
+    }
+    currentExecutor = { execute: reloadedExecute }
+
+    const request = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }
+    expect((await app.request('/api/commands/approve_request/req-1', request)).status).toBe(404)
+    expect((await app.request('/api/commands/close_request/req-1', request)).status).toBe(200)
+    expect(initialExecute).not.toHaveBeenCalled()
+    expect(reloadedExecute).toHaveBeenCalledWith(expect.objectContaining({ command: 'CloseRequest' }))
+  })
+
   describe('Idempotency-Key handling', () => {
     const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
     const setup = (execute: any) => {

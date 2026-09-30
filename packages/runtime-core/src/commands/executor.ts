@@ -103,8 +103,8 @@ export class CommandExecutor {
       workflow: context.workflowContext,
       entity: command.entity,
     }
-    if (!await this.policyEvaluator.evaluate(command.policy, policyContext)) return false
-    return this.policyEvaluator.evaluate(command.availableWhen, policyContext)
+    if (!await this.policyEvaluator.evaluateForListing(command.policy, policyContext)) return false
+    return this.policyEvaluator.evaluateForListing(command.availableWhen, policyContext)
   }
 
   async execute(request: CommandExecutionRequest): Promise<CommandExecutionResult> {
@@ -294,43 +294,50 @@ export class CommandExecutor {
       ? await this.ports.queryExecutor.transaction(operation)
       : await operation()
 
-    const occurredAt = new Date().toISOString()
-    this.ports.auditLogger?.log({
-      eventType: 'domain.command',
-      severity: 'info',
-      action: command.name,
-      resource: `${command.entity}:${request.recordId}`,
-      success: true,
-      userId: actor.delegatedBy ?? actor.id,
-      entityType: command.entity,
-      entityId: request.recordId,
-      metadata: {
-        actor: { id: actor.id, type: actor.type },
-        delegatedBy: actor.delegatedBy,
-        command: command.name,
-        workflow: request.context?.workflow,
-        source: request.context?.source,
+    const publishEffects = async () => {
+      const occurredAt = new Date().toISOString()
+      this.ports.auditLogger?.log({
+        eventType: 'domain.command',
+        severity: 'info',
+        action: command.name,
+        resource: `${command.entity}:${request.recordId}`,
+        success: true,
+        userId: actor.delegatedBy ?? actor.id,
+        entityType: command.entity,
+        entityId: request.recordId,
+        metadata: {
+          actor: { id: actor.id, type: actor.type },
+          delegatedBy: actor.delegatedBy,
+          command: command.name,
+          workflow: request.context?.workflow,
+          source: request.context?.source,
+          correlationId: request.context?.correlationId,
+          mutation: committedMutations,
+        },
         correlationId: request.context?.correlationId,
-        mutation: committedMutations,
-      },
-      correlationId: request.context?.correlationId,
-      actorType: actor.type,
-      actorId: actor.id,
-      workflowName: request.context?.workflow,
-      actionName: command.name,
-    })
-    for (const entry of queuedAuditEntries) this.ports.auditLogger?.log(entry)
-    await this.ports.eventPublisher?.publish({
-      name: command.name,
-      entity: command.entity,
-      recordId: request.recordId,
-      command: command.name,
-      actor,
-      data: updated,
-      occurredAt,
-      correlationId: request.context?.correlationId,
-    })
-    for (const event of queuedEvents) await this.ports.eventPublisher?.publish(event)
+        actorType: actor.type,
+        actorId: actor.id,
+        workflowName: request.context?.workflow,
+        actionName: command.name,
+      })
+      for (const entry of queuedAuditEntries) this.ports.auditLogger?.log(entry)
+      await this.ports.eventPublisher?.publish({
+        name: command.name,
+        entity: command.entity,
+        recordId: request.recordId,
+        command: command.name,
+        actor,
+        data: updated,
+        occurredAt,
+        correlationId: request.context?.correlationId,
+      })
+      for (const event of queuedEvents) await this.ports.eventPublisher?.publish(event)
+    }
+    if (this.ports.queryExecutor.afterCommit) {
+      await this.ports.queryExecutor.afterCommit(publishEffects)
+    } else {
+      await publishEffects()
+    }
 
     return { command: command.name, record: updated }
   }

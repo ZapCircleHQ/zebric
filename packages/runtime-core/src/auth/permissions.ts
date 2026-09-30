@@ -23,6 +23,16 @@ export class PermissionManager {
     this.permissions = authConfig?.permissions || {}
   }
 
+  /** Whether any configured rule for this operation needs a stored record. */
+  requiresRecordCheck(entity: string, action: PermissionCheckContext['action']): boolean {
+    return Object.values(this.permissions).some(rule => rule.allow?.some(allowRule =>
+      typeof allowRule !== 'string'
+      && (allowRule.entity === '*' || allowRule.entity === entity)
+      && (allowRule.actions.includes('*') || allowRule.actions.includes(action))
+      && requiresRecordEvaluation(allowRule.condition)
+    ) ?? false)
+  }
+
   /**
    * Check if user has permission to perform an action
    */

@@ -244,13 +244,20 @@ describe('WorkersQueryExecutor access control', () => {
     })
 
     beforeEach(async () => {
-      await adapter.query('INSERT INTO PolicyDoc (id, title, ownerId) VALUES (?, ?, ?)', ['mine', 'Mine', 'user-1'])
       await adapter.query('INSERT INTO PolicyDoc (id, title, ownerId) VALUES (?, ?, ?)', ['theirs', 'Theirs', 'user-2'])
+      await adapter.query('INSERT INTO PolicyDoc (id, title, ownerId) VALUES (?, ?, ?)', ['mine', 'Mine', 'user-1'])
     })
 
     it('filters reads using delegated effective identity', async () => {
       const rows = await executor.execute({ entity: 'PolicyDoc' }, delegated)
       expect(rows.map((row: any) => row.id)).toEqual(['mine'])
+    })
+
+    it('applies query and search limits after record-aware read filtering', async () => {
+      const page = await executor.execute({ entity: 'PolicyDoc', limit: 1 }, delegated)
+      const search = await executor.search('PolicyDoc', ['title'], 'i', { limit: 1, context: delegated })
+      expect(page.map((row: any) => row.id)).toEqual(['mine'])
+      expect(search.map((row: any) => row.id)).toEqual(['mine'])
     })
 
     it('enforces the same policy for updates', async () => {

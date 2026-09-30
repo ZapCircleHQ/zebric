@@ -77,6 +77,52 @@ export function evaluateExpression(
   }
 }
 
+/** Evaluate an expression for action discovery, treating submitted-input values as unknown. */
+export function canExpressionBeTrueWithoutInput(
+  expression: string | ExpressionNode,
+  context: ExpressionContext,
+): boolean {
+  const ast = typeof expression === 'string' ? parseExpression(expression) : expression
+  return evaluatePartialNode(ast, { ...context, now: context.now ?? new Date() }) !== false
+}
+
+const UNKNOWN_INPUT = Symbol('unknown-input')
+
+function evaluatePartialNode(node: ExpressionNode, context: ExpressionContext): unknown {
+  if (node.type === 'path' && (node.path === 'input' || node.path.startsWith('input.'))) return UNKNOWN_INPUT
+  if (node.type === 'literal') return node.value
+  if (node.type === 'path') {
+    if (node.path === 'now') return context.now
+    return getPath(context as Record<string, unknown>, node.path)
+  }
+  if (node.type === 'array') {
+    const values = node.elements.map(element => evaluatePartialNode(element, context))
+    return values.includes(UNKNOWN_INPUT) ? UNKNOWN_INPUT : values
+  }
+  if (node.type === 'unary') {
+    const value = evaluatePartialNode(node.operand, context)
+    if (value === UNKNOWN_INPUT) return UNKNOWN_INPUT
+    return node.operator === '!' ? !toBoolean(value) : -toFiniteNumber(value)
+  }
+
+  const left = evaluatePartialNode(node.left, context)
+  if (node.operator === '&&') {
+    if (left === false) return false
+    const right = evaluatePartialNode(node.right, context)
+    if (right === false) return false
+    return left === UNKNOWN_INPUT || right === UNKNOWN_INPUT ? UNKNOWN_INPUT : true
+  }
+  if (node.operator === '||') {
+    if (left === true) return true
+    const right = evaluatePartialNode(node.right, context)
+    if (right === true) return true
+    return left === UNKNOWN_INPUT || right === UNKNOWN_INPUT ? UNKNOWN_INPUT : false
+  }
+  const right = evaluatePartialNode(node.right, context)
+  if (left === UNKNOWN_INPUT || right === UNKNOWN_INPUT) return UNKNOWN_INPUT
+  return evaluateNode({ ...node, left: { type: 'literal', value: left }, right: { type: 'literal', value: right } }, context)
+}
+
 export function expressionPaths(expression: string | ExpressionNode): string[] {
   const ast = typeof expression === 'string' ? parseExpression(expression) : expression
   const paths = new Set<string>()

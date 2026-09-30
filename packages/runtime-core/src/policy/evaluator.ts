@@ -4,7 +4,7 @@ import { SYSTEM_SESSION, type UserSession } from '../auth/provider.js'
 import type { QueryExecutorPort } from '../routing/request-ports.js'
 import type { AccessCondition, Blueprint, Entity, Relation } from '../types/blueprint.js'
 import { ExpressionEvaluationError } from '../errors/domain-errors.js'
-import { evaluateExpression, expressionPaths, validateExpression } from './expression.js'
+import { canExpressionBeTrueWithoutInput, evaluateExpression, expressionPaths, validateExpression } from './expression.js'
 
 const SHORTHANDS = new Set(['public', 'authenticated', 'owner'])
 
@@ -62,6 +62,35 @@ export class PolicyEvaluator {
       const resolvedExpected = resolveLegacyValue(expected, actor, context)
       return actual !== undefined && resolvedExpected !== undefined && actual === resolvedExpected
     })
+  }
+
+  /** Evaluate the input-independent portion of a condition while listing a command. */
+  async evaluateForListing(condition: AccessCondition | undefined, context: PolicyContext): Promise<boolean> {
+    if (!requiresInputEvaluation(condition)) return this.evaluate(condition, context)
+    if (typeof condition === 'string') {
+      const record = context.record
+        ? await this.hydrateRelations(condition, context.record, context.entity)
+        : undefined
+      return canExpressionBeTrueWithoutInput(condition, expressionContext(
+        context.actor ?? actorFromSession(context.session),
+        { ...context, record },
+      ))
+    }
+    if (condition && typeof condition === 'object' && 'and' in condition && Array.isArray(condition.and)) {
+      for (const branch of condition.and) if (!await this.evaluateForListing(branch, context)) return false
+      return condition.and.length > 0
+    }
+    if (condition && typeof condition === 'object' && 'or' in condition && Array.isArray(condition.or)) {
+      for (const branch of condition.or) if (await this.evaluateForListing(branch, context)) return true
+      return false
+    }
+    if (condition && typeof condition === 'object') {
+      const knownEntries = Object.entries(condition).filter(([path, value]) =>
+        !path.startsWith('input.') && !(typeof value === 'string' && value.startsWith('input.'))
+      )
+      return knownEntries.length === 0 || this.evaluate(Object.fromEntries(knownEntries), context)
+    }
+    return true
   }
 
   private async hydrateRelations(
@@ -167,6 +196,23 @@ export function requiresRecordEvaluation(condition: AccessCondition | undefined)
     return condition.or.some(requiresRecordEvaluation)
   }
   return Object.keys(condition).some(key => !key.startsWith('$currentUser.'))
+}
+
+/** Whether a condition needs submitted command input and cannot be decided while listing actions. */
+export function requiresInputEvaluation(condition: AccessCondition | undefined): boolean {
+  if (typeof condition === 'string') {
+    return !SHORTHANDS.has(condition) && expressionPaths(condition).some(path => path.startsWith('input.'))
+  }
+  if (!condition || typeof condition === 'boolean') return false
+  if ('and' in condition && Array.isArray(condition.and)) {
+    return condition.and.some(requiresInputEvaluation)
+  }
+  if ('or' in condition && Array.isArray(condition.or)) {
+    return condition.or.some(requiresInputEvaluation)
+  }
+  return Object.entries(condition).some(([path, value]) =>
+    path.startsWith('input.') || (typeof value === 'string' && value.startsWith('input.'))
+  )
 }
 
 function expressionContext(actor: Actor | null, context: PolicyContext) {

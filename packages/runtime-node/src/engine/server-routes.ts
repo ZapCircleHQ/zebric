@@ -1069,16 +1069,21 @@ export function registerCommandRoutes(
   deps: {
     blueprint: Blueprint
     commandExecutor: CommandExecutor
+    getBlueprint?: () => Blueprint
+    getCommandExecutor?: () => CommandExecutor
     sessionManager: SessionManager
     workflowManager?: WorkflowManager
     apiKeys: ReadonlyMap<string, { name: string }>
   },
 ): void {
   const idempotency = new IdempotencyCache()
+  const resolveCommand = (operationId: string) =>
+    (deps.getBlueprint?.() ?? deps.blueprint).commands
+      ?.find(command => commandOperationId(command.name) === operationId)
 
-  for (const command of deps.blueprint.commands ?? []) {
-    const operationId = commandOperationId(command.name)
-    app.post(`/commands/${operationId}/:id`, async c => {
+  app.post('/commands/:operationId/:id', async c => {
+      const command = resolveCommand(c.req.param('operationId'))
+      if (!command) return c.notFound()
       const body = await parseActionRequestBody(c)
       const redirectTarget = resolveActionRedirect(
         typeof body.redirect === 'string' ? body.redirect : undefined,
@@ -1091,7 +1096,7 @@ export function registerCommandRoutes(
       }
       try {
         const input = coerceCommandFormInput(command, body)
-        const result = await deps.commandExecutor.execute({
+        const result = await (deps.getCommandExecutor?.() ?? deps.commandExecutor).execute({
           command: command.name,
           recordId: c.req.param('id'),
           input,
@@ -1115,7 +1120,9 @@ export function registerCommandRoutes(
       }
     })
 
-    app.post(`/api/commands/${operationId}/:id`, async c => {
+  app.post('/api/commands/:operationId/:id', async c => {
+      const command = resolveCommand(c.req.param('operationId'))
+      if (!command) return agentApiError(c, 404, 'NOT_FOUND', 'Command not found')
       const session = await resolveEntityApiSession(c, deps.sessionManager, deps.apiKeys)
       if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
       if (!agentHasScopes(session, command.scopes ?? [])) {
@@ -1131,7 +1138,7 @@ export function registerCommandRoutes(
           return agentApiError(c, 422, 'VALIDATION_FAILED', 'Command input must be a JSON object')
         }
         const execute = async (): Promise<Response> => {
-          const result = await deps.commandExecutor.execute({
+          const result = await (deps.getCommandExecutor?.() ?? deps.commandExecutor).execute({
             command: command.name,
             recordId: c.req.param('id'),
             input: (input ?? {}) as Record<string, unknown>,
@@ -1173,7 +1180,6 @@ export function registerCommandRoutes(
         return agentApiError(c, 500, 'INTERNAL_ERROR', 'Command execution failed', { retryable: true })
       }
     })
-  }
 }
 
 function coerceCommandFormInput(command: Command, body: Record<string, unknown>): Record<string, unknown> {

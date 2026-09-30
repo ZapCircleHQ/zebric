@@ -455,6 +455,17 @@ export class ZebricEngine extends EventEmitter {
         this.rendererInstance.setReloadScript(reloadScript)
       }
       this.blueprintAdapter.setBlueprint(newBlueprint)
+      if (this.serverManager) {
+        await this.serverManager.updateDependencies({
+          blueprint: newBlueprint,
+          state: this.state,
+          workflowManager: this.workflowManager,
+          commandSourceFiles: new Map((newBlueprint.commands ?? []).flatMap(command => {
+            const source = this.loader.getSourceLocation('command', command.name)?.file
+            return source ? [[command.name, source] as const] : []
+          })),
+        })
+      }
 
       // Notify connected clients via WebSocket
       if (this.reloadServer) {

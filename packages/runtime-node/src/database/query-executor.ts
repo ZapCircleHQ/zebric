@@ -27,7 +27,11 @@ export interface AuditOutboxRecord {
 export class QueryExecutor {
   private permissionManager?: PermissionManager
   private readonly policyEvaluator: PolicyEvaluator
-  private readonly transactionContext = new AsyncLocalStorage<{ token: symbol; db?: any }>()
+  private readonly transactionContext = new AsyncLocalStorage<{
+    token: symbol
+    db?: any
+    afterCommit: Array<() => Promise<void> | void>
+  }>()
   private activeTransaction?: { token: symbol; done: Promise<void> }
   private transactionTail: Promise<void> = Promise.resolve()
 
@@ -64,31 +68,50 @@ export class QueryExecutor {
     let resolveDone!: () => void
     const done = new Promise<void>((resolve) => { resolveDone = resolve })
     this.activeTransaction = { token, done }
+    let transactionReleased = false
+    const releaseTransaction = () => {
+      if (transactionReleased) return
+      transactionReleased = true
+      if (this.activeTransaction?.token === token) this.activeTransaction = undefined
+      resolveDone()
+      releaseQueue()
+    }
 
     try {
       const db = this.connection.getDb() as any
+      const afterCommit: Array<() => Promise<void> | void> = []
+      let result: T
       if (this.connection.getType() === 'postgres') {
-        return await db.transaction((tx: any) =>
-          this.transactionContext.run({ token, db: tx }, fn)
+        result = await db.transaction((tx: any) =>
+          this.transactionContext.run({ token, db: tx, afterCommit }, fn)
         )
+        releaseTransaction()
+        for (const effect of afterCommit) await effect()
+        return result
       }
 
       const sqlite = this.connection.getSQLite()
       if (!sqlite) throw new Error('SQLite connection is not initialized')
       sqlite.exec('BEGIN IMMEDIATE')
       try {
-        const result = await this.transactionContext.run({ token }, fn)
+        result = await this.transactionContext.run({ token, afterCommit }, fn)
         sqlite.exec('COMMIT')
-        return result
       } catch (error) {
         sqlite.exec('ROLLBACK')
         throw error
       }
+      releaseTransaction()
+      for (const effect of afterCommit) await effect()
+      return result
     } finally {
-      this.activeTransaction = undefined
-      resolveDone()
-      releaseQueue()
+      releaseTransaction()
     }
+  }
+
+  async afterCommit(effect: () => Promise<void> | void): Promise<void> {
+    const context = this.transactionContext.getStore()
+    if (context) context.afterCommit.push(effect)
+    else await effect()
   }
 
   private getDb(): any {
@@ -176,6 +199,9 @@ export class QueryExecutor {
     if (AccessControl.isImpossibleFilter(accessFilters)) {
       throw new Error(`Access denied: Cannot read ${queryDef.entity}`)
     }
+    const paginateAfterPolicy = !isSystemSession(context.session)
+      && (requiresRecordEvaluation(entity?.access?.read)
+        || this.permissionManager?.requiresRecordCheck(queryDef.entity, 'read') === true)
 
     // Combine query filters with access control filters
     let finalWhere = whereClause
@@ -213,12 +239,12 @@ export class QueryExecutor {
     }
 
     // Apply LIMIT
-    if (queryDef.limit) {
+    if (queryDef.limit && !paginateAfterPolicy) {
       query = query.limit(queryDef.limit) as any
     }
 
     // Apply OFFSET
-    if (queryDef.offset) {
+    if (queryDef.offset && !paginateAfterPolicy) {
       query = query.offset(queryDef.offset) as any
     }
 
@@ -235,7 +261,12 @@ export class QueryExecutor {
         this.policyEvaluator,
         this.permissionManager,
       )
-      return secured.map(record => filterReadableFields(entity, record, context.session))
+      const paginated = paginateAfterPolicy
+        ? secured.slice(queryDef.offset ?? 0, queryDef.limit == null
+          ? undefined
+          : (queryDef.offset ?? 0) + queryDef.limit)
+        : secured
+      return paginated.map(record => filterReadableFields(entity, record, context.session))
     } finally {
       this.metrics?.recordQuery(queryDef.entity, 'read', performance.now() - start)
     }
@@ -308,17 +339,21 @@ export class QueryExecutor {
     }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
+    const limitAfterPolicy = !isSystemSession(options.context?.session)
+      && (requiresRecordEvaluation(entity?.access?.read)
+        || this.permissionManager?.requiresRecordCheck(entityName, 'read') === true)
 
     const start = performance.now()
     try {
-      const results = await (db as any)
+      let results = (db as any)
         .select()
         .from(table)
         .where(where)
-        .limit(limit)
+      if (!limitAfterPolicy) results = results.limit(limit)
 
-      if (!Array.isArray(results)) return []
-      const records = results.map((record) => this.toCamelCase(record))
+      const rows = await results
+      if (!Array.isArray(rows)) return []
+      const records = rows.map((record) => this.toCamelCase(record))
       const secured = await filterRecordsByReadPolicy(
         entity,
         records,
@@ -326,7 +361,8 @@ export class QueryExecutor {
         this.policyEvaluator,
         this.permissionManager,
       )
-      return secured.map(record => filterReadableFields(entity, record, options.context?.session))
+      return (limitAfterPolicy ? secured.slice(0, limit) : secured)
+        .map(record => filterReadableFields(entity, record, options.context?.session))
     } finally {
       this.metrics?.recordQuery(entityName, 'search', performance.now() - start)
     }
@@ -568,7 +604,8 @@ export class QueryExecutor {
 
     const entity = this.connection.getEntity(queryDef.entity)
     if (!isSystemSession(context.session)
-      && (this.permissionManager != null || requiresRecordEvaluation(entity?.access?.read))) {
+      && (requiresRecordEvaluation(entity?.access?.read)
+        || this.permissionManager?.requiresRecordCheck(queryDef.entity, 'read') === true)) {
       return (await this.execute({ ...queryDef, limit: undefined, offset: undefined }, context)).length
     }
     if (entity) {

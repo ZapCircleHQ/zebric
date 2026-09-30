@@ -71,6 +71,8 @@ export interface QueryExecutorPort {
   ): Promise<any[]>
   /** Run command state changes atomically where the adapter supports transactions. */
   transaction?<T>(fn: () => Promise<T>): Promise<T>
+  /** Run an effect after the outermost active transaction commits, or immediately when none is active. */
+  afterCommit?(effect: () => Promise<void> | void): Promise<void> | void
 }
 
 /**
