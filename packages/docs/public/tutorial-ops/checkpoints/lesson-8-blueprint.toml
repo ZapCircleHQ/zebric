@@ -1,4 +1,4 @@
-version = "0.2.0"
+version = "0.6.0"
 
 [project]
 name = "HarborFlow Exceptions"
@@ -6,7 +6,7 @@ version = "1.0.0"
 description = "Customer exception request tracking for HarborFlow operations rollout."
 
 [project.runtime]
-min_version = "0.2.0"
+min_version = "0.6.0"
 
 [auth]
 providers = ["email"]
@@ -39,7 +39,7 @@ fields = [
   { name = "exceptionType", type = "Enum", values = ["shipping_delay", "pricing_adjustment", "custom_terms", "other"], default = "other" },
   { name = "priority", type = "Enum", values = ["standard", "expedite", "urgent"], default = "standard" },
   { name = "justification", type = "LongText" },
-  { name = "status", type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted" },
+  { name = "status", type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted", write = "command-only", commands = ["ApproveExceptionRequestState"] },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
@@ -48,6 +48,13 @@ read = true
 create = true
 update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
 delete = { "$currentUser.role" = "admin" }
+
+[command.ApproveExceptionRequestState]
+entity = "ExceptionRequest"
+description = "Apply the guarded approval state transition."
+policy = "workflow.__zebric.currentWorkflow == 'ApproveExceptionRequest'"
+availableWhen = "record.status in ['submitted', 'reviewing']"
+mutations = { status = "approved" }
 
 [[entities]]
 name = "ApprovalAudit"
@@ -145,6 +152,7 @@ statusField = "status"
 label = "Approve Exception"
 workflow = "ApproveExceptionRequest"
 style = "primary"
+visibleWhen = { status = ["submitted", "reviewing"] }
 successMessage = "Exception approved and operations notified."
 
 [[pages]]
@@ -159,16 +167,13 @@ description = "Approve an exception request and notify operations."
 [workflows.trigger]
 manual = true
 
+[workflows.precondition]
+"variables.data.record.status" = ["submitted", "reviewing"]
+
 [[workflows.steps]]
-type = "query"
-entity = "ExceptionRequest"
-action = "update"
-
-[workflows.steps.where]
-id = "{{ variables.data.record.id }}"
-
-[workflows.steps.data]
-status = "approved"
+type = "command"
+command = "ApproveExceptionRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflows.steps]]
 type = "notify"

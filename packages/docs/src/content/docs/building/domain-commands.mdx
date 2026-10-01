@@ -1,0 +1,189 @@
+---
+label: Domain Commands
+order: 3
+slug: building/domain-commands
+title: Domain Commands
+description: Model guarded business decisions once and reuse them from generated UI, HTTP, agents, and workflows.
+---
+
+Domain commands represent business decisions and lifecycle transitions. 
+
+Use a command when a mutation needs the same validation, authorization, state checks, audit history, and transaction behavior from every surface (API, MCP, Web UI).
+
+CRUD is still available for ordinary data entry. Prefer a command for operations such as approving a request, shipping an order, assigning an owner, or closing an incident.
+
+## Define a Command
+
+```toml
+[command.ApproveRequest]
+entity = "Request"
+label = "Approve"
+description = "Approve a request that is waiting for review."
+policy = "actor.roles contains 'approver' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'pending'"
+confirm = "Approve this request?"
+style = "primary"
+mutations = { status = "approved", approvedById = "actor.id", approvedAt = "now" }
+scopes = ["requests.approve"]
+```
+
+`policy` answers whether the actor may execute the command. 
+
+`availableWhen` answers whether the command is valid for the current record. Generated detail-page UI only offers commands that pass both checks, and execution checks them again.
+
+Expressions can inspect `actor`, `record`, `input`, `workflow`, and `now`. Relations referenced through `record` are loaded before policy evaluation.
+
+### Command Options
+
+| Field | Description |
+|---|---|
+| `entity` | Entity whose record the command operates on. |
+| `label` | Human-readable action label. Defaults to the command name. |
+| `description` | Explanation used by generated UI and API discovery. |
+| `policy` | Actor and record authorization condition. |
+| `availableWhen` | State condition controlling availability. |
+| `confirm` | Optional browser confirmation prompt. |
+| `style` | `primary`, `secondary`, `danger`, or `ghost`. |
+| `input` | Typed input fields accepted by the command. |
+| `mutations` | Declarative fields to update. |
+| `handler` | Relative JavaScript or TypeScript module for custom logic. |
+| `scopes` | Scopes required when an API-key actor invokes the command. |
+
+A command must define `mutations`, `handler`, or both.
+
+## Typed Input
+
+```toml
+[command.RejectRequest]
+entity = "Request"
+label = "Reject"
+style = "danger"
+availableWhen = "record.status == 'pending'"
+mutations = { status = "rejected", rejectionReason = "input.reason" }
+
+[command.RejectRequest.input.reason]
+type = "LongText"
+required = true
+label = "Reason"
+description = "Explain why the request cannot be approved."
+```
+
+Input types use the same scalar types as entity fields. `Enum` inputs can also declare `values`.
+
+Mutation values can reference `input.*`, `actor.*`, and `record.*`. The special value `now` resolves at execution time.
+
+## Protect Lifecycle Fields
+
+Mark important fields as command-only so generic forms, entity APIs, and query workflow steps cannot bypass the command policy:
+
+```toml
+[entity.Request]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "status", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", write = "command-only", commands = ["ApproveRequest", "RejectRequest"] }
+]
+```
+
+`commands` is an optional allowlist. Without it, any command for the entity can write the protected field. Runtime defaults still apply when a create request omits a protected field.
+
+The equivalent entity-level form is useful when several fields share one allowlist:
+
+```toml
+[entity.Request.protection]
+fields = ["status", "approvedById", "approvedAt"]
+commands = ["ApproveRequest", "RejectRequest"]
+```
+
+An attempted generic mutation returns `PROTECTED_FIELD_MUTATION`.
+
+## Generated UI
+
+Detail pages automatically include available commands for the page's primary entity. Add an action-bar block only when you also want a status badge or explicit workflow actions:
+
+```toml
+[page."/requests/:id"]
+title = "Request"
+layout = "detail"
+
+[page."/requests/:id".query.request]
+entity = "Request"
+where = { id = "$params.id" }
+
+[page."/requests/:id".actionBar]
+statusField = "status"
+```
+
+Zebric uses the command's label, description, input, confirmation text, and style to render the action. A stale or unauthorized submission is still rejected server-side.
+
+## Invoke Commands from Workflows
+
+Workflows orchestrate commands and side effects. They should not use generic query updates to bypass command-only state:
+
+```toml
+[[workflow.ApproveAndNotify.steps]]
+type = "command"
+command = "ApproveRequest"
+recordId = "{{ variables.data.record.id }}"
+input = { note = "{{ variables.data.payload.note }}" }
+
+[[workflow.ApproveAndNotify.steps]]
+type = "notify"
+adapter = "slack_ops"
+body = "Request approved: {{ variables.data.record.title }}"
+```
+
+Set `transactional = true` when every database mutation in a workflow must commit or roll back together. Command mutations join the workflow transaction. Keep external service, webhook, and notification effects outside transactional workflows because an external effect cannot be rolled back with the database.
+
+## HTTP and Agent Invocation
+
+Commands are included in discovery and OpenAPI and receive a stable snake-case operation ID. `ApproveRequest` becomes `approve_request`:
+
+```http
+POST /api/commands/approve_request/{id}
+Authorization: Bearer <credential>
+Idempotency-Key: <stable-key>
+X-Agent-Run-ID: <run-id>
+Content-Type: application/json
+```
+
+API-key actors must have every scope declared by the command. Browser actions use the authenticated session and CSRF protection instead.
+
+## Custom Handlers
+
+Use a handler when a command needs logic beyond declarative field mutations:
+
+```toml
+[command.ScoreOpportunity]
+entity = "Opportunity"
+handler = "./commands/score-opportunity.js"
+```
+
+Handler paths are resolved relative to the TOML file declaring the command and must remain under the root Blueprint directory. A `#name` suffix selects a named export; otherwise the module must export a default function.
+
+Handlers receive the actor, input, current record, actor-scoped database operations, registered services, audit and event ports, and correlation context. Database changes run in the command transaction. Handler audit entries and application events are published only after the transaction commits.
+
+## Actors and API Keys
+
+Policies use one actor shape for people, agents, services, and system work:
+
+```toml
+[[auth.apiKeys]]
+name = "dispatch-agent-key"
+keyEnv = "DISPATCH_AGENT_API_KEY"
+agentId = "dispatch-agent"
+credentialId = "dispatch-production"
+displayName = "Dispatch Agent"
+roles = ["operator"]
+scopes = ["requests.read", "requests.approve"]
+```
+
+Use roles for application authorization and scopes to narrow an API credential's transport surface. `actor.id` identifies the agent or user; `actor.credentialId` identifies the credential. A trusted host may also preserve a human delegator in `actor.delegatedBy`. Never accept delegation identity directly from an untrusted request.
+
+## Migration Checklist
+
+1. Identify lifecycle fields and semantic business operations.
+2. Define commands with policy and state availability.
+3. Protect lifecycle fields and list the commands allowed to write them.
+4. Replace direct workflow updates of those fields with command steps.
+5. Give API-key principals explicit roles and least-privilege scopes.
+6. Test both the allowed command and a rejected generic CRUD bypass.

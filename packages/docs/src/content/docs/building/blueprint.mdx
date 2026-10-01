@@ -6,14 +6,14 @@ title: Blueprint Reference
 description: Complete reference for entities, pages, forms, access control, and UI configuration.
 ---
 
-Blueprints are TOML files that declaratively define your application. This page covers every section of a blueprint.
+Blueprints are TOML files that declaratively define your application. This page covers the core data, page, UI, authentication, and integration sections. Domain behavior has a dedicated [Domain Commands](/building/domain-commands) reference, while [Workflows](/building/workflows) and [Skills](/reference/skills) cover their respective sections in depth.
 
 ## Project
 
 Every blueprint starts with a version and project metadata:
 
 ```toml
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "My App"
@@ -21,7 +21,7 @@ version = "1.0.0"
 description = "An internal tool"
 
 [project.runtime]
-min_version = "0.1.0"
+min_version = "0.6.0"
 ```
 
 ## Composing multiple TOML files
@@ -101,6 +101,32 @@ fields = [
 | `default` | any | Default value (`"now"` for DateTime) |
 | `values` | string[] | Allowed values for Enum type |
 | `ref` | string | Foreign key target for Ref type |
+| `write` | `"command-only"` | Reject generic writes to a lifecycle field |
+| `commands` | string[] | Commands allowed to write a command-only field |
+
+### Indexes and Entity Protection
+
+Define compound or named indexes with `[[entity.Post.indexes]]`:
+
+```toml
+[[entity.Post.indexes]]
+fields = ["authorId", "status"]
+name = "post_author_status"
+
+[[entity.Post.indexes]]
+fields = ["slug"]
+unique = true
+```
+
+Protect several fields with one command allowlist:
+
+```toml
+[entity.Post.protection]
+fields = ["status", "publishedAt"]
+commands = ["PublishPost", "UnpublishPost"]
+```
+
+See [Domain Commands](/building/domain-commands#protect-lifecycle-fields) for command-only mutation behavior.
 
 ### Relations
 
@@ -303,7 +329,7 @@ not be presented to the user, such as a parent record identifier.
 
 ## Action Bar
 
-Detail pages can include an action bar with workflow triggers:
+Detail pages can include an action bar with workflow triggers and a status badge. They render domain commands for the primary entity when the command's policy and `availableWhen` checks pass, even when no explicit action-bar block is present:
 
 ```toml
 [page."/issues/:id"]
@@ -322,7 +348,12 @@ style = "primary"
 label = "Request Approval"
 workflow = "RequestApprovalIfNeeded"
 style = "secondary"
+visibleWhen = { status = ["draft", "changes_requested"] }
 ```
+
+Command actions do not need to be repeated in `actionBar.actions`; define their label, input, confirmation prompt, and style on the command. See [Generated UI](/building/domain-commands#generated-ui).
+
+Workflow and link actions support `visibleWhen` and `enabledWhen` record conditions, along with `confirm`, `payload`, `redirect`, `successMessage`, and `errorMessage`. Put authoritative state checks in the workflow or command as well; UI visibility is not an authorization boundary.
 
 ## Layout Slots
 
@@ -383,7 +414,54 @@ trustedOrigins = ["http://localhost:3000"]
 [[auth.apiKeys]]
 name = "my-agent"
 keyEnv = "MY_API_KEY"
+agentId = "content-agent"
+credentialId = "content-agent-production"
+displayName = "Content Agent"
+roles = ["editor"]
+scopes = ["entity.post.list", "posts.publish"]
 ```
+
+API keys can authenticate entity, skill, workflow, command, job, and audit routes. See [Security & Authentication](/building/security#api-keys) for identity and scope behavior.
+
+## Domain Commands
+
+Commands define guarded business transitions shared by UI, HTTP, agents, and workflows:
+
+```toml
+[command.PublishPost]
+entity = "Post"
+label = "Publish"
+policy = "actor.roles contains 'editor'"
+availableWhen = "record.status == 'draft'"
+mutations = { status = "published", publishedAt = "now" }
+scopes = ["posts.publish"]
+```
+
+See [Domain Commands](/building/domain-commands) for typed input, protected fields, handlers, generated UI, workflow steps, and HTTP invocation.
+
+## External Services
+
+Services declare typed operations supplied by a loaded plugin:
+
+```toml
+[service.crm]
+description = "Customer system"
+plugin = "crm-plugin"
+
+[service.crm.operations.lookupCustomer]
+description = "Find a customer by email."
+
+[service.crm.operations.lookupCustomer.input.email]
+type = "Email"
+required = true
+
+[service.crm.operations.lookupCustomer.result]
+type = "Object"
+fields = { id = { type = "Text", required = true }, name = { type = "Text" } }
+allowUnknown = false
+```
+
+Each service requires at least one operation. Input and result schemas accept entity scalar types plus nested `Object` and `Array` values. `Object` requires `fields`; `Array` requires `items`. The optional `transform` map projects a validated external result before returning it to the caller.
 
 ## Notifications
 

@@ -41,7 +41,7 @@ For HarborFlow, a strong first workflow is:
 
 Start with one event and one useful outcome:
 
-- approval changes status
+- a guarded domain command changes status
 - a notification is sent
 - a follow-up field is updated
 
@@ -64,6 +64,13 @@ That gives the app:
 Here is a concrete first version:
 
 ```toml
+[command.ApproveExceptionRequestState]
+entity = "ExceptionRequest"
+description = "Apply the guarded approval state transition."
+policy = "workflow.__zebric.currentWorkflow == 'ApproveExceptionRequest'"
+availableWhen = "record.status in ['submitted', 'reviewing']"
+mutations = { status = "approved" }
+
 [notifications]
 default = "console"
 
@@ -78,14 +85,13 @@ description = "Approve an exception request and notify operations."
 [workflows.trigger]
 manual = true
 
+[workflows.precondition]
+"variables.data.record.status" = ["submitted", "reviewing"]
+
 [[workflows.steps]]
-type = "query"
-entity = "ExceptionRequest"
-action = "update"
-[workflows.steps.where]
-id = "{{ variables.data.record.id }}"
-[workflows.steps.data]
-status = "approved"
+type = "command"
+command = "ApproveExceptionRequestState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflows.steps]]
 type = "notify"
@@ -105,13 +111,23 @@ statusField = "status"
 label = "Approve Request"
 workflow = "ApproveExceptionRequest"
 style = "primary"
+visibleWhen = { status = ["submitted", "reviewing"] }
 ```
 
 Add this action bar block under the existing `[[pages]]` entry where `path = "/requests/:id"`.
 
-Using the console adapter is enough for a first pass because you can verify the workflow wiring locally before you switch to Slack or email.
+Protect the existing `status` field so forms, generic API updates, and query steps cannot bypass this command:
 
-One current limitation worth knowing: the action bar always renders every configured action, regardless of the record's status. `statusField` only displays a status badge — it does not hide or disable buttons based on state. Clicking **Approve Request** on a request that is already `approved`, `rejected`, or `completed` will still run the workflow and silently force the status back to `approved`. If that matters for your process, add a `condition` step at the start of the workflow that checks the current status and only proceeds when it is `reviewing`.
+```toml
+fields = [
+  # Keep the entity's other fields here.
+  { name = "status", type = "Enum", values = ["submitted", "reviewing", "approved", "rejected", "completed"], default = "submitted", write = "command-only", commands = ["ApproveExceptionRequestState"] }
+]
+```
+
+Using the console adapter is enough for a first pass because you can verify the workflow wiring locally before you switch to Slack or email. The command owns the state transition; the workflow coordinates that transition with the notification.
+
+`visibleWhen` hides the workflow action when the record is no longer awaiting approval. The workflow precondition still rejects a stale click before any step runs, and the command repeats the state check during execution. UI visibility is a convenience, not an authorization boundary. Commands rendered directly by Zebric use `availableWhen` for the same presentation behavior; this example keeps the workflow button because it also coordinates a notification.
 
 ## Why This Matters
 
@@ -138,8 +154,10 @@ Use [Workflows & Notifications](/building/workflows/) for more step types and ad
 In this lesson, you are adding automation-related sections:
 
 - add a `[notifications]` block and at least one adapter
+- add a domain command for the guarded approval transition
+- mark `status` as command-only
 - add a `[[workflows]]` definition named `ApproveExceptionRequest`
-- add workflow steps to update data and send a notification
+- add workflow steps to invoke the command and send a notification
 - add an action bar to the detail page so users can trigger the workflow
 
 This is the first lesson where a user action leads to a **workflow-backed state change** instead of only CRUD behavior.
@@ -159,9 +177,11 @@ zebric dev --blueprint lesson-6-blueprint.toml
 
 - **CLI**: `zebric validate` and `zebric dev` run your blueprint for real, outside the browser sandbox
 - **Workflows**: manual triggers and multi-step automation
+- **Domain Commands**: one guarded implementation of the approval state transition
 - **Notifications**: console, Slack, or email adapters for alerts
 - **Pages**: action bars expose workflows in the UI
 - **Entities**: workflow steps update entity state as part of the business process
+- **Protected Fields**: generic writes cannot bypass the approval command
 
 ## Next Lesson
 

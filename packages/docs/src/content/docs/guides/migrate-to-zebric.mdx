@@ -130,6 +130,7 @@ Find and read:
 Map to Zebric:
 - Email/password auth → `providers = ["email"]` in `[auth]`
 - Roles or permissions → entity-level `[entity.Foo.access]` blocks
+- Business decisions and lifecycle transitions → domain-command `policy` and `availableWhen`
 - If user records exist in the DB, look for a User model and describe its fields
 
 ---
@@ -169,6 +170,20 @@ For each automated process, determine:
 - What triggers it (record create/update/delete, HTTP webhook, manual button)
 - What it does (update a record, send a notification, call an external API)
 
+Separate state transitions from orchestration. Model each guarded business decision as a domain command, protect its lifecycle fields, and let workflows invoke commands before coordinating notifications or external effects:
+
+```toml
+[command.CloseIssue]
+entity = "Issue"
+policy = "actor.roles contains 'support' || actor.roles contains 'admin'"
+availableWhen = "record.status != 'closed'"
+mutations = { status = "closed", closedAt = "now" }
+
+[entity.Issue.protection]
+fields = ["status", "closedAt"]
+commands = ["CloseIssue"]
+```
+
 Map to Zebric:
 ```toml
 [workflow.NotifyOnClose]
@@ -195,7 +210,7 @@ body    = "Issue closed: {{ trigger.after.title }}"
 Emit a single `blueprint.toml` file with the following structure:
 
 ```toml
-version = "0.2.0"
+version = "0.6.0"
 
 [project]
 name    = "App Name"
@@ -203,7 +218,7 @@ version = "1.0.0"
 description = "Brief description"
 
 [project.runtime]
-min_version = "0.2.0"
+min_version = "0.6.0"
 
 # --- Entities ---
 [entity.EntityName]
@@ -225,6 +240,10 @@ auth   = { required = true }
 
 # --- Workflows ---
 [workflow.WorkflowName]
+...
+
+# --- Domain commands ---
+[command.CommandName]
 ...
 ```
 

@@ -70,6 +70,7 @@ If a page queries or displays a field that isn't defined on the entity, the runt
 
 - For browser requests, check that the user is logged in (session cookie present)
 - For API key requests, verify the `Authorization: Bearer <key>` header is set and matches the `keyEnv` value in `[[auth.apiKeys]]`
+- For API key requests, verify the credential declares every required entity, skill, workflow, or command scope
 - Check entity-level access control: `[entity.Foo.access]` rules are evaluated against `$currentUser`. A missing session produces no `$currentUser`, causing all access checks to fail.
 
 ### Session not persisting between requests
@@ -161,12 +162,12 @@ Check the [template variable reference](/building/workflows#template-variables).
 - Confirm the environment variable named by `keyEnv` is present **when the runtime starts**. An absent variable causes that key configuration to be skipped.
 - Confirm the agent's `--credential-env` names a populated variable and the bearer key belongs to this application.
 - `401 AUTHENTICATION_REQUIRED` means authentication failed. `403 INSUFFICIENT_SCOPE` means the recognized identity lacks one or more action scopes.
-- Browser session mutations require valid CSRF protection. Bearer-authenticated skill requests bypass CSRF only after the bearer credential is validated.
+- Browser session mutations require valid CSRF protection. Bearer-authenticated API requests bypass CSRF only after the bearer credential is validated.
 
 ### A filter is rejected or an expected action is missing
 
 - Check the action and query schema in `/api/openapi.json`; enum values, required fields, and pagination limits are enforced before application logic runs.
-- Only Blueprint skill actions are agent tools. Generic entity routes are not automatically substituted for a missing semantic action.
+- Blueprint skills and domain commands become agent tools. Generic entity routes are not automatically substituted for a missing semantic action.
 - Restart or reload the application after changing the Blueprint, then confirm the discovery and OpenAPI fingerprints agree.
 
 ### A mutation is rejected before reaching Zebric
@@ -177,6 +178,14 @@ Zebric Agent creates mutation tools only when mutation policy is configured. In 
 
 - `WORKFLOW_PRECONDITION_FAILED` or `STATE_CONFLICT`: refetch the resource. Another actor may have changed its state; do not automatically repeat the same intended transition.
 - `IDEMPOTENCY_KEY_REUSE`: the same key was paired with different input. Fix the caller so one key identifies one canonical operation.
+
+### A domain command is missing or rejected
+
+- Confirm the page uses the `detail` layout and its primary query targets the command's entity. An explicit `actionBar` is only needed for status display or workflow actions.
+- `AUTHORIZATION_FAILED`: inspect the command `policy`, actor roles, and session identity.
+- `COMMAND_UNAVAILABLE`: refetch the record and inspect `availableWhen`; the state may have changed since the UI rendered.
+- `PROTECTED_FIELD_MUTATION`: use an allowed command instead of a generic form, entity API update, or query workflow step.
+- `VALIDATION_FAILED`: compare the request body with the command's declared `input` fields and required values.
 
 ### A workflow job disappears or times out
 
