@@ -1,5 +1,11 @@
 # @zebric/runtime-simulator
 
+## 0.6.1
+
+### Patch Changes
+
+- @zebric/runtime-core@0.6.1
+
 ## 0.5.0
 
 ### Minor Changes

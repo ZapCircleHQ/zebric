@@ -1,5 +1,11 @@
 # @zebric/mcp-server
 
+## 0.6.1
+
+### Patch Changes
+
+- @zebric/agent@0.6.1
+
 ## 0.5.0
 
 ### Patch Changes

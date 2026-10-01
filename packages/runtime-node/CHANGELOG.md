@@ -1,5 +1,15 @@
 # @zebric/runtime-node
 
+## 0.6.1
+
+### Patch Changes
+
+- 2269b4c: Fixed Better Auth connecting to the wrong SQLite file when a custom `databaseUrl` is passed to `createZebric()` outside dev mode. Previously, auth silently fell back to `./data/app.db` instead of the configured database, causing "no such table: user" errors on sign-up/sign-in. Auth now resolves the same database file as the rest of the engine.
+  - @zebric/runtime-core@0.6.1
+  - @zebric/runtime-hono@0.6.1
+  - @zebric/notifications@0.6.1
+  - @zebric/observability@0.6.1
+
 ## 0.5.0
 
 ### Minor Changes
