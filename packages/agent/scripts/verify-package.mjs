@@ -7,7 +7,19 @@ import { fileURLToPath } from 'node:url'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(packageRoot, '../..')
-const runtimeCoreRoot = join(repositoryRoot, 'packages/runtime-core')
+// Unpublished workspace packages that the agent depends on, directly or
+// transitively. Each is packed and forced to its tarball in the consumer.
+const workspaceDependencies = [
+  'runtime-core',
+  'observability',
+  'notifications',
+  'runtime-hono',
+  'runtime-node',
+].map(directory => ({
+  name: `@zebric/${directory}`,
+  root: join(repositoryRoot, 'packages', directory),
+  prefix: `zebric-${directory}-`,
+}))
 const temporaryRoot = mkdtempSync(join(tmpdir(), 'zebric-agent-package-'))
 const artifactsRoot = join(temporaryRoot, 'artifacts')
 const consumerRoot = join(temporaryRoot, 'consumer')
@@ -17,10 +29,14 @@ try {
   mkdirSync(artifactsRoot)
   mkdirSync(consumerRoot)
   runPnpm(['pack', '--pack-destination', artifactsRoot], packageRoot)
-  runPnpm(['pack', '--pack-destination', artifactsRoot], runtimeCoreRoot)
+  for (const dependency of workspaceDependencies) {
+    runPnpm(['pack', '--pack-destination', artifactsRoot], dependency.root)
+  }
 
   const agentTarball = findTarball(artifactsRoot, `zebric-agent-${agentPackage.version}`)
-  const runtimeCoreTarball = findTarball(artifactsRoot, 'zebric-runtime-core-')
+  const dependencyTarballs = Object.fromEntries(
+    workspaceDependencies.map(dependency => [dependency.name, findTarball(artifactsRoot, dependency.prefix)]),
+  )
   const contents = output('tar', ['-tzf', agentTarball])
   assert.doesNotMatch(contents, /\.test\.(js|d\.ts)(\.map)?$/m, 'package must not contain compiled tests')
   assert.match(contents, /^package\/dist\/cli\/index\.js$/m, 'package must contain the CLI binary')
@@ -32,7 +48,7 @@ try {
     type: 'module',
     dependencies: {
       '@zebric/agent': `file:${agentTarball}`,
-      '@zebric/runtime-core': `file:${runtimeCoreTarball}`,
+      '@zebric/runtime-core': `file:${dependencyTarballs['@zebric/runtime-core']}`,
     },
   }, null, 2))
   // The workspace dependency may be part of the same unpublished release.
@@ -43,7 +59,9 @@ try {
   - .
 
 overrides:
-  '@zebric/runtime-core': ${JSON.stringify(`file:${runtimeCoreTarball}`)}
+${Object.entries(dependencyTarballs)
+  .map(([name, tarball]) => `  '${name}': ${JSON.stringify(`file:${tarball}`)}`)
+  .join('\n')}
 `)
   // Make an accidental registry lookup for an unpublished Zebric package fail
   // deterministically, while leaving third-party package installs unchanged.
