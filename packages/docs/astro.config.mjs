@@ -45,6 +45,7 @@ export default defineConfig({
 					label: 'Building',
 					items: [
 						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
+						{ label: 'Domain Commands', slug: 'building/domain-commands' },
 						{
 							label: 'Agent API',
 							items: [

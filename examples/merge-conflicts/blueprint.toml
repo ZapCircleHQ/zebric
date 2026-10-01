@@ -1,12 +1,12 @@
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "Merge Conflict Workflow"
-version = "0.1.0"
+version = "0.6.0"
 description = "Human-supervised merge-conflict resolution evidence and review console"
 
 [project.runtime]
-min_version = "0.2.3"
+min_version = "0.6.0"
 
 [entity.Repository]
 fields = [
@@ -34,7 +34,7 @@ fields = [
 fields = [
   { name = "id", type = "ULID", primary_key = true },
   { name = "pullRequestId", type = "Ref", ref = "PullRequest.id", required = true, index = true },
-  { name = "status", type = "Enum", values = ["detected", "analyzing", "resolving", "validating", "awaiting_approval", "approved", "applying", "completed", "failed", "abandoned"], default = "detected", index = true },
+  { name = "status", type = "Enum", values = ["detected", "analyzing", "resolving", "validating", "awaiting_approval", "approved", "applying", "completed", "failed", "abandoned"], default = "detected", index = true, write = "command-only", commands = ["ApproveConflictResolution", "RejectConflictResolution"] },
   { name = "failure", type = "LongText" },
   { name = "publishedCommit", type = "Text" },
   { name = "createdAt", type = "DateTime", default = "now" },
@@ -79,6 +79,21 @@ fields = [
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
+[command.ApproveConflictResolution]
+entity = "ConflictResolution"
+label = "Approve resolution"
+policy = "actor.roles contains 'reviewer' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'awaiting_approval'"
+mutations = { status = "approved", updatedAt = "now" }
+
+[command.RejectConflictResolution]
+entity = "ConflictResolution"
+label = "Reject resolution"
+style = "danger"
+policy = "actor.roles contains 'reviewer' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'awaiting_approval'"
+mutations = { status = "abandoned", updatedAt = "now" }
+
 [page."/"]
 title = "Conflict resolutions"
 auth = "optional"
@@ -109,11 +124,9 @@ action = "create"
 data = { resolutionId = "{{ variables.data.record.id }}", decision = "approved", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.ApproveResolution.steps]]
-type = "query"
-entity = "ConflictResolution"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "awaiting_approval" }
-data = { status = "approved", updatedAt = "now" }
+type = "command"
+command = "ApproveConflictResolution"
+recordId = "{{ variables.data.record.id }}"
 
 [workflow.RejectResolution]
 trigger = { manual = true }
@@ -127,8 +140,20 @@ action = "create"
 data = { resolutionId = "{{ variables.data.record.id }}", decision = "rejected", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.RejectResolution.steps]]
-type = "query"
-entity = "ConflictResolution"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "awaiting_approval" }
-data = { status = "abandoned", updatedAt = "now" }
+type = "command"
+command = "RejectConflictResolution"
+recordId = "{{ variables.data.record.id }}"
+
+[auth]
+providers = ["email"]
+
+[auth.permissions]
+reviewer = { allow = ["ConflictResolution.read", "ConflictResolution.update", "ReviewDecision.create", "ReviewDecision.read"] }
+admin = { allow = ["*.*"] }
+
+[[auth.apiKeys]]
+name = "merge-conflict-reviewer"
+keyEnv = "MERGE_CONFLICT_AGENT_API_KEY"
+agentId = "merge-conflict-reviewer"
+roles = ["reviewer"]
+scopes = ["conflicts.read", "conflicts.review"]

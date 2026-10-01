@@ -6,16 +6,18 @@
  */
 
 import { parse as parseTOML } from 'smol-toml'
-import { BlueprintSchema } from './schema.js'
+import { BlueprintFragmentSchema, BlueprintSchema } from './schema.js'
 import type { Blueprint } from '../types/index.js'
 import {
   BlueprintValidationError,
   zodErrorToStructured,
   createReferenceError,
+  createCompositionError,
   createParseError,
   createVersionError,
 } from './validation-error.js'
 import { analyzeTransactionalWorkflow } from './workflow-analysis.js'
+import { validatePolicyCondition } from '../policy/evaluator.js'
 
 // Re-export for backwards compatibility
 export { BlueprintValidationError }
@@ -25,43 +27,54 @@ export class BlueprintParser {
    * Parse Blueprint from string content
    */
   parse(content: string, format: 'toml' | 'json', source?: string): Blueprint {
-    // Parse based on format
-    let data: any
-    try {
-      if (format === 'toml') {
-        const parsed = parseTOML(content)
-        // Transform spec-compliant TOML to Blueprint JSON structure
-        data = this.transformTOML(parsed)
-        // Normalize parser output before validation.
-        data = this.stripSymbolKeys(data)
-      } else {
-        data = JSON.parse(content)
-      }
-    } catch (parseError: any) {
-      // Extract line/column from parse error if available
-      const line = parseError.line
-      const column = parseError.col ?? parseError.column
-      throw createParseError(parseError.message, source, line, column)
+    const data = this.parseData(content, format, source)
+    if (Array.isArray(data?.imports) && data.imports.length > 0) {
+      throw createCompositionError([
+        'Blueprint imports require a filesystem-aware BlueprintLoader; load this TOML from its file path',
+      ], source)
     }
+    return this.validateComposed(data, content, source)
+  }
 
-    // Validate against schema
-    const result = BlueprintSchema.safeParse(data)
-
+  /** Parse and structurally validate a partial TOML Blueprint module. */
+  parseFragment(content: string, source?: string): import('./schema.js').BlueprintFragmentSchemaType {
+    const data = this.parseData(content, 'toml', source)
+    const result = BlueprintFragmentSchema.safeParse(data)
     if (!result.success) {
-      throw new BlueprintValidationError(
-        zodErrorToStructured(result.error, source)
+      throw new BlueprintValidationError(zodErrorToStructured(result.error, source))
+    }
+    return result.data
+  }
+
+  /** Validate a filesystem adapter's fully composed Blueprint. */
+  validateComposed(
+    data: unknown,
+    hashContent: string,
+    source?: string,
+    sourceFor?: (kind: string, identity: string) => string | undefined,
+  ): Blueprint {
+    const result = BlueprintSchema.safeParse(data)
+    if (!result.success) {
+      throw new BlueprintValidationError(zodErrorToStructured(result.error, source))
+    }
+    const blueprint = result.data as Blueprint
+    blueprint.hash = this.generateHash(hashContent)
+    this.validateReferences(blueprint, source, sourceFor)
+    return blueprint
+  }
+
+  private parseData(content: string, format: 'toml' | 'json', source?: string): any {
+    try {
+      const parsed = format === 'toml' ? parseTOML(content) : JSON.parse(content)
+      return this.stripSymbolKeys(format === 'toml' ? this.transformTOML(parsed) : parsed)
+    } catch (parseError: any) {
+      throw createParseError(
+        parseError.message,
+        source,
+        parseError.line,
+        parseError.col ?? parseError.column,
       )
     }
-
-    const blueprint = result.data as Blueprint
-
-    // Add hash (using Web Crypto API)
-    blueprint.hash = this.generateHash(content)
-
-    // Validate references
-    this.validateReferences(blueprint, source)
-
-    return blueprint
   }
 
   /**
@@ -96,22 +109,23 @@ export class BlueprintParser {
    * Handles both [entity.Name] and [[entities]] syntax
    */
   private transformTOML(parsed: any): any {
-    // If already in correct format (has entities array), return as-is
-    if (parsed.entities) {
-      return parsed
-    }
-
     const transformed: any = {
       version: parsed.version,
       project: parsed.project,
-      entities: [],
-      pages: [],
+      entities: Array.isArray(parsed.entities) ? [...parsed.entities] : [],
+      pages: Array.isArray(parsed.pages) ? [...parsed.pages] : [],
+      workflows: Array.isArray(parsed.workflows) ? [...parsed.workflows] : undefined,
+      commands: Array.isArray(parsed.commands) ? [...parsed.commands] : undefined,
+      services: Array.isArray(parsed.services) ? [...parsed.services] : undefined,
+      plugins: Array.isArray(parsed.plugins) ? [...parsed.plugins] : undefined,
+      skills: Array.isArray(parsed.skills) ? [...parsed.skills] : undefined,
       auth: parsed.auth,
       ui: parsed.ui,
       ux: parsed.ux,
       design_adapter: parsed.design_adapter,
       design_system: parsed.design_system,
       notifications: parsed.notifications,
+      imports: parsed.imports,
     }
 
     // Transform [entity.Name] to entities array
@@ -142,7 +156,7 @@ export class BlueprintParser {
 
     // Handle workflows if present
     if (parsed.workflow) {
-      transformed.workflows = []
+      transformed.workflows ??= []
       for (const [workflowName, workflowDef] of Object.entries(parsed.workflow)) {
         transformed.workflows.push({
           name: workflowName,
@@ -151,9 +165,32 @@ export class BlueprintParser {
       }
     }
 
+    // Handle first-class domain commands.
+    if (parsed.command) {
+      transformed.commands ??= []
+      for (const [commandName, commandDef] of Object.entries(parsed.command)) {
+        transformed.commands.push({
+          name: commandName,
+          ...(commandDef as any),
+        })
+      }
+    }
+
+    // Handle [services.<name>] and [service.<name>] declarations.
+    const serviceDefinitions = Array.isArray(parsed.services) ? parsed.service : (parsed.services ?? parsed.service)
+    if (serviceDefinitions && !Array.isArray(serviceDefinitions)) {
+      transformed.services ??= []
+      for (const [serviceName, serviceDef] of Object.entries(serviceDefinitions)) {
+        transformed.services.push({
+          name: serviceName,
+          ...(serviceDef as any),
+        })
+      }
+    }
+
     // Handle plugins if present
     if (parsed.plugin) {
-      transformed.plugins = []
+      transformed.plugins ??= []
       for (const [pluginName, pluginDef] of Object.entries(parsed.plugin)) {
         transformed.plugins.push({
           name: pluginName,
@@ -164,7 +201,7 @@ export class BlueprintParser {
 
     // Handle skills if present
     if (parsed.skill) {
-      transformed.skills = []
+      transformed.skills ??= []
       for (const [skillName, skillDef] of Object.entries(parsed.skill)) {
         transformed.skills.push({
           name: skillName,
@@ -209,9 +246,111 @@ export class BlueprintParser {
   /**
    * Validate entity references, field refs, etc.
    */
-  private validateReferences(blueprint: Blueprint, file?: string): void {
+  private validateReferences(
+    blueprint: Blueprint,
+    file?: string,
+    sourceFor?: (kind: string, identity: string) => string | undefined,
+  ): void {
     const entityNames = new Set(blueprint.entities.map((e) => e.name))
     const errors: string[] = []
+
+    const validatePolicy = (label: string, condition: any) => {
+      try {
+        validatePolicyCondition(condition)
+      } catch (error) {
+        errors.push(`${label} has an invalid expression: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+
+    const seenCommands = new Set<string>()
+    for (const command of blueprint.commands ?? []) {
+      if (seenCommands.has(command.name)) {
+        errors.push(`Duplicate command definition "${command.name}"`)
+      }
+      seenCommands.add(command.name)
+      if (!entityNames.has(command.entity)) {
+        errors.push(`Command "${command.name}" references unknown entity "${command.entity}"`)
+      }
+      const target = blueprint.entities.find(entity => entity.name === command.entity)
+      const targetFields = new Set(target?.fields.map(field => field.name) ?? [])
+      for (const fieldName of Object.keys(command.mutations ?? {})) {
+        if (!targetFields.has(fieldName)) {
+          errors.push(`Command "${command.name}" mutates unknown field "${command.entity}.${fieldName}"`)
+        }
+      }
+      validatePolicy(`Command "${command.name}" policy`, command.policy)
+      validatePolicy(`Command "${command.name}" availability`, command.availableWhen)
+    }
+
+    const commandNames = new Set((blueprint.commands ?? []).map(command => command.name))
+    const services = new Map<string, Set<string>>()
+    for (const service of blueprint.services ?? []) {
+      if (services.has(service.name)) errors.push(`Duplicate service definition "${service.name}"`)
+      services.set(service.name, new Set(Object.keys(service.operations)))
+    }
+    const validateWorkflowSteps = (workflowName: string, steps: Array<Record<string, any>>) => {
+      for (const step of steps) {
+        if (step.type === 'command') {
+          if (typeof step.command !== 'string' || !commandNames.has(step.command)) {
+            errors.push(`Workflow "${workflowName}" references unknown command "${String(step.command)}"`)
+          }
+          if (typeof step.recordId !== 'string' || step.recordId.length === 0) {
+            errors.push(`Workflow "${workflowName}" command step requires recordId`)
+          }
+        }
+        if (step.type === 'service') {
+          const operations = typeof step.service === 'string' ? services.get(step.service) : undefined
+          if (!operations) {
+            errors.push(`Workflow "${workflowName}" references unknown service "${String(step.service)}"`)
+          } else if (typeof step.operation !== 'string' || !operations.has(step.operation)) {
+            errors.push(`Workflow "${workflowName}" references unknown service operation "${String(step.service)}.${String(step.operation)}"`)
+          }
+        }
+        if (Array.isArray(step.then)) validateWorkflowSteps(workflowName, step.then)
+        if (Array.isArray(step.else)) validateWorkflowSteps(workflowName, step.else)
+        if (Array.isArray(step.do)) validateWorkflowSteps(workflowName, step.do)
+      }
+    }
+    for (const workflow of blueprint.workflows ?? []) {
+      validateWorkflowSteps(workflow.name, workflow.steps)
+    }
+    for (const entity of blueprint.entities) {
+      const fieldNames = new Set(entity.fields.map(field => field.name))
+      for (const [action, condition] of Object.entries(entity.access ?? {})) {
+        validatePolicy(`Entity "${entity.name}" ${action} access`, condition)
+      }
+      for (const fieldName of entity.protection?.fields ?? []) {
+        if (!fieldNames.has(fieldName)) {
+          errors.push(`Entity "${entity.name}" protects unknown field "${fieldName}"`)
+        }
+      }
+      for (const commandName of entity.protection?.commands ?? []) {
+        if (!commandNames.has(commandName)) {
+          errors.push(`Entity "${entity.name}" protection references unknown command "${commandName}"`)
+        } else if (blueprint.commands?.find(command => command.name === commandName)?.entity !== entity.name) {
+          errors.push(`Entity "${entity.name}" protection references command "${commandName}" for another entity`)
+        }
+      }
+      for (const field of entity.fields) {
+        for (const [action, condition] of Object.entries(field.access ?? {})) {
+          validatePolicy(`Field "${entity.name}.${field.name}" ${action} access`, condition)
+        }
+        for (const commandName of field.commands ?? []) {
+          if (!commandNames.has(commandName)) {
+            errors.push(`Field "${entity.name}.${field.name}" references unknown command "${commandName}"`)
+          } else if (blueprint.commands?.find(command => command.name === commandName)?.entity !== entity.name) {
+            errors.push(`Field "${entity.name}.${field.name}" references command "${commandName}" for another entity`)
+          }
+        }
+      }
+    }
+    for (const [role, rule] of Object.entries(blueprint.auth?.permissions ?? {})) {
+      for (const condition of rule.allow) {
+        if (typeof condition !== 'string') {
+          validatePolicy(`Role "${role}" permission for ${condition.entity}`, condition.condition)
+        }
+      }
+    }
 
     // Check entity references in pages
     for (const page of blueprint.pages) {
@@ -360,7 +499,7 @@ export class BlueprintParser {
           )
         }
         if (workflow.transactional) {
-          const analysis = analyzeTransactionalWorkflow(workflow)
+          const analysis = analyzeTransactionalWorkflow(workflow, blueprint.commands)
           if (!analysis.databaseOnly) {
             errors.push(
               `Transactional workflow "${workflow.name}" must contain only database query steps: ${analysis.reasons.join('; ')}`
@@ -395,7 +534,17 @@ export class BlueprintParser {
     this.validateRouteLinks(blueprint, errors)
 
     if (errors.length > 0) {
-      throw createReferenceError(errors, file)
+      const contextualErrors = sourceFor
+        ? errors.map(error => {
+            const definition = error.match(/^(Command|Workflow|Entity|Field|Page|Skill) "([^"]+)/)
+            if (!definition?.[1] || !definition[2]) return error
+            const kind = definition[1].toLowerCase()
+            const identity = kind === 'field' ? definition[2].split('.')[0]! : definition[2]
+            const location = sourceFor(kind === 'field' ? 'entity' : kind, identity)
+            return location ? `${location}: ${error}` : error
+          })
+        : errors
+      throw createReferenceError(contextualErrors, file)
     }
   }
 

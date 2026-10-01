@@ -9,20 +9,30 @@ description: Expose bounded, discoverable Zebric operations that an agent can us
 Agent API v1 is under active development. Its discovery contract, safety behavior, and stdio MCP adapter are implemented and tested, but durable jobs and managed credential rotation are not yet available.
 :::
 
-A Zebric application becomes agent-drivable when it publishes a small set of **skills**: named, typed operations that describe what an agent may observe or change. A compatible client discovers those operations from the running application, converts them into tools, and authenticates each request.
+A Zebric application becomes agent-drivable when it publishes a small set of semantic operations. **Domain commands** expose guarded state transitions automatically; **skills** curate reads, custom routes, and workflow-backed operations. A compatible client discovers these operations from the running application, converts them into tools, and authenticates each request.
 
 This keeps responsibilities clear:
 
-- The **Blueprint** defines the allowed operations, input types, scopes, and workflows.
+- The **Blueprint** defines commands, skills, input types, scopes, policies, and workflows.
 - The **runtime** enforces authentication, authorization, preconditions, transactions, idempotency, and audit attribution.
 - The **agent** chooses among the published operations and supplies typed input.
 - External executors such as a browser or test runner perform work outside Zebric, then return bounded evidence through a semantic action.
 
-## Prefer skills over broad CRUD
+## Prefer commands and skills over broad CRUD
 
-Generic entity endpoints are useful for application code, but they are usually too broad for an agent. Publish a skill when the operation has a business meaning or a state transition that must be guarded.
+Generic entity endpoints are useful for application code, but they are usually too broad for an agent. Define a domain command when an entity transition must have one implementation across generated UI, HTTP, agents, and workflows. Publish a skill for a bounded read, custom projection, or workflow operation that does not map to one record command.
 
-For example, an issue board should expose `claim_issue_for_qa` rather than allowing an agent to freely update every `Issue` field. The semantic action can atomically verify that the issue is ready, record who claimed it, and reject stale attempts.
+For example, an issue board should expose `ClaimIssueForQA` rather than allowing an agent to freely update every `Issue` field. The command can atomically verify that the issue is ready, record who claimed it, and reject stale attempts. A companion skill can expose a filtered `list_issues` read operation.
+
+```toml
+[command.ClaimIssueForQA]
+entity = "Issue"
+description = "Claim a ready issue for one QA run."
+policy = "actor.roles contains 'qa'"
+availableWhen = "record.qaState == 'ready_to_test'"
+mutations = { qaState = "testing", claimedBy = "actor.id" }
+scopes = ["qa.claim"]
+```
 
 ```toml
 [skill.issue_board]
@@ -61,11 +71,11 @@ An agent starts with the application base URL and requests:
 
 1. `GET /.well-known/zebric-agent.json` for capabilities and the OpenAPI location.
 2. `GET /api/openapi.json` for the exact operation and input schemas.
-3. Protected skill routes with a bearer credential.
+3. Protected skill or command routes with a bearer credential.
 
 The discovery document and OpenAPI document carry the same versioned SHA-256 contract fingerprint. Clients should reject a mismatch. A capability set to `false` means the client must not assume that behavior exists; for example, `eventStream: false` requires polling instead of subscribing to events.
 
-See the [REST API reference](/reference/api) for the wire contract and [Skills reference](/reference/skills) for Blueprint syntax.
+See the [REST API reference](/reference/api) for the wire contract, [Domain Commands](/building/domain-commands) for state transitions, and [Skills reference](/reference/skills) for custom agent operations.
 
 ## Authoring for Zebric Agent
 
@@ -76,7 +86,7 @@ Use this review checklist:
 - Give every action one bounded purpose and a useful description.
 - Prefer typed filters and stable workflow keys over free-form search text.
 - Return only the fields needed for the task; model context is not a data export channel.
-- Use a workflow-backed action for state transitions and declare its preconditions.
+- Use a domain command for a single-record state transition; use a workflow when the operation coordinates multiple commands or side effects.
 - Make mutations transactional, idempotent, observable, and conflict-aware.
 - Require the narrowest scopes that can perform the action.
 - Keep secrets out of descriptions, request bodies, results, and workflow evidence.

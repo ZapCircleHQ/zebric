@@ -4,12 +4,13 @@
  * Standalone functions for rendering action bars on detail pages.
  */
 
-import type { Blueprint, Page } from '../types/blueprint.js'
+import type { Blueprint, Command, CommandInputField, Page } from '../types/blueprint.js'
 import type { Theme } from './theme.js'
-import { html, SafeHtml, safe } from '../security/html-escape.js'
+import { html, SafeHtml, safe, attr } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
 import { isActionEnabled, isActionVisible, renderPrimaryAction, renderSecondaryAction } from './action-button-renderer.js'
-import { getStatusRoleClass, getStatusSemanticRole } from './semantic-role-resolver.js'
+import { getActionButtonClass, getActionSemanticRole, getStatusRoleClass, getStatusSemanticRole } from './semantic-role-resolver.js'
+import { commandOperationId } from '../api/openapi-generator.js'
 
 export function getStatusFieldName(config: Page['actionBar'], entity?: any): string | null {
   if (!config) return null
@@ -37,14 +38,12 @@ export function renderActionBar(
   utils: RendererUtils,
   entity?: any,
   csrfToken?: string,
-  blueprint?: Blueprint
+  blueprint?: Blueprint,
+  availableCommands: string[] = [],
 ): SafeHtml {
-  const config = page.actionBar
-  if (!config) {
-    return safe('')
-  }
+  const config = page.actionBar ?? {}
 
-  const statusField = getStatusFieldName(config, entity)
+  const statusField = page.actionBar ? getStatusFieldName(config, entity) : null
   const statusValue = statusField ? record?.[statusField] : undefined
   const hasStatus =
     statusField &&
@@ -68,8 +67,12 @@ export function renderActionBar(
         disabled: !isActionEnabled(action, record),
       })
     )
+  const commandNames = new Set(availableCommands)
+  const commandActions = (blueprint?.commands ?? [])
+    .filter(command => command.entity === entity?.name && commandNames.has(command.name))
+    .map(command => renderCommandAction(command, record, page, csrfToken, theme, utils, blueprint))
 
-  const hasPrimary = primaryActions.length > 0
+  const hasPrimary = primaryActions.length > 0 || commandActions.length > 0
   const hasSecondary = secondaryActions.length > 0
   const hasHeader = Boolean(config.title || config.description || hasStatus)
   const shouldRender = hasHeader || hasPrimary || hasSecondary
@@ -112,6 +115,7 @@ export function renderActionBar(
         ${hasPrimary ? html`
           <div class="flex flex-wrap gap-2">
             ${safe(primaryActions.map(action => action.html).join(''))}
+            ${safe(commandActions.map(action => action.html).join(''))}
           </div>
         ` : ''}
       </div>
@@ -121,6 +125,105 @@ export function renderActionBar(
           ${safe(secondaryActions.map(action => action.html).join(''))}
         </div>
       ` : ''}
+    </div>
+  `
+}
+
+function renderCommandAction(
+  command: Command,
+  record: Record<string, unknown>,
+  page: Page,
+  csrfToken: string | undefined,
+  theme: Theme,
+  utils: RendererUtils,
+  blueprint?: Blueprint,
+): SafeHtml {
+  const operation = commandOperationId(command.name)
+  const action = `/commands/${encodeURIComponent(operation)}/${encodeURIComponent(String(record.id ?? ''))}`
+  const redirect = utils.interpolatePath(page.path, record)
+  const label = command.label ?? utils.formatFieldName(command.name)
+  const buttonClass = getActionButtonClass(command.style, theme, blueprint)
+  const semanticRole = getActionSemanticRole(command.style)
+  const confirm = command.confirm
+    ? safe(attr('onclick', `return confirm(${JSON.stringify(command.confirm)})`))
+    : safe('')
+  const description = command.description ? safe(attr('title', command.description)) : safe('')
+  const fields = Object.entries(command.input ?? {})
+  const hidden = html`
+    ${csrfToken ? html`<input type="hidden" name="_csrf" value="${csrfToken}" />` : ''}
+    <input type="hidden" name="redirect" value="${redirect}" />
+  `
+
+  if (fields.length === 0) {
+    return html`
+      <form method="POST" action="${action}" class="inline">
+        ${hidden}
+        <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${description}${confirm}>${label}</button>
+      </form>
+    `
+  }
+
+  return html`
+    <details class="relative rounded-lg border border-gray-200 bg-white p-3">
+      <summary class="cursor-pointer list-none ${buttonClass}" data-zebric-role="${semanticRole}"${description}>${label}</summary>
+      <form method="POST" action="${action}" class="mt-4 min-w-72 space-y-4">
+        ${hidden}
+        ${command.description ? html`<p class="text-sm text-gray-600">${command.description}</p>` : ''}
+        ${safe(fields.map(([name, field]) => renderCommandInput(operation, name, field, utils).html).join(''))}
+        <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirm}>${label}</button>
+      </form>
+    </details>
+  `
+}
+
+function renderCommandInput(
+  operation: string,
+  name: string,
+  field: CommandInputField,
+  utils: RendererUtils,
+): SafeHtml {
+  const id = `command-${operation}-${name}`
+  const label = field.label ?? utils.formatFieldName(name)
+  const descriptionId = field.description ? `${id}-description` : undefined
+  const common = safe(
+    `${field.required ? attr('required', true) : ''}${descriptionId ? attr('aria-describedby', descriptionId) : ''}`
+  )
+  let control: SafeHtml
+  if (field.type === 'Enum') {
+    control = html`
+      <select id="${id}" name="${name}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}>
+        ${field.required ? '' : html`<option value="">Select…</option>`}
+        ${safe((field.values ?? []).map(value => html`<option value="${value}">${value}</option>`.html).join(''))}
+      </select>
+    `
+  } else if (field.type === 'Boolean') {
+    control = html`
+      <select id="${id}" name="${name}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}>
+        ${field.required ? '' : html`<option value="">Select…</option>`}
+        <option value="true">Yes</option>
+        <option value="false">No</option>
+      </select>
+    `
+  } else if (field.type === 'LongText' || field.type === 'JSON') {
+    control = html`<textarea id="${id}" name="${name}" rows="3" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}></textarea>`
+  } else {
+    const inputType = field.type === 'Integer' || field.type === 'Float'
+      ? 'number'
+      : field.type === 'Email'
+        ? 'email'
+        : field.type === 'Date'
+          ? 'date'
+          : field.type === 'DateTime'
+            ? 'datetime-local'
+            : 'text'
+    const step = field.type === 'Float' ? safe(attr('step', 'any')) : safe('')
+    control = html`<input id="${id}" name="${name}" type="${inputType}"${step} class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common} />`
+  }
+  return html`
+    <div>
+      <label for="${id}" class="block text-sm font-medium text-gray-700">${label}</label>
+      ${control}
+      ${field.description ? html`<p id="${descriptionId}" class="mt-1 text-xs text-gray-500">${field.description}</p>` : ''}
     </div>
   `
 }

@@ -37,13 +37,26 @@ Returns validation errors and warnings without starting a server. Useful for CI 
 
 | Variable | Description |
 |----------|-------------|
-| `PORT` | Server port (default: 3000) |
-| `HOST` | Server host (default: localhost) |
-| `DATABASE_URL` | Database connection string |
 | `SLACK_BOT_TOKEN` | Slack bot token (for Slack notification adapter) |
 | `SLACK_SIGNING_SECRET` | Slack webhook signing secret |
 
 API key environment variables are defined per key in `[[auth.apiKeys]]` using the `keyEnv` field.
+
+`zebric dev` takes its host, port, and Blueprint path from command-line flags; it does not read `HOST` or `PORT`.
+
+The lower-level `zebric-engine` binary additionally reads:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | SQLite or PostgreSQL connection URL |
+| `ZEBRIC_RATE_LIMIT_MAX` | Maximum requests in one rate-limit window |
+| `ZEBRIC_RATE_LIMIT_WINDOW_MS` | Rate-limit window length in milliseconds |
+
+`zebric-engine` defaults to `--host 0.0.0.0`, while `zebric dev` defaults to `localhost`.
+
+### `zebric benchmark`
+
+Run the repository's internal Big Zebra benchmark harness. This command forwards remaining arguments to `benchmark/cli.mjs` in the current workspace and is intended for Zebric contributors rather than application deployment.
 
 ## Story Runner
 

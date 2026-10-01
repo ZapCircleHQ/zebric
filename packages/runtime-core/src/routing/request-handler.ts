@@ -16,6 +16,7 @@ import type {
   SessionManagerPort,
   RendererPort,
   AuditLoggerPort,
+  CommandAvailabilityPort,
   RuntimePorts
 } from './request-ports.js'
 import { ErrorSanitizer } from '../security/error-sanitizer.js'
@@ -45,6 +46,7 @@ export class RequestHandler {
   private sessionManager?: SessionManagerPort
   private renderer?: RendererPort
   private auditLogger?: AuditLoggerPort
+  private commandAvailability?: CommandAvailabilityPort
   private errorSanitizer?: ErrorSanitizer
   private defaultOrigin: string
 
@@ -54,6 +56,7 @@ export class RequestHandler {
     this.sessionManager = config.sessionManager
     this.renderer = config.renderer
     this.auditLogger = config.auditLogger
+    this.commandAvailability = config.commandAvailability
     this.errorSanitizer = config.errorSanitizer
     this.defaultOrigin = config.defaultOrigin || 'http://localhost:3000'
   }
@@ -63,6 +66,10 @@ export class RequestHandler {
    */
   setBlueprint(blueprint: Blueprint): void {
     this.blueprint = blueprint
+  }
+
+  setCommandAvailability(commandAvailability?: CommandAvailabilityPort): void {
+    this.commandAvailability = commandAvailability
   }
 
   /**
@@ -106,6 +113,8 @@ export class RequestHandler {
         }
       }
 
+      const availableCommands = await this.resolveAvailableCommands(page, data, match, session)
+
       // Log successful access
       this.auditLogger?.log({
         eventType: 'DATA_READ',
@@ -130,7 +139,8 @@ export class RequestHandler {
           params: match.params,
           query: match.query,
           flash,
-          csrfToken
+          csrfToken,
+          availableCommands
         }, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
       } else {
         // Render HTML
@@ -141,7 +151,8 @@ export class RequestHandler {
           query: match.query,
           session,
           flash,
-          csrfToken
+          csrfToken,
+          availableCommands
         })
 
         return htmlResponse(200, html, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
@@ -149,6 +160,26 @@ export class RequestHandler {
     } catch (error) {
       return this.handleError(error, session, page.path, request)
     }
+  }
+
+  private async resolveAvailableCommands(
+    page: Blueprint['pages'][number],
+    data: Record<string, any>,
+    match: RouteMatch,
+    session: Awaited<ReturnType<typeof resolveSession>>,
+  ): Promise<string[]> {
+    if (page.layout !== 'detail' || !this.commandAvailability || !page.queries) return []
+    const [queryName, query] = Object.entries(page.queries)[0] ?? []
+    if (!queryName || !query?.entity) return []
+    const source = data[queryName]
+    const targetId = match.params?.id || match.query?.id
+    const record = Array.isArray(source)
+      ? (targetId
+          ? source.find(item => item && String(item.id) === String(targetId))
+          : source[0])
+      : source
+    if (!record || typeof record !== 'object') return []
+    return this.commandAvailability.list({ entity: query.entity, record, session })
   }
 
   /**

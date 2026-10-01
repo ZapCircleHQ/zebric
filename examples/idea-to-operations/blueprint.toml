@@ -1,12 +1,12 @@
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "Idea to Operations"
-version = "0.1.0"
+version = "0.6.0"
 description = "Northstar Labs takes ambiguous ideas through discovery, decision, delivery, launch, and ongoing operations with humans and agents sharing the same governed lifecycle."
 
 [project.runtime]
-min_version = "0.5.0"
+min_version = "0.6.0"
 
 [ux]
 pattern = "queue-detail@v1"
@@ -79,7 +79,7 @@ fields = [
   { name = "id", type = "ULID", primary_key = true },
   { name = "title", type = "Text", required = true, index = true },
   { name = "summary", type = "LongText", required = true },
-  { name = "stage", type = "Enum", values = ["idea", "discovery", "proposal", "approved", "planning", "building", "launch", "operating", "retired"], default = "idea", index = true },
+  { name = "stage", type = "Enum", values = ["idea", "discovery", "proposal", "approved", "planning", "building", "launch", "operating", "retired"], default = "idea", index = true, write = "command-only", commands = ["StartInitiativeDiscovery", "SubmitInitiativeProposal", "ApproveInitiativeState", "BeginInitiativePlanning", "StartInitiativeBuilding", "RequestInitiativeLaunch", "MoveInitiativeToOperations", "RetireInitiativeState"] },
   { name = "health", type = "Enum", values = ["healthy", "attention", "at_risk", "blocked"], default = "healthy", index = true },
   { name = "healthReason", type = "Text", nullable = true },
   { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
@@ -455,6 +455,74 @@ read = "authenticated"
 create = "authenticated"
 update = false
 delete = { "$currentUser.role" = "admin" }
+
+# Domain commands -------------------------------------------------------------
+
+[command.StartInitiativeDiscovery]
+entity = "Initiative"
+label = "Start discovery"
+policy = "actor.roles contains 'initiative_owner' || actor.roles contains 'admin'"
+availableWhen = "record.stage == 'idea'"
+mutations = { stage = "discovery", ownerId = "input.ownerId", ownerName = "input.ownerName", problemStatement = "input.problemStatement" }
+[command.StartInitiativeDiscovery.input.ownerId]
+type = "Text"
+required = true
+[command.StartInitiativeDiscovery.input.ownerName]
+type = "Text"
+required = true
+[command.StartInitiativeDiscovery.input.problemStatement]
+type = "LongText"
+required = true
+
+[command.SubmitInitiativeProposal]
+entity = "Initiative"
+label = "Submit proposal"
+policy = "actor.roles contains 'admin' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+availableWhen = "record.stage == 'discovery' && record.ownerId != null && record.sponsorId != null && record.expectedOutcome != null && record.successCriteria != null && record.recommendedApproach != null"
+mutations = { stage = "proposal" }
+
+[command.ApproveInitiativeState]
+entity = "Initiative"
+label = "Approve initiative"
+policy = "actor.roles contains 'decision_maker' || actor.roles contains 'admin'"
+availableWhen = "record.stage == 'proposal'"
+mutations = { stage = "approved" }
+
+[command.BeginInitiativePlanning]
+entity = "Initiative"
+policy = "actor.type == 'system'"
+availableWhen = "record.stage == 'approved'"
+mutations = { stage = "planning" }
+
+[command.StartInitiativeBuilding]
+entity = "Initiative"
+label = "Start building"
+policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+availableWhen = "record.stage == 'planning' && record.ownerId != null && record.targetLaunchDate != null && record.planApprovedAt != null"
+mutations = { stage = "building" }
+
+[command.RequestInitiativeLaunch]
+entity = "Initiative"
+label = "Request launch review"
+policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+availableWhen = "record.stage == 'building'"
+mutations = { stage = "launch" }
+
+[command.MoveInitiativeToOperations]
+entity = "Initiative"
+label = "Move to operations"
+policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+availableWhen = "record.stage == 'launch' && record.launchApprovedAt != null && record.operationalOwnerId != null && record.runbookUrl != null"
+mutations = { stage = "operating", launchedAt = "now", health = "healthy", healthReason = "" }
+
+[command.RetireInitiativeState]
+entity = "Initiative"
+policy = "actor.roles contains 'decision_maker' || actor.roles contains 'admin'"
+availableWhen = "record.stage == 'operating'"
+mutations = { stage = "retired", retiredAt = "now", retirementReason = "input.reason" }
+[command.RetireInitiativeState.input.reason]
+type = "LongText"
+required = true
 
 # ---------------------------------------------------------------------------
 # Pages
@@ -869,11 +937,10 @@ precondition = { "variables.data.record.stage" = "idea", "session.user.role" = [
 transactional = true
 
 [[workflow.StartDiscovery.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "idea" }
-data = { stage = "discovery", ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", problemStatement = "{{ variables.data.payload.problemStatement }}" }
+type = "command"
+command = "StartInitiativeDiscovery"
+recordId = "{{ variables.data.record.id }}"
+input = { ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", problemStatement = "{{ variables.data.payload.problemStatement }}" }
 
 [[workflow.StartDiscovery.steps]]
 type = "query"
@@ -888,11 +955,9 @@ precondition = { "variables.data.record.stage" = "discovery", "session.user.role
 transactional = true
 
 [[workflow.SubmitProposal.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "discovery" }
-data = { stage = "proposal" }
+type = "command"
+command = "SubmitInitiativeProposal"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.SubmitProposal.steps]]
 type = "query"
@@ -1016,11 +1081,9 @@ where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ var
 data = { status = "decided" }
 
 [[workflow.ApproveInitiative.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "proposal" }
-data = { stage = "approved" }
+type = "command"
+command = "ApproveInitiativeState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.ApproveInitiative.steps]]
 type = "query"
@@ -1033,11 +1096,9 @@ description = "Approval recorded -> move to planning and create the planning che
 trigger = { entity = "Initiative", event = "update", condition = { "before.stage" = "proposal", "after.stage" = "approved" } }
 
 [[workflow.BeginPlanning.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.after.id }}", stage = "approved" }
-data = { stage = "planning" }
+type = "command"
+command = "BeginInitiativePlanning"
+recordId = "{{ variables.after.id }}"
 
 [[workflow.BeginPlanning.steps]]
 type = "query"
@@ -1108,11 +1169,9 @@ precondition = { "variables.data.record.stage" = "planning", "session.user.role"
 transactional = true
 
 [[workflow.StartBuilding.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "planning" }
-data = { stage = "building" }
+type = "command"
+command = "StartInitiativeBuilding"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.StartBuilding.steps]]
 type = "query"
@@ -1199,11 +1258,9 @@ then = [
 ]
 
 [[workflow.RequestLaunchReview.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "building" }
-data = { stage = "launch" }
+type = "command"
+command = "RequestInitiativeLaunch"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.RequestLaunchReview.steps]]
 type = "query"
@@ -1323,11 +1380,9 @@ precondition = { "variables.data.record.stage" = "launch", "session.user.role" =
 transactional = true
 
 [[workflow.TransitionToOperations.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "launch" }
-data = { stage = "operating", launchedAt = "now", health = "healthy", healthReason = "" }
+type = "command"
+command = "MoveInitiativeToOperations"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.TransitionToOperations.steps]]
 type = "query"
@@ -1428,11 +1483,10 @@ where = { id = "{{ variables.data.record.id }}" }
 data = { status = "retired" }
 
 [[workflow.RetireCapability.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.initiativeId }}", stage = "operating" }
-data = { stage = "retired", retiredAt = "now", retirementReason = "{{ variables.data.payload.reason }}" }
+type = "command"
+command = "RetireInitiativeState"
+recordId = "{{ variables.data.record.initiativeId }}"
+input = { reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.RetireCapability.steps]]
 type = "query"
@@ -1837,6 +1891,7 @@ keyEnv = "OPS_AGENT_API_KEY"
 agentId = "ops-agent"
 credentialId = "ops-demo-credential"
 displayName = "Operations Agent"
+roles = ["user"]
 scopes = ["ops.read", "ops.discovery.write", "ops.decision.prepare", "ops.plan.draft", "ops.observation.convert", "ops.idea.create"]
 
 [ui]

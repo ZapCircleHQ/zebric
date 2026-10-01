@@ -21,6 +21,7 @@ import type { MetricsRegistry } from '../monitoring/metrics.js'
 import type { PluginRegistry } from '../plugins/index.js'
 import { AuditEventType, AuditSeverity, type AuditLogger } from '../security/index.js'
 import { NotificationManager } from '@zebric/notifications'
+import { createServiceRegistry } from '../services/service-registry.js'
 
 export interface SubsystemInitializerDependencies {
   blueprint: Blueprint
@@ -289,6 +290,7 @@ export class SubsystemInitializer {
       pluginRegistry: this.plugins,
       httpClient,
       notificationService: this.notificationManager,
+      serviceRegistry: createServiceRegistry(this.blueprint, this.plugins),
       logger: this.logger.child({
         operation: 'workflow-manager',
       }),

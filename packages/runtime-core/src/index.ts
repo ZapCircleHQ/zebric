@@ -46,6 +46,13 @@ export * from './cache/cache-interface.js'
 export * from './auth/provider.js'
 export * from './auth/permissions.js'
 export * from './auth/session.js'
+export * from './auth/actor.js'
+
+// Domain execution
+export * from './commands/index.js'
+export * from './errors/domain-errors.js'
+export * from './policy/index.js'
+export * from './services/index.js'
 
 // API
 export * from './api/openapi-generator.js'

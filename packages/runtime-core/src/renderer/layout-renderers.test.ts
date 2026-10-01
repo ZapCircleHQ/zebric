@@ -186,6 +186,54 @@ describe('LayoutRenderers', () => {
   })
 
   describe('renderDetailLayout', () => {
+    it('renders only authorized command actions with derived metadata and input controls', () => {
+      const blueprint = makeBlueprint({
+        commands: [{
+          name: 'ApproveTask', entity: 'Task', label: 'Approve',
+          description: 'Record an approval decision.',
+          confirm: 'Approve this task?', style: 'primary',
+          input: {
+            note: { type: 'LongText', required: true, label: 'Approval note', description: 'Why this is ready.' },
+            notify: { type: 'Boolean' },
+          },
+          mutations: { status: 'approved' },
+        }],
+      })
+      const { renderer } = createLayoutRenderers(blueprint)
+      const context = makeContext({
+        page: blueprint.pages[1],
+        data: { task: { id: 'task-1', title: 'Ship it', status: 'open' } },
+        params: { id: 'task-1' },
+        csrfToken: 'csrf-token',
+        availableCommands: ['ApproveTask'],
+      })
+
+      const result = renderer.renderDetailLayout(context).toString()
+      expect(result).toContain('action="&#x2F;commands&#x2F;approve_task&#x2F;task-1"')
+      expect(result).toContain('Approve')
+      expect(result).toContain('Record an approval decision.')
+      expect(result).toContain('Approval note')
+      expect(result).toContain('Why this is ready.')
+      expect(result).toContain('name="notify"')
+      expect(result).toContain('Approve this task?')
+      expect(result).toContain('csrf-token')
+    })
+
+    it('does not render commands absent from the authorized availability list', () => {
+      const blueprint = makeBlueprint({
+        commands: [{ name: 'ArchiveTask', entity: 'Task', mutations: { status: 'archived' } }],
+      })
+      const { renderer } = createLayoutRenderers(blueprint)
+      const result = renderer.renderDetailLayout(makeContext({
+        page: blueprint.pages[1],
+        data: { task: { id: 'task-1', title: 'Ship it', status: 'open' } },
+        params: { id: 'task-1' },
+        availableCommands: [],
+      })).toString()
+
+      expect(result).not.toContain('/commands/archive_task/task-1')
+    })
+
     it('renders detail with record', () => {
       const { renderer } = createLayoutRenderers()
       const context = makeContext({

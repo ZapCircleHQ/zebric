@@ -6,7 +6,7 @@ title: Workflows & Notifications
 description: Automate processes with workflows and deliver alerts via Slack, email, or console.
 ---
 
-Workflows automate multi-step processes in your application. They can be triggered by entity events, manual actions from the UI, or webhooks.
+Workflows orchestrate multi-step processes in your application. They can be triggered by entity events, manual actions from the UI, or webhooks. Use [domain commands](/building/domain-commands) for guarded state transitions, then compose those commands with queries, notifications, and external effects in a workflow.
 
 ## Defining a Workflow
 
@@ -18,13 +18,10 @@ description = "Update issue status and write an audit event."
 manual = true
 
 [[workflow.SetIssueStatus.steps]]
-type = "query"
-entity = "Issue"
-action = "update"
-[workflow.SetIssueStatus.steps.where]
-id = "{{ variables.data.record.id }}"
-[workflow.SetIssueStatus.steps.data]
-status = "{{ variables.data.payload.status }}"
+type = "command"
+command = "SetIssueStatus"
+recordId = "{{ variables.data.record.id }}"
+input = { status = "{{ variables.data.payload.status }}" }
 ```
 
 ## Trigger Types
@@ -105,6 +102,20 @@ signature is `sha256=` followed by the hex HMAC-SHA256 of
 
 ## Step Types
 
+### Command Steps
+
+Execute a domain command using the workflow's actor and context:
+
+```toml
+[[workflow.MyWorkflow.steps]]
+type = "command"
+command = "CloseIssue"
+recordId = "{{ variables.data.record.id }}"
+input = { resolution = "{{ variables.data.payload.resolution }}" }
+```
+
+Command steps enforce typed input, policy, state availability, and command-only field protection. Prefer them over query updates for lifecycle state. See [Domain Commands](/building/domain-commands#invoke-commands-from-workflows).
+
 ### Query Steps
 
 Perform database operations:
@@ -117,10 +128,27 @@ action = "update"
 [workflow.MyWorkflow.steps.where]
 id = "{{ variables.data.record.id }}"
 [workflow.MyWorkflow.steps.data]
-status = "closed"
+summary = "{{ variables.data.payload.summary }}"
 ```
 
-Actions: `create`, `update`, `delete`, `findOne`.
+Actions: `create`, `update`, `delete`, `findOne`. Query steps are appropriate for ordinary data operations. A query step cannot write a field marked `write = "command-only"`.
+
+### Transactions
+
+Set `transactional = true` when database changes in a workflow must commit or roll back together:
+
+```toml
+[workflow.CloseAndArchive]
+trigger = { manual = true }
+transactional = true
+
+[[workflow.CloseAndArchive.steps]]
+type = "command"
+command = "CloseIssue"
+recordId = "{{ variables.data.record.id }}"
+```
+
+Command and query mutations participate in the active database transaction. Do not place external service, webhook, or notification effects inside a transactional workflow because those effects cannot be rolled back with the database.
 
 ### Condition Steps
 
@@ -131,7 +159,7 @@ Branch based on previous step results:
 type = "condition"
 if = { "steps.0.result.id" = { "$exists" = true } }
 then = [
-  { type = "query", entity = "Issue", action = "update", where = { id = "{{ variables.data.record.id }}" }, data = { status = "awaiting_approval" } }
+  { type = "command", command = "RequestIssueApproval", recordId = "{{ variables.data.record.id }}" }
 ]
 else = [
   { type = "query", entity = "AuditEvent", action = "create", data = { issueId = "{{ variables.data.record.id }}" } }

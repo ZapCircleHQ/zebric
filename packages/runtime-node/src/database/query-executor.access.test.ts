@@ -45,10 +45,10 @@ describe('QueryExecutor row access', () => {
     await connection.connect()
     executor = new QueryExecutor(connection)
     await executor.create('RoadmapItem', {
-      id: 'public-item', title: 'Public item', visibility: 'public', priority: 2,
+      id: 'internal-item', title: 'Internal item', visibility: 'internal', priority: 5,
     }, { session: authenticatedSession })
     await executor.create('RoadmapItem', {
-      id: 'internal-item', title: 'Internal item', visibility: 'internal', priority: 5,
+      id: 'public-item', title: 'Public item', visibility: 'public', priority: 2,
     }, { session: authenticatedSession })
   })
 
@@ -71,6 +71,16 @@ describe('QueryExecutor row access', () => {
     expect(await executor.findById('RoadmapItem', 'internal-item')).toBeNull()
     expect(await executor.findById('RoadmapItem', 'internal-item', { session: authenticatedSession }))
       .toMatchObject({ id: 'internal-item' })
+  })
+
+  it('applies query and search limits after record-aware read filtering', async () => {
+    const page = await executor.execute({
+      entity: 'RoadmapItem', orderBy: { title: 'asc' }, limit: 1,
+    })
+    const search = await executor.search('RoadmapItem', ['title'], 'item', { limit: 1 })
+
+    expect(page.map(item => item.id)).toEqual(['public-item'])
+    expect(search.map(item => item.id)).toEqual(['public-item'])
   })
 
   it('compiles canonical placeholders and operators', async () => {

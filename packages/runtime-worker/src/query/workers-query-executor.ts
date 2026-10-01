@@ -7,16 +7,18 @@
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
-import { AccessControl, PermissionManager, assertEntityAccess, filterReadableFields, filterWritableFields, normalizeQueryWhere } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
+  private readonly policyEvaluator: PolicyEvaluator
 
   constructor(
     private adapter: SqlStoragePort,
     private blueprint: Blueprint
   ) {
     this.permissionManager = new PermissionManager(blueprint.auth)
+    this.policyEvaluator = new PolicyEvaluator(blueprint, this)
   }
 
   /**
@@ -33,6 +35,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       action: 'read',
       session: context.session,
       permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
     })
     const accessFilter = AccessControl.getFilterConditions(entity, context.session)
     if (AccessControl.isImpossibleFilter(accessFilter)) {
@@ -43,14 +46,29 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const combinedWhere = query.where && accessFilter
       ? { and: [query.where, accessFilter] }
       : query.where || accessFilter || undefined
-    const securedQuery = { ...query, where: combinedWhere }
+    const paginateAfterPolicy = !isSystemSession(context.session)
+      && (requiresRecordEvaluation(entity.access?.read)
+        || this.permissionManager.requiresRecordCheck(entity.name, 'read'))
+    const securedQuery = paginateAfterPolicy
+      ? { ...query, where: combinedWhere, limit: undefined, offset: undefined }
+      : { ...query, where: combinedWhere }
     const allowedFields = new Set(entity.fields.map(field => field.name))
     const compiledWhere = this.compilePredicate(normalizeQueryWhere(securedQuery.where, context, { allowedFields }))
     const sql = this.buildSelectQuery(securedQuery, compiledWhere.sql)
 
     // Execute query
     const result = await this.adapter.query(sql, compiledWhere.params)
-    return filterReadableFields(entity, result.rows, context.session)
+    const secured = await filterRecordsByReadPolicy(
+      entity,
+      result.rows as Record<string, any>[],
+      context.session,
+      this.policyEvaluator,
+      this.permissionManager,
+    )
+    const paginated = paginateAfterPolicy
+      ? secured.slice(query.offset ?? 0, query.limit == null ? undefined : (query.offset ?? 0) + query.limit)
+      : secured
+    return filterReadableFields(entity, paginated, context.session)
   }
 
   /**
@@ -62,6 +80,8 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entity}`)
     }
 
+    assertProtectedMutation(entityDef, data, context)
+
     // Drop fields the caller may not write, then check entity-level create access.
     const writable = filterWritableFields(entityDef, data, context.session)
     await assertEntityAccess({
@@ -70,6 +90,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       data: writable,
       session: context.session,
       permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
     })
 
     // Filter data to only include defined fields
@@ -105,6 +126,8 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       throw new Error(`Entity not found: ${entity}`)
     }
 
+    assertProtectedMutation(entityDef, data, context)
+
     const existing = await this.findByIdUnrestricted(entity, id)
     if (!existing) {
       throw new Error(`${entity} with id ${id} not found`)
@@ -119,6 +142,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       data: existing,
       session: context.session,
       permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
     })
 
     // Filter data to only include defined fields
@@ -167,6 +191,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
         data: existing,
         session: context.session,
         permissionManager: this.permissionManager,
+        policyEvaluator: this.policyEvaluator,
       })
     }
 
@@ -223,6 +248,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       action: 'read',
       session: options.context?.session,
       permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
     })
     const accessFilter = AccessControl.getFilterConditions(entityDef, options.context?.session)
     if (AccessControl.isImpossibleFilter(accessFilter)) {
@@ -266,10 +292,24 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     }
 
     const limit = Math.min(Math.max(options.limit ?? 10, 1), 50)
-    const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql} LIMIT ${limit}`
+    const limitAfterPolicy = !isSystemSession(options.context?.session)
+      && (requiresRecordEvaluation(entityDef.access?.read)
+        || this.permissionManager.requiresRecordCheck(entityName, 'read'))
+    const sql = `SELECT * FROM ${this.quoteIdentifier(entityName)} WHERE ${whereSql}${limitAfterPolicy ? '' : ` LIMIT ${limit}`}`
 
     const result = await this.adapter.query(sql, params)
-    return filterReadableFields(entityDef, result.rows || [], options.context?.session)
+    const secured = await filterRecordsByReadPolicy(
+      entityDef,
+      (result.rows || []) as Record<string, any>[],
+      options.context?.session,
+      this.policyEvaluator,
+      this.permissionManager,
+    )
+    return filterReadableFields(
+      entityDef,
+      limitAfterPolicy ? secured.slice(0, limit) : secured,
+      options.context?.session,
+    )
   }
 
   // ==========================================================================

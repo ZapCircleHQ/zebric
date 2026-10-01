@@ -1,5 +1,10 @@
 # Zebric gaps found while building Merge Conflict Workflow
 
+## 0.6.0 migration update
+
+- Fixed for the human boundary: approval and rejection now use protected domain commands with framework audit/events.
+- Still open: the 732-line TypeScript orchestrator remains necessary because typed local handlers, durable waits, model steps, artifacts, and governed Git credentials are not yet framework primitives.
+
 ## Gap summary
 
 | Priority | Gap | Workflow consequence | Possible direction |

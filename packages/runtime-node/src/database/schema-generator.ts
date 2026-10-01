@@ -433,9 +433,9 @@ export class SchemaGenerator {
   }
 
   private sqlIdentifier(identifier: string): string {
-    if (this.dbType !== 'postgres') {
-      return identifier
-    }
+    // ANSI double-quoted identifiers are supported by both SQLite and Postgres.
+    // Always quote generated names so valid domain names such as `Order` do not
+    // collide with SQL keywords after snake_case mapping.
     return `"${identifier.replace(/"/g, '""')}"`
   }
 

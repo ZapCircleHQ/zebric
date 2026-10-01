@@ -1,4 +1,4 @@
-import type { Workflow, WorkflowStep } from '../types/blueprint.js'
+import type { Command, Workflow, WorkflowStep } from '../types/blueprint.js'
 
 export interface TransactionalWorkflowAnalysis {
   databaseOnly: boolean
@@ -7,7 +7,10 @@ export interface TransactionalWorkflowAnalysis {
 }
 
 /** Classify a transactional workflow without relying on a particular runtime. */
-export function analyzeTransactionalWorkflow(workflow: Workflow): TransactionalWorkflowAnalysis {
+export function analyzeTransactionalWorkflow(
+  workflow: Workflow,
+  commands: readonly Command[] = [],
+): TransactionalWorkflowAnalysis {
   const reasons: string[] = []
   let databaseOnly = true
   let d1BatchEligible = true
@@ -37,6 +40,17 @@ export function analyzeTransactionalWorkflow(workflow: Workflow): TransactionalW
               d1BatchEligible = false
               reasons.push(`${stepPath} depends on intermediate result "${assigned}"`)
             }
+          }
+          break
+        case 'command':
+          // Commands execute through the same database transaction boundary as
+          // query mutations. They are not D1-batchable because policy checks,
+          // handlers, audit, and domain events run through the command pipeline.
+          d1BatchEligible = false
+          reasons.push(`${stepPath} invokes domain command "${String(step.command)}"`)
+          if (commands.find(command => command.name === step.command)?.handler) {
+            databaseOnly = false
+            reasons.push(`${stepPath} invokes a command handler with unrestricted effects`)
           }
           break
         case 'condition':

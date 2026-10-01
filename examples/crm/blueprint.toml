@@ -1,12 +1,12 @@
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "Zebric CRM"
-version = "1.0.0"
+version = "0.6.0"
 description = "A governed B2B CRM where humans and agents share records, workflows, approvals, and audit trails."
 
 [project.runtime]
-min_version = "0.2.3"
+min_version = "0.6.0"
 
 [ux]
 pattern = "queue-detail@v1"
@@ -186,7 +186,7 @@ fields = [
   { name = "website", type = "Text" },
   { name = "source", type = "Enum", values = ["manual", "google_places", "import", "agent", "referral"], default = "manual" },
   { name = "sourceCandidateId", type = "Text", nullable = true },
-  { name = "status", type = "Enum", values = ["new", "researching", "qualified", "rejected", "converted"], default = "new", index = true },
+  { name = "status", type = "Enum", values = ["new", "researching", "qualified", "rejected", "converted"], default = "new", index = true, write = "command-only", commands = ["QualifyLeadState", "RejectLeadState"] },
   { name = "qualificationNotes", type = "LongText" },
   { name = "nextAction", type = "Text" },
   { name = "lastActivityAt", type = "DateTime", nullable = true },
@@ -221,12 +221,12 @@ fields = [
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
   { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
   { name = "assistantEmail", type = "Email", index = true },
-  { name = "stage", type = "Enum", values = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"], default = "discovery", index = true },
+  { name = "stage", type = "Enum", values = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"], default = "discovery", index = true, write = "command-only", commands = ["AdvanceOpportunityState", "WinOpportunity", "LoseOpportunity"] },
   { name = "amount", type = "Float", default = 0 },
   { name = "probability", type = "Integer", default = 10 },
   { name = "expectedCloseDate", type = "Date", nullable = true, index = true },
   { name = "nextAction", type = "Text" },
-  { name = "status", type = "Enum", values = ["open", "won", "lost"], default = "open", index = true },
+  { name = "status", type = "Enum", values = ["open", "won", "lost"], default = "open", index = true, write = "command-only", commands = ["WinOpportunity", "LoseOpportunity"] },
   { name = "lossReason", type = "Text" },
   { name = "lastActivityAt", type = "DateTime", nullable = true },
   { name = "closedAt", type = "DateTime", nullable = true },
@@ -308,13 +308,13 @@ fields = [
   { name = "subject", type = "Text", required = true },
   { name = "body", type = "LongText", required = true },
   { name = "sendGridId", type = "Text", index = true, nullable = true },
-  { name = "status", type = "Enum", values = ["draft", "pending_review", "approved", "sending", "sent", "delivered", "failed", "received"], required = true, index = true },
+  { name = "status", type = "Enum", values = ["draft", "pending_review", "approved", "sending", "sent", "delivered", "failed", "received"], required = true, default = "draft", index = true, write = "command-only", commands = ["QueueOutreachReview", "ApproveOutreachMessage", "StartMessageSend", "FinishMessageSend", "ReceiveMessage"] },
   { name = "approvalRequired", type = "Boolean", default = true },
   { name = "reviewerId", type = "Text", nullable = true, index = true },
   { name = "reviewerName", type = "Text" },
   { name = "approvedById", type = "Text", nullable = true },
   { name = "approvedAt", type = "DateTime", nullable = true },
-  { name = "classification", type = "Enum", values = ["unclassified", "interested", "not_interested", "follow_up_later", "referral", "question", "unclear"], default = "unclassified", index = true },
+  { name = "classification", type = "Enum", values = ["unclassified", "interested", "not_interested", "follow_up_later", "referral", "question", "unclear"], default = "unclassified", index = true, write = "command-only", commands = ["ApplyMessageClassification"] },
   { name = "classificationReason", type = "LongText" },
   { name = "classificationModel", type = "Text" },
   { name = "ownerId", type = "Text", required = true, index = true },
@@ -453,7 +453,7 @@ fields = [
   { name = "suggestedAction", type = "Text", required = true },
   { name = "generatedAt", type = "DateTime", default = "now" },
   { name = "expiresAt", type = "DateTime", nullable = true },
-  { name = "status", type = "Enum", values = ["open", "acknowledged", "acted_on", "dismissed", "expired"], default = "open", index = true },
+  { name = "status", type = "Enum", values = ["open", "acknowledged", "acted_on", "dismissed", "expired"], default = "open", index = true, write = "command-only", commands = ["DismissInsightState", "ActOnInsightState"] },
   { name = "actedOnAt", type = "DateTime", nullable = true },
   { name = "generator", type = "Text", default = "deterministic" }
 ]
@@ -463,6 +463,118 @@ read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "adm
 create = "authenticated"
 update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
 delete = { "$currentUser.role" = "admin" }
+
+# Domain commands -------------------------------------------------------------
+
+[command.QualifyLeadState]
+entity = "Lead"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+availableWhen = "record.status in ['new', 'researching']"
+mutations = { status = "qualified", qualificationNotes = "input.notes", nextAction = "input.nextAction" }
+[command.QualifyLeadState.input.notes]
+type = "LongText"
+[command.QualifyLeadState.input.nextAction]
+type = "Text"
+
+[command.RejectLeadState]
+entity = "Lead"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+availableWhen = "record.status in ['new', 'researching', 'qualified']"
+mutations = { status = "rejected", qualificationNotes = "input.reason" }
+[command.RejectLeadState.input.reason]
+type = "LongText"
+required = true
+
+[command.AdvanceOpportunityState]
+entity = "Opportunity"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+availableWhen = "record.status == 'open' && input.stage in ['discovery', 'qualified', 'proposal', 'negotiation']"
+mutations = { stage = "input.stage", probability = "input.probability", nextAction = "input.nextAction" }
+[command.AdvanceOpportunityState.input.stage]
+type = "Enum"
+values = ["discovery", "qualified", "proposal", "negotiation"]
+required = true
+[command.AdvanceOpportunityState.input.probability]
+type = "Integer"
+required = true
+[command.AdvanceOpportunityState.input.nextAction]
+type = "Text"
+
+[command.WinOpportunity]
+entity = "Opportunity"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+availableWhen = "record.status == 'open' && record.stage in ['proposal', 'negotiation']"
+mutations = { stage = "won", status = "won", probability = 100, closedAt = "now", nextAction = "Customer handoff" }
+
+[command.LoseOpportunity]
+entity = "Opportunity"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+availableWhen = "record.status == 'open'"
+mutations = { stage = "lost", status = "lost", probability = 0, closedAt = "now", lossReason = "input.reason", nextAction = "" }
+[command.LoseOpportunity.input.reason]
+type = "Text"
+required = true
+
+[command.QueueOutreachReview]
+entity = "Message"
+policy = "workflow.__zebric.currentWorkflow == 'PrepareOutreach'"
+availableWhen = "record.direction == 'outbound' && record.status == 'draft'"
+mutations = { status = "pending_review" }
+
+[command.ApproveOutreachMessage]
+entity = "Message"
+policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.reviewerId == actor.effectiveId"
+availableWhen = "record.status == 'pending_review'"
+mutations = { status = "approved", body = "input.body", approvedById = "actor.effectiveId", approvedAt = "now" }
+[command.ApproveOutreachMessage.input.body]
+type = "LongText"
+required = true
+
+[command.StartMessageSend]
+entity = "Message"
+policy = "workflow.__zebric.currentWorkflow == 'SendApprovedEmail'"
+availableWhen = "record.status == 'approved'"
+mutations = { status = "sending" }
+
+[command.FinishMessageSend]
+entity = "Message"
+policy = "workflow.__zebric.currentWorkflow == 'SendApprovedEmail'"
+availableWhen = "record.status == 'sending'"
+mutations = { status = "sent", sentAt = "now" }
+
+[command.ReceiveMessage]
+entity = "Message"
+policy = "workflow.__zebric.currentWorkflow == 'ReceiveInboundEmail'"
+availableWhen = "record.direction == 'inbound' && record.status == 'draft'"
+mutations = { status = "received", receivedAt = "now" }
+
+[command.ApplyMessageClassification]
+entity = "Message"
+policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+availableWhen = "record.direction == 'inbound' && record.classification == 'unclassified'"
+mutations = { classification = "input.classification", classificationReason = "input.reason", classificationModel = "input.model" }
+[command.ApplyMessageClassification.input.classification]
+type = "Enum"
+values = ["interested", "not_interested", "follow_up_later", "referral", "question", "unclear"]
+required = true
+[command.ApplyMessageClassification.input.reason]
+type = "LongText"
+required = true
+[command.ApplyMessageClassification.input.model]
+type = "Text"
+required = true
+
+[command.DismissInsightState]
+entity = "Insight"
+policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+availableWhen = "record.status in ['open', 'acknowledged']"
+mutations = { status = "dismissed", actedOnAt = "now" }
+
+[command.ActOnInsightState]
+entity = "Insight"
+policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+availableWhen = "record.status in ['open', 'acknowledged']"
+mutations = { status = "acted_on", actedOnAt = "now" }
 
 # Human UI -------------------------------------------------------------------
 
@@ -759,11 +871,10 @@ precondition = { "variables.data.record.status" = ["new", "researching"] }
 transactional = true
 
 [[workflow.QualifyLead.steps]]
-type = "query"
-entity = "Lead"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
-data = { status = "qualified", qualificationNotes = "{{ variables.data.payload.notes }}", nextAction = "{{ variables.data.payload.nextAction }}" }
+type = "command"
+command = "QualifyLeadState"
+recordId = "{{ variables.data.record.id }}"
+input = { notes = "{{ variables.data.payload.notes }}", nextAction = "{{ variables.data.payload.nextAction }}" }
 
 [[workflow.QualifyLead.steps]]
 type = "query"
@@ -778,11 +889,10 @@ precondition = { "variables.data.record.status" = ["new", "researching", "qualif
 transactional = true
 
 [[workflow.RejectLead.steps]]
-type = "query"
-entity = "Lead"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "rejected", qualificationNotes = "{{ variables.data.payload.reason }}" }
+type = "command"
+command = "RejectLeadState"
+recordId = "{{ variables.data.record.id }}"
+input = { reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.RejectLead.steps]]
 type = "query"
@@ -819,7 +929,7 @@ type = "query"
 entity = "Lead"
 action = "create"
 assignTo = "lead"
-data = { companyName = "{{ variables.data.record.name }}", phone = "{{ variables.data.record.phone }}", website = "{{ variables.data.record.website }}", source = "google_places", sourceCandidateId = "{{ variables.data.record.id }}", status = "new", qualificationNotes = "{{ variables.data.record.evaluation }}", nextAction = "Research decision maker and prepare outreach", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", teamId = "{{ variables.data.record.teamId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { companyName = "{{ variables.data.record.name }}", phone = "{{ variables.data.record.phone }}", website = "{{ variables.data.record.website }}", source = "google_places", sourceCandidateId = "{{ variables.data.record.id }}", qualificationNotes = "{{ variables.data.record.evaluation }}", nextAction = "Research decision maker and prepare outreach", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", teamId = "{{ variables.data.record.teamId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [[workflow.PromoteProspect.steps]]
 type = "query"
@@ -892,11 +1002,10 @@ precondition = { "variables.data.record.status" = "open", "variables.data.payloa
 transactional = true
 
 [[workflow.AdvanceOpportunity.steps]]
-type = "query"
-entity = "Opportunity"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "open" }
-data = { stage = "{{ variables.data.payload.stage }}", probability = "{{ variables.data.payload.probability }}", nextAction = "{{ variables.data.payload.nextAction }}" }
+type = "command"
+command = "AdvanceOpportunityState"
+recordId = "{{ variables.data.record.id }}"
+input = { stage = "{{ variables.data.payload.stage }}", probability = "{{ variables.data.payload.probability }}", nextAction = "{{ variables.data.payload.nextAction }}" }
 
 [[workflow.AdvanceOpportunity.steps]]
 type = "query"
@@ -910,11 +1019,9 @@ precondition = { "variables.data.record.status" = "open", "variables.data.record
 transactional = true
 
 [[workflow.MarkOpportunityWon.steps]]
-type = "query"
-entity = "Opportunity"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "open" }
-data = { stage = "won", status = "won", probability = 100, closedAt = "now", nextAction = "Customer handoff" }
+type = "command"
+command = "WinOpportunity"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.MarkOpportunityWon.steps]]
 type = "query"
@@ -928,11 +1035,10 @@ precondition = { "variables.data.record.status" = "open" }
 transactional = true
 
 [[workflow.MarkOpportunityLost.steps]]
-type = "query"
-entity = "Opportunity"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "open" }
-data = { stage = "lost", status = "lost", probability = 0, closedAt = "now", lossReason = "{{ variables.data.payload.reason }}", nextAction = "" }
+type = "command"
+command = "LoseOpportunity"
+recordId = "{{ variables.data.record.id }}"
+input = { reason = "{{ variables.data.payload.reason }}" }
 
 [[workflow.MarkOpportunityLost.steps]]
 type = "query"
@@ -970,7 +1076,12 @@ type = "query"
 entity = "Message"
 action = "create"
 assignTo = "message"
-data = { conversationId = "{{ variables.data.payload.conversationId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", direction = "outbound", sender = "{{ variables.data.payload.sender }}", recipients = "{{ variables.data.payload.recipients }}", subject = "{{ variables.data.payload.subject }}", body = "{{ variables.data.payload.body }}", status = "pending_review", approvalRequired = true, reviewerId = "{{ variables.data.payload.reviewerId }}", reviewerName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", initiatedById = "{{ variables.data.session.user.id }}", createdByType = "user" }
+data = { conversationId = "{{ variables.data.payload.conversationId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", direction = "outbound", sender = "{{ variables.data.payload.sender }}", recipients = "{{ variables.data.payload.recipients }}", subject = "{{ variables.data.payload.subject }}", body = "{{ variables.data.payload.body }}", approvalRequired = true, reviewerId = "{{ variables.data.payload.reviewerId }}", reviewerName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", initiatedById = "{{ variables.data.session.user.id }}", createdByType = "user" }
+
+[[workflow.PrepareOutreach.steps]]
+type = "command"
+command = "QueueOutreachReview"
+recordId = "{{ variables.message.id }}"
 
 [[workflow.PrepareOutreach.steps]]
 type = "query"
@@ -985,11 +1096,10 @@ precondition = { "variables.data.record.status" = "pending_review", "session.use
 transactional = true
 
 [[workflow.ApproveOutreach.steps]]
-type = "query"
-entity = "Message"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "pending_review" }
-data = { status = "approved", body = "{{ variables.data.payload.body }}", approvedById = "{{ variables.data.session.user.id }}", approvedAt = "now" }
+type = "command"
+command = "ApproveOutreachMessage"
+recordId = "{{ variables.data.record.id }}"
+input = { body = "{{ variables.data.payload.body }}" }
 
 [[workflow.ApproveOutreach.steps]]
 type = "query"
@@ -1017,11 +1127,9 @@ trigger = { manual = true }
 precondition = { "variables.data.record.status" = "approved" }
 
 [[workflow.SendApprovedEmail.steps]]
-type = "query"
-entity = "Message"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "approved" }
-data = { status = "sending" }
+type = "command"
+command = "StartMessageSend"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.SendApprovedEmail.steps]]
 type = "webhook"
@@ -1038,11 +1146,9 @@ subject = "{{ variables.data.record.subject }}"
 content = [{ type = "text/plain", value = "{{ variables.data.record.body }}" }]
 
 [[workflow.SendApprovedEmail.steps]]
-type = "query"
-entity = "Message"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "sending" }
-data = { status = "sent", sentAt = "now" }
+type = "command"
+command = "FinishMessageSend"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.SendApprovedEmail.steps]]
 type = "query"
@@ -1066,7 +1172,12 @@ type = "query"
 entity = "Message"
 action = "create"
 assignTo = "inbound"
-data = { conversationId = "{{ variables.webhook.body.conversationId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", direction = "inbound", sender = "{{ variables.webhook.body.from }}", recipients = "{{ variables.webhook.body.to }}", subject = "{{ variables.webhook.body.subject }}", body = "{{ variables.webhook.body.text }}", sendGridId = "{{ variables.webhook.body.messageId }}", status = "received", approvalRequired = false, ownerId = "{{ variables.webhook.body.ownerId }}", ownerName = "{{ variables.webhook.body.ownerName }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}", createdByType = "system", receivedAt = "now" }
+data = { conversationId = "{{ variables.webhook.body.conversationId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", direction = "inbound", sender = "{{ variables.webhook.body.from }}", recipients = "{{ variables.webhook.body.to }}", subject = "{{ variables.webhook.body.subject }}", body = "{{ variables.webhook.body.text }}", sendGridId = "{{ variables.webhook.body.messageId }}", approvalRequired = false, ownerId = "{{ variables.webhook.body.ownerId }}", ownerName = "{{ variables.webhook.body.ownerName }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}", createdByType = "system" }
+
+[[workflow.ReceiveInboundEmail.steps]]
+type = "command"
+command = "ReceiveMessage"
+recordId = "{{ variables.inbound.id }}"
 
 [[workflow.ReceiveInboundEmail.steps]]
 type = "query"
@@ -1105,11 +1216,10 @@ precondition = { "variables.data.record.direction" = "inbound", "variables.data.
 transactional = true
 
 [[workflow.ApplyReplyClassification.steps]]
-type = "query"
-entity = "Message"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", classification = "unclassified" }
-data = { classification = "{{ variables.data.payload.classification }}", classificationReason = "{{ variables.data.payload.reason }}", classificationModel = "{{ variables.data.payload.model }}" }
+type = "command"
+command = "ApplyMessageClassification"
+recordId = "{{ variables.data.record.id }}"
+input = { classification = "{{ variables.data.payload.classification }}", reason = "{{ variables.data.payload.reason }}", model = "{{ variables.data.payload.model }}" }
 
 [[workflow.ApplyReplyClassification.steps]]
 type = "query"
@@ -1129,11 +1239,9 @@ trigger = { manual = true }
 precondition = { "variables.data.record.status" = ["open", "acknowledged"] }
 
 [[workflow.DismissInsight.steps]]
-type = "query"
-entity = "Insight"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "dismissed", actedOnAt = "now" }
+type = "command"
+command = "DismissInsightState"
+recordId = "{{ variables.data.record.id }}"
 
 [workflow.ActOnInsight]
 trigger = { manual = true }
@@ -1147,11 +1255,9 @@ action = "create"
 data = { title = "{{ variables.data.payload.title }}", description = "{{ variables.data.record.evidence }}", type = "follow_up", status = "open", priority = "{{ variables.data.record.severity }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", opportunityId = "{{ variables.data.record.opportunityId }}", insightId = "{{ variables.data.record.id }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "workflow" }
 
 [[workflow.ActOnInsight.steps]]
-type = "query"
-entity = "Insight"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "acted_on", actedOnAt = "now" }
+type = "command"
+command = "ActOnInsightState"
+recordId = "{{ variables.data.record.id }}"
 
 # Agent surface ---------------------------------------------------------------
 
@@ -1562,10 +1668,7 @@ source = "templates/sign-in.liquid"
 assistant = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
 ae = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.create", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
 manager = { allow = ["SalesTeam.*", "TeamMembership.*", "CrmAccount.*", "Contact.*", "Lead.*", "Opportunity.*", "Activity.read", "Activity.create", "Conversation.*", "Message.*", "Task.*", "ProspectSearch.*", "ProspectCandidate.*", "Insight.*"] }
-# Static API-key actors currently receive the fallback user role. Skill scopes
-# limit reachable routes, while entity rules admit the agent principal. Zebric
-# cannot yet bind it to the initiating human's team rows; see ZEBRIC_GAPS.md.
-user = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.create", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
+sales_agent = { allow = ["SalesTeam.read", "TeamMembership.read", "CrmAccount.read", "CrmAccount.create", "CrmAccount.update", "Contact.read", "Contact.create", "Contact.update", "Lead.read", "Lead.create", "Lead.update", "Opportunity.read", "Opportunity.create", "Opportunity.update", "Activity.read", "Activity.create", "Conversation.read", "Conversation.create", "Conversation.update", "Message.read", "Message.create", "Message.update", "Task.read", "Task.create", "Task.update", "ProspectSearch.read", "ProspectSearch.create", "ProspectSearch.update", "ProspectCandidate.read", "ProspectCandidate.create", "ProspectCandidate.update", "Insight.read", "Insight.create", "Insight.update"] }
 admin = { allow = ["*.*"] }
 
 [[auth.apiKeys]]
@@ -1574,6 +1677,7 @@ keyEnv = "CRM_AGENT_API_KEY"
 agentId = "crm-sales-agent"
 credentialId = "crm-demo-credential"
 displayName = "CRM Sales Agent"
+roles = ["sales_agent"]
 scopes = ["crm.accounts.read", "crm.leads.read", "crm.leads.transition", "crm.assignment.write", "crm.opportunities.read", "crm.opportunities.transition", "crm.activity.read", "crm.activity.create", "crm.tasks.read", "crm.tasks.create", "crm.prospects.read", "crm.prospects.search", "crm.prospects.promote", "crm.outreach.prepare", "crm.messages.read", "crm.messages.classify", "crm.outreach.send", "crm.insights.read", "crm.insights.act"]
 
 [ui]

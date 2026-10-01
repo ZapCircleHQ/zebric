@@ -32,8 +32,7 @@ const engine = new ZebricEngine({
   port: 3000,
   host: 'localhost',
   database: {
-    type: 'sqlite',       // or 'postgres'
-    filename: './data.db', // SQLite path
+    url: 'sqlite://./data.db',
   },
   dev: {
     hotReload: true,
@@ -51,18 +50,18 @@ await engine.start()
 **SQLite** (default):
 ```typescript
 database: {
-  type: 'sqlite',
-  filename: './data.db'
+  url: 'sqlite://./data.db'
 }
 ```
 
 **PostgreSQL**:
 ```typescript
 database: {
-  type: 'postgres',
   url: 'postgres://user:pass@localhost:5432/mydb'
 }
 ```
+
+The current engine selects the adapter from the `database.url` scheme. Use `sqlite://<path>`, `postgres://...`, or `postgresql://...`. In development, `dev.dbPath` can set the SQLite path when `database.url` is omitted. Other fields on the `DatabaseConfig` type are not currently consumed by engine initialization.
 
 ## Workers Runtime
 

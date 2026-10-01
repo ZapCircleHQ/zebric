@@ -220,8 +220,8 @@ export class ComponentRenderers {
   /**
    * Render action bar for detail pages
    */
-  renderActionBar(page: Page, record: any, entity?: any, csrfToken?: string): SafeHtml {
-    return renderActionBarFn(page, record, this.theme, this.utils, entity, csrfToken, this.blueprint)
+  renderActionBar(page: Page, record: any, entity?: any, csrfToken?: string, availableCommands?: string[]): SafeHtml {
+    return renderActionBarFn(page, record, this.theme, this.utils, entity, csrfToken, this.blueprint, availableCommands)
   }
 
   /**

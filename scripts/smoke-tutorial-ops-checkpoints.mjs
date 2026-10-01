@@ -37,18 +37,21 @@ const checkpoints = [
     file: 'lesson-6-blueprint.toml',
     expectedEntity: 'ExceptionRequest',
     expectedWorkflow: 'ApproveExceptionRequest',
+    expectedCommand: 'ApproveExceptionRequestState',
     protected: true,
   },
   {
     file: 'lesson-7-blueprint.toml',
     expectedEntity: 'ExceptionRequest',
     expectedWorkflow: 'ApproveExceptionRequest',
+    expectedCommand: 'ApproveExceptionRequestState',
     protected: true,
   },
   {
     file: 'lesson-8-blueprint.toml',
     expectedEntity: 'ExceptionRequest',
     expectedWorkflow: 'ApproveExceptionRequest',
+    expectedCommand: 'ApproveExceptionRequestState',
     protected: true,
   },
 ]
@@ -98,7 +101,19 @@ async function smokeCheckpoint(checkpoint, index) {
 
   try {
     const content = await readFile(blueprintPath, 'utf8')
-    parser.parse(content, 'toml', blueprintPath)
+    const parsed = parser.parse(content, 'toml', blueprintPath)
+    if (checkpoint.expectedCommand) {
+      assert(
+        parsed.commands?.some((command) => command.name === checkpoint.expectedCommand),
+        `${checkpoint.file} missing command ${checkpoint.expectedCommand}`
+      )
+      const entity = parsed.entities.find((candidate) => candidate.name === checkpoint.expectedEntity)
+      const status = entity?.fields.find((field) => field.name === 'status')
+      assert(
+        status?.write === 'command-only' && status.commands?.includes(checkpoint.expectedCommand),
+        `${checkpoint.file} status is not protected by ${checkpoint.expectedCommand}`
+      )
+    }
 
     engine = new ZebricEngine({
       blueprintPath,

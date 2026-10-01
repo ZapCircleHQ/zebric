@@ -17,6 +17,7 @@ const blueprint: Blueprint = {
       { name: 'id', type: 'ULID', primary_key: true },
       { name: 'title', type: 'Text', required: true },
       { name: 'body', type: 'LongText' },
+      { name: 'status', type: 'Text', write: 'command-only', commands: ['ApproveDoc'] },
       // Hard-protected: no client, agent, or UI write is ever accepted.
       { name: 'assigneeId', type: 'Text', access: { write: false } },
       // Conditionally writable: only an authenticated principal may set it.
@@ -31,6 +32,19 @@ const blueprint: Blueprint = {
       { name: 'updatedAt', type: 'DateTime', default: 'now' },
     ],
     access: { read: true, create: true, update: true, delete: true },
+  }, {
+    name: 'PolicyDoc',
+    fields: [
+      { name: 'id', type: 'ULID', primary_key: true },
+      { name: 'title', type: 'Text' },
+      { name: 'ownerId', type: 'Text' },
+    ],
+    access: {
+      read: 'record.ownerId == actor.effectiveId',
+      create: true,
+      update: 'record.ownerId == actor.effectiveId',
+      delete: false,
+    },
   }],
   pages: [],
 }
@@ -128,6 +142,11 @@ describe('QueryExecutor field-level write access', () => {
       expect(updated.assigneeId).toBe('user-3')
     })
 
+    it('rejects a direct write to a command-only field', async () => {
+      await expect(executor.update('Doc', docId, { status: 'approved' }, { session: admin }))
+        .rejects.toMatchObject({ code: 'PROTECTED_FIELD_MUTATION' })
+    })
+
     it('applies an authenticated-writable field but drops an admin-only one for a member', async () => {
       const updated = await executor.update('Doc', docId, {
         title: 'Edited', region: 'eu', ownerNote: 'member edit',
@@ -167,6 +186,33 @@ describe('QueryExecutor field-level write access', () => {
 
       const row = await executor.findById('Doc', created.id, { session: admin })
       expect(row).not.toHaveProperty('secret')
+    })
+  })
+
+  describe('record-aware expression policies', () => {
+    const delegated = {
+      user: { id: 'sales-agent', email: 'agent@example.test', roles: ['agent'] },
+      actor: { id: 'sales-agent', type: 'agent', roles: ['agent'], delegatedBy: 'user-1' },
+    } as any
+
+    beforeEach(async () => {
+      await executor.create('PolicyDoc', { title: 'Mine', ownerId: 'user-1' }, { session: SYSTEM_SESSION })
+      await executor.create('PolicyDoc', { title: 'Theirs', ownerId: 'user-2' }, { session: SYSTEM_SESSION })
+    })
+
+    it('filters collection reads using delegated effective identity', async () => {
+      const rows = await executor.execute({ entity: 'PolicyDoc' }, { session: delegated })
+      expect(rows.map(row => row.title)).toEqual(['Mine'])
+    })
+
+    it('authorizes mutations against the stored record', async () => {
+      const all = await executor.execute({ entity: 'PolicyDoc' }, { session: SYSTEM_SESSION })
+      const mine = all.find(row => row.title === 'Mine')
+      const theirs = all.find(row => row.title === 'Theirs')
+      await expect(executor.update('PolicyDoc', mine.id, { title: 'Updated' }, { session: delegated }))
+        .resolves.toMatchObject({ title: 'Updated' })
+      await expect(executor.update('PolicyDoc', theirs.id, { title: 'Blocked' }, { session: delegated }))
+        .rejects.toThrow('Access denied')
     })
   })
 })

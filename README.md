@@ -252,6 +252,8 @@ Zebric may not be suitable for:
 
 ## Documentation
 
+- [Domain commands and protected lifecycle state](docs/DOMAIN-COMMANDS.md)
+
 - Full documentation: [docs.zebric.dev](https://docs.zebric.dev)
 - Interactive examples and playground: [playground.zebric.dev](https://playground.zebric.dev)
 - Repository testing guide: [TESTING.md](TESTING.md)

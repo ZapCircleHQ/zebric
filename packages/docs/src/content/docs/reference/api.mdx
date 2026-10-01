@@ -19,7 +19,7 @@ Entity routes are pluralized with a trailing `s` (for example, `Issue` -> `/api/
 | `PUT` | `/api/<entity-name>s/:id` | Update record |
 | `DELETE` | `/api/<entity-name>s/:id` | Delete record |
 
-Requests can authenticate via session cookies or API keys.
+Requests can authenticate via session cookies or API keys. API-key actors must have the operation-specific entity scope described below.
 
 ## Query Parameters
 
@@ -33,6 +33,8 @@ GET /api/issues?limit=25&offset=25
 |-----------|-------------|
 | `limit` | Maximum number of results (default `100`, max `1000`) |
 | `offset` | Number of records to skip |
+
+Pagination is applied after access-control filtering, so `limit` and `offset` count records visible to the current actor rather than inaccessible rows.
 
 ## Authentication
 
@@ -54,9 +56,42 @@ API keys are defined in the blueprint:
 [[auth.apiKeys]]
 name = "my-agent"
 keyEnv = "MY_API_KEY"
+agentId = "content-agent"
+credentialId = "content-agent-production"
+roles = ["editor"]
+scopes = ["entity.post.list", "entity.post.get", "entity.post.update"]
 ```
 
-API key requests skip CSRF validation but still go through access control.
+API key requests skip CSRF validation only after successful bearer authentication. They still go through transport scopes and entity access control.
+
+Entity routes require `entity.<lowercase-entity>.<operation>`, using `list`, `get`, `create`, `update`, or `delete`. Mutating API-key requests must also send `X-Agent-Run-ID`; see [API Keys](/building/security#api-keys) for the complete identity and scope model.
+
+## Domain Commands
+
+Every domain command receives a stable snake-case operation ID. For example, `ApproveRequest` is exposed as:
+
+```http
+POST /api/commands/approve_request/{id}
+Authorization: Bearer <credential>
+Idempotency-Key: <stable-key-for-this-intent>
+X-Agent-Run-ID: <agent-invocation-id>
+Content-Type: application/json
+```
+
+The JSON body contains the command's declared input. Successful commands return `200` with the command name and updated record. The runtime enforces the command's scopes, typed input, policy, `availableWhen` condition, protected-field allowlist, transaction, and audit behavior.
+
+Browser-generated command forms use `POST /commands/{operationId}/{id}` with session authentication and CSRF protection.
+
+## Audit History
+
+Authorized callers can query framework audit history for one record:
+
+```http
+GET /api/audit?entity=Request&recordId=01J...&limit=50
+Authorization: Bearer <credential>
+```
+
+`entity` and `recordId` are required. Optional `command`, `workflow`, and `actorId` parameters narrow the result. `limit` accepts `1`–`200`. Zebric first verifies that the caller can read the target record; it does not expose the raw audit store.
 
 ## OpenAPI
 
@@ -90,12 +125,22 @@ The document includes the application `name` and `version`, absolute `openapi` U
   "openapi": "https://issues.example/api/openapi.json",
   "authentication": [{ "type": "bearer" }],
   "skills": ["issue_board"],
+  "commands": [
+    {
+      "name": "ApproveRequest",
+      "operationId": "approve_request",
+      "entity": "Request",
+      "scopes": ["requests.approve"]
+    }
+  ],
   "capabilities": {
     "workflowJobs": true,
     "idempotency": true,
     "eventStream": false,
     "transactionalWorkflows": true,
-    "d1BatchWorkflows": false
+    "d1BatchWorkflows": false,
+    "domainCommands": true,
+    "auditHistory": true
   },
   "contract": {
     "version": "1",
@@ -106,7 +151,7 @@ The document includes the application `name` and `version`, absolute `openapi` U
 
 The same contract appears as `x-zebric-contract` in OpenAPI, whose response also has an `ETag`. Clients must not use a capability reported as `false`, and should reject mismatched fingerprints. Discovery falls back to `/api/openapi.json` for older runtimes that return `404` for the well-known route.
 
-Each skill operation has an `operationId`, required scopes, and `x-zebric-agent-operation` metadata describing its risk, approval requirement, idempotency requirement, asynchronous behavior, workflow, and preconditions.
+Each skill and command operation has an `operationId`, required scopes, and `x-zebric-agent-operation` metadata describing its risk, approval requirement, idempotency requirement, asynchronous behavior, and underlying workflow or command.
 
 ## Workflow mutations and jobs
 
@@ -121,7 +166,9 @@ Content-Type: application/json
 
 They return `202 Accepted` with `{ "success": true, "job": { "id", "workflow", "status", "url" } }`. Poll the returned `job.url` (`GET /api/jobs/{id}`) using the same credential. Job visibility is ownership-isolated: a different API key cannot observe the job.
 
-Repeating identical input with the same idempotency key returns the original accepted operation. Reusing the key for different input returns `409 IDEMPOTENCY_KEY_REUSE`. Workflow precondition and conditional-update races also return `409` with distinct codes.
+Repeating identical input with the same idempotency key returns the original successful operation. Reusing the key for a different route or input returns `409 IDEMPOTENCY_KEY_REUSE`. Workflow precondition and conditional-update races also return `409` with distinct codes.
+
+The in-process idempotency cache retains only successful `2xx` responses. Failed responses are dropped so a corrected or transiently failed request can be retried. Successful entries expire after 24 hours, and the oldest entry is evicted when the cache exceeds 1,000 entries.
 
 :::caution[Process-local state]
 Workflow jobs and idempotency records are currently held by one runtime process. They are not shared between instances and are lost on restart.
@@ -147,9 +194,10 @@ Agent routes use a stable envelope:
 |---:|---|---|
 | `400` | `INVALID_REQUEST`, `INVALID_QUERY`, `INVALID_AGENT_ATTRIBUTION` | Input or attribution is invalid |
 | `401` | `AUTHENTICATION_REQUIRED` | Bearer credential is absent or invalid |
-| `403` | `INSUFFICIENT_SCOPE`, `CSRF_INVALID` | The actor cannot perform the action |
-| `404` | `RESOURCE_NOT_FOUND`, `WORKFLOW_NOT_FOUND`, `JOB_NOT_FOUND` | Resource is absent or not visible to this actor |
-| `409` | `IDEMPOTENCY_KEY_REUSE`, `WORKFLOW_PRECONDITION_FAILED`, `STATE_CONFLICT` | The intended transition is stale or conflicts |
+| `403` | `AUTHORIZATION_FAILED`, `INSUFFICIENT_SCOPE`, `CSRF_INVALID` | The actor cannot perform the action |
+| `404` | `NOT_FOUND`, `COMMAND_NOT_FOUND`, `RESOURCE_NOT_FOUND`, `WORKFLOW_NOT_FOUND`, `JOB_NOT_FOUND` | Resource or operation is absent or not visible to this actor |
+| `409` | `IDEMPOTENCY_KEY_REUSE`, `WORKFLOW_PRECONDITION_FAILED`, `COMMAND_UNAVAILABLE`, `PROTECTED_FIELD_MUTATION`, `STATE_CONFLICT` | The intended transition is stale, unavailable, or bypasses a protected field |
+| `422` | `VALIDATION_FAILED`, `EXTERNAL_RESULT_VALIDATION_FAILED` | Command input or a typed external result is invalid |
 | `429` | `RATE_LIMITED` | Back off; honor `Retry-After` when present |
 | `500` | `INTERNAL_ERROR`, `WORKFLOW_UNAVAILABLE` | Runtime or workflow infrastructure failed |
 

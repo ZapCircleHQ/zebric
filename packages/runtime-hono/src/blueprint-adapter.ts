@@ -6,6 +6,7 @@ import {
   type HttpResponse,
   type HttpRequestAdapter,
   type RendererPort,
+  type CommandAvailabilityPort,
   type RuntimePorts,
   HTMLRenderer,
   getInjectedCsrfTokenFromRequest,
@@ -57,6 +58,7 @@ export class BlueprintHttpAdapter implements HttpRequestAdapter {
       sessionManager: config.sessionManager,
       renderer: this.renderer,
       auditLogger: config.auditLogger,
+      commandAvailability: config.commandAvailability,
       errorSanitizer: config.errorSanitizer,
       defaultOrigin: config.defaultOrigin
     })
@@ -82,6 +84,10 @@ export class BlueprintHttpAdapter implements HttpRequestAdapter {
     }
 
     this.requestHandler.setBlueprint(blueprint)
+  }
+
+  setCommandAvailability(commandAvailability?: CommandAvailabilityPort): void {
+    this.requestHandler.setCommandAvailability(commandAvailability)
   }
 
   /**

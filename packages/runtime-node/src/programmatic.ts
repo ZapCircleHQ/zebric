@@ -5,7 +5,7 @@
  */
 
 import { ZebricEngine } from './engine.js'
-import type { Blueprint, Theme } from '@zebric/runtime-core'
+import type { Blueprint, CommandHandler, ServiceHandler, ServiceRegistry, Theme } from '@zebric/runtime-core'
 import type { EngineConfig } from './types/index.js'
 import { validateBlueprintFile } from './blueprint/validate.js'
 
@@ -220,6 +220,20 @@ export class Zebric {
    */
   running(): boolean {
     return this.isRunning
+  }
+
+  getServiceRegistry(): ServiceRegistry | undefined {
+    return this.engine?.getServiceRegistry()
+  }
+
+  registerService(service: string, operation: string, handler: ServiceHandler): void {
+    if (!this.isRunning || !this.engine) throw new Error('Zebric is not running')
+    this.engine.registerService(service, operation, handler)
+  }
+
+  registerCommandHandler(reference: string, handler: CommandHandler): void {
+    if (!this.isRunning || !this.engine) throw new Error('Zebric is not running')
+    this.engine.registerCommandHandler(reference, handler)
   }
 
   /**

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { validateCommand } from './validate.js'
 
 type StructuredValidationError = {
-  type: 'SCHEMA_VALIDATION' | 'REFERENCE_VALIDATION' | 'PARSE_ERROR' | 'VERSION_ERROR'
+  type: 'SCHEMA_VALIDATION' | 'REFERENCE_VALIDATION' | 'COMPOSITION_ERROR' | 'PARSE_ERROR' | 'VERSION_ERROR'
   message: string
   errors: Array<{
     code: string
@@ -16,7 +16,6 @@ type StructuredValidationError = {
 
 vi.mock('node:fs/promises', () => ({
   access: vi.fn(),
-  readFile: vi.fn(),
 }))
 
 vi.mock('@zebric/runtime-core', async () => {
@@ -29,20 +28,20 @@ vi.mock('@zebric/runtime-core', async () => {
     }
   }
   return {
-    BlueprintParser: vi.fn().mockImplementation(() => ({
-      parse: vi.fn(),
-    })),
-    detectFormat: vi.fn().mockReturnValue('toml'),
     BlueprintValidationError,
   }
 })
 
-import { access, readFile } from 'node:fs/promises'
-import { BlueprintParser, detectFormat, BlueprintValidationError } from '@zebric/runtime-core'
+vi.mock('@zebric/runtime-node', () => ({
+  BlueprintLoader: vi.fn().mockImplementation(() => ({ load: vi.fn() })),
+}))
+
+import { access } from 'node:fs/promises'
+import { BlueprintValidationError } from '@zebric/runtime-core'
+import { BlueprintLoader } from '@zebric/runtime-node'
 
 const mockAccess = access as ReturnType<typeof vi.fn>
-const mockReadFile = readFile as ReturnType<typeof vi.fn>
-const MockBlueprintParser = BlueprintParser as ReturnType<typeof vi.fn>
+const MockBlueprintLoader = BlueprintLoader as ReturnType<typeof vi.fn>
 
 describe('validateCommand', () => {
   let mockConsoleLog: any
@@ -84,7 +83,6 @@ describe('validateCommand', () => {
   describe('valid blueprint', () => {
     beforeEach(() => {
       mockAccess.mockResolvedValue(undefined)
-      mockReadFile.mockResolvedValue('[project]\nname = "test"')
     })
 
     it('prints success info when blueprint is valid', async () => {
@@ -94,9 +92,9 @@ describe('validateCommand', () => {
         entities: [{ name: 'User' }, { name: 'Post' }],
         pages: [{ path: '/' }],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockReturnValue(fakeBp),
+          load: vi.fn().mockResolvedValue(fakeBp),
         }
       })
 
@@ -117,9 +115,9 @@ describe('validateCommand', () => {
         pages: [],
         workflows: [{ name: 'wf1' }, { name: 'wf2' }],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockReturnValue(fakeBp),
+          load: vi.fn().mockResolvedValue(fakeBp),
         }
       })
 
@@ -135,9 +133,9 @@ describe('validateCommand', () => {
         entities: [],
         pages: [],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockReturnValue(fakeBp),
+          load: vi.fn().mockResolvedValue(fakeBp),
         }
       })
 
@@ -153,7 +151,6 @@ describe('validateCommand', () => {
   describe('BlueprintValidationError', () => {
     beforeEach(() => {
       mockAccess.mockResolvedValue(undefined)
-      mockReadFile.mockResolvedValue('invalid content')
     })
 
     it('prints structured errors and exits', async () => {
@@ -171,11 +168,9 @@ describe('validateCommand', () => {
           },
         ],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockImplementation(() => {
-            throw new BlueprintValidationError(structured)
-          }),
+          load: vi.fn().mockRejectedValue(new BlueprintValidationError(structured)),
         }
       })
 
@@ -199,11 +194,9 @@ describe('validateCommand', () => {
           },
         ],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockImplementation(() => {
-            throw new BlueprintValidationError(structured)
-          }),
+          load: vi.fn().mockRejectedValue(new BlueprintValidationError(structured)),
         }
       })
 
@@ -217,11 +210,9 @@ describe('validateCommand', () => {
         message: 'Invalid TOML syntax',
         errors: [],
       }
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockImplementation(() => {
-            throw new BlueprintValidationError(structured)
-          }),
+          load: vi.fn().mockRejectedValue(new BlueprintValidationError(structured)),
         }
       })
 
@@ -233,15 +224,12 @@ describe('validateCommand', () => {
   describe('generic error handling', () => {
     beforeEach(() => {
       mockAccess.mockResolvedValue(undefined)
-      mockReadFile.mockResolvedValue('...')
     })
 
     it('prints Error.message and exits for unknown errors', async () => {
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockImplementation(() => {
-            throw new Error('Unexpected parse failure')
-          }),
+          load: vi.fn().mockRejectedValue(new Error('Unexpected parse failure')),
         }
       })
 
@@ -251,11 +239,9 @@ describe('validateCommand', () => {
     })
 
     it('handles non-Error throws', async () => {
-      MockBlueprintParser.mockImplementation(function () {
+      MockBlueprintLoader.mockImplementation(function () {
         return {
-          parse: vi.fn().mockImplementation(() => {
-            throw 'string error'
-          }),
+          load: vi.fn().mockRejectedValue('string error'),
         }
       })
 

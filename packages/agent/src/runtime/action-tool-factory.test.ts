@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createRuntimeReadTools, getRuntimeToolMetadata, InMemoryMutationExecutionStateStore, ZebricApiError } from './action-tool-factory.js'
 import type { ZebricApplicationContract } from './discovery-client.js'
 import { DeterministicAgentDriver } from '../testing/deterministic-driver.js'
+import { generateOpenAPISpec, type Blueprint } from '@zebric/runtime-core'
 
 const contract: ZebricApplicationContract = {
   baseUrl: 'https://issues.example',
@@ -49,6 +50,46 @@ const contract: ZebricApplicationContract = {
 }
 
 describe('createRuntimeReadTools', () => {
+  it('turns generated domain command operations into MCP-ready mutation tools', async () => {
+    const blueprint: Blueprint = {
+      version: '0.6.0',
+      project: { name: 'Requests', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+      entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
+      pages: [],
+      commands: [{
+        name: 'ApproveRequest', entity: 'Request',
+        input: { comment: { type: 'Text', required: true } },
+        mutations: { status: 'approved' },
+      }],
+    }
+    const fetcher = vi.fn(async () => Response.json({
+      command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' },
+    })) as typeof fetch
+    const generated = generateOpenAPISpec(blueprint)
+    const tools = createRuntimeReadTools({
+      baseUrl: 'https://requests.example',
+      openApiUrl: 'https://requests.example/api/openapi.json',
+      openapi: generated,
+    }, {
+      applicationName: 'requests',
+      fetch: fetcher,
+      mutations: { approve: () => true, agentRunId: () => 'run-1' },
+    })
+    const commandTool = tools.find(tool => tool.name === 'requests_approve_request')!
+    expect(getRuntimeToolMetadata(commandTool)).toMatchObject({
+      operationId: 'approve_request', path: '/api/commands/approve_request/{id}', risk: 'write',
+    })
+    await commandTool.invoke({ id: 'req-1', comment: 'Looks good' })
+    expect(fetcher).toHaveBeenCalledWith(
+      new URL('https://requests.example/api/commands/approve_request/req-1'),
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ comment: 'Looks good' }),
+        headers: expect.objectContaining({ 'x-agent-run-id': 'run-1' }),
+      }),
+    )
+  })
+
   it('preserves authoritative operation risk and execution metadata', () => {
     const tools = createRuntimeReadTools(contract, {
       applicationName: 'local', mutations: { approve: () => true },

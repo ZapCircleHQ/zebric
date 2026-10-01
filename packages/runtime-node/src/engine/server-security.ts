@@ -9,6 +9,7 @@ export interface ApiKeyCredential {
   agentId: string
   credentialId: string
   displayName: string
+  roles: string[]
   scopes: string[]
   constraints?: Record<string, string[]>
 }
@@ -228,6 +229,7 @@ export function initApiKeys(blueprint: Blueprint): Map<string, ApiKeyCredential>
       agentId: keyConfig.agentId ?? keyConfig.name,
       credentialId: keyConfig.credentialId ?? keyConfig.name,
       displayName: keyConfig.displayName ?? keyConfig.name,
+      roles: [...(keyConfig.roles ?? [])],
       scopes: [...(keyConfig.scopes ?? [])],
       ...(keyConfig.constraints ? { constraints: keyConfig.constraints } : {}),
     })
@@ -250,13 +252,14 @@ export function resolveApiKeySession(
     id: agentId,
     credentialId,
     displayName,
+    roles: [...(keyConfig.roles ?? [])],
     scopes: [...(keyConfig.scopes ?? [])],
     ...(keyConfig.constraints ? { constraints: keyConfig.constraints } : {}),
   }
   return {
     id: `apikey-${credentialId}`,
     userId: agentId,
-    user: { id: agentId, name: displayName, email: '' },
+    user: { id: agentId, name: displayName, email: '', roles: actor.roles },
     expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
     createdAt: new Date(),
     actor,

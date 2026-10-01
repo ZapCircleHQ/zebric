@@ -6,6 +6,7 @@
 
 import type { AuthConfig, PermissionRule, PermissionCondition, AccessCondition } from '../types/blueprint.js'
 import type { UserSession } from './session.js'
+import { PolicyEvaluator, requiresRecordEvaluation } from '../policy/evaluator.js'
 
 export interface PermissionCheckContext {
   session?: UserSession | null
@@ -16,9 +17,20 @@ export interface PermissionCheckContext {
 
 export class PermissionManager {
   private permissions: Record<string, PermissionRule>
+  private readonly policyEvaluator = new PolicyEvaluator()
 
   constructor(authConfig?: AuthConfig) {
     this.permissions = authConfig?.permissions || {}
+  }
+
+  /** Whether any configured rule for this operation needs a stored record. */
+  requiresRecordCheck(entity: string, action: PermissionCheckContext['action']): boolean {
+    return Object.values(this.permissions).some(rule => rule.allow?.some(allowRule =>
+      typeof allowRule !== 'string'
+      && (allowRule.entity === '*' || allowRule.entity === entity)
+      && (allowRule.actions.includes('*') || allowRule.actions.includes(action))
+      && requiresRecordEvaluation(allowRule.condition)
+    ) ?? false)
   }
 
   /**
@@ -88,7 +100,7 @@ export class PermissionManager {
           }
         } else {
           // PermissionCondition with entity, actions, and condition
-          if (this.matchesCondition(allowRule, context)) {
+          if (await this.matchesCondition(allowRule, context)) {
             return true
           }
         }
@@ -101,7 +113,7 @@ export class PermissionManager {
   /**
    * Check anonymous (no session) permissions
    */
-  private checkAnonymousPermission(context: PermissionCheckContext): boolean {
+  private async checkAnonymousPermission(context: PermissionCheckContext): Promise<boolean> {
     const anonymousRule = this.permissions['anonymous'] || this.permissions['public']
 
     if (!anonymousRule) {
@@ -124,7 +136,7 @@ export class PermissionManager {
           if (this.matchesPattern(allowRule, context.entity, context.action)) {
             return true
           }
-        } else if (this.matchesCondition(allowRule, context)) {
+        } else if (await this.matchesCondition(allowRule, context)) {
           return true
         }
       }
@@ -149,10 +161,10 @@ export class PermissionManager {
   /**
    * Match permission condition
    */
-  private matchesCondition(
+  private async matchesCondition(
     condition: PermissionCondition,
     context: PermissionCheckContext
-  ): boolean {
+  ): Promise<boolean> {
     // Check if entity matches
     if (condition.entity !== '*' && condition.entity !== context.entity) {
       return false
@@ -163,8 +175,18 @@ export class PermissionManager {
       return false
     }
 
+    // Collection reads are provisionally allowed so adapters can evaluate the
+    // policy against each returned record before releasing it to the caller.
+    if (context.action === 'read' && !context.data && requiresRecordEvaluation(condition.condition)) {
+      return true
+    }
+
     // Check access condition
-    return this.evaluateAccessCondition(condition.condition, context)
+    return this.policyEvaluator.evaluate(condition.condition, {
+      session: context.session,
+      record: context.data,
+      entity: context.entity,
+    })
   }
 
   /**
@@ -269,7 +291,7 @@ export class PermissionManager {
     }
 
     // Default role if none specified
-    if (roles.length === 0 && session.user) {
+    if (roles.length === 0 && session.user && (!session.actor || session.actor.type === 'user')) {
       roles.push('user') // Default authenticated user role
     }
 

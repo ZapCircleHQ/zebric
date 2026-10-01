@@ -55,7 +55,7 @@ Try it now: switch to **Requester** and confirm you cannot change a request's st
 If your process needs tighter controls, ask these types of questions:
 
 - should submitters only see requests they created?
-- should reviewers be able to edit every field or only status and notes?
+- should reviewers be able to edit every field, while lifecycle fields change only through named commands?
 - should directors be the only people allowed to approve high-priority requests?
 
 ## Add Page-Level Authentication
@@ -97,6 +97,8 @@ Use questions like these:
 - do rejected requests need a visible reason?
 
 These are all realistic considerations for an internal operations tool once it gets past a proof of concept.
+
+Entity access answers whether an actor may perform a broad CRUD operation. In the next lesson, a domain command adds a narrower guard for the approval decision itself and marks `status` as command-only. Both layers apply: broad update permission does not bypass command protection.
 
 ## Version 1.0 Permissions
 

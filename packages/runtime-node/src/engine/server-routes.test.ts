@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Hono } from 'hono'
-import { injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
+import {
+  AuthorizationFailureError,
+  CommandUnavailableError,
+  ExpressionEvaluationError,
+  ExternalResultValidationError,
+  ProtectedFieldMutationError,
+  ServiceFailureError,
+  ValidationFailureError,
+  WorkflowFailureError,
+  injectCsrfTokenIntoRequest,
+} from '@zebric/runtime-core'
 import { registerSearchRoutes, type BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import { registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
+import { commandErrorStatus, registerAgentEventStreamRoute, registerAPIRoutes, registerActionRoutes, registerCommandRoutes, registerOpenAPIRoute, registerPageRoutes } from './server-routes.js'
 import { createApiKeyRegistry } from './server-security.js'
 import { AgentEventBus } from './agent-event-bus.js'
 
@@ -12,6 +22,7 @@ function testApiKeys(scopes: string[], name = 'roadmap-agent') {
     agentId: name,
     credentialId: `${name}-credential`,
     displayName: name,
+    roles: [],
     scopes,
   } }])
 }
@@ -74,6 +85,227 @@ describe('agent discovery routes', () => {
     }, { port: 3000 } as any)
     const changedContract = (await (await changed.request('http://one.example/.well-known/zebric-agent.json')).json() as any).contract
     expect(changedContract.fingerprint).not.toBe(firstContract.fingerprint)
+  })
+
+  it('publishes self-describing command capabilities', async () => {
+    const app = new Hono()
+    registerOpenAPIRoute(app, {
+      version: '0.6.0',
+      project: { name: 'Commands', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+      entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
+      pages: [],
+      commands: [{
+        name: 'ApproveRequest', entity: 'Request', label: 'Approve', confirm: 'Approve this request?', style: 'primary',
+        input: { comment: { type: 'Text', required: false } }, mutations: { status: 'approved' },
+      }],
+    }, { port: 3000 } as any)
+    const body = await (await app.request('/.well-known/zebric-agent.json')).json() as any
+    expect(body.capabilities.domainCommands).toBe(true)
+    expect(body.commands).toEqual([expect.objectContaining({
+      name: 'ApproveRequest', operationId: 'approve_request', entity: 'Request', label: 'Approve',
+      confirm: 'Approve this request?', style: 'primary',
+    })])
+  })
+})
+
+describe('domain command HTTP routes', () => {
+  const blueprint = {
+    version: '0.6.0',
+    project: { name: 'Commands', version: '0.6.0', runtime: { min_version: '0.6.0' } },
+    entities: [{ name: 'Request', fields: [{ name: 'id', type: 'ULID' }] }],
+    pages: [],
+    commands: [{ name: 'ApproveRequest', entity: 'Request', mutations: { status: 'approved' } }],
+  } as any
+
+  it('invokes the shared command executor with HTTP context', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => session } as any,
+      queryExecutor: {} as any,
+      apiKeys: new Map(),
+    } as any)
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comment: 'ok' }),
+    })
+    expect(response.status).toBe(200)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest', recordId: 'req-1', input: { comment: 'ok' },
+      context: expect.objectContaining({ session, source: 'http' }),
+    }))
+  })
+
+  it('dispatches command routes from reloadable blueprint and executor state', async () => {
+    const initialExecute = vi.fn()
+    const reloadedExecute = vi.fn(async () => ({ command: 'CloseRequest', record: { id: 'req-1' } }))
+    let currentBlueprint: any = blueprint
+    let currentExecutor: any = { execute: initialExecute }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: currentExecutor,
+      getBlueprint: () => currentBlueprint,
+      getCommandExecutor: () => currentExecutor,
+      sessionManager: { getSession: async () => ({ id: 's1', user: { id: 'user-1', email: 'u@example.test' } }) } as any,
+      apiKeys: new Map(),
+    })
+
+    currentBlueprint = {
+      ...blueprint,
+      commands: [{ name: 'CloseRequest', entity: 'Request', mutations: { status: 'closed' } }],
+    }
+    currentExecutor = { execute: reloadedExecute }
+
+    const request = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }
+    expect((await app.request('/api/commands/approve_request/req-1', request)).status).toBe(404)
+    expect((await app.request('/api/commands/close_request/req-1', request)).status).toBe(200)
+    expect(initialExecute).not.toHaveBeenCalled()
+    expect(reloadedExecute).toHaveBeenCalledWith(expect.objectContaining({ command: 'CloseRequest' }))
+  })
+
+  describe('Idempotency-Key handling', () => {
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const setup = (execute: any) => {
+      const app = new Hono()
+      registerCommandRoutes(app, {
+        blueprint,
+        commandExecutor: { execute } as any,
+        sessionManager: { getSession: async () => session } as any,
+        apiKeys: new Map(),
+      })
+      return (key: string, body: unknown = { comment: 'ok' }) => app.request('/api/commands/approve_request/req-1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key },
+        body: JSON.stringify(body),
+      })
+    }
+    const result = { command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }
+
+    it('replays the first response for a repeated key without re-executing', async () => {
+      const execute = vi.fn(async () => result)
+      const post = setup(execute)
+      expect((await post('k1')).status).toBe(200)
+      expect(await (await post('k1')).json()).toEqual(result)
+      expect(execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('rejects key reuse with different input', async () => {
+      const execute = vi.fn(async () => result)
+      const post = setup(execute)
+      await post('k1', { comment: 'a' })
+      const response = await post('k1', { comment: 'b' })
+      expect(response.status).toBe(409)
+      expect((await response.json() as any).error.code).toBe('IDEMPOTENCY_KEY_REUSE')
+      expect(execute).toHaveBeenCalledTimes(1)
+    })
+
+    it('lets a retry with the same key run again after a failed execution', async () => {
+      const execute = vi.fn()
+        .mockRejectedValueOnce(new Error('database unavailable'))
+        .mockResolvedValueOnce(result)
+      const post = setup(execute)
+      expect((await post('k1')).status).toBe(500)
+      const retry = await post('k1')
+      expect(retry.status).toBe(200)
+      expect(await retry.json()).toEqual(result)
+      expect(execute).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('executes generated UI command forms with typed input and redirects with flash feedback', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1', status: 'approved' } }))
+    const session = { id: 's1', user: { id: 'user-1', email: 'u@example.test' } }
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint: {
+        ...blueprint,
+        commands: [{
+          ...blueprint.commands[0], label: 'Approve',
+          input: {
+            score: { type: 'Integer', required: true },
+            notify: { type: 'Boolean' },
+            context: { type: 'JSON' },
+          },
+        }],
+      },
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => session } as any,
+      apiKeys: new Map(),
+    })
+    const response = await app.request('/commands/approve_request/req-1', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', referer: 'http://localhost/requests/req-1' },
+      body: 'score=7&notify=true&context=%7B%22source%22%3A%22ui%22%7D&redirect=%2Frequests%2Freq-1',
+    })
+
+    expect(response.status).toBe(303)
+    expect(response.headers.get('location')).toBe('/requests/req-1')
+    expect(response.headers.get('set-cookie')).toContain('Approve%20completed')
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest', recordId: 'req-1',
+      input: { score: 7, notify: true, context: { source: 'ui' } },
+      context: expect.objectContaining({ session, source: 'ui' }),
+    }))
+  })
+
+  it('maps shared authorization errors consistently', async () => {
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute: async () => { throw new AuthorizationFailureError('denied') } } as any,
+      sessionManager: { getSession: async () => ({ id: 's1', user: { id: 'u1', email: 'u@example.test' } }) } as any,
+      apiKeys: new Map(),
+    })
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toMatchObject({ error: { code: 'AUTHORIZATION_FAILED' } })
+  })
+
+  it.each([
+    [new AuthorizationFailureError('denied'), 403],
+    [new ValidationFailureError('invalid'), 422],
+    [new ExternalResultValidationError('invalid result'), 422],
+    [new CommandUnavailableError('not in this state'), 409],
+    [new CommandUnavailableError('Request req-1 was not found'), 404],
+    [new ProtectedFieldMutationError('Request', ['status']), 409],
+    [new WorkflowFailureError('workflow failed'), 500],
+    [new ServiceFailureError('service failed'), 500],
+    [new ExpressionEvaluationError('expression failed'), 500],
+  ])('maps the shared %s error to HTTP %s', (error, status) => {
+    expect(commandErrorStatus(error)).toBe(status)
+  })
+
+  it('identifies API-key command calls as MCP while retaining the shared executor', async () => {
+    const execute = vi.fn(async () => ({ command: 'ApproveRequest', record: { id: 'req-1' } }))
+    const app = new Hono()
+    registerCommandRoutes(app, {
+      blueprint,
+      commandExecutor: { execute } as any,
+      sessionManager: { getSession: async () => null } as any,
+      apiKeys: testApiKeys([]),
+    })
+    const response = await app.request('/api/commands/approve_request/req-1', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer secret-key',
+        'content-type': 'application/json',
+        'x-agent-run-id': 'command-test-run',
+      },
+      body: '{}',
+    })
+
+    expect(response.status).toBe(200)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      command: 'ApproveRequest',
+      context: expect.objectContaining({ source: 'mcp', session: expect.objectContaining({
+        actor: expect.objectContaining({ type: 'agent' }),
+      }) }),
+    }))
   })
 })
 

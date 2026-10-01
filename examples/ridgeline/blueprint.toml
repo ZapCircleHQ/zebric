@@ -1,12 +1,12 @@
-version = "0.1.0"
+version = "0.6.0"
 
 [project]
 name = "Ridgeline Coffee"
-version = "1.0.0"
+version = "0.6.0"
 description = "A wholesale and retail coffee roaster operations app: green-coffee inventory, roast logging, orders, shipping, and subscriptions."
 
 [project.runtime]
-min_version = "0.2.3"
+min_version = "0.6.0"
 
 [ux]
 pattern = "dashboard@v1"
@@ -223,7 +223,7 @@ fields = [
   # customerId-to-session link isn't available.
   { name = "customerEmail", type = "Text", index = true },
   { name = "orderType", type = "Enum", values = ["wholesale", "retail"], required = true, index = true },
-  { name = "status", type = "Enum", values = ["pending", "confirmed", "roasting", "shipped", "delivered", "cancelled"], default = "pending", index = true },
+  { name = "status", type = "Enum", values = ["pending", "confirmed", "roasting", "shipped", "delivered", "cancelled"], default = "pending", index = true, write = "command-only", commands = ["ConfirmSalesOrder", "StartSalesOrderRoasting", "ShipSalesOrder", "DeliverSalesOrder", "CancelSalesOrder"] },
   { name = "orderDate", type = "DateTime", default = "now" },
   { name = "requestedShipDate", type = "Date", nullable = true },
   { name = "dueDate", type = "Date", nullable = true },
@@ -281,7 +281,7 @@ fields = [
   # Same reasoning as OrderItem.customerEmail above.
   { name = "customerEmail", type = "Text", index = true },
   { name = "method", type = "Enum", values = ["ups", "fedex", "usps", "delivery_truck"], required = true },
-  { name = "status", type = "Enum", values = ["planned", "ready", "in_transit", "delivered", "exception"], default = "planned", index = true },
+  { name = "status", type = "Enum", values = ["planned", "ready", "in_transit", "delivered", "exception"], default = "planned", index = true, write = "command-only", commands = ["ReadyShipment", "TransitShipment", "DeliverShipment", "ExceptShipment"] },
   { name = "scheduledShipDate", type = "Date", nullable = true },
   { name = "trackingNumber", type = "Text", nullable = true },
   { name = "truckingServiceId", type = "Ref", ref = "TruckingService.id", nullable = true },
@@ -308,7 +308,7 @@ fields = [
   { name = "productId", type = "Ref", ref = "Product.id", required = true, index = true },
   { name = "frequency", type = "Enum", values = ["weekly", "biweekly", "monthly"], default = "monthly" },
   { name = "quantity", type = "Integer", default = 1 },
-  { name = "status", type = "Enum", values = ["active", "paused", "cancelled"], default = "active", index = true },
+  { name = "status", type = "Enum", values = ["active", "paused", "cancelled"], default = "active", index = true, write = "command-only", commands = ["PauseSubscriptionState", "ResumeSubscriptionState", "CancelSubscriptionState"] },
   { name = "nextShipDate", type = "Date", nullable = true },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
@@ -322,6 +322,95 @@ read = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin
 create = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
 update = { or = [{ "$currentUser.role" = "staff" }, { "$currentUser.role" = "admin" }, { customerEmail = "$currentUser.email" }] }
 delete = { "$currentUser.role" = "admin" }
+
+# Domain commands -------------------------------------------------------------
+
+[command.ConfirmSalesOrder]
+entity = "SalesOrder"
+label = "Confirm order"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'pending'"
+mutations = { status = "confirmed" }
+
+[command.StartSalesOrderRoasting]
+entity = "SalesOrder"
+label = "Start roasting"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'confirmed'"
+mutations = { status = "roasting" }
+
+[command.ShipSalesOrder]
+entity = "SalesOrder"
+label = "Ship order"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'roasting'"
+mutations = { status = "shipped" }
+
+[command.DeliverSalesOrder]
+entity = "SalesOrder"
+label = "Deliver order"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin'"
+availableWhen = "record.status == 'shipped'"
+mutations = { status = "delivered" }
+
+[command.CancelSalesOrder]
+entity = "SalesOrder"
+label = "Cancel order"
+style = "danger"
+confirm = "Cancel this order?"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin'"
+availableWhen = "record.status in ['pending', 'confirmed', 'roasting', 'shipped']"
+mutations = { status = "cancelled" }
+
+[command.ReadyShipment]
+entity = "Shipment"
+policy = "workflow.__zebric.currentWorkflow == 'ConfirmOrder'"
+availableWhen = "record.status == 'planned'"
+mutations = { status = "ready" }
+
+[command.TransitShipment]
+entity = "Shipment"
+policy = "workflow.__zebric.currentWorkflow == 'ShipOrder'"
+availableWhen = "record.status == 'ready'"
+mutations = { status = "in_transit" }
+
+[command.DeliverShipment]
+entity = "Shipment"
+policy = "workflow.__zebric.currentWorkflow == 'DeliverOrder'"
+availableWhen = "record.status == 'in_transit'"
+mutations = { status = "delivered" }
+
+[command.ExceptShipment]
+entity = "Shipment"
+policy = "workflow.__zebric.currentWorkflow == 'CancelOrder'"
+availableWhen = "record.status != 'delivered'"
+mutations = { status = "exception" }
+
+[command.PauseSubscriptionState]
+entity = "Subscription"
+label = "Pause subscription"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin' || (actor.roles contains 'customer' && record.customerEmail == actor.metadata.email)"
+availableWhen = "record.status == 'active'"
+mutations = { status = "paused" }
+
+[command.ResumeSubscriptionState]
+entity = "Subscription"
+label = "Resume subscription"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin' || (actor.roles contains 'customer' && record.customerEmail == actor.metadata.email)"
+availableWhen = "record.status == 'paused'"
+mutations = { status = "active", nextShipDate = "input.nextShipDate" }
+
+[command.ResumeSubscriptionState.input.nextShipDate]
+type = "Date"
+required = true
+
+[command.CancelSubscriptionState]
+entity = "Subscription"
+label = "Cancel subscription"
+style = "danger"
+policy = "actor.roles contains 'staff' || actor.roles contains 'admin' || (actor.roles contains 'customer' && record.customerEmail == actor.metadata.email)"
+availableWhen = "record.status in ['active', 'paused']"
+mutations = { status = "cancelled" }
 
 # Human surfaces ----------------------------------------------------------------
 
@@ -1084,7 +1173,7 @@ type = "query"
 entity = "SalesOrder"
 action = "create"
 assignTo = "order"
-data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", orderType = "{{ variables.data.payload.orderType }}", status = "pending", requestedShipDate = "{{ variables.data.payload.requestedShipDate }}", dueDate = "{{ variables.data.payload.dueDate }}", notes = "{{ variables.data.payload.notes }}", createdBy = "{{ variables.data.session.user.id }}" }
+data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", orderType = "{{ variables.data.payload.orderType }}", requestedShipDate = "{{ variables.data.payload.requestedShipDate }}", dueDate = "{{ variables.data.payload.dueDate }}", notes = "{{ variables.data.payload.notes }}", createdBy = "{{ variables.data.session.user.id }}" }
 
 [[workflow.CreateOrderWithItems.steps]]
 type = "loop"
@@ -1097,7 +1186,7 @@ do = [
 type = "loop"
 items = "{{ variables.data.payload.shipments }}"
 do = [
-  { type = "query", entity = "Shipment", action = "create", data = { orderId = "{{ variables.order.id }}", customerEmail = "{{ variables.data.payload.customerEmail }}", method = "{{ variables.data.payload.shippingMethod }}", status = "planned", scheduledShipDate = "{{ variables.data.payload.requestedShipDate }}", truckingServiceId = "{{ variables.data.payload.truckingServiceId }}", warehouseId = "{{ variables.data.payload.warehouseId }}", loadNumber = "{{ variables.item.loadNumber }}", cases = "{{ variables.item.cases }}" } }
+  { type = "query", entity = "Shipment", action = "create", data = { orderId = "{{ variables.order.id }}", customerEmail = "{{ variables.data.payload.customerEmail }}", method = "{{ variables.data.payload.shippingMethod }}", scheduledShipDate = "{{ variables.data.payload.requestedShipDate }}", truckingServiceId = "{{ variables.data.payload.truckingServiceId }}", warehouseId = "{{ variables.data.payload.warehouseId }}", loadNumber = "{{ variables.item.loadNumber }}", cases = "{{ variables.item.cases }}" } }
 ]
 
 # Staff/admin-only is enforced by `auth.permissions` (only they hold
@@ -1132,17 +1221,15 @@ where = { orderId = "{{ variables.data.record.id }}" }
 assignTo = "shipments"
 
 [[workflow.ConfirmOrder.steps]]
-type = "query"
-entity = "SalesOrder"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "pending" }
-data = { status = "confirmed" }
+type = "command"
+command = "ConfirmSalesOrder"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.ConfirmOrder.steps]]
 type = "loop"
 items = "{{ variables.shipments }}"
 do = [
-  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "ready" } }
+  { type = "command", command = "ReadyShipment", recordId = "{{ variables.item.id }}" }
 ]
 
 [workflow.StartRoastingForOrder]
@@ -1152,11 +1239,9 @@ precondition = { "variables.data.record.status" = "confirmed" }
 transactional = true
 
 [[workflow.StartRoastingForOrder.steps]]
-type = "query"
-entity = "SalesOrder"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "confirmed" }
-data = { status = "roasting" }
+type = "command"
+command = "StartSalesOrderRoasting"
+recordId = "{{ variables.data.record.id }}"
 
 [workflow.ShipOrder]
 description = "Ship a roasting order and mark every shipment in transit."
@@ -1172,17 +1257,15 @@ where = { orderId = "{{ variables.data.record.id }}" }
 assignTo = "shipments"
 
 [[workflow.ShipOrder.steps]]
-type = "query"
-entity = "SalesOrder"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "roasting" }
-data = { status = "shipped" }
+type = "command"
+command = "ShipSalesOrder"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.ShipOrder.steps]]
 type = "loop"
 items = "{{ variables.shipments }}"
 do = [
-  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "in_transit" } }
+  { type = "command", command = "TransitShipment", recordId = "{{ variables.item.id }}" }
 ]
 
 [workflow.DeliverOrder]
@@ -1199,17 +1282,15 @@ where = { orderId = "{{ variables.data.record.id }}" }
 assignTo = "shipments"
 
 [[workflow.DeliverOrder.steps]]
-type = "query"
-entity = "SalesOrder"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "shipped" }
-data = { status = "delivered" }
+type = "command"
+command = "DeliverSalesOrder"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.DeliverOrder.steps]]
 type = "loop"
 items = "{{ variables.shipments }}"
 do = [
-  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "delivered" } }
+  { type = "command", command = "DeliverShipment", recordId = "{{ variables.item.id }}" }
 ]
 
 [workflow.CancelOrder]
@@ -1226,17 +1307,15 @@ where = { orderId = "{{ variables.data.record.id }}" }
 assignTo = "shipments"
 
 [[workflow.CancelOrder.steps]]
-type = "query"
-entity = "SalesOrder"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "cancelled" }
+type = "command"
+command = "CancelSalesOrder"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.CancelOrder.steps]]
 type = "loop"
 items = "{{ variables.shipments }}"
 do = [
-  { type = "query", entity = "Shipment", action = "update", where = { id = "{{ variables.item.id }}" }, data = { status = "exception" } }
+  { type = "command", command = "ExceptShipment", recordId = "{{ variables.item.id }}" }
 ]
 
 # The browser computes newRemainingKg and newBagsInStock from the values it read
@@ -1278,7 +1357,7 @@ transactional = true
 type = "query"
 entity = "Subscription"
 action = "create"
-data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", productId = "{{ variables.data.payload.productId }}", frequency = "{{ variables.data.payload.frequency }}", quantity = "{{ variables.data.payload.quantity }}", status = "active", nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
+data = { customerId = "{{ variables.data.payload.customerId }}", customerEmail = "{{ variables.data.payload.customerEmail }}", productId = "{{ variables.data.payload.productId }}", frequency = "{{ variables.data.payload.frequency }}", quantity = "{{ variables.data.payload.quantity }}", nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
 
 [workflow.PauseSubscription]
 description = "Pause an active subscription."
@@ -1287,11 +1366,9 @@ precondition = { "variables.data.record.status" = "active" }
 transactional = true
 
 [[workflow.PauseSubscription.steps]]
-type = "query"
-entity = "Subscription"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "active" }
-data = { status = "paused" }
+type = "command"
+command = "PauseSubscriptionState"
+recordId = "{{ variables.data.record.id }}"
 
 [workflow.ResumeSubscription]
 description = "Resume a paused subscription with a new next-ship date."
@@ -1300,11 +1377,10 @@ precondition = { "variables.data.record.status" = "paused" }
 transactional = true
 
 [[workflow.ResumeSubscription.steps]]
-type = "query"
-entity = "Subscription"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "paused" }
-data = { status = "active", nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
+type = "command"
+command = "ResumeSubscriptionState"
+recordId = "{{ variables.data.record.id }}"
+input = { nextShipDate = "{{ variables.data.payload.nextShipDate }}" }
 
 [workflow.CancelSubscription]
 description = "Cancel a subscription."
@@ -1313,11 +1389,9 @@ precondition = { "variables.data.record.status" = ["active", "paused"] }
 transactional = true
 
 [[workflow.CancelSubscription.steps]]
-type = "query"
-entity = "Subscription"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "cancelled" }
+type = "command"
+command = "CancelSubscriptionState"
+recordId = "{{ variables.data.record.id }}"
 
 # Agent surface -----------------------------------------------------------------
 
@@ -1544,9 +1618,6 @@ source = "templates/sign-in.liquid"
 [auth.permissions]
 customer = { allow = ["SalesOrder.read", "SalesOrder.create", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Subscription.read", "Subscription.create", "Subscription.update", "Customer.read", "Warehouse.read", "Product.read", "TruckingService.read"] }
 staff = { allow = ["SalesOrder.read", "SalesOrder.create", "SalesOrder.update", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Shipment.update", "Customer.read", "Customer.create", "Customer.update", "Warehouse.read", "Warehouse.create", "Warehouse.update", "TruckingService.read", "TruckingService.create", "TruckingService.update", "Product.read", "Product.create", "Product.update", "GreenCoffeeLot.read", "GreenCoffeeLot.create", "GreenCoffeeLot.update", "RoastBatch.read", "RoastBatch.create", "RoastBatch.update", "Subscription.read", "Subscription.create", "Subscription.update"] }
-# API-key actors receive the fallback `user` role. Scopes narrow their HTTP
-# surface; this role grants the underlying writes required by scoped workflows.
-user = { allow = ["SalesOrder.read", "SalesOrder.create", "SalesOrder.update", "OrderItem.read", "OrderItem.create", "Shipment.read", "Shipment.create", "Customer.read", "Product.read", "GreenCoffeeLot.read", "RoastBatch.read", "Subscription.read", "Subscription.update"] }
 admin = { allow = ["*.*"] }
 
 [[auth.apiKeys]]
@@ -1555,6 +1626,7 @@ keyEnv = "RIDGELINE_AGENT_API_KEY"
 agentId = "ridgeline-agent"
 credentialId = "ridgeline-demo-credential"
 displayName = "Ridgeline Agent"
+roles = ["staff"]
 scopes = ["ridgeline.orders.read", "ridgeline.orders.transition", "ridgeline.inventory.read", "ridgeline.accounts.read", "ridgeline.subscriptions.read", "ridgeline.subscriptions.transition"]
 
 [ui]

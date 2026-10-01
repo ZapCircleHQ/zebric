@@ -1,5 +1,11 @@
 # Zebric CRM gap ledger
 
+## 0.6.0 migration update
+
+- Fixed: lead/opportunity transitions, reviewed outbound-message state, reviewed reply classification, and insight disposition use domain commands.
+- Fixed: the CRM API key declares the `sales_agent` role; policies use the unified actor and preserve trusted delegated identity.
+- Still open: no safe example-level binding proves which human delegated an API-key request, so Sarah's delegated-agent scenario needs host integration. Google Places/SendGrid also remain webhook workflows rather than typed service adapters.
+
 This is the implementation ledger for `examples/crm`, not a wishlist written in
 advance. Priorities reflect correctness and production impact. Workarounds are
 kept visible even when the demo succeeds.

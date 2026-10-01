@@ -6,6 +6,15 @@ const DiscoverySchema = z.object({
   openapi: z.string(),
   events: z.string().optional(),
   skills: z.array(z.string()).optional(),
+  commands: z.array(z.object({
+    name: z.string(),
+    operationId: z.string(),
+    entity: z.string(),
+    label: z.string().optional(),
+    description: z.string().optional(),
+    input: z.record(z.string(), z.unknown()),
+    scopes: z.array(z.string()),
+  })).optional(),
   capabilities: z.record(z.string(), z.boolean()).optional(),
   contract: z.object({
     version: z.literal('1'),

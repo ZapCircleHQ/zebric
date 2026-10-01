@@ -15,6 +15,14 @@ import type { QueryExecutor } from '../database/query-executor.js'
 import type { NotificationManager } from '@zebric/notifications'
 import { createWorkflowLogger, type Logger } from '@zebric/observability'
 import { evaluateCondition as evaluateWorkflowCondition } from '@zebric/runtime-core'
+import {
+  DomainError,
+  ServiceFailureError,
+  WorkflowFailureError,
+  type CommandExecutor,
+  type ExecutionObserverPort,
+  type ServiceInvoker,
+} from '@zebric/runtime-core'
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 export interface EmailService {
@@ -35,6 +43,9 @@ export interface WorkflowExecutorOptions {
   emailService?: EmailService
   httpClient?: HttpClient
   notificationService?: NotificationManager
+  commandExecutor?: CommandExecutor
+  executionObserver?: ExecutionObserverPort
+  services?: ServiceInvoker
   logger?: Logger
   onEntityEvent?: (event: {
     entity: string
@@ -56,6 +67,9 @@ export class WorkflowExecutor {
   private emailService?: EmailService
   private httpClient?: HttpClient
   private notificationService?: NotificationManager
+  private commandExecutor?: CommandExecutor
+  private executionObserver?: ExecutionObserverPort
+  private services?: ServiceInvoker
   private logger?: Logger
   private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
   private readonly deferredEntityEvents = new AsyncLocalStorage<Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]>>()
@@ -66,8 +80,16 @@ export class WorkflowExecutor {
     this.emailService = options.emailService
     this.httpClient = options.httpClient
     this.notificationService = options.notificationService
+    this.commandExecutor = options.commandExecutor
+    this.executionObserver = options.executionObserver
+    this.services = options.services
     this.logger = options.logger
     this.onEntityEvent = options.onEntityEvent
+  }
+
+  setCommandExecutor(commandExecutor: CommandExecutor, executionObserver?: ExecutionObserverPort): void {
+    this.commandExecutor = commandExecutor
+    if (executionObserver) this.executionObserver = executionObserver
   }
 
   /**
@@ -79,6 +101,10 @@ export class WorkflowExecutor {
     options?: { beforeTransactionalCommit?: () => Promise<void> }
   ): Promise<WorkflowExecutionResult> {
     const logs: WorkflowLog[] = []
+    const workflowSpan = this.executionObserver?.startSpan('zebric.workflow', {
+      'zebric.workflow.name': workflow.name,
+      'zebric.workflow.trigger': context.trigger.type,
+    }, context.trace?.correlationId ?? context.trace?.executionId)
     const workflowLogger = this.logger
       ? createWorkflowLogger(this.logger, workflow.name, {
           correlationId: context.trace?.correlationId,
@@ -136,6 +162,11 @@ export class WorkflowExecutor {
 
           log('debug', `Executing step ${i + 1}/${workflow.steps.length}: ${step.type}`)
 
+          const stepSpan = this.executionObserver?.startSpan('zebric.workflow.step', {
+            'zebric.workflow.name': workflow.name,
+            'zebric.workflow.step.type': step.type,
+            'zebric.workflow.step.index': i,
+          }, context.trace?.correlationId ?? context.trace?.executionId)
           try {
             const result = await this.executeStep(step, context)
 
@@ -143,7 +174,9 @@ export class WorkflowExecutor {
               context.variables[step.assignTo] = result
               log('debug', `Assigned result to variable: ${step.assignTo}`, result)
             }
+            this.executionObserver?.endSpan(stepSpan)
           } catch (error) {
+            this.executionObserver?.endSpan(stepSpan, error)
             const errorMessage = error instanceof Error ? error.message : String(error)
             log('error', `Step ${i + 1} failed: ${errorMessage}`, error)
             throw error
@@ -170,6 +203,7 @@ export class WorkflowExecutor {
       }
 
       log('info', `Workflow completed: ${workflow.name}`)
+      this.executionObserver?.endSpan(workflowSpan)
 
       return {
         success: true,
@@ -177,12 +211,20 @@ export class WorkflowExecutor {
         logs,
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      log('error', `Workflow failed: ${errorMessage}`, error)
+      this.executionObserver?.endSpan(workflowSpan, error)
+      const failure = error instanceof DomainError
+        ? error
+        : new WorkflowFailureError(
+            error instanceof Error ? error.message : String(error),
+            { workflow: workflow.name },
+            { cause: error },
+          )
+      log('error', `Workflow failed: ${failure.message}`, failure)
 
       return {
         success: false,
-        error: errorMessage,
+        error: failure.message,
+        errorCode: failure.code,
         logs,
       }
     }
@@ -195,6 +237,12 @@ export class WorkflowExecutor {
     switch (step.type) {
       case 'query':
         return this.executeQuery(step, context)
+
+      case 'command':
+        return this.executeCommand(step, context)
+
+      case 'service':
+        return this.executeService(step, context)
 
       case 'email':
         return this.executeEmail(step, context)
@@ -220,6 +268,47 @@ export class WorkflowExecutor {
       default:
         throw new Error(`Unknown step type: ${(step as any).type}`)
     }
+  }
+
+  private async executeCommand(step: WorkflowStep, context: WorkflowContext): Promise<any> {
+    if (!this.commandExecutor) throw new Error('Command executor is not configured')
+    if (!step.command) throw new Error('Command step requires command')
+    if (!step.recordId) throw new Error('Command step requires recordId')
+    const recordId = String(this.resolveVariables(step.recordId, context))
+    const input = step.input ? this.resolveTypedVariables(step.input, context) : {}
+    const definition = this.commandExecutor.registry.get(step.command)
+    const before = definition
+      ? await this.dataLayer.findById(definition.entity, recordId, { session: context.session }).catch(() => null)
+      : null
+    const result = await this.commandExecutor.execute({
+      command: step.command,
+      recordId,
+      input,
+      context: {
+        session: context.session,
+        source: 'workflow',
+        workflow: String((context.variables as any)?.__zebric?.currentWorkflow ?? 'unknown'),
+        workflowContext: context.variables,
+        correlationId: context.trace?.correlationId ?? context.trace?.executionId,
+      },
+    })
+    if (definition) {
+      await this.emitEntityEvent(definition.entity, 'update', before, result.record, context)
+    }
+    return result.record
+  }
+
+  private async executeService(step: WorkflowStep, context: WorkflowContext): Promise<unknown> {
+    if (!this.services) throw new ServiceFailureError('Service registry is not configured')
+    if (!step.service) throw new ServiceFailureError('Service step requires service')
+    if (!step.operation) throw new ServiceFailureError('Service step requires operation')
+    const params = step.params ? this.resolveTypedVariables(step.params, context) : {}
+    return this.services.invoke(step.service, step.operation, params, {
+      actor: context.session?.actor,
+      correlationId: context.trace?.correlationId ?? context.trace?.executionId,
+      workflow: String((context.variables as any)?.__zebric?.currentWorkflow ?? 'unknown'),
+      workflowContext: context.variables,
+    })
   }
 
   /**
@@ -535,6 +624,26 @@ export class WorkflowExecutor {
       return resolved
     }
 
+    return value
+  }
+
+  /** Preserve arrays/objects when a value is a complete template expression. */
+  private resolveTypedVariables(value: any, context: WorkflowContext): any {
+    if (typeof value === 'string') {
+      const exact = value.match(/^\s*\{\{([^}]+)\}\}\s*$/)
+      if (exact?.[1]) {
+        const resolved = this.resolveTemplateValue(context, exact[1].trim())
+        if (resolved !== undefined) return resolved
+      }
+      return this.resolveVariables(value, context)
+    }
+    if (Array.isArray(value)) return value.map(item => this.resolveTypedVariables(item, context))
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+        key,
+        this.resolveTypedVariables(item, context),
+      ]))
+    }
     return value
   }
 

@@ -5,7 +5,7 @@
  * Separate from application logging, immutable once written.
  */
 
-import { appendFileSync, existsSync, mkdirSync } from 'fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs'
 import { dirname } from 'path'
 import type { UserSession } from '@zebric/runtime-core'
 
@@ -31,6 +31,7 @@ export enum AuditEventType {
 
   // Agent and workflow events
   AGENT_ACTION = 'agent.action',
+  DOMAIN_COMMAND = 'domain.command',
   WORKFLOW_COMPLETED = 'workflow.completed',
   WORKFLOW_FAILED = 'workflow.failed',
 
@@ -84,7 +85,7 @@ export interface AuditLogEntry {
   requestId?: string
   auditId?: string
   correlationId?: string
-  actorType?: 'user' | 'agent' | 'system'
+  actorType?: 'user' | 'agent' | 'service' | 'system'
   actorId?: string
   agentId?: string
   credentialId?: string
@@ -146,6 +147,35 @@ export class AuditLogger {
       console.error('[AUDIT ERROR] Failed to write audit log:', error)
       return false
     }
+  }
+
+  /** Query a bounded, filtered view of immutable audit history. Authorization is
+   * performed by the runtime route before this method is called. */
+  query(filters: {
+    entityType: string
+    entityId: string
+    command?: string
+    workflow?: string
+    actorId?: string
+    limit?: number
+  }): AuditLogEntry[] {
+    if (!this.config.enabled || !existsSync(this.logPath)) return []
+    const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200)
+    const lines = readFileSync(this.logPath, 'utf8').split('\n').filter(Boolean)
+    const matches: AuditLogEntry[] = []
+    for (let index = lines.length - 1; index >= 0 && matches.length < limit; index--) {
+      try {
+        const entry = JSON.parse(lines[index]!) as AuditLogEntry
+        if (entry.entityType !== filters.entityType || entry.entityId !== filters.entityId) continue
+        if (filters.command && entry.actionName !== filters.command && entry.metadata?.command !== filters.command) continue
+        if (filters.workflow && entry.workflowName !== filters.workflow && entry.metadata?.workflow !== filters.workflow) continue
+        if (filters.actorId && entry.actorId !== filters.actorId && entry.userId !== filters.actorId) continue
+        matches.push(entry)
+      } catch {
+        // Ignore malformed historical lines rather than exposing or failing on raw storage.
+      }
+    }
+    return matches
   }
 
   /**

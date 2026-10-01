@@ -1,6 +1,6 @@
 {
   "name": "@zebric/agent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "First-party agent for operating and authoring Zebric applications",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,13 +39,13 @@
     "@langchain/core": "^1.2.5",
     "@langchain/langgraph": "^1.4.9",
     "@zebric/runtime-core": "workspace:*",
+    "@zebric/runtime-node": "workspace:*",
     "deepagents": "^1.12.2",
     "langchain": "^1.5.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.19.17",
-    "@zebric/runtime-node": "workspace:*",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   },

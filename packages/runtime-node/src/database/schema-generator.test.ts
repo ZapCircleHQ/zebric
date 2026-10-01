@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import Database from 'better-sqlite3'
 import { SchemaGenerator } from './schema-generator.js'
 
 function entity(name: string, fields: any[], indexes?: any[]) {
@@ -60,9 +61,9 @@ describe('SchemaGenerator', () => {
       )
     )
 
-    expect(statements[0]).toContain('CREATE TABLE IF NOT EXISTS blog_post')
-    expect(statements.join('\n')).toContain('CREATE INDEX IF NOT EXISTS idx_blog_title ON blog_post (title);')
-    expect(statements.join('\n')).toContain('CREATE UNIQUE INDEX IF NOT EXISTS idx_BlogPost_title_unique ON blog_post (title);')
+    expect(statements[0]).toContain('CREATE TABLE IF NOT EXISTS "blog_post"')
+    expect(statements.join('\n')).toContain('CREATE INDEX IF NOT EXISTS "idx_blog_title" ON "blog_post" ("title");')
+    expect(statements.join('\n')).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "idx_BlogPost_title_unique" ON "blog_post" ("title");')
   })
 
   it('generates alter table add-column statement and unique post statement', () => {
@@ -72,10 +73,23 @@ describe('SchemaGenerator', () => {
       { name: 'status', type: 'Text', required: true, unique: true }
     )
 
-    expect(result.statement).toBe('ALTER TABLE todo_item ADD COLUMN status TEXT NOT NULL;')
+    expect(result.statement).toBe('ALTER TABLE "todo_item" ADD COLUMN "status" TEXT NOT NULL;')
     expect(result.postStatements[0]).toBe(
-      'CREATE UNIQUE INDEX IF NOT EXISTS idx_TodoItem_status_unique ON todo_item (status);'
+      'CREATE UNIQUE INDEX IF NOT EXISTS "idx_TodoItem_status_unique" ON "todo_item" ("status");'
     )
+  })
+
+  it('quotes SQL reserved entity and field names in executable SQLite DDL', () => {
+    const generator = new SchemaGenerator('sqlite')
+    const statements = generator.generateCreateStatementsForEntity(entity('Order', [
+      { name: 'id', type: 'ULID', primary_key: true },
+      { name: 'group', type: 'Text', required: true, unique: true },
+    ], [{ fields: ['group'], name: 'index', unique: false }]))
+    const database = new Database(':memory:')
+
+    expect(() => database.exec(statements.join('\n'))).not.toThrow()
+    expect(database.prepare('SELECT "group" FROM "order"').all()).toEqual([])
+    database.close()
   })
 
   it('maps names and default modifiers in column definitions', () => {
@@ -83,13 +97,13 @@ describe('SchemaGenerator', () => {
 
     expect(generator.getTableName('BlogPost')).toBe('blog_post')
     expect(generator.getColumnDefinition({ name: 'isActive', type: 'Boolean', default: true } as any))
-      .toBe('is_active INTEGER DEFAULT 1')
+      .toBe('"is_active" INTEGER DEFAULT 1')
     expect(generator.getColumnDefinition({ name: 'rating', type: 'Float', default: 4.5 } as any))
-      .toBe('rating REAL DEFAULT 4.5')
+      .toBe('"rating" REAL DEFAULT 4.5')
     expect(generator.getColumnDefinition({ name: 'title', type: 'Text', default: 'hello' } as any))
-      .toBe("title TEXT DEFAULT 'hello'")
+      .toBe("\"title\" TEXT DEFAULT 'hello'")
     expect(generator.getColumnDefinition({ name: 'createdAt', type: 'DateTime', default: 'now' } as any))
-      .toBe('created_at INTEGER DEFAULT (unixepoch())')
+      .toBe('"created_at" INTEGER DEFAULT (unixepoch())')
     expect(new SchemaGenerator('postgres').getColumnDefinition({ name: 'createdAt', type: 'DateTime', default: 'now' } as any))
       .toBe('"created_at" TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP')
   })
@@ -100,7 +114,7 @@ describe('SchemaGenerator', () => {
       { name: 'id', type: 'ULID', primary_key: true, unique: true, required: true } as any,
       { forAlter: true }
     )
-    expect(sql).toBe('id TEXT')
+    expect(sql).toBe('"id" TEXT')
   })
 
   it('generates initial schema including Better Auth tables when auth is enabled', () => {
@@ -123,7 +137,7 @@ describe('SchemaGenerator', () => {
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS session')
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS account')
     expect(combined).toContain('CREATE TABLE IF NOT EXISTS verification')
-    expect(combined).toContain('CREATE TABLE IF NOT EXISTS task')
+    expect(combined).toContain('CREATE TABLE IF NOT EXISTS "task"')
     const userTableMatches = combined.match(/CREATE TABLE IF NOT EXISTS user \(/g) || []
     expect(userTableMatches).toHaveLength(1)
   })

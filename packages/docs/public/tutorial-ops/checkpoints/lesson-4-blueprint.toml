@@ -1,4 +1,4 @@
-version = "0.2.0"
+version = "0.6.0"
 
 [project]
 name = "HarborFlow Exceptions"
@@ -6,7 +6,7 @@ version = "1.0.0"
 description = "Customer exception request tracking for HarborFlow operations."
 
 [project.runtime]
-min_version = "0.2.0"
+min_version = "0.6.0"
 
 [[entities]]
 name = "TeamMember"
