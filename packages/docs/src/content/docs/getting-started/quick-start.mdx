@@ -111,12 +111,13 @@ Zebric read your TOML blueprint and:
 2. **Generated routes** for each page (`/`, `/posts/new`, `/posts/:id`)
 3. **Rendered server-side HTML** using the layout type you specified (list, form, detail)
 4. **Wired up CRUD operations** so the form creates records and the list queries them
+5. **Left authentication disabled** because the Blueprint has no `[auth]` section, so Better Auth tables are not needed for this public app
 
 No code was generated. The runtime interprets the blueprint directly.
 
 ## Next Steps
 
-- Add [authentication](/reference/api/) with `[auth]` and `providers = ["email"]`
+- Add [authentication](/building/security/) with `[auth]` and `providers = ["email"]`
 - Define [access control](/building/blueprint/) on entities with `[entity.Post.access]`
 - Add [workflows](/building/workflows/) to automate status transitions
 - Explore the [example blueprints](https://github.com/ZapCircleHQ/zebric/tree/main/examples) for more patterns

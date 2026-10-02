@@ -125,6 +125,29 @@ function initApp(sm: ServerManager): Hono {
   return smAny.app
 }
 
+describe('authentication routes', () => {
+  it('does not invoke Better Auth routes when authentication is not configured', async () => {
+    const handler = vi.fn(async () => new Response('auth-handler'))
+    const app = initApp(new ServerManager(stubDeps({
+      authProvider: { getAuthInstance: () => ({ handler }) },
+    })))
+
+    expect(await (await app.request('/api/auth/session')).text()).toBe('ok')
+    expect(handler).not.toHaveBeenCalled()
+  })
+
+  it('invokes Better Auth routes when authentication is configured', async () => {
+    const handler = vi.fn(async () => new Response('auth-handler'))
+    const app = initApp(new ServerManager(stubDeps({
+      auth: { providers: ['email'] },
+      authProvider: { getAuthInstance: () => ({ handler }) },
+    })))
+
+    expect(await (await app.request('/api/auth/session')).text()).toBe('auth-handler')
+    expect(handler).toHaveBeenCalledOnce()
+  })
+})
+
 // ============================================================================
 // Security fix regression tests
 // ============================================================================
