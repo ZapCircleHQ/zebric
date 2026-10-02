@@ -50,6 +50,8 @@ fields = [
 [entity.Post.access]
 read = true
 create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
 
 # Home page — list all posts
 [page."/"]
@@ -125,7 +127,7 @@ Zebric read your TOML blueprint and:
 3. **Rendered server-side HTML** using the layout type you specified (list, form, detail)
 4. **Wired up CRUD operations** so the form creates records and the list queries them
 5. **Enabled email/password authentication** and server-side sessions through Better Auth
-6. **Kept reading public** while requiring authentication at both the create page and entity-operation layers
+6. **Kept reading public** while requiring authentication for every create, update, or delete operation
 
 No code was generated. The runtime interprets the blueprint directly.
 

@@ -453,6 +453,9 @@ jobs:
       - name: Astro docs check
         run: pnpm -C packages/docs check
 
+      - name: Test documented blueprints
+        run: pnpm -C packages/docs test
+
       - name: Link check built docs
         uses: lycheeverse/lychee-action@v2
         with:

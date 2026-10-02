@@ -8,6 +8,8 @@
     "start": "astro dev",
     "build": "astro build",
     "check": "astro check",
+    "pretest": "pnpm --filter @zebric/runtime-core build",
+    "test": "node --test tests/*.test.mjs",
     "smoke:tutorial-ops": "node ../../scripts/smoke-tutorial-ops-checkpoints.mjs",
     "preview": "astro preview",
     "astro": "astro"
