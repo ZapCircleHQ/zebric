@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-worker",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Zebric Runtime - Cloudflare Workers Adapter",
   "repository": {
     "type": "git",

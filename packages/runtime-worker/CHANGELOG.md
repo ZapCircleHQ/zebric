@@ -1,5 +1,12 @@
 # @zebric/runtime-worker
 
+## 0.6.2
+
+### Patch Changes
+
+- @zebric/runtime-core@0.6.2
+- @zebric/runtime-hono@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes

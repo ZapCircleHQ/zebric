@@ -1,5 +1,15 @@
 # @zebric/runtime-node
 
+## 0.6.2
+
+### Patch Changes
+
+- c9b9e20: Do not initialize Better Auth when a Blueprint has no `[auth]` configuration. Public applications now use a `DisabledAuthProvider` that returns no session, so Better Auth's database tables are no longer required.
+  - @zebric/runtime-core@0.6.2
+  - @zebric/runtime-hono@0.6.2
+  - @zebric/notifications@0.6.2
+  - @zebric/observability@0.6.2
+
 ## 0.6.1
 
 ### Patch Changes
