@@ -33,6 +33,10 @@ description = "A simple blog"
 [project.runtime]
 min_version = "0.6.0"
 
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
 # Define a Post entity with three fields
 [entity.Post]
 fields = [
@@ -42,6 +46,12 @@ fields = [
   { name = "published", type = "Boolean", default = false },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
+
+[entity.Post.access]
+read = true
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
 
 # Home page — list all posts
 [page."/"]
@@ -56,7 +66,7 @@ orderBy = { createdAt = "desc" }
 # Create-post form
 [page."/posts/new"]
 title = "New Post"
-auth = "none"
+auth = "required"
 layout = "form"
 
 [page."/posts/new".form]
@@ -99,9 +109,14 @@ zebric dev --blueprint blueprint.toml --seed
 
 Open `http://localhost:3000` in your browser. You'll see:
 
-- A list page at `/` showing all posts
-- A form at `/posts/new` to create a post
-- A detail page at `/posts/:id` for each post
+- A public list page at `/` showing all posts
+- A public detail page at `/posts/:id` for each post
+- A protected form at `/posts/new` for signed-in users
+
+Visit `/posts/new`. Zebric redirects you to its built-in sign-in page because
+the form has `auth = "required"`. Select **Sign up**, create an account, then
+return to `/posts/new` and publish your first post. Readers can visit the list
+and detail pages without signing in.
 
 ## What Just Happened?
 
@@ -111,12 +126,14 @@ Zebric read your TOML blueprint and:
 2. **Generated routes** for each page (`/`, `/posts/new`, `/posts/:id`)
 3. **Rendered server-side HTML** using the layout type you specified (list, form, detail)
 4. **Wired up CRUD operations** so the form creates records and the list queries them
+5. **Enabled email/password authentication** and server-side sessions through Better Auth
+6. **Kept reading public** while requiring authentication for every create, update, or delete operation
 
 No code was generated. The runtime interprets the blueprint directly.
 
 ## Next Steps
 
-- Add [authentication](/reference/api/) with `[auth]` and `providers = ["email"]`
-- Define [access control](/building/blueprint/) on entities with `[entity.Post.access]`
+- Learn more about [authentication and access control](/building/security/)
+- Add an `authorId` field and let authors update their own posts
 - Add [workflows](/building/workflows/) to automate status transitions
 - Explore the [example blueprints](https://github.com/ZapCircleHQ/zebric/tree/main/examples) for more patterns

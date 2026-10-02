@@ -13,7 +13,7 @@ import type { Logger } from '@zebric/observability'
 import type { DatabaseConfig, EngineConfig } from '../types/index.js'
 import { DatabaseConnection, QueryExecutor } from '../database/index.js'
 import { SessionManager, PermissionManager, type AuthProvider, ErrorSanitizer } from '@zebric/runtime-core'
-import { createBetterAuthProvider, type AuthProviderConfig } from '../auth/index.js'
+import { createBetterAuthProvider, DisabledAuthProvider, type AuthProviderConfig } from '../auth/index.js'
 import { WorkflowManager, ProductionHttpClient } from '../workflows/index.js'
 import type { WorkflowJob } from '../workflows/types.js'
 import { type CachePort, MemoryCache, RedisCache } from '../cache/index.js'
@@ -206,6 +206,27 @@ export class SubsystemInitializer {
     sessionManager: SessionManager
     permissionManager: PermissionManager
   }> {
+    // Keep auth-free applications auth-free. Constructing Better Auth checks for
+    // its user/session tables, which are intentionally absent when the Blueprint
+    // has no [auth] block.
+    if (!this.blueprint.auth) {
+      this.permissionManager = new PermissionManager()
+      this.authProvider = new DisabledAuthProvider()
+      this.sessionManager = new SessionManager(this.authProvider)
+
+      if (this.queryExecutor) {
+        this.queryExecutor.setPermissionManager(this.permissionManager)
+      }
+
+      this.logger.info('Authentication disabled (no [auth] configuration)')
+
+      return {
+        authProvider: this.authProvider,
+        sessionManager: this.sessionManager,
+        permissionManager: this.permissionManager,
+      }
+    }
+
     const dbPath = resolveAuthDbPath(this.config)
     const host = this.config.host || 'localhost'
     const port = this.config.port ?? 3000

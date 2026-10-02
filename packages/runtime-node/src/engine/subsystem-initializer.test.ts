@@ -1,5 +1,32 @@
 import { describe, expect, it, vi } from 'vitest'
-import { drainAuditOutbox, resolveAuthDbPath } from './subsystem-initializer.js'
+import { DisabledAuthProvider } from '../auth/index.js'
+import { SubsystemInitializer, drainAuditOutbox, resolveAuthDbPath } from './subsystem-initializer.js'
+
+describe('authentication initialization', () => {
+  it('does not initialize Better Auth when the Blueprint has no auth configuration', async () => {
+    const logger = { info: vi.fn(), child: vi.fn() }
+    const initializer = new SubsystemInitializer({
+      blueprint: {
+        version: '0.6.0',
+        project: { name: 'Public App', version: '1.0.0', runtime: { min_version: '0.6.0' } },
+        entities: [],
+        pages: [{ path: '/', title: 'Home', layout: 'list', auth: 'none' }],
+      },
+      config: { blueprintPath: 'blueprint.toml' },
+      metrics: {} as any,
+      plugins: {} as any,
+      auditLogger: {} as any,
+      errorSanitizer: {} as any,
+      logger: logger as any,
+    })
+
+    const { authProvider, sessionManager } = await initializer.initializeAuth()
+
+    expect(authProvider).toBeInstanceOf(DisabledAuthProvider)
+    await expect(sessionManager.getSession(new Request('http://localhost/'))).resolves.toBeNull()
+    expect(logger.info).toHaveBeenCalledWith('Authentication disabled (no [auth] configuration)')
+  })
+})
 
 describe('resolveAuthDbPath', () => {
   it('uses an explicit sqlite database.url over dev.dbPath', () => {
