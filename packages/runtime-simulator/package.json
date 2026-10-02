@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-simulator",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Browser-only Zebric simulator runtime",
   "repository": {
     "type": "git",
