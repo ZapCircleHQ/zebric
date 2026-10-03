@@ -35,6 +35,7 @@ import type {
 import { createQueryExecutorPort, createSessionManagerPort, createAuditLoggerPort } from './engine-port-factory.js'
 import { setupGracefulShutdown, setupHotReload as setupHotReloadFn, loadPlugins as loadPluginsFn, initializePluginAPIProvider } from './engine-lifecycle.js'
 import { AgentEventBus } from './engine/agent-event-bus.js'
+import { seedDatabase } from './engine/seed.js'
 
 const require = createRequire(import.meta.url)
 const { version: ENGINE_VERSION } = require('../package.json') as { version: string }
@@ -147,6 +148,10 @@ export class ZebricEngine extends EventEmitter {
       const { database, queryExecutor } = await this.subsystemInitializer.initializeDatabase()
       this.database = database
       this.queryExecutor = queryExecutor
+
+      if (this.config.dev?.seed) {
+        await seedDatabase(this.blueprint, queryExecutor, this.logger)
+      }
 
       // 5. Initialize Authentication
       const { authProvider, sessionManager } = await this.subsystemInitializer.initializeAuth()

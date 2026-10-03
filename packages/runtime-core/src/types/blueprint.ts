@@ -44,6 +44,8 @@ export interface Entity {
   access?: AccessRules
   indexes?: Index[]
   protection?: EntityProtection
+  /** Sample records inserted by `zebric dev --seed` when the entity is empty */
+  seed?: Array<Record<string, unknown>>
 }
 
 export interface EntityProtection {

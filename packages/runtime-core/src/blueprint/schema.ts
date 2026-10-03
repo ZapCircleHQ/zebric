@@ -107,6 +107,7 @@ const EntitySchema = z.object({
     fields: z.array(z.string().min(1)).min(1),
     commands: z.array(z.string().min(1)).min(1),
   }).optional(),
+  seed: z.array(z.record(StringKeySchema, z.unknown())).optional(),
 })
 
 // ============================================================================

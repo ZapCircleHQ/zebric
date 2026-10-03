@@ -70,3 +70,14 @@ test('quickstart Post access allows public reads and authenticated writes only',
     assert.equal(authenticatedAllowed, true, `authenticated ${action} access`)
   }
 })
+
+test('quickstart Post entity declares sample seed posts', async () => {
+  const blueprint = await loadQuickStartBlueprint()
+  const post = blueprint.entities.find((entity) => entity.name === 'Post')
+
+  assert.ok(post?.seed && post.seed.length >= 3, 'Post must declare sample seed records')
+  for (const record of post.seed) {
+    assert.equal(typeof record.title, 'string')
+    assert.equal(typeof record.body, 'string')
+  }
+})
