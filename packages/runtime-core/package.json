@@ -39,8 +39,10 @@
     "url": "https://github.com/ZapCircleHQ/zebric/issues"
   },
   "scripts": {
-    "prebuild": "node ./scripts/build-css.mjs",
+    "prebuild": "node ./scripts/build-css.mjs && node ./scripts/build-version.mjs",
     "build": "tsc",
+    "build:version": "node ./scripts/build-version.mjs",
+    "pretest": "node ./scripts/build-version.mjs",
     "build:css": "node ./scripts/build-css.mjs",
     "dev": "tsc --watch",
     "test": "vitest run",

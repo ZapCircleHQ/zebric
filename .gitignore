@@ -67,3 +67,4 @@ temp/
 *.tmp
 packages/runtime-core/src/renderer/styles/tailwind.generated.css
 packages/runtime-core/src/renderer/styles/tailwind.generated.ts
+packages/runtime-core/src/version.generated.ts

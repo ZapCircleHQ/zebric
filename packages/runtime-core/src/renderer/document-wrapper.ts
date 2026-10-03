@@ -13,6 +13,7 @@ import { renderNavigation } from './navigation-renderer.js'
 import { renderFlash } from './feedback-renderer.js'
 import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
 import { renderDesignSystemStyles, resolveDesignSystem, withDesignSystemTheme } from './design-system.js'
+import { ZEBRIC_VERSION } from '../version.generated.js'
 
 export interface WrapInDocumentOptions {
   includeClientRuntime?: boolean
@@ -152,7 +153,7 @@ export class DocumentWrapper {
       <footer class="border-t border-gray-200 mt-12 py-6">
         <div class="${this.theme.container}">
           <p class="text-center text-sm text-gray-500">
-            Powered by Zebric Engine v0.1.1
+            Powered by Zebric Engine v${ZEBRIC_VERSION}
           </p>
         </div>
       </footer>
