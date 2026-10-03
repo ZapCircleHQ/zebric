@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-core",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Zebric Runtime Core - Platform-agnostic engine and ports",
   "type": "module",
   "main": "./dist/index.js",

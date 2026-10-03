@@ -1,5 +1,14 @@
 # @zebric/cli
 
+## 0.6.3
+
+### Patch Changes
+
+- 25fabeb: Make `zebric dev --seed` work: entities can declare a `seed` array of sample records that is inserted when the entity is empty. The quickstart blueprint now ships sample posts.
+- Updated dependencies [25fabeb]
+  - @zebric/runtime-core@0.6.3
+  - @zebric/runtime-node@0.6.3
+
 ## 0.6.2
 
 ### Patch Changes
