@@ -1,6 +1,6 @@
 {
   "name": "@zebric/mcp-server",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "MCP server adapter for Zebric applications",
   "type": "module",
   "main": "./dist/index.js",
