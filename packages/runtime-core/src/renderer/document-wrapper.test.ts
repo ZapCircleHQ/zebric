@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { DocumentWrapper } from './document-wrapper.js'
 import { defaultTheme } from './theme.js'
 import { safe } from '../security/html-escape.js'
 import type { Blueprint } from '../types/blueprint.js'
+import { ZEBRIC_VERSION } from '../version.generated.js'
 
 function makeBlueprint(overrides: Partial<Blueprint> = {}): Blueprint {
   return {
@@ -94,5 +96,24 @@ describe('DocumentWrapper Zazzle rendering', () => {
     expect(html).toContain('data-zebric-feedback="toast"')
     expect(html).toContain('fixed right-4 top-4')
     expect(html).toContain('Saved.')
+  })
+})
+
+describe('DocumentWrapper footer version', () => {
+  const pkg = JSON.parse(
+    readFileSync(new URL('../../package.json', import.meta.url), 'utf8')
+  ) as { version: string }
+
+  it('keeps the generated version in sync with package.json', () => {
+    expect(ZEBRIC_VERSION).toBe(pkg.version)
+  })
+
+  it('renders the package version in the footer', () => {
+    const wrapper = new DocumentWrapper(makeBlueprint(), defaultTheme)
+
+    const html = wrapper.wrapInDocument('Home', safe('<p>Content</p>'))
+
+    expect(html).toContain(`Powered by Zebric Engine v${pkg.version}`)
+    expect(html).not.toContain('v0.1.1')
   })
 })
