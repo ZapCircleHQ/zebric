@@ -46,6 +46,11 @@ fields = [
   { name = "published", type = "Boolean", default = false },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
+seed = [
+  { title = "Welcome to Zebric", body = "This blog runs from a single TOML blueprint. Edit blueprint.toml and the page reloads.", published = true },
+  { title = "How seeding works", body = "These sample posts come from the seed array on the Post entity. zebric dev --seed inserts them when the table is empty.", published = true },
+  { title = "Write your own", body = "Sign up, visit /posts/new, and publish your first post.", published = false }
+]
 
 [entity.Post.access]
 read = true
@@ -109,7 +114,7 @@ zebric dev --blueprint blueprint.toml --seed
 
 Open `http://localhost:3000` in your browser. You'll see:
 
-- A public list page at `/` showing all posts
+- A public list page at `/` showing all posts, including the three sample posts from `seed`
 - A public detail page at `/posts/:id` for each post
 - A protected form at `/posts/new` for signed-in users
 
