@@ -27,8 +27,8 @@ describe('ZebricWorkersEngine', () => {
   beforeEach(() => {
     env = {
       DB: new MockD1Database(),
-      CACHE: new MockKVNamespace(),
-      STORAGE: new MockR2Bucket()
+      CACHE_KV: new MockKVNamespace(),
+      FILES: new MockR2Bucket()
     }
 
     engine = new ZebricWorkersEngine({
@@ -40,6 +40,8 @@ describe('ZebricWorkersEngine', () => {
   describe('initialization', () => {
     it('should initialize with inline blueprint', () => {
       expect(engine).toBeDefined()
+      expect(engine.getCache()).toBeDefined()
+      expect(engine.getStorage()).toBeDefined()
     })
 
     it('should throw error without blueprint', () => {
@@ -84,6 +86,8 @@ describe('ZebricWorkersEngine', () => {
       const response = await engine.fetch(request)
 
       expect(response.status).toBe(200)
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(response.headers.get('x-request-id')).toBeTruthy()
       const data = await response.json()
       expect(data.status).toBe('healthy')
     })
@@ -103,6 +107,158 @@ describe('ZebricWorkersEngine', () => {
       const response = await engine.fetch(request)
 
       expect(response.status).toBe(404)
+    })
+
+    it('renders file-backed templates bundled with the Worker', async () => {
+      const templateEngine = new ZebricWorkersEngine({
+        env,
+        blueprint: {
+          ...simpleBlueprint,
+          pages: [{
+            path: '/',
+            title: 'Bundled page',
+            auth: 'none',
+            template: { type: 'file', source: 'templates/page.liquid' },
+          }],
+        } as any,
+        templates: {
+          'templates/page.liquid': '<main data-runtime="worker">{{ page.title }}</main>',
+        },
+      })
+
+      const response = await templateEngine.fetch(new Request('https://example.com/'))
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain('<main data-runtime="worker">Bundled page</main>')
+    })
+
+    it('preloads file-backed templates from KV before rendering', async () => {
+      const templates = new MockKVNamespace()
+      await templates.put('template:templates/page.liquid', '<main>KV: {{ page.title }}</main>')
+      const templateEngine = new ZebricWorkersEngine({
+        env: { ...env, TEMPLATES_KV: templates },
+        blueprint: {
+          ...simpleBlueprint,
+          pages: [{
+            path: '/',
+            title: 'Edge page',
+            auth: 'none',
+            template: { type: 'file', source: 'templates/page.liquid' },
+          }],
+        } as any,
+      })
+
+      const response = await templateEngine.fetch(new Request('https://example.com/'))
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain('<main>KV: Edge page</main>')
+    })
+  })
+
+  describe('authentication', () => {
+    const authenticatedBlueprint: any = {
+      ...simpleBlueprint,
+      auth: { providers: ['email'] },
+      pages: [{ path: '/', title: 'Private', layout: 'dashboard' }],
+    }
+
+    it('initializes Better Auth on D1 by default for authenticated Blueprints', async () => {
+      const authEngine = new ZebricWorkersEngine({
+        env: {
+          ...env,
+          BETTER_AUTH_URL: 'http://localhost:8787',
+          BETTER_AUTH_SECRET: 'test-secret-that-is-at-least-32-characters',
+        },
+        blueprint: authenticatedBlueprint,
+      })
+
+      const response = await authEngine.fetch(new Request('http://localhost:8787/auth/sign-in'))
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain('Sign in to continue')
+      expect(authEngine.getAuthProvider()).toBeDefined()
+    })
+
+    it('requires an explicit auth secret for HTTPS deployments', () => {
+      expect(() => new ZebricWorkersEngine({
+        env: { ...env, BETTER_AUTH_URL: 'https://app.example.com' },
+        blueprint: authenticatedBlueprint,
+      })).toThrow('BETTER_AUTH_SECRET is required')
+    })
+
+    it('uses an injected auth provider for protected pages', async () => {
+      const authProvider = {
+        getAuthInstance: () => ({ handler: () => Response.json({ ok: true }) }),
+        getSession: async () => ({
+          id: 'session-1',
+          userId: 'user-1',
+          user: { id: 'user-1', email: 'edge@example.com' },
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 60_000),
+        }),
+        hasRole: () => false,
+        ownsResource: () => false,
+      }
+      const authEngine = new ZebricWorkersEngine({ env, blueprint: authenticatedBlueprint, authProvider })
+
+      const response = await authEngine.fetch(new Request('https://example.com/'))
+      expect(response.status).toBe(200)
+      expect(authEngine.getAuthProvider()).toBe(authProvider)
+    })
+
+    it('mounts the provider handler at the Node-compatible auth API path', async () => {
+      const authProvider = {
+        getAuthInstance: () => ({ handler: () => Response.json({ runtime: 'worker' }) }),
+        getSession: async () => null,
+        hasRole: () => false,
+        ownsResource: () => false,
+      }
+      const authEngine = new ZebricWorkersEngine({ env, blueprint: authenticatedBlueprint, authProvider })
+
+      const response = await authEngine.fetch(new Request('https://example.com/api/auth/session'))
+      expect(response.status).toBe(200)
+      expect(await response.json()).toEqual({ runtime: 'worker' })
+    })
+
+    it('issues and validates CSRF tokens for cookie-authenticated mutations', async () => {
+      const authProvider = {
+        getAuthInstance: () => ({ handler: () => Response.json({ signedIn: true }) }),
+        getSession: async () => null,
+        hasRole: () => false,
+        ownsResource: () => false,
+      }
+      const authEngine = new ZebricWorkersEngine({ env, blueprint: authenticatedBlueprint, authProvider })
+      const pageResponse = await authEngine.fetch(new Request('https://app.example.com/auth/sign-in'))
+      const cookie = pageResponse.headers.get('set-cookie')!
+      const token = /csrf-token=([^;]+)/.exec(cookie)?.[1]
+      expect(token).toBeTruthy()
+
+      const rejected = await authEngine.fetch(new Request('https://app.example.com/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { cookie },
+      }))
+      expect(rejected.status).toBe(403)
+
+      const accepted = await authEngine.fetch(new Request('https://app.example.com/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { cookie, 'x-csrf-token': token! },
+      }))
+      expect(accepted.status).toBe(200)
+    })
+
+    it('renders sign-in pages and keeps callback redirects on the request origin', async () => {
+      const authProvider = {
+        getAuthInstance: () => ({ handler: () => new Response(null, { status: 204 }) }),
+        getSession: async () => null,
+        hasRole: () => false,
+        ownsResource: () => false,
+      }
+      const authEngine = new ZebricWorkersEngine({ env, blueprint: authenticatedBlueprint, authProvider })
+
+      const response = await authEngine.fetch(new Request(
+        'https://app.example.com/auth/sign-in?callback=https://evil.example/steal?token=1'
+      ))
+      const html = await response.text()
+      expect(response.status).toBe(200)
+      expect(html).toContain('https://app.example.com/steal?token=1')
+      expect(html).not.toContain('https://evil.example')
     })
   })
 

@@ -43,6 +43,7 @@
   "dependencies": {
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
+    "better-auth": "^1.6.6",
     "cookie": "^1.0.2",
     "hono": "^4.12.14"
   },

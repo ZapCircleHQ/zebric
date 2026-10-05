@@ -7,7 +7,7 @@
 import type { Blueprint, Page, LayoutSlotName, BoardConfig } from '../types/blueprint.js'
 import type { RenderContext, SlotContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
-import type { Template, TemplateRegistry, TemplateLoader } from './template-system.js'
+import { StringTemplate, type Template, type TemplateRegistry, type TemplateLoader } from './template-system.js'
 import { html, escapeHtmlAttr, SafeHtml, safe } from '../security/html-escape.js'
 import { ComponentRenderers } from './component-renderers.js'
 import { RendererUtils } from './renderer-utils.js'
@@ -54,8 +54,16 @@ export class LayoutRenderers {
       // Check if template is already loaded
       let template = this.templateRegistry.get(templateName)
 
-      // If not loaded, try to load it
-      if (!template && this.templateLoader.loadSync) {
+      // If not loaded, compile inline content or load a file-backed template.
+      if (!template && page.template.type === 'inline') {
+        const engine = page.template.engine || 'liquid'
+        if (engine !== 'liquid') {
+          console.warn(`Inline page templates currently support Liquid only (page: ${page.path})`)
+          return null
+        }
+        template = new StringTemplate(templateName, 'liquid', this.builtinTemplateEngine.compile(page.template.source))
+        this.templateRegistry.set(templateName, template)
+      } else if (!template && this.templateLoader.loadSync) {
         const engine = page.template.engine || 'liquid'
         template = this.templateLoader.loadSync(page.template.source, engine)
         template.name = templateName

@@ -5,15 +5,19 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 ## Engine Features
 
 - ✅ **Platform-agnostic business logic** - Uses @zebric/runtime-core for routing, auth, validation
-- ✅ **Session management** - KV-backed sessions with automatic expiration
+- ✅ **Authentication** - Better Auth on D1, the same auth pages/API paths as Node, or an injected provider
+- ✅ **Session management** - Better Auth sessions or optional KV-backed custom sessions
 - ✅ **D1 database** - Cloudflare D1 SQL database adapter
 - ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
+- ✅ **File-backed templates** - Bundle imported files or preload them from KV
+- ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
 - ❌ **Workflows** - Rejected during initialization until a Workers executor is available
 
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
-`WorkersCookieManager`, `KVTemplateLoader`, and `BehaviorRegistry` as low-level
-adapters. These are available for custom Worker composition but are not
-automatically wired into `ZebricWorkersEngine`.
+`WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
+`BehaviorRegistry` as low-level adapters. `CACHE_KV` and `FILES` make cache and
+storage adapters available from the engine, but request execution does not use
+them automatically; the remaining adapters support custom Worker composition.
 
 ## Installation
 
@@ -29,12 +33,12 @@ Copy `wrangler.example.toml` to `wrangler.toml` and configure your bindings:
 
 ```toml
 compatibility_date = "2025-11-09"
-compatibility_flags = ["formdata_parser_supports_files"]
-node_compat = true
+compatibility_flags = ["nodejs_compat", "formdata_parser_supports_files"]
 
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "your-kv-id"
+[[rules]]
+type = "Text"
+globs = ["**/*.toml", "**/*.liquid"]
+fallthrough = true
 
 [[d1_databases]]
 binding = "DB"
@@ -48,47 +52,80 @@ bucket_name = "your-bucket"
 ### 2. Create Your Worker
 
 ```typescript
-import { Hono } from 'hono'
-import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import {
-  WorkersSessionManager,
-  WorkersQueryExecutor,
-  D1Adapter
-} from '@zebric/runtime-worker'
-import { blueprint } from './blueprint'
-
-export interface Env {
-  SESSIONS: KVNamespace
-  DB: D1Database
-}
+import { ZebricWorkersEngine, type WorkersEnv } from '@zebric/runtime-worker'
+import blueprintToml from './blueprint.toml'
 
 export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const db = new D1Adapter(env.DB)
-    const queryExecutor = new WorkersQueryExecutor(db, blueprint)
-    const sessionManager = new WorkersSessionManager({
-      kv: env.SESSIONS
+  fetch(request: Request, env: WorkersEnv) {
+    const engine = new ZebricWorkersEngine({
+      env,
+      blueprintContent: blueprintToml,
+      blueprintFormat: 'toml',
     })
-
-    const adapter = new BlueprintHttpAdapter({
-      blueprint,
-      queryExecutor,
-      sessionManager
-    })
-
-    const app = new Hono()
-    app.get('/health', async () => new Response(JSON.stringify({ status: 'healthy' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    }))
-    app.all('*', (c) => adapter.handle(c.req.raw))
-
-    return app.fetch(request, env, ctx)
+    return engine.fetch(request)
   }
 }
 ```
 
-> `ZebricWorkersEngine` and `createWorkerHandler` now use this same Hono-based adapter internally. If you already have other Hono routes, you can compose Zebric by mounting the adapter in your existing `app`.
+## Authentication
+
+When the Blueprint contains an `[auth]` block, the engine initializes Better
+Auth directly against the `DB` D1 binding. It mounts `/api/auth/*`,
+`/auth/sign-in`, `/auth/sign-up`, and `/auth/sign-out`, and uses the resulting
+session for page and entity authorization.
+
+Set a stable public origin and a high-entropy secret:
+
+```toml
+[vars]
+BETTER_AUTH_URL = "https://app.example.com"
+```
+
+```bash
+wrangler secret put BETTER_AUTH_SECRET
+```
+
+Better Auth's `user`, `session`, `account`, and `verification` tables must be
+included in your D1 migrations before enabling auth. Generate the schema with
+the Better Auth CLI for the installed version, then apply it with Wrangler.
+Workers auth requires the `nodejs_compat` compatibility flag.
+
+For a custom identity service, pass `authProvider` and optionally
+`sessionManager` to `ZebricWorkersEngine`; the provider's standard `handler`
+is still mounted at the Node-compatible auth API path.
+
+## File-backed templates
+
+Workers do not have a deployment filesystem like Node. Import template files
+as text and pass their contents keyed by the exact Blueprint `source` path:
+
+```typescript
+import pageTemplate from './templates/page.html'
+
+const engine = new ZebricWorkersEngine({
+  env,
+  blueprint,
+  templates: {
+    'templates/page.html': pageTemplate,
+  },
+})
+```
+
+Wrangler imports `.html` as text by default. The configuration above adds text
+module rules for Blueprint `.toml` and template `.liquid` files. Alternatively,
+bind a KV namespace as `TEMPLATES_KV`; keys use the `template:` prefix by
+default and the engine preloads all file-backed
+page, slot, and auth templates before serving a request.
+
+## Remaining Node parity gaps
+
+The Worker engine still rejects Blueprints containing workflows. Consequently,
+workflow actions, commands that depend on that execution stack, Agent API
+skills/discovery/jobs, and workflow events are not registered. Node's dedicated
+entity API, notification/plugin lifecycle, audit/metrics stack, and upload
+routes also remain Node-only. D1 transaction semantics require a dedicated
+batch-oriented workflow implementation rather than a direct port of Node's
+interactive transaction executor.
 
 ## Session Management
 
@@ -110,6 +147,10 @@ const { sessionId, csrfToken } = await sessionManager.createSession(
 const cookie = sessionManager.createSessionCookie(sessionId)
 response.headers.set('Set-Cookie', cookie)
 ```
+
+`WorkersSessionManager` is the lower-level KV session adapter. It remains useful
+for custom auth providers; the engine uses Better Auth sessions by default when
+the Blueprint has `[auth]`.
 
 ### Getting Sessions
 

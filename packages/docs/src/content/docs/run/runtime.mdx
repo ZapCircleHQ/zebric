@@ -85,10 +85,22 @@ export default {
 }
 ```
 
-`WorkersEnv` requires `DB` (D1). `SESSION_KV` optionally enables KV-backed
-session lookup. `CACHE_KV` creates the adapter returned by `engine.getCache()`,
-but request execution does not use it automatically. R2 storage and CSRF are
-low-level adapters that must be composed explicitly.
+`WorkersEnv` requires `DB` (D1). When the Blueprint declares `[auth]`, the
+Worker runtime uses Better Auth on that D1 binding and mounts the same
+`/api/auth/*` and `/auth/*` paths as Node. Set `BETTER_AUTH_URL` to the public
+origin, store `BETTER_AUTH_SECRET` with `wrangler secret put`, include Better
+Auth's generated tables in the D1 migrations, and enable `nodejs_compat`.
+
+File-backed Blueprint templates can be passed through the engine's `templates`
+map after importing them as Wrangler text modules. `TEMPLATES_KV` is an
+alternative: store each template under `template:<source>` and the engine will
+preload referenced templates before rendering. `SESSION_KV` remains available
+for custom KV-backed session integrations. `CACHE_KV` creates the adapter
+returned by `engine.getCache()`, but request execution does not use it
+automatically. `FILES` similarly creates the R2 adapter returned by
+`engine.getStorage()`. The engine applies double-submit CSRF protection when
+auth is configured. Upload routes and the separate KV session-backed CSRF
+adapter remain low-level components for custom composition.
 
 ```toml
 # wrangler.toml

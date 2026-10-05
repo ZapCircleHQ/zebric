@@ -94,7 +94,7 @@ function createLayoutRenderers(blueprint?: Blueprint) {
     utils
   )
 
-  return { renderer, componentRenderers, utils, templateRegistry, builtinTemplates, slotTemplateCache }
+  return { renderer, componentRenderers, utils, templateRegistry, templateLoader, builtinTemplates, slotTemplateCache }
 }
 
 describe('LayoutRenderers', () => {
@@ -713,6 +713,22 @@ describe('LayoutRenderers', () => {
       })
       const result = renderer.renderWithCustomTemplate(context)
       expect(result).toContain('Custom Content')
+    })
+
+    it('compiles inline page templates without treating the source as a file path', () => {
+      const { renderer, templateLoader } = createLayoutRenderers()
+      const loadSpy = vi.spyOn(templateLoader, 'loadSync')
+      const context = makeContext({
+        page: {
+          path: '/custom',
+          title: 'Custom',
+          layout: 'custom',
+          template: { type: 'inline', source: '<div>Inline Content</div>', engine: 'liquid' },
+        } as any,
+      })
+
+      expect(renderer.renderWithCustomTemplate(context)).toBe('<div>Inline Content</div>')
+      expect(loadSpy).not.toHaveBeenCalled()
     })
   })
 
