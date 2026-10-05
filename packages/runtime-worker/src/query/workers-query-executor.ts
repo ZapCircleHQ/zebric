@@ -204,6 +204,95 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   }
 
   /**
+   * Authorize and compile one fixed workflow mutation without executing it.
+   * The Worker workflow executor prepares every statement first, then submits
+   * the complete set to D1's atomic batch primitive.
+   */
+  async prepareBatchMutation(
+    entity: string,
+    action: 'create' | 'update' | 'delete',
+    data: Record<string, any> | undefined,
+    where: Record<string, any> | undefined,
+    context: RequestContext,
+  ): Promise<Array<{ sql: string; params: unknown[] }>> {
+    const entityDef = this.getEntity(entity)
+    if (!entityDef) throw new Error(`Entity not found: ${entity}`)
+
+    if (action === 'create') {
+      if (!data) throw new Error('Create action requires data')
+      assertProtectedMutation(entityDef, data, context)
+      const writable = filterWritableFields(entityDef, data, context.session)
+      await assertEntityAccess({
+        entity: entityDef,
+        action: 'create',
+        data: writable,
+        session: context.session,
+        permissionManager: this.permissionManager,
+        policyEvaluator: this.policyEvaluator,
+      })
+      const filtered = this.filterFields(entityDef, writable)
+      const fields = Object.keys(filtered)
+      if (fields.length === 0) throw new Error(`Create ${entity} has no writable fields`)
+      return [{
+        sql: `INSERT INTO ${this.quoteIdentifier(entity)} (${fields.map(field => this.quoteIdentifier(field)).join(', ')}) VALUES (${fields.map(() => '?').join(', ')})`,
+        params: Object.values(filtered),
+      }]
+    }
+
+    const id = typeof where?.id === 'string' || typeof where?.id === 'number'
+      ? String(where.id)
+      : undefined
+    if (!id) throw new Error(`${action[0]!.toUpperCase()}${action.slice(1)} action requires an id in the where clause`)
+    const mutationWhere = where as Record<string, any>
+    const existing = await this.findByIdUnrestricted(entity, id)
+    if (!existing && action === 'update') throw new Error(`${entity} with id ${id} not found`)
+
+    if (action === 'delete') {
+      if (existing) {
+        await assertEntityAccess({
+          entity: entityDef,
+          action: 'delete',
+          data: existing,
+          session: context.session,
+          permissionManager: this.permissionManager,
+          policyEvaluator: this.policyEvaluator,
+        })
+      }
+      const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
+      return [
+        this.workflowPredicateGuard(entity, id, predicate),
+        {
+          sql: `DELETE FROM ${this.quoteIdentifier(entity)} WHERE ${predicate.sql}`,
+          params: predicate.params,
+        },
+      ]
+    }
+
+    if (!data) throw new Error('Update action requires data')
+    assertProtectedMutation(entityDef, data, context)
+    const writable = filterWritableFields(entityDef, data, context.session)
+    await assertEntityAccess({
+      entity: entityDef,
+      action: 'update',
+      data: existing,
+      session: context.session,
+      permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
+    })
+    const filtered = this.filterFields(entityDef, writable)
+    const fields = Object.keys(filtered)
+    if (fields.length === 0) throw new Error(`Update ${entity} has no writable fields`)
+    const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
+    return [
+      this.workflowPredicateGuard(entity, id, predicate),
+      {
+        sql: `UPDATE ${this.quoteIdentifier(entity)} SET ${fields.map(field => `${this.quoteIdentifier(field)} = ?`).join(', ')} WHERE ${predicate.sql}`,
+        params: [...Object.values(filtered), ...predicate.params],
+      },
+    ]
+  }
+
+  /**
    * Find a record by ID
    */
   async findById(entity: string, id: string, context: RequestContext = {}): Promise<any> {
@@ -425,6 +514,32 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     if (value instanceof Date) return value.toISOString()
     if (value !== null && typeof value === 'object') return JSON.stringify(value)
     return value
+  }
+
+  private compileWorkflowWhere(entity: Entity, where: Record<string, any>, context: RequestContext): { sql: string; params: any[] } {
+    const predicate = normalizeQueryWhere(where, context, {
+      allowedFields: new Set(entity.fields.map(field => field.name)),
+    })
+    const compiled = this.compilePredicate(predicate)
+    if (!compiled.sql) throw new Error('Workflow mutation requires a where clause')
+    return compiled
+  }
+
+  /**
+   * Turn a stale conditional mutation into a batch failure. If the row still
+   * exists but no longer matches its workflow predicate, this attempts to
+   * insert its existing id and deliberately trips the primary-key constraint.
+   */
+  private workflowPredicateGuard(
+    entity: string,
+    id: string,
+    predicate: { sql: string; params: any[] },
+  ): { sql: string; params: unknown[] } {
+    const table = this.quoteIdentifier(entity)
+    return {
+      sql: `INSERT INTO ${table} ("id") SELECT "id" FROM ${table} WHERE "id" = ? AND (${predicate.sql}) IS NOT TRUE`,
+      params: [id, ...predicate.params],
+    }
   }
 
   private quoteIdentifier(identifier: string): string {

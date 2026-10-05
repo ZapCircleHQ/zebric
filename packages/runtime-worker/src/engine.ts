@@ -4,8 +4,8 @@
  * CloudFlare Workers adapter for Zebric runtime.
  */
 
-import { BlueprintParser, detectFormat, ErrorSanitizer, HTMLRenderer, SessionManager, defaultTheme, analyzeTransactionalWorkflow, getInjectedCsrfTokenFromRequest, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
-import type { AuthProvider, Blueprint, SessionManagerPort, TemplateLoader, Theme, UserSession } from '@zebric/runtime-core'
+import { BlueprintParser, CommandExecutor, DomainError, ValidationFailureError, commandOperationId, detectFormat, ErrorSanitizer, HTMLRenderer, SessionManager, defaultTheme, getInjectedCsrfTokenFromRequest, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
+import type { AuthProvider, Blueprint, Command, SessionManagerPort, TemplateLoader, Theme, UserSession } from '@zebric/runtime-core'
 import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
@@ -19,6 +19,8 @@ import { WorkersBetterAuthProvider } from './auth/better-auth-provider.js'
 import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
 import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
+import { requestFingerprint, WorkersIdempotencyCache } from './api/idempotency-cache.js'
+import { D1WorkflowExecutor, securityId } from './workflows/d1-workflow-executor.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
@@ -76,6 +78,9 @@ export class ZebricWorkersEngine {
   private templatesReady?: Promise<void>
   private queryExecutor: WorkersQueryExecutor
   private apiKeys: WorkersApiKeyRegistry
+  private commandExecutor: CommandExecutor
+  private workflowExecutor: D1WorkflowExecutor
+  private idempotency = new WorkersIdempotencyCache()
 
   constructor(private config: WorkersEngineConfig) {
     this.db = new D1Adapter(config.env.DB)
@@ -102,21 +107,6 @@ export class ZebricWorkersEngine {
     }
 
     this.apiKeys = new WorkersApiKeyRegistry(this.blueprint, config.env)
-
-    const unsupportedWorkflows = this.blueprint.workflows ?? []
-    if (unsupportedWorkflows.length > 0) {
-      const details = unsupportedWorkflows.map(workflow => {
-        if (!workflow.transactional) {
-          return `${workflow.name} (workflow execution is not implemented)`
-        }
-
-        const analysis = analyzeTransactionalWorkflow(workflow)
-        return `${workflow.name} (${analysis.d1BatchEligible ? 'D1-batch eligible but not yet executable' : analysis.reasons.join('; ')})`
-      })
-      throw new Error(
-        `Cloudflare Workers workflows are not yet supported: ${details.join(', ')}`
-      )
-    }
 
     this.authProvider = config.authProvider
     if (!this.authProvider && this.blueprint.auth) {
@@ -161,6 +151,8 @@ export class ZebricWorkersEngine {
     )
 
     this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
+    this.commandExecutor = new CommandExecutor(this.blueprint, { queryExecutor: this.queryExecutor })
+    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor)
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -171,6 +163,15 @@ export class ZebricWorkersEngine {
       queryExecutor: this.queryExecutor,
       sessionManager: this.sessionManager,
       renderer: rendererPort,
+      commandAvailability: {
+        list: async ({ entity, record, session }) => {
+          const commands = this.supportedCommands().filter(command => command.entity === entity)
+          const available = await Promise.all(commands.map(async command =>
+            [command.name, await this.commandExecutor.isAvailable(command.name, record, { session })] as const
+          ))
+          return available.filter(([, allowed]) => allowed).map(([name]) => name)
+        },
+      },
       errorSanitizer: new ErrorSanitizer(false),
     })
 
@@ -198,6 +199,8 @@ export class ZebricWorkersEngine {
     })
 
     registerWorkersDiscoveryRoutes(this.app, this.blueprint)
+    this.registerCommandRoutes()
+    this.registerWorkflowRoutes()
     this.registerEntityApiRoutes()
 
     this.app.all('*', async (c) => {
@@ -394,6 +397,188 @@ export class ZebricWorkersEngine {
     return undefined
   }
 
+  private supportedCommands(): Command[] {
+    return (this.blueprint.commands ?? []).filter(command => !command.handler)
+  }
+
+  private registerCommandRoutes(): void {
+    const commands = new Map(this.supportedCommands().map(command => [commandOperationId(command.name), command]))
+
+    this.app.post('/api/commands/:operationId/:id', async c => {
+      const command = commands.get(c.req.param('operationId'))
+      if (!command) return this.agentError(404, 'NOT_FOUND', 'Command not found')
+      try {
+        const session = await this.resolveApiSession(c.req.raw)
+        if (!session) return this.agentError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+        if (!agentHasScopes(session, command.scopes ?? [])) {
+          return this.agentError(403, 'INSUFFICIENT_SCOPE', 'The credential lacks required command scopes')
+        }
+        this.requireAgentRunId(c.req.raw, session)
+        const input = await this.parseOptionalJsonObject(c.req.raw)
+        const execute = async () => {
+          const result = await this.commandExecutor.execute({
+            command: command.name,
+            recordId: this.requireEntityId(c.req.param('id')),
+            input,
+            context: {
+              session,
+              source: session.actor?.type === 'agent' ? 'mcp' : 'http',
+              correlationId: c.req.header('x-correlation-id') ?? c.req.header('x-request-id'),
+            },
+          })
+          await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
+          return Response.json(result)
+        }
+        return await this.withIdempotency(c.req.raw, session, `${command.name}:${c.req.param('id')}`, input, execute)
+      } catch (error) {
+        return this.commandError(error)
+      }
+    })
+
+    this.app.post('/commands/:operationId/:id', async c => {
+      const command = commands.get(c.req.param('operationId'))
+      if (!command) return c.notFound()
+      const session = await this.sessionManager?.getSession(c.req.raw) ?? null
+      if (!session) return c.redirect(`/auth/sign-in?callback=${encodeURIComponent('/')}`, 303)
+      try {
+        const form = Object.fromEntries(await c.req.raw.formData())
+        const input = this.coerceCommandInput(command, form)
+        const result = await this.commandExecutor.execute({
+          command: command.name,
+          recordId: this.requireEntityId(c.req.param('id')),
+          input,
+          context: { session, source: 'ui' },
+        })
+        await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
+        return c.redirect(this.safeRedirect(form.redirect, c.req.header('referer'), c.req.url), 303)
+      } catch (error) {
+        console.error(`Command ${command.name} failed:`, error)
+        return Response.json({ error: error instanceof DomainError ? error.message : 'Command execution failed' }, { status: 400 })
+      }
+    })
+  }
+
+  private registerWorkflowRoutes(): void {
+    for (const skill of this.blueprint.skills ?? []) {
+      for (const action of skill.actions.filter(action => action.workflow && this.workflowExecutor.has(action.workflow))) {
+        const route = action.path.replace(/\{(\w+)\}/g, ':$1')
+        const method = action.method.toLowerCase() as 'get' | 'post' | 'put' | 'delete'
+        this.app[method](route, async c => {
+          try {
+            const session = await this.resolveApiSession(c.req.raw)
+            if (skill.auth !== 'none' && !session) {
+              return this.agentError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+            }
+            if (!agentHasScopes(session, action.scopes ?? [])) {
+              return this.agentError(403, 'INSUFFICIENT_SCOPE', 'The credential lacks required scopes')
+            }
+            if (method !== 'get') this.requireAgentRunId(c.req.raw, session)
+            const rawBody = method === 'get' ? {} : await this.parseOptionalJsonObject(c.req.raw)
+            const body = action.body
+              ? Object.fromEntries(Object.entries(rawBody).filter(([key]) => key in action.body!))
+              : rawBody
+            const params = Object.fromEntries(
+              [...action.path.matchAll(/\{(\w+)\}/g)].map(match => [match[1]!, c.req.param(match[1]!)]),
+            )
+            const record = action.entity && params.id
+              ? await this.queryExecutor.findById(action.entity, params.id, { session }).catch(() => null)
+              : null
+            const data = {
+              params,
+              body,
+              payload: body,
+              entity: action.entity,
+              recordId: params.id,
+              record,
+              user: session?.user,
+              session,
+              attribution: session?.actor?.type === 'agent' ? {
+                agentId: session.actor.id,
+                credentialId: session.actor.credentialId,
+                runId: c.req.header('x-agent-run-id'),
+              } : undefined,
+            }
+            const execute = async () => {
+              const job = await this.workflowExecutor.triggerManual(action.workflow!, data, session ?? undefined)
+              return Response.json({
+                success: true,
+                job: { id: job.id, workflow: job.workflowName, status: this.publicJobStatus(job.status), url: `/api/jobs/${job.id}` },
+              }, { status: 202, headers: { Location: `/api/jobs/${job.id}` } })
+            }
+            return await this.withIdempotency(c.req.raw, session, `${skill.name}:${action.name}`, body, execute)
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            if (message.includes('precondition failed')) {
+              return this.agentError(409, 'WORKFLOW_PRECONDITION_FAILED', 'The workflow precondition was not satisfied')
+            }
+            if (message.startsWith('Invalid agent attribution:')) {
+              return this.agentError(400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required')
+            }
+            console.error(`Workflow action ${skill.name}.${action.name} failed:`, error)
+            return this.agentError(500, 'INTERNAL_ERROR', 'The Agent API action failed', true)
+          }
+        })
+      }
+    }
+
+    this.app.get('/api/jobs/:id', async c => {
+      const session = await this.resolveApiSession(c.req.raw)
+      if (!session) return this.agentError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+      const job = this.workflowExecutor.getJob(c.req.param('id'))
+      if (!job || !job.ownerId || job.ownerId !== securityId(session)) {
+        return this.agentError(404, 'JOB_NOT_FOUND', 'The workflow job was not found')
+      }
+      return Response.json({
+        id: job.id,
+        workflow: job.workflowName,
+        status: this.publicJobStatus(job.status),
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        result: job.result,
+        error: job.error ?? null,
+      })
+    })
+
+    this.app.post('/actions/:workflowName', async c => {
+      const session = await this.sessionManager?.getSession(c.req.raw) ?? null
+      if (!session) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+      const workflowName = c.req.param('workflowName')
+      if (!this.workflowExecutor.has(workflowName)) return Response.json({ error: 'Workflow not found' }, { status: 404 })
+      try {
+        const contentType = c.req.header('content-type') ?? ''
+        const body = contentType.includes('application/json')
+          ? await this.parseOptionalJsonObject(c.req.raw)
+          : Object.fromEntries(await c.req.raw.formData())
+        const payload = typeof body.payload === 'string'
+          ? JSON.parse(body.payload || '{}')
+          : body.payload ?? {}
+        const entity = typeof body.entity === 'string' ? body.entity : undefined
+        const recordId = typeof body.recordId === 'string' ? body.recordId : undefined
+        const record = entity && recordId
+          ? await this.queryExecutor.findById(entity, recordId, { session }).catch(() => null)
+          : null
+        const data = {
+          payload,
+          entity,
+          recordId,
+          record,
+          page: body.page,
+          redirect: body.redirect,
+          session,
+        }
+        const job = await this.workflowExecutor.triggerManual(workflowName, data, session)
+        if (c.req.header('accept')?.includes('application/json')) {
+          return Response.json({ success: true, job: { id: job.id, workflow: workflowName } })
+        }
+        return c.redirect(this.safeRedirect(body.redirect, c.req.header('referer'), c.req.url), 303)
+      } catch (error) {
+        const status = error instanceof Error && error.message.includes('precondition failed') ? 409 : 500
+        return Response.json({ error: status === 409 ? 'Workflow precondition failed' : 'Failed to trigger action' }, { status })
+      }
+    })
+  }
+
   private registerEntityApiRoutes(): void {
     for (const entity of this.blueprint.entities) {
       const collectionPath = `/api/${entity.name.toLowerCase()}s`
@@ -426,18 +611,26 @@ export class ZebricWorkersEngine {
         this.requireAgentRunId(c.req.raw, session)
         const data = await this.parseJsonObject(c.req.raw)
         const result = await this.queryExecutor.create(entity.name, data, { session })
+        await this.workflowExecutor.triggerEntity(entity.name, 'create', undefined, result, session)
         return Response.json(result, { status: 201 })
       }))
 
       this.app.put(itemPath, async c => this.handleEntityApi(c, entity.name, 'update', async session => {
         this.requireAgentRunId(c.req.raw, session)
         const data = await this.parseJsonObject(c.req.raw)
-        return Response.json(await this.queryExecutor.update(entity.name, this.requireEntityId(c.req.param('id')), data, { session }))
+        const id = this.requireEntityId(c.req.param('id'))
+        const before = await this.queryExecutor.findById(entity.name, id, { session }).catch(() => undefined)
+        const result = await this.queryExecutor.update(entity.name, id, data, { session })
+        await this.workflowExecutor.triggerEntity(entity.name, 'update', before, result, session)
+        return Response.json(result)
       }))
 
       this.app.delete(itemPath, async c => this.handleEntityApi(c, entity.name, 'delete', async session => {
         this.requireAgentRunId(c.req.raw, session)
-        await this.queryExecutor.delete(entity.name, this.requireEntityId(c.req.param('id')), { session })
+        const id = this.requireEntityId(c.req.param('id'))
+        const before = await this.queryExecutor.findById(entity.name, id, { session }).catch(() => ({ id }))
+        await this.queryExecutor.delete(entity.name, id, { session })
+        await this.workflowExecutor.triggerEntity(entity.name, 'delete', before, undefined, session)
         return Response.json({ success: true })
       }))
     }
@@ -490,6 +683,97 @@ export class ZebricWorkersEngine {
     return data as Record<string, unknown>
   }
 
+  private async parseOptionalJsonObject(request: Request): Promise<Record<string, unknown>> {
+    const text = await request.clone().text()
+    if (!text.trim()) return {}
+    if (!request.headers.get('content-type')?.includes('application/json')) {
+      throw new ValidationFailureError('Command input must be a JSON object')
+    }
+    const data = JSON.parse(text) as unknown
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new ValidationFailureError('Command input must be a JSON object')
+    }
+    return data as Record<string, unknown>
+  }
+
+  private async withIdempotency(
+    request: Request,
+    session: UserSession | null,
+    operation: string,
+    input: Record<string, unknown>,
+    execute: () => Promise<Response>,
+  ): Promise<Response> {
+    const key = request.headers.get('idempotency-key')?.trim()
+    if (!key) return execute()
+    const url = new URL(request.url)
+    const fingerprint = await requestFingerprint(operation, request.method, `${url.pathname}${url.search}`, JSON.stringify(input))
+    const result = await this.idempotency.run(`${securityId(session) ?? 'anonymous'}:${key}`, fingerprint, execute)
+    return result.conflict
+      ? this.agentError(409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different input')
+      : result.response
+  }
+
+  private coerceCommandInput(command: Command, body: Record<string, unknown>): Record<string, unknown> {
+    const result: Record<string, unknown> = {}
+    for (const [name, field] of Object.entries(command.input ?? {})) {
+      const raw = body[name]
+      if (raw === undefined || raw === null || raw === '') continue
+      if (typeof raw !== 'string') throw new ValidationFailureError(`Invalid value for ${name}`)
+      if (field.type === 'Integer') {
+        const value = Number(raw)
+        if (!Number.isInteger(value)) throw new ValidationFailureError(`Invalid integer for ${name}`)
+        result[name] = value
+      } else if (field.type === 'Float') {
+        const value = Number(raw)
+        if (!Number.isFinite(value)) throw new ValidationFailureError(`Invalid number for ${name}`)
+        result[name] = value
+      } else if (field.type === 'Boolean') {
+        if (raw !== 'true' && raw !== 'false') throw new ValidationFailureError(`Invalid boolean for ${name}`)
+        result[name] = raw === 'true'
+      } else if (field.type === 'JSON') {
+        try {
+          result[name] = JSON.parse(raw)
+        } catch {
+          throw new ValidationFailureError(`Invalid JSON for ${name}`)
+        }
+      } else {
+        result[name] = raw
+      }
+    }
+    return result
+  }
+
+  private commandError(error: unknown): Response {
+    if (error instanceof DomainError) {
+      const status = error.code === 'AUTHORIZATION_FAILED' ? 403
+        : error.code === 'COMMAND_UNAVAILABLE' ? 409
+          : error.code === 'VALIDATION_FAILED' ? 422
+            : 400
+      return this.agentError(status, error.code, error.message)
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.startsWith('Invalid agent attribution:')) {
+      return this.agentError(400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required')
+    }
+    console.error('Command execution failed:', error)
+    return this.agentError(500, 'INTERNAL_ERROR', 'Command execution failed', true)
+  }
+
+  private agentError(status: number, code: string, message: string, retryable = false): Response {
+    return Response.json({ error: { code, message, retryable } }, { status })
+  }
+
+  private publicJobStatus(status: 'running' | 'completed' | 'failed'): 'running' | 'succeeded' | 'failed' {
+    return status === 'completed' ? 'succeeded' : status
+  }
+
+  private safeRedirect(value: unknown, referer: string | undefined, requestUrl: string): string {
+    const origin = new URL(requestUrl).origin
+    const candidate = typeof value === 'string' ? value : referer ?? '/'
+    const parsed = new URL(candidate, origin)
+    return parsed.origin === origin ? `${parsed.pathname}${parsed.search}` : '/'
+  }
+
   private requireEntityId(id: string | undefined): string {
     if (!id) throw new Error('Invalid request: entity ID is required')
     return id
@@ -539,9 +823,10 @@ export class ZebricWorkersEngine {
  * Create a Workers fetch handler
  */
 export function createWorkerHandler(config: Omit<WorkersEngineConfig, 'env'>) {
+  let engine: ZebricWorkersEngine | undefined
   return {
     async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
-      const engine = new ZebricWorkersEngine({ ...config, env })
+      engine ??= new ZebricWorkersEngine({ ...config, env })
       return engine.fetch(request)
     }
   }

@@ -69,21 +69,17 @@ Deploy to Cloudflare Workers using `@zebric/runtime-worker` — same blueprint f
 
 ```typescript
 // worker.ts
-import { ZebricWorkersEngine } from '@zebric/runtime-worker'
-import type { WorkersEnv } from '@zebric/runtime-worker'
+import { createWorkerHandler } from '@zebric/runtime-worker'
 import blueprintToml from './blueprint.toml'
 
-export default {
-  async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
-    const engine = new ZebricWorkersEngine({
-      env,
-      blueprintContent: blueprintToml,
-      blueprintFormat: 'toml',
-    })
-    return engine.fetch(request)
-  },
-}
+export default createWorkerHandler({
+  blueprintContent: blueprintToml,
+  blueprintFormat: 'toml',
+})
 ```
+
+The handler retains one engine per isolate, which is required for process-local
+workflow job observation and idempotency replay.
 
 `WorkersEnv` requires `DB` (D1). When the Blueprint declares `[auth]`, the
 Worker runtime uses Better Auth on that D1 binding and mounts the same
@@ -106,8 +102,16 @@ Workers also expose Node-compatible `/api/<entities>` CRUD routes. Blueprint
 API keys are loaded from Worker secret bindings named by `keyEnv`, with roles,
 entity scopes, constraints, and `X-Agent-Run-ID` attribution enforced. Clients
 can inspect the supported Worker surface at `/.well-known/zebric-agent.json`
-and `/api/openapi.json`; unsupported workflow, command, job, audit, and
-idempotency capabilities are reported as disabled.
+and `/api/openapi.json`.
+
+Workers execute declarative commands through the shared core command pipeline.
+They also support transactional workflows made only of a fixed list of
+create/update/delete query steps; those mutations are compiled and committed in
+one atomic D1 batch. Workflow-backed Agent API skills return observable jobs and
+support per-isolate idempotent replay. Command handlers, intermediate workflow
+results, dynamic control flow, delays, and external effects remain Node-only;
+unsupported operations are omitted from discovery. Worker jobs and idempotency
+entries are process-local rather than durable across isolates.
 
 ```toml
 # wrangler.toml

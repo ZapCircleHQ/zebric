@@ -1,26 +1,37 @@
-import { generateOpenAPISpec, type Blueprint, type OpenAPISpec } from '@zebric/runtime-core'
+import { analyzeTransactionalWorkflow, commandOperationId, generateOpenAPISpec, type Blueprint, type OpenAPISpec } from '@zebric/runtime-core'
 import type { Hono } from 'hono'
 
 export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint): void {
   app.get('/.well-known/zebric-agent.json', async c => {
     const origin = new URL(c.req.url).origin
     const contract = await workersContract(blueprint)
+    const supported = supportedBlueprint(blueprint)
     return Response.json({
       name: blueprint.project.name,
       version: blueprint.project.version,
       openapi: `${origin}/api/openapi.json`,
       contract,
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
-      skills: [],
-      commands: [],
+      skills: supported.skills?.map(skill => skill.name) ?? [],
+      commands: (supported.commands ?? []).map(command => ({
+        name: command.name,
+        operationId: commandOperationId(command.name),
+        entity: command.entity,
+        label: command.label,
+        description: command.description,
+        input: command.input ?? {},
+        confirm: command.confirm,
+        style: command.style,
+        scopes: command.scopes ?? [],
+      })),
       capabilities: {
         entityApi: true,
-        workflowJobs: false,
-        idempotency: false,
+        workflowJobs: Boolean(supported.workflows?.length),
+        idempotency: true,
         eventStream: false,
         transactionalWorkflows: false,
-        d1BatchWorkflows: false,
-        domainCommands: false,
+        d1BatchWorkflows: Boolean(supported.workflows?.length),
+        domainCommands: Boolean(supported.commands?.length),
         auditHistory: false,
       },
     }, { headers: discoveryHeaders() })
@@ -56,16 +67,32 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string): 
       ],
     }
   })
-  const supportedBlueprint: Blueprint = {
-    ...blueprint,
-    skills,
-    commands: [],
-    workflows: [],
+  const supported = supportedBlueprint(blueprint)
+  const apiBlueprint: Blueprint = {
+    ...supported,
+    skills: [...skills, ...(supported.skills ?? [])],
   }
-  const spec = generateOpenAPISpec(supportedBlueprint, baseUrl)
+  const spec = generateOpenAPISpec(apiBlueprint, baseUrl)
   delete spec.paths['/api/audit']
   if (!blueprint.auth?.apiKeys?.length) spec.security = []
   return spec
+}
+
+function supportedBlueprint(blueprint: Blueprint): Blueprint {
+  const workflows = (blueprint.workflows ?? []).filter(workflow =>
+    workflow.transactional && analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).d1BatchEligible
+  )
+  const workflowNames = new Set(workflows.map(workflow => workflow.name))
+  const skills = (blueprint.skills ?? []).flatMap(skill => {
+    const actions = skill.actions.filter(action => action.workflow && workflowNames.has(action.workflow))
+    return actions.length > 0 ? [{ ...skill, actions }] : []
+  })
+  return {
+    ...blueprint,
+    commands: (blueprint.commands ?? []).filter(command => !command.handler),
+    workflows,
+    skills,
+  }
 }
 
 async function workersContract(blueprint: Blueprint): Promise<{ version: '1'; fingerprint: string }> {

@@ -18,11 +18,14 @@ const blueprint: any = {
     apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY' }],
   },
   skills: [{ name: 'unsupported_worker_skill', actions: [] }],
-  commands: [{ name: 'UnsupportedCommand', entity: 'Item', mutations: {} }],
+  commands: [
+    { name: 'SupportedCommand', entity: 'Item', mutations: {} },
+    { name: 'HandlerCommand', entity: 'Item', handler: './handler.js' },
+  ],
 }
 
 describe('Workers Agent API discovery', () => {
-  it('publishes entity APIs and accurately reports unsupported capabilities', async () => {
+  it('publishes entity APIs and only the command capabilities Workers can execute', async () => {
     const app = new Hono()
     registerWorkersDiscoveryRoutes(app, blueprint)
 
@@ -33,13 +36,13 @@ describe('Workers Agent API discovery', () => {
       openapi: 'https://edge.example/api/openapi.json',
       authentication: [{ type: 'bearer' }],
       skills: [],
-      commands: [],
+      commands: [{ name: 'SupportedCommand', operationId: 'supported_command', entity: 'Item' }],
       capabilities: {
         entityApi: true,
         workflowJobs: false,
-        idempotency: false,
+        idempotency: true,
         transactionalWorkflows: false,
-        domainCommands: false,
+        domainCommands: true,
         auditHistory: false,
       },
     })
@@ -52,7 +55,8 @@ describe('Workers Agent API discovery', () => {
     expect(openapi.paths['/api/items/{id}']).toHaveProperty('put')
     expect(openapi.paths['/api/items/{id}']).toHaveProperty('delete')
     expect(openapi.paths['/api/audit']).toBeUndefined()
-    expect(openapi.paths['/api/commands/unsupported_command/{id}']).toBeUndefined()
+    expect(openapi.paths['/api/commands/supported_command/{id}']).toBeDefined()
+    expect(openapi.paths['/api/commands/handler_command/{id}']).toBeUndefined()
     expect(openapiResponse.headers.get('etag')).toBe(`"${discovery.contract.fingerprint}"`)
   })
 

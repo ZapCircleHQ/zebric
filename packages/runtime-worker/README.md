@@ -11,9 +11,11 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
 - ✅ **Entity API** - Node-compatible CRUD paths with API-key roles and scopes
 - ✅ **Discovery** - Honest OpenAPI and `/.well-known/zebric-agent.json` metadata
+- ✅ **Domain commands** - Declarative commands use the shared policy, validation, and protected-field pipeline
+- ✅ **D1 workflows** - Fixed transactional create/update/delete workflows execute as one atomic D1 batch
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
-- ❌ **Workflows** - Rejected during initialization until a Workers executor is available
+- ❌ **General workflows** - External effects, intermediate results, control flow, and non-transactional workflows require Node
 
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
 `WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
@@ -54,20 +56,17 @@ bucket_name = "your-bucket"
 ### 2. Create Your Worker
 
 ```typescript
-import { ZebricWorkersEngine, type WorkersEnv } from '@zebric/runtime-worker'
+import { createWorkerHandler } from '@zebric/runtime-worker'
 import blueprintToml from './blueprint.toml'
 
-export default {
-  fetch(request: Request, env: WorkersEnv) {
-    const engine = new ZebricWorkersEngine({
-      env,
-      blueprintContent: blueprintToml,
-      blueprintFormat: 'toml',
-    })
-    return engine.fetch(request)
-  }
-}
+export default createWorkerHandler({
+  blueprintContent: blueprintToml,
+  blueprintFormat: 'toml',
+})
 ```
+
+`createWorkerHandler` retains one engine per Worker isolate so process-local
+workflow jobs and idempotency replays remain observable across requests.
 
 ## Authentication
 
@@ -121,12 +120,17 @@ page, slot, and auth templates before serving a request.
 
 ## Remaining Node parity gaps
 
-The Worker engine still rejects Blueprints containing workflows. Consequently,
-workflow actions, commands that depend on that execution stack, Agent API
-skills/jobs, and workflow events are not registered. Node's notification/plugin
-lifecycle, audit/metrics stack, and upload routes also remain Node-only. D1 transaction semantics require a dedicated
-batch-oriented workflow implementation rather than a direct port of Node's
-interactive transaction executor.
+Workers execute declarative domain commands and transactional workflows that
+contain a fixed list of database create/update/delete steps. Eligible workflows
+are compiled up front and submitted through one atomic D1 batch. Workflow-backed
+Agent API skill routes, manual actions, entity triggers, job observation, and
+per-isolate idempotent replay are available for that subset.
+
+Command handlers and workflows with intermediate query results, commands,
+external effects, delays, loops, conditions, or non-transactional execution are
+rejected or omitted from discovery. Jobs and idempotency entries are process-local,
+not durable across isolates. Node's notification/plugin lifecycle, audit/metrics
+stack, event stream, and upload routes also remain Node-only.
 
 ## Entity API and API keys
 
@@ -147,8 +151,8 @@ entity routes require scopes such as `entity.item.list` and
 Valid API keys bypass browser CSRF checks, while invalid bearer values do not.
 
 Discovery is available at `/.well-known/zebric-agent.json` and
-`/api/openapi.json`. Worker metadata advertises entity APIs while reporting
-workflows, jobs, commands, audit history, and idempotency as unsupported.
+`/api/openapi.json`. Worker metadata includes supported declarative commands and
+D1-batch workflow skills while omitting unsupported handlers and workflow shapes.
 
 ## Session Management
 

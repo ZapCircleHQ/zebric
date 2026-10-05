@@ -50,7 +50,7 @@ describe('ZebricWorkersEngine', () => {
       }).toThrow('Blueprint must be provided')
     })
 
-    it('rejects transactional workflows until Workers has an atomic workflow executor', () => {
+    it('accepts D1-batch-eligible transactional workflows', () => {
       expect(() => new ZebricWorkersEngine({
         env,
         blueprint: {
@@ -62,7 +62,7 @@ describe('ZebricWorkersEngine', () => {
             steps: [{ type: 'query', entity: 'post', action: 'update' }],
           }],
         } as any,
-      })).toThrow('D1-batch eligible but not yet executable')
+      })).not.toThrow()
     })
 
     it('rejects non-transactional workflows until Workers has a workflow executor', () => {
@@ -76,7 +76,7 @@ describe('ZebricWorkersEngine', () => {
             steps: [{ type: 'query', entity: 'post', action: 'update' }],
           }],
         } as any,
-      })).toThrow('NotifyAuthor (workflow execution is not implemented)')
+      })).toThrow('workflow must declare transactional = true')
     })
   })
 
@@ -386,6 +386,127 @@ describe('ZebricWorkersEngine', () => {
       }))
       expect(invalidKey.status).toBe(403)
       expect(await invalidKey.json()).toEqual({ error: 'Invalid CSRF token' })
+    })
+  })
+
+  describe('commands and D1 workflows', () => {
+    const executionBlueprint: any = {
+      version: '0.6.0',
+      project: { name: 'worker-execution', version: '1.0.0', runtime: { min_version: '0.6.0' } },
+      entities: [{
+        name: 'Task',
+        fields: [
+          { name: 'id', type: 'ULID', primary_key: true },
+          { name: 'status', type: 'Text', write: 'command-only', commands: ['ApproveTask'] },
+          { name: 'note', type: 'Text' },
+        ],
+      }],
+      pages: [],
+      commands: [{
+        name: 'ApproveTask',
+        entity: 'Task',
+        scopes: ['command.task.approve'],
+        input: { note: { type: 'Text', required: true } },
+        mutations: { status: 'approved', note: 'input.note' },
+      }],
+      workflows: [{
+        name: 'MovePair',
+        trigger: { manual: true },
+        transactional: true,
+        steps: [
+          { type: 'query', entity: 'Task', action: 'update', where: { id: '{{variables.data.params.id}}' }, data: { note: '{{variables.data.body.note}}' } },
+          { type: 'query', entity: 'Task', action: 'update', where: { id: '{{variables.data.body.otherId}}' }, data: { note: '{{variables.data.body.note}}' } },
+        ],
+      }],
+      skills: [{
+        name: 'task_workflows',
+        actions: [{
+          name: 'move_pair', method: 'POST', path: '/api/tasks/{id}/move-pair', entity: 'Task',
+          workflow: 'MovePair', scopes: ['workflow.task.move'], body: { otherId: 'Text', note: 'Text' },
+        }],
+      }],
+      auth: {
+        providers: [],
+        permissions: { operator: { allow: ['Task.*'] } },
+        apiKeys: [{
+          name: 'agent', keyEnv: 'AGENT_KEY', roles: ['operator'],
+          scopes: ['command.task.approve', 'workflow.task.move'],
+        }],
+      },
+    }
+
+    async function executionEngine() {
+      const instance = new ZebricWorkersEngine({
+        env: { DB: new MockD1Database(), AGENT_KEY: 'secret' } as any,
+        blueprint: executionBlueprint,
+        authProvider: {
+          getAuthInstance: () => ({ handler: () => new Response(null, { status: 204 }) }),
+          getSession: async () => null,
+          hasRole: () => false,
+          ownsResource: () => false,
+        },
+      })
+      await instance.getDatabase().migrate(['CREATE TABLE Task (id TEXT PRIMARY KEY, status TEXT, note TEXT)'])
+      await instance.getDatabase().query('INSERT INTO Task VALUES (?, ?, ?)', ['task-1', 'ready', null])
+      await instance.getDatabase().query('INSERT INTO Task VALUES (?, ?, ?)', ['task-2', 'ready', null])
+      return instance
+    }
+
+    it('executes declarative commands and rejects conflicting idempotency-key reuse', async () => {
+      const instance = await executionEngine()
+      const headers = {
+        authorization: 'Bearer secret', 'content-type': 'application/json',
+        'x-agent-run-id': 'run-1', 'idempotency-key': 'approve-1',
+      }
+      const first = await instance.fetch(new Request('https://example.com/api/commands/approve_task/task-1', {
+        method: 'POST', headers, body: JSON.stringify({ note: 'checked' }),
+      }))
+      expect(first.status).toBe(200)
+      expect(await first.json()).toEqual(expect.objectContaining({ record: expect.objectContaining({ status: 'approved', note: 'checked' }) }))
+
+      const replay = await instance.fetch(new Request('https://example.com/api/commands/approve_task/task-1', {
+        method: 'POST', headers, body: JSON.stringify({ note: 'checked' }),
+      }))
+      expect(replay.status).toBe(200)
+
+      const conflict = await instance.fetch(new Request('https://example.com/api/commands/approve_task/task-1', {
+        method: 'POST', headers, body: JSON.stringify({ note: 'different' }),
+      }))
+      expect(conflict.status).toBe(409)
+    })
+
+    it('runs eligible workflow mutations in a job and limits job reads to the owner', async () => {
+      const instance = await executionEngine()
+      const response = await instance.fetch(new Request('https://example.com/api/tasks/task-1/move-pair', {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json', 'x-agent-run-id': 'run-2' },
+        body: JSON.stringify({ otherId: 'task-2', note: 'moved' }),
+      }))
+      expect(response.status).toBe(202)
+      const invocation = await response.json() as any
+
+      const job = await instance.fetch(new Request(`https://example.com${invocation.job.url}`, {
+        headers: { authorization: 'Bearer secret' },
+      }))
+      expect(job.status).toBe(200)
+      expect(await job.json()).toEqual(expect.objectContaining({ status: 'succeeded', workflow: 'MovePair' }))
+
+      const rows = await instance.getDatabase().query<any>('SELECT id, note FROM Task ORDER BY id')
+      expect(rows.rows).toEqual([{ id: 'task-1', note: 'moved' }, { id: 'task-2', note: 'moved' }])
+    })
+
+    it('rejects workflow shapes D1 cannot execute atomically', () => {
+      expect(() => new ZebricWorkersEngine({
+        env: { DB: new MockD1Database() } as any,
+        blueprint: {
+          ...executionBlueprint,
+          workflows: [{
+            name: 'ExternalEffect', trigger: { manual: true }, transactional: true,
+            steps: [{ type: 'webhook', url: 'https://example.com' }],
+          }],
+          skills: [],
+        },
+      })).toThrow('non-database effect "webhook"')
     })
   })
 
