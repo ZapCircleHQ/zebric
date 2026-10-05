@@ -5,7 +5,7 @@
  */
 
 import { BlueprintParser, detectFormat, ErrorSanitizer, HTMLRenderer, SessionManager, defaultTheme, analyzeTransactionalWorkflow, getInjectedCsrfTokenFromRequest, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
-import type { AuthProvider, Blueprint, SessionManagerPort, TemplateLoader, Theme } from '@zebric/runtime-core'
+import type { AuthProvider, Blueprint, SessionManagerPort, TemplateLoader, Theme, UserSession } from '@zebric/runtime-core'
 import { Hono } from 'hono'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
@@ -16,7 +16,9 @@ import { WorkersQueryExecutor } from './query/workers-query-executor.js'
 import { BundledTemplateLoader } from './renderer/bundled-template-loader.js'
 import { KVTemplateLoader } from './renderer/kv-template-loader.js'
 import { WorkersBetterAuthProvider } from './auth/better-auth-provider.js'
+import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
+import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
@@ -72,6 +74,8 @@ export class ZebricWorkersEngine {
   private sessionManager?: SessionManagerPort
   private templateLoader?: TemplateLoader
   private templatesReady?: Promise<void>
+  private queryExecutor: WorkersQueryExecutor
+  private apiKeys: WorkersApiKeyRegistry
 
   constructor(private config: WorkersEngineConfig) {
     this.db = new D1Adapter(config.env.DB)
@@ -96,6 +100,8 @@ export class ZebricWorkersEngine {
     } else {
       throw new Error('Blueprint must be provided via config.blueprint, config.blueprintContent, or env.BLUEPRINT')
     }
+
+    this.apiKeys = new WorkersApiKeyRegistry(this.blueprint, config.env)
 
     const unsupportedWorkflows = this.blueprint.workflows ?? []
     if (unsupportedWorkflows.length > 0) {
@@ -154,7 +160,7 @@ export class ZebricWorkersEngine {
       this.templateLoader,
     )
 
-    const queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
+    this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -162,7 +168,7 @@ export class ZebricWorkersEngine {
     // Initialize adapter
     this.adapter = new BlueprintHttpAdapter({
       blueprint: this.blueprint,
-      queryExecutor,
+      queryExecutor: this.queryExecutor,
       sessionManager: this.sessionManager,
       renderer: rendererPort,
       errorSanitizer: new ErrorSanitizer(false),
@@ -182,14 +188,17 @@ export class ZebricWorkersEngine {
 
     registerWidgetRoutes(this.app, {
       blueprint: this.blueprint,
-      queryExecutor,
+      queryExecutor: this.queryExecutor,
       sessionManager: this.sessionManager,
     })
     registerSearchRoutes(this.app, {
       blueprint: this.blueprint,
-      queryExecutor,
+      queryExecutor: this.queryExecutor,
       sessionManager: this.sessionManager,
     })
+
+    registerWorkersDiscoveryRoutes(this.app, this.blueprint)
+    this.registerEntityApiRoutes()
 
     this.app.all('*', async (c) => {
       return this.adapter.handle(c.req.raw)
@@ -331,6 +340,13 @@ export class ZebricWorkersEngine {
       const safe = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
       const cookieToken = WorkersCookieManager.get(request, 'csrf-token')?.trim()
 
+      // A valid scoped API key is not a browser cookie credential and is not
+      // vulnerable to CSRF. Invalid bearer values must not bypass validation.
+      if (await this.apiKeys.resolveRequest(request)) {
+        await next()
+        return c.res
+      }
+
       if (safe) {
         const token = cookieToken || crypto.randomUUID()
         injectCsrfTokenIntoRequest(request, token)
@@ -376,6 +392,115 @@ export class ZebricWorkersEngine {
       return undefined
     }
     return undefined
+  }
+
+  private registerEntityApiRoutes(): void {
+    for (const entity of this.blueprint.entities) {
+      const collectionPath = `/api/${entity.name.toLowerCase()}s`
+      const itemPath = `${collectionPath}/:id`
+
+      this.app.get(collectionPath, async c => this.handleEntityApi(c, entity.name, 'list', async session => {
+        const parsedLimit = Number.parseInt(c.req.query('limit') ?? '', 10)
+        const parsedOffset = Number.parseInt(c.req.query('offset') ?? '', 10)
+        const limit = Math.min(Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 100, 1000)
+        const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : undefined
+        const orderBy = entity.fields.some(field => field.name === 'createdAt')
+          ? { createdAt: 'desc' as const }
+          : undefined
+        return Response.json(await this.queryExecutor.execute({
+          entity: entity.name,
+          orderBy,
+          limit,
+          offset,
+        }, { session }))
+      }))
+
+      this.app.get(itemPath, async c => this.handleEntityApi(c, entity.name, 'get', async session => {
+        const result = await this.queryExecutor.findById(entity.name, this.requireEntityId(c.req.param('id')), { session })
+        return result
+          ? Response.json(result)
+          : Response.json({ error: 'Not found' }, { status: 404 })
+      }))
+
+      this.app.post(collectionPath, async c => this.handleEntityApi(c, entity.name, 'create', async session => {
+        this.requireAgentRunId(c.req.raw, session)
+        const data = await this.parseJsonObject(c.req.raw)
+        const result = await this.queryExecutor.create(entity.name, data, { session })
+        return Response.json(result, { status: 201 })
+      }))
+
+      this.app.put(itemPath, async c => this.handleEntityApi(c, entity.name, 'update', async session => {
+        this.requireAgentRunId(c.req.raw, session)
+        const data = await this.parseJsonObject(c.req.raw)
+        return Response.json(await this.queryExecutor.update(entity.name, this.requireEntityId(c.req.param('id')), data, { session }))
+      }))
+
+      this.app.delete(itemPath, async c => this.handleEntityApi(c, entity.name, 'delete', async session => {
+        this.requireAgentRunId(c.req.raw, session)
+        await this.queryExecutor.delete(entity.name, this.requireEntityId(c.req.param('id')), { session })
+        return Response.json({ success: true })
+      }))
+    }
+  }
+
+  private async handleEntityApi(
+    c: any,
+    entity: string,
+    action: 'list' | 'get' | 'create' | 'update' | 'delete',
+    execute: (session: UserSession | null) => Promise<Response>,
+  ): Promise<Response> {
+    try {
+      const session = await this.resolveApiSession(c.req.raw)
+      if (!agentHasScopes(session, [`entity.${entity.toLowerCase()}.${action}`])) {
+        throw new Error('Access denied: insufficient agent scope')
+      }
+      return await execute(session)
+    } catch (error) {
+      const label = action === 'get' ? 'Find' : `${action[0]!.toUpperCase()}${action.slice(1)}`
+      console.error(`${label} ${entity} error:`, error)
+      return Response.json({
+        error: `${label} failed`,
+        details: error instanceof Error ? error.message : 'Unknown error',
+      }, { status: this.entityApiErrorStatus(error) })
+    }
+  }
+
+  private async resolveApiSession(request: Request): Promise<UserSession | null> {
+    return await this.apiKeys.resolveRequest(request)
+      ?? await this.sessionManager?.getSession(request)
+      ?? null
+  }
+
+  private requireAgentRunId(request: Request, session: UserSession | null): void {
+    if (session?.actor?.type !== 'agent') return
+    const runId = request.headers.get('x-agent-run-id')?.trim()
+    if (!runId || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(runId)) {
+      throw new Error('Invalid agent attribution: X-Agent-Run-ID must be 1-128 safe characters')
+    }
+  }
+
+  private async parseJsonObject(request: Request): Promise<Record<string, unknown>> {
+    if (!request.headers.get('content-type')?.includes('application/json')) {
+      throw new Error('Invalid request: application/json is required')
+    }
+    const data = await request.json().catch(() => null)
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new Error('Invalid request: JSON object body is required')
+    }
+    return data as Record<string, unknown>
+  }
+
+  private requireEntityId(id: string | undefined): string {
+    if (!id) throw new Error('Invalid request: entity ID is required')
+    return id
+  }
+
+  private entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.startsWith('Invalid request:') || message.startsWith('Invalid agent attribution:')) return 400
+    if (message.includes('Access denied')) return 403
+    if (message.toLowerCase().includes('not found')) return 404
+    return 500
   }
 
   private authCallback(request: Request): string {

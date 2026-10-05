@@ -84,10 +84,23 @@ export class KVTemplateLoader implements TemplateLoader {
   }
 
   /**
-   * Sync load not supported for KV (always async)
+   * Return a template already fetched with load()/preload(). HTML rendering is
+   * synchronous, so Worker engines preload Blueprint file references before
+   * dispatching the request.
    */
-  loadSync(_source: string, _engine: 'handlebars' | 'liquid'): Template {
-    throw new Error('Synchronous template loading not supported in CloudFlare Workers. Use load() instead.')
+  loadSync(source: string, engine: 'handlebars' | 'liquid'): Template {
+    const cached = this.localCache.get(`${source}:${engine}`)
+    if (!cached) {
+      throw new Error(`Template '${source}' has not been preloaded from KV`)
+    }
+    return cached.template
+  }
+
+  /** Fetch all templates needed by the synchronous HTML renderer. */
+  async preload(templates: Iterable<{ source: string; engine?: 'handlebars' | 'liquid' }>): Promise<void> {
+    await Promise.all(Array.from(templates, template =>
+      this.load(template.source, template.engine ?? 'liquid').then(() => undefined)
+    ))
   }
 
   /**

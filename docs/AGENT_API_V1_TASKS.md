@@ -467,7 +467,7 @@ Node SQLite/PostgreSQL behavior is part of the core v1 release gate. Workers ite
 - [ ] Compile eligible database-only transactional workflows into one D1 batch, rejecting workflows that require intermediate query results, external effects, delays, loops, or unsupported control flow.
 - [ ] Consider a SQLite-backed Durable Object execution adapter for general interactive transactions and per-application serialization.
 - [x] Advertise Node transactional-workflow support through discovery metadata.
-- [ ] Add Agent API discovery to `runtime-worker` and advertise D1/Workers transaction limitations there.
+- [x] Add Agent API discovery to `runtime-worker` and advertise D1/Workers transaction limitations there.
 
 ### Acceptance criteria
 

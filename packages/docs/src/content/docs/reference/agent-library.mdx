@@ -53,7 +53,7 @@ Mutation retries reuse the generated idempotency key. Automatic HTTP retries occ
 
 The package declares caret dependency ranges while the preview compatibility suite tracks the concrete versions above. Run package verification after dependency updates. Consumers compiling declarations need modern TypeScript libraries including `ESNext.Disposable` until upstream declaration requirements change.
 
-Zebric Agent currently targets the Node runtime Agent API. Worker parity, durable runtime jobs, configuration files, interactive chat, broad Blueprint inspection/linting, patch application, and provider-specific compatibility guarantees are not available yet.
+Zebric Agent currently targets the complete Node runtime Agent API. Workers publish discovery and scoped entity CRUD operations, but semantic skills, commands, workflows, durable jobs, and event streaming are not yet available there. Configuration files, interactive chat, broad Blueprint inspection/linting, patch application, and provider-specific compatibility guarantees are also not available yet.
 
 See [Security and Current Limitations](/agents/zebric-agent/security) before connecting to production data.
 

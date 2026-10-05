@@ -9,6 +9,8 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **Session management** - Better Auth sessions or optional KV-backed custom sessions
 - ✅ **D1 database** - Cloudflare D1 SQL database adapter
 - ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
+- ✅ **Entity API** - Node-compatible CRUD paths with API-key roles and scopes
+- ✅ **Discovery** - Honest OpenAPI and `/.well-known/zebric-agent.json` metadata
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
 - ❌ **Workflows** - Rejected during initialization until a Workers executor is available
@@ -121,11 +123,32 @@ page, slot, and auth templates before serving a request.
 
 The Worker engine still rejects Blueprints containing workflows. Consequently,
 workflow actions, commands that depend on that execution stack, Agent API
-skills/discovery/jobs, and workflow events are not registered. Node's dedicated
-entity API, notification/plugin lifecycle, audit/metrics stack, and upload
-routes also remain Node-only. D1 transaction semantics require a dedicated
+skills/jobs, and workflow events are not registered. Node's notification/plugin
+lifecycle, audit/metrics stack, and upload routes also remain Node-only. D1 transaction semantics require a dedicated
 batch-oriented workflow implementation rather than a direct port of Node's
 interactive transaction executor.
+
+## Entity API and API keys
+
+Workers expose the same generic entity paths as Node:
+
+```text
+GET    /api/items
+POST   /api/items
+GET    /api/items/:id
+PUT    /api/items/:id
+DELETE /api/items/:id
+```
+
+API keys declared in `[[auth.apiKeys]]` are read from Worker secret bindings
+using `keyEnv`. Keys receive their configured roles, scopes, and constraints;
+entity routes require scopes such as `entity.item.list` and
+`entity.item.update`. Agent mutations must also include `X-Agent-Run-ID`.
+Valid API keys bypass browser CSRF checks, while invalid bearer values do not.
+
+Discovery is available at `/.well-known/zebric-agent.json` and
+`/api/openapi.json`. Worker metadata advertises entity APIs while reporting
+workflows, jobs, commands, audit history, and idempotency as unsupported.
 
 ## Session Management
 

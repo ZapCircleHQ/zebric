@@ -262,6 +262,133 @@ describe('ZebricWorkersEngine', () => {
     })
   })
 
+  describe('entity API parity', () => {
+    const apiBlueprint: any = {
+      version: '0.3.0',
+      project: { name: 'worker-api', version: '1.0.0', runtime: { min_version: '0.2.0' } },
+      entities: [{
+        name: 'Item',
+        fields: [
+          { name: 'id', type: 'ULID', primary_key: true },
+          { name: 'title', type: 'Text', required: true },
+          { name: 'createdAt', type: 'DateTime' },
+        ],
+      }],
+      pages: [],
+      auth: {
+        providers: [],
+        permissions: { operator: { allow: ['Item.*'] } },
+        apiKeys: [{
+          name: 'worker-agent',
+          keyEnv: 'WORKER_AGENT_KEY',
+          roles: ['operator'],
+          scopes: [
+            'entity.item.list',
+            'entity.item.get',
+            'entity.item.create',
+            'entity.item.update',
+            'entity.item.delete',
+          ],
+        }],
+      },
+    }
+
+    const noSessionProvider = {
+      getAuthInstance: () => ({ handler: () => new Response(null, { status: 204 }) }),
+      getSession: async () => null,
+      hasRole: () => false,
+      ownsResource: () => false,
+    }
+
+    async function createApiEngine(scopes?: string[]) {
+      const db = new MockD1Database()
+      const blueprint = scopes
+        ? {
+            ...apiBlueprint,
+            auth: {
+              ...apiBlueprint.auth,
+              apiKeys: [{ ...apiBlueprint.auth.apiKeys[0], scopes }],
+            },
+          }
+        : apiBlueprint
+      const apiEngine = new ZebricWorkersEngine({
+        env: { DB: db, WORKER_AGENT_KEY: 'worker-secret' } as any,
+        blueprint,
+        authProvider: noSessionProvider,
+      })
+      await apiEngine.getDatabase().migrate([
+        'CREATE TABLE Item (id TEXT PRIMARY KEY, title TEXT NOT NULL, createdAt TEXT)',
+      ])
+      return apiEngine
+    }
+
+    it('supports scoped API-key CRUD with Node-compatible entity paths', async () => {
+      const apiEngine = await createApiEngine()
+      const agentHeaders = {
+        authorization: 'Bearer worker-secret',
+        'content-type': 'application/json',
+        'x-agent-run-id': 'worker-run-1',
+      }
+
+      const created = await apiEngine.fetch(new Request('https://example.com/api/items', {
+        method: 'POST',
+        headers: agentHeaders,
+        body: JSON.stringify({ id: 'item-1', title: 'Created at the edge', createdAt: '2026-10-05T00:00:00Z' }),
+      }))
+      expect(created.status).toBe(201)
+
+      const listed = await apiEngine.fetch(new Request('https://example.com/api/items', {
+        headers: { authorization: 'Bearer worker-secret' },
+      }))
+      expect(listed.status).toBe(200)
+      expect(await listed.json()).toEqual([expect.objectContaining({ id: 'item-1', title: 'Created at the edge' })])
+
+      const updated = await apiEngine.fetch(new Request('https://example.com/api/items/item-1', {
+        method: 'PUT',
+        headers: agentHeaders,
+        body: JSON.stringify({ title: 'Updated at the edge' }),
+      }))
+      expect(updated.status).toBe(200)
+      expect(await updated.json()).toEqual(expect.objectContaining({ title: 'Updated at the edge' }))
+
+      const deleted = await apiEngine.fetch(new Request('https://example.com/api/items/item-1', {
+        method: 'DELETE',
+        headers: agentHeaders,
+      }))
+      expect(deleted.status).toBe(200)
+    })
+
+    it('enforces scopes, agent attribution, and CSRF bypass only for valid keys', async () => {
+      const apiEngine = await createApiEngine(['entity.item.list'])
+
+      const unscoped = await apiEngine.fetch(new Request('https://example.com/api/items', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer worker-secret',
+          'content-type': 'application/json',
+          'x-agent-run-id': 'worker-run-1',
+        },
+        body: JSON.stringify({ id: 'item-1', title: 'Denied' }),
+      }))
+      expect(unscoped.status).toBe(403)
+
+      const missingRun = await (await createApiEngine()).fetch(new Request('https://example.com/api/items', {
+        method: 'POST',
+        headers: { authorization: 'Bearer worker-secret', 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'item-1', title: 'No attribution' }),
+      }))
+      expect(missingRun.status).toBe(400)
+
+      const invalidKey = await apiEngine.fetch(new Request('https://example.com/api/items', {
+        method: 'POST',
+        headers: { authorization: 'Bearer wrong-secret', 'content-type': 'application/json' },
+        body: JSON.stringify({ id: 'item-1', title: 'No CSRF bypass' }),
+      }))
+      expect(invalidKey.status).toBe(403)
+      expect(await invalidKey.json()).toEqual({ error: 'Invalid CSRF token' })
+    })
+  })
+
   describe('error handling', () => {
     it('should handle malformed requests gracefully', async () => {
       const request = new Request('https://example.com/api/post', {

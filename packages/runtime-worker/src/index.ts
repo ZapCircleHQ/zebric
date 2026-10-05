@@ -29,3 +29,6 @@ export * from './behaviors/example-behaviors.js'
 
 // Query Executor
 export { WorkersQueryExecutor } from './query/workers-query-executor.js'
+
+// API discovery
+export { generateWorkersOpenApi, registerWorkersDiscoveryRoutes } from './api/discovery.js'

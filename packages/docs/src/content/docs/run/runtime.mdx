@@ -102,6 +102,13 @@ automatically. `FILES` similarly creates the R2 adapter returned by
 auth is configured. Upload routes and the separate KV session-backed CSRF
 adapter remain low-level components for custom composition.
 
+Workers also expose Node-compatible `/api/<entities>` CRUD routes. Blueprint
+API keys are loaded from Worker secret bindings named by `keyEnv`, with roles,
+entity scopes, constraints, and `X-Agent-Run-ID` attribution enforced. Clients
+can inspect the supported Worker surface at `/.well-known/zebric-agent.json`
+and `/api/openapi.json`; unsupported workflow, command, job, audit, and
+idempotency capabilities are reported as disabled.
+
 ```toml
 # wrangler.toml
 name = "my-zebric-app"
