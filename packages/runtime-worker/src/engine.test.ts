@@ -510,6 +510,95 @@ describe('ZebricWorkersEngine', () => {
     })
   })
 
+  describe('review hardening', () => {
+    const itemEntity = { name: 'Item', fields: [{ name: 'title', type: 'Text' as const, required: true }] }
+
+    it('requires an auth secret unless the base URL is localhost', () => {
+      const bp: any = { ...simpleBlueprint, auth: { providers: ['email'] } }
+      expect(() => new ZebricWorkersEngine({
+        env: { ...env, BETTER_AUTH_URL: 'http://app.example.com' },
+        blueprint: bp,
+      })).toThrow('BETTER_AUTH_SECRET is required')
+      expect(() => new ZebricWorkersEngine({ env: { ...env, BETTER_AUTH_URL: 'http://localhost:8787' }, blueprint: bp })).not.toThrow()
+    })
+
+    it('rejects entities whose API path collides with reserved routes', () => {
+      expect(() => new ZebricWorkersEngine({
+        env,
+        blueprint: { ...simpleBlueprint, entities: [{ name: 'Job', fields: [{ name: 'title', type: 'Text', required: true }] }] } as any,
+      })).toThrow('reserved')
+    })
+
+    it('retries template preload after a failure instead of caching it', async () => {
+      const kv = new MockKVNamespace()
+      const realGet = kv.get.bind(kv)
+      let calls = 0
+      ;(kv as any).get = async (...args: any[]) => {
+        if (calls++ === 0) throw new Error('KV unavailable')
+        return (realGet as any)(...args)
+      }
+      const templated = new ZebricWorkersEngine({
+        env: { ...env, TEMPLATES_KV: kv },
+        blueprint: {
+          ...simpleBlueprint,
+          pages: [{ path: '/', title: 'Home', layout: 'custom', template: { type: 'file', source: 'home.liquid' } }],
+        } as any,
+      })
+      const first = await templated.fetch(new Request('http://localhost/health'))
+      expect(first.status).toBeGreaterThanOrEqual(500)
+      await templated.fetch(new Request('http://localhost/health'))
+      expect(calls).toBeGreaterThan(1)
+    })
+
+    it('limits discovery CORS to apps without auth', async () => {
+      const open = new ZebricWorkersEngine({ env, blueprint: { ...simpleBlueprint, entities: [itemEntity] } as any })
+      const openRes = await open.fetch(new Request('http://localhost/.well-known/zebric-agent.json'))
+      expect(openRes.headers.get('access-control-allow-origin')).toBe('*')
+
+      const secured = new ZebricWorkersEngine({
+        env: { ...env, BETTER_AUTH_URL: 'http://localhost:8787' },
+        blueprint: { ...simpleBlueprint, entities: [itemEntity], auth: { providers: ['email'] } } as any,
+      })
+      const securedRes = await secured.fetch(new Request('http://localhost:8787/.well-known/zebric-agent.json'))
+      expect(securedRes.headers.get('access-control-allow-origin')).toBeNull()
+      expect(securedRes.headers.get('cache-control')).toContain('private')
+    })
+
+    it('does not allow anonymous entity writes on an authenticated Blueprint', async () => {
+      const secured = new ZebricWorkersEngine({
+        env: { ...env, BETTER_AUTH_URL: 'http://localhost:8787' },
+        blueprint: { ...simpleBlueprint, entities: [itemEntity], auth: { providers: ['email'] } } as any,
+      })
+      const res = await secured.fetch(new Request('http://localhost:8787/api/items', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'x' }),
+      }))
+      expect(res.status).toBe(403)
+    })
+
+    it('leaves entity CRUD open when a Blueprint declares no auth or access rules', async () => {
+      // Core access control allows everything when no permissions/access rules exist,
+      // so the request is authorized and only fails later on the (mock) database.
+      const res = await engine.fetch(new Request('http://localhost/api/posts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'x' }),
+      }))
+      expect([401, 403]).not.toContain(res.status)
+    })
+
+    it('omits internal error details from 5xx entity API responses', async () => {
+      const res = await engine.fetch(new Request('http://localhost/api/posts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'x' }),
+      }))
+      expect(res.status).toBe(500)
+      expect(await res.json()).toEqual({ error: 'Create failed' })
+    })
+  })
+
   describe('error handling', () => {
     it('should handle malformed requests gracefully', async () => {
       const request = new Request('https://example.com/api/post', {

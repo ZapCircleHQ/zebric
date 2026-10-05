@@ -35,6 +35,9 @@ interface WorkflowContext {
   session?: UserSession
 }
 
+const JOB_TTL_MS = 60 * 60 * 1000
+const MAX_JOBS = 1000
+
 /** Executes the strict subset of workflows D1 can preserve atomically. */
 export class D1WorkflowExecutor {
   private readonly workflows = new Map<string, Workflow>()
@@ -115,6 +118,7 @@ export class D1WorkflowExecutor {
       createdAt: now,
       startedAt: now,
     }
+    this.evictJobs()
     this.jobs.set(job.id, job)
 
     try {
@@ -126,12 +130,26 @@ export class D1WorkflowExecutor {
       job.status = 'completed'
       job.completedAt = new Date().toISOString()
       job.result = { workflow: name, mutations: workflow.steps.length }
-    } catch {
+    } catch (error) {
+      console.error(`Workflow ${name} failed:`, error)
       job.status = 'failed'
       job.completedAt = new Date().toISOString()
       job.error = 'Workflow execution failed'
     }
     return job
+  }
+
+  /** Jobs live in isolate memory; drop expired ones and cap the total. */
+  private evictJobs(): void {
+    const cutoff = Date.now() - JOB_TTL_MS
+    for (const [id, job] of this.jobs) {
+      if (Date.parse(job.createdAt) < cutoff) this.jobs.delete(id)
+    }
+    while (this.jobs.size >= MAX_JOBS) {
+      const oldest = this.jobs.keys().next().value
+      if (oldest === undefined) break
+      this.jobs.delete(oldest)
+    }
   }
 
   private async compileStep(step: WorkflowStep, context: WorkflowContext): Promise<Array<{ sql: string; params: unknown[] }>> {

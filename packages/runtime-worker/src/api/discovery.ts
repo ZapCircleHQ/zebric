@@ -2,9 +2,14 @@ import { analyzeTransactionalWorkflow, commandOperationId, generateOpenAPISpec, 
 import type { Hono } from 'hono'
 
 export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint): void {
+  // The Blueprint is static for the life of the isolate, so build the contract once.
+  const publicDiscovery = !blueprint.auth
+  let cachedContract: ReturnType<typeof workersContract> | undefined
+  const build = async () => ({ contract: await (cachedContract ??= workersContract(blueprint)) })
+  const headers = () => discoveryHeaders(publicDiscovery)
   app.get('/.well-known/zebric-agent.json', async c => {
     const origin = new URL(c.req.url).origin
-    const contract = await workersContract(blueprint)
+    const { contract } = await build()
     const supported = supportedBlueprint(blueprint)
     return Response.json({
       name: blueprint.project.name,
@@ -34,16 +39,16 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint):
         domainCommands: Boolean(supported.commands?.length),
         auditHistory: false,
       },
-    }, { headers: discoveryHeaders() })
+    }, { headers: headers() })
   })
 
   app.get('/api/openapi.json', async c => {
-    const contract = await workersContract(blueprint)
+    const { contract } = await build()
     const spec = generateWorkersOpenApi(blueprint, new URL(c.req.url).origin)
     spec['x-zebric-contract'] = contract
     return Response.json(spec, {
       headers: {
-        ...discoveryHeaders(),
+        ...headers(),
         ETag: `"${contract.fingerprint}"`,
       },
     })
@@ -112,9 +117,9 @@ function stableJsonValue(value: unknown): unknown {
   )
 }
 
-function discoveryHeaders(): Record<string, string> {
-  return {
-    'Access-Control-Allow-Origin': '*',
-    'Cache-Control': 'public, max-age=300',
-  }
+/** Open CORS and shared caching only for apps without [auth]; private apps stay same-origin. */
+function discoveryHeaders(publicDiscovery: boolean): Record<string, string> {
+  return publicDiscovery
+    ? { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300' }
+    : { 'Cache-Control': 'private, max-age=300' }
 }

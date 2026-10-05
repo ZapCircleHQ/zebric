@@ -115,8 +115,10 @@ export class ZebricWorkersEngine {
         ?? this.blueprint.auth.trustedOrigins?.[0]
         ?? 'http://localhost:8787'
       const configuredSecret = config.auth?.secret ?? config.env.BETTER_AUTH_SECRET
-      if (!configuredSecret && new URL(baseURL).protocol === 'https:') {
-        throw new Error('BETTER_AUTH_SECRET is required for HTTPS Cloudflare Workers deployments')
+      const { protocol, hostname } = new URL(baseURL)
+      const isLocal = protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(hostname)
+      if (!configuredSecret && !isLocal) {
+        throw new Error('BETTER_AUTH_SECRET is required unless the auth base URL is localhost')
       }
       this.authProvider = new WorkersBetterAuthProvider({
         database: config.env.DB,
@@ -178,7 +180,7 @@ export class ZebricWorkersEngine {
     this.app = new Hono()
 
     this.registerSecurityHeaders()
-    if (this.authProvider) {
+    if (this.authProvider || this.sessionManager) {
       this.registerCsrfProtection()
     }
     this.app.get('/health', async () => this.handleHealthCheck())
@@ -214,7 +216,11 @@ export class ZebricWorkersEngine {
   async fetch(request: Request): Promise<Response> {
     try {
       if (!this.templatesReady && this.templateLoader instanceof KVTemplateLoader) {
-        this.templatesReady = this.templateLoader.preload(this.collectFileTemplates())
+        this.templatesReady = this.templateLoader.preload(this.collectFileTemplates()).catch(error => {
+          // Do not cache a failed preload; the next request retries.
+          this.templatesReady = undefined
+          throw error
+        })
       }
       await this.templatesReady
       return await this.app.fetch(request, this.config.env)
@@ -365,6 +371,13 @@ export class ZebricWorkersEngine {
         return c.res
       }
 
+      // Without an auth provider (legacy SESSION_KV), only requests that carry a
+      // live session have an ambient credential worth protecting.
+      if (!this.authProvider && !(await this.sessionManager?.getSession(request))) {
+        await next()
+        return c.res
+      }
+
       const submitted = await this.extractCsrfToken(request)
       if (!cookieToken || !submitted || cookieToken !== submitted.trim()) {
         return Response.json({ error: 'Invalid CSRF token' }, { status: 403 })
@@ -439,9 +452,13 @@ export class ZebricWorkersEngine {
       const command = commands.get(c.req.param('operationId'))
       if (!command) return c.notFound()
       const session = await this.sessionManager?.getSession(c.req.raw) ?? null
-      if (!session) return c.redirect(`/auth/sign-in?callback=${encodeURIComponent('/')}`, 303)
+      if (!session) {
+        const callback = this.safeRedirect(undefined, c.req.header('referer'), c.req.url)
+        return c.redirect(`/auth/sign-in?callback=${encodeURIComponent(callback)}`, 303)
+      }
+      let form: Record<string, unknown> = {}
       try {
-        const form = Object.fromEntries(await c.req.raw.formData())
+        form = Object.fromEntries(await c.req.raw.formData())
         const input = this.coerceCommandInput(command, form)
         const result = await this.commandExecutor.execute({
           command: command.name,
@@ -453,7 +470,16 @@ export class ZebricWorkersEngine {
         return c.redirect(this.safeRedirect(form.redirect, c.req.header('referer'), c.req.url), 303)
       } catch (error) {
         console.error(`Command ${command.name} failed:`, error)
-        return Response.json({ error: error instanceof DomainError ? error.message : 'Command execution failed' }, { status: 400 })
+        const message = error instanceof DomainError || error instanceof ValidationFailureError
+          ? error.message
+          : 'Command execution failed'
+        if (c.req.header('accept')?.includes('application/json')) {
+          return Response.json({ error: message }, { status: 400 })
+        }
+        // Browser form post: go back to the originating page with the error.
+        const target = new URL(this.safeRedirect(form.redirect, c.req.header('referer'), c.req.url), c.req.url)
+        target.searchParams.set('error', message)
+        return c.redirect(`${target.pathname}${target.search}`, 303)
       }
     })
   }
@@ -475,7 +501,7 @@ export class ZebricWorkersEngine {
             if (method !== 'get') this.requireAgentRunId(c.req.raw, session)
             const rawBody = method === 'get' ? {} : await this.parseOptionalJsonObject(c.req.raw)
             const body = action.body
-              ? Object.fromEntries(Object.entries(rawBody).filter(([key]) => key in action.body!))
+              ? Object.fromEntries(Object.entries(rawBody).filter(([key]) => Object.hasOwn(action.body!, key)))
               : rawBody
             const params = Object.fromEntries(
               [...action.path.matchAll(/\{(\w+)\}/g)].map(match => [match[1]!, c.req.param(match[1]!)]),
@@ -580,8 +606,12 @@ export class ZebricWorkersEngine {
   }
 
   private registerEntityApiRoutes(): void {
+    const reserved = new Set(['/api/jobs', '/api/commands', '/api/auth', '/api/openapi.json'])
     for (const entity of this.blueprint.entities) {
       const collectionPath = `/api/${entity.name.toLowerCase()}s`
+      if (reserved.has(collectionPath)) {
+        throw new Error(`Entity ${entity.name} maps to ${collectionPath}, which is reserved by the Workers runtime; rename the entity`)
+      }
       const itemPath = `${collectionPath}/:id`
 
       this.app.get(collectionPath, async c => this.handleEntityApi(c, entity.name, 'list', async session => {
@@ -651,10 +681,11 @@ export class ZebricWorkersEngine {
     } catch (error) {
       const label = action === 'get' ? 'Find' : `${action[0]!.toUpperCase()}${action.slice(1)}`
       console.error(`${label} ${entity} error:`, error)
+      const status = this.entityApiErrorStatus(error)
       return Response.json({
         error: `${label} failed`,
-        details: error instanceof Error ? error.message : 'Unknown error',
-      }, { status: this.entityApiErrorStatus(error) })
+        ...(status < 500 ? { details: error instanceof Error ? error.message : 'Unknown error' } : {}),
+      }, { status })
     }
   }
 

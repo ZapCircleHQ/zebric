@@ -129,7 +129,9 @@ per-isolate idempotent replay are available for that subset.
 Command handlers and workflows with intermediate query results, commands,
 external effects, delays, loops, conditions, or non-transactional execution are
 rejected or omitted from discovery. Jobs and idempotency entries are process-local,
-not durable across isolates. Node's notification/plugin lifecycle, audit/metrics
+not durable across isolates: jobs expire after an hour and are capped at 1000 per
+isolate, so a retry or poll that lands on another isolate can re-execute or 404.
+Node's notification/plugin lifecycle, audit/metrics
 stack, event stream, and upload routes also remain Node-only.
 
 ## Entity API and API keys
@@ -446,3 +448,14 @@ pnpm wrangler deploy
 ## License
 
 MIT
+
+## Operational notes
+
+- `BETTER_AUTH_SECRET` is required unless the auth base URL is `localhost`.
+- Entities may not map to reserved API paths (`/api/jobs`, `/api/commands`,
+  `/api/auth`); the engine throws at startup if one does.
+- CSRF checks apply whenever a request carries a session. Valid API-key bearer
+  requests are exempt.
+- Discovery endpoints send open CORS headers only for Blueprints without `[auth]`.
+- A Blueprint with no `[auth]` permissions or entity access rules leaves the entity
+  CRUD API open to anonymous callers, matching core access-control defaults.

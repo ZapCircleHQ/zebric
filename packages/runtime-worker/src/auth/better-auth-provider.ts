@@ -18,10 +18,15 @@ export interface WorkersBetterAuthProviderConfig {
 
 export class WorkersBetterAuthProvider implements AuthProvider {
   private auth: Auth<any>
+  private readonly sessionCookieName: string
 
   constructor(config: WorkersBetterAuthProviderConfig) {
     const providers = config.blueprint.auth?.providers ?? ['email']
     const duration = config.blueprint.auth?.session?.duration ?? 60 * 60 * 24 * 7
+
+    // Better Auth prefixes cookie names with __Secure- when secure cookies are on.
+    const secure = new URL(config.baseURL).protocol === 'https:'
+    this.sessionCookieName = `${secure ? '__Secure-' : ''}better-auth.session_token`
 
     this.auth = betterAuth({
       // Better Auth 1.5+ detects D1 bindings and uses its D1 Kysely dialect.
@@ -49,7 +54,7 @@ export class WorkersBetterAuthProvider implements AuthProvider {
         cookieCache: { enabled: true, maxAge: 5 * 60 },
       },
       advanced: {
-        useSecureCookies: new URL(config.baseURL).protocol === 'https:',
+        useSecureCookies: secure,
       },
     })
   }
@@ -65,7 +70,7 @@ export class WorkersBetterAuthProvider implements AuthProvider {
       if (bearer?.toLowerCase().startsWith('bearer ')) {
         const token = bearer.slice(7).trim()
         const existing = headers.get('cookie')
-        headers.set('cookie', `${existing ? `${existing}; ` : ''}better-auth.session_token=${encodeURIComponent(token)}`)
+        headers.set('cookie', `${existing ? `${existing}; ` : ''}${this.sessionCookieName}=${encodeURIComponent(token)}`)
       }
 
       const result = await this.auth.api.getSession({ headers })
