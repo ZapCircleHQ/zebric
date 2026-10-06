@@ -36,6 +36,18 @@ binding = "DB"
 database_name = "zebric-db"
 database_id = "your-database-id"
 
+# Optional durable workflow backend. Export ZebricWorkflow using
+# createWorkflowEntrypoint from @zebric/runtime-worker/workflows.
+# [[workflows]]
+# name = "zebric-workflows"
+# binding = "WORKFLOWS"
+# class_name = "ZebricWorkflow"
+#
+# [triggers]
+# crons = ["0 * * * *"]
+#
+# Inbound workflow webhooks: pnpm wrangler secret put ZEBRIC_WEBHOOK_SECRET
+
 # ============================================================================
 # R2 Storage (for file uploads)
 # ============================================================================

@@ -72,4 +72,22 @@ describe('Workers Agent API discovery', () => {
     const spec = generateWorkersOpenApi({ ...blueprint, auth: undefined })
     expect(spec.security).toEqual([])
   })
+  it('advertises durable lifecycle support and omits disabled workflow skills', async () => {
+    const workflows = [
+      { name: 'Active', trigger: { manual: true }, steps: [] },
+      { name: 'Disabled', enabled: false, trigger: { manual: true }, steps: [] },
+    ]
+    const skills = workflows.map(workflow => ({ name: workflow.name, actions: [{ name: 'run', method: 'POST', path: `/api/${workflow.name}`, workflow: workflow.name }] }))
+    const app = new Hono()
+    registerWorkersDiscoveryRoutes(app, { ...blueprint, workflows, skills }, { durableWorkflows: true })
+    const discovery = await (await app.request('https://edge.example/.well-known/zebric-agent.json')).json() as any
+    expect(discovery.skills).toEqual(['Active'])
+    expect(discovery.capabilities).toMatchObject({ workflowJobs: true, durableWorkflowJobs: true, workflowCancellation: true, workflowRetries: true, d1BatchWorkflows: false })
+    const spec = await (await app.request('https://edge.example/api/openapi.json')).json() as any
+    expect(spec.paths['/api/Disabled']).toBeUndefined()
+    expect(spec.paths['/api/jobs/{id}/cancel'].post).toBeDefined()
+    expect(spec.paths['/api/jobs/{id}/retry'].post).toBeDefined()
+    expect(spec['x-zebric-workflows'].durable).toBe(true)
+  })
+
 })

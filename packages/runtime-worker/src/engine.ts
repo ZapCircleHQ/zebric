@@ -20,11 +20,15 @@ import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
 import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
 import { requestFingerprint, WorkersIdempotencyCache } from './api/idempotency-cache.js'
+import { verifyWebhookRequest } from './security/webhook-auth.js'
+import type { DurableWorkflowBinding } from './workflows/durable-workflow.js'
 import { type WorkersWorkflowServices, D1WorkflowExecutor, securityId } from './workflows/d1-workflow-executor.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
   DB: D1Database
+  /** Optional Cloudflare Workflows binding for durable workflow execution. */
+  WORKFLOWS?: DurableWorkflowBinding
   /** Creates the cache returned by getCache(); request execution does not use it automatically. */
   CACHE_KV?: KVNamespace
   SESSION_KV?: KVNamespace
@@ -37,6 +41,7 @@ export interface WorkersEnv {
   BLUEPRINT?: string // Serialized blueprint JSON
   BETTER_AUTH_SECRET?: string
   BETTER_AUTH_URL?: string
+  ZEBRIC_WEBHOOK_SECRET?: string
 }
 
 export interface WorkersAuthConfig {
@@ -155,7 +160,7 @@ export class ZebricWorkersEngine {
 
     this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
     this.commandExecutor = new CommandExecutor(this.blueprint, { queryExecutor: this.queryExecutor })
-    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor })
+    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor }, config.env.WORKFLOWS)
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -201,7 +206,7 @@ export class ZebricWorkersEngine {
       sessionManager: this.sessionManager,
     })
 
-    registerWorkersDiscoveryRoutes(this.app, this.blueprint)
+    registerWorkersDiscoveryRoutes(this.app, this.blueprint, { durableWorkflows: Boolean(this.config.env.WORKFLOWS) })
     this.registerCommandRoutes()
     this.registerWorkflowRoutes()
     this.registerEntityApiRoutes()
@@ -347,6 +352,7 @@ export class ZebricWorkersEngine {
     this.app.use('*', async (c, next) => {
       const request = c.req.raw
       const method = request.method.toUpperCase()
+      if (new URL(request.url).pathname.startsWith('/webhooks/')) { await next(); return c.res }
       const safe = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
       const cookieToken = WorkersCookieManager.get(request, 'csrf-token')?.trim()
 
@@ -526,7 +532,13 @@ export class ZebricWorkersEngine {
               } : undefined,
             }
             const execute = async () => {
-              const job = await this.workflowExecutor.triggerManual(action.workflow!, data, session ?? undefined)
+              const key = c.req.header('idempotency-key')?.trim()
+              const url = new URL(c.req.url)
+              const submission = key ? {
+                scope: `${securityId(session) ?? 'anonymous'}:${key}`,
+                fingerprint: await requestFingerprint(`${skill.name}:${action.name}`, c.req.method, `${url.pathname}${url.search}`, JSON.stringify(body)),
+              } : undefined
+              const job = await this.workflowExecutor.triggerManual(action.workflow!, data, session ?? undefined, submission)
               return Response.json({
                 success: true,
                 job: { id: job.id, workflow: job.workflowName, status: this.publicJobStatus(job.status), url: `/api/jobs/${job.id}` },
@@ -535,6 +547,7 @@ export class ZebricWorkersEngine {
             return await this.withIdempotency(c.req.raw, session, `${skill.name}:${action.name}`, body, execute)
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error)
+            if (message.includes('Idempotency key was reused')) return this.agentError(409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different input')
             if (message.includes('precondition failed')) {
               return this.agentError(409, 'WORKFLOW_PRECONDITION_FAILED', 'The workflow precondition was not satisfied')
             }
@@ -548,10 +561,34 @@ export class ZebricWorkersEngine {
       }
     }
 
+    this.app.all('/webhooks/*', async c => {
+      const workflows = this.workflowExecutor.list().filter(workflow => workflow.enabled !== false && workflow.trigger.webhook === new URL(c.req.url).pathname)
+      if (!workflows.length) return Response.json({ error: 'No workflow found for this webhook' }, { status: 404 })
+      const rawBody = await c.req.raw.clone().text()
+      const authorized = new Set<string>()
+      let configured = false
+      for (const workflow of workflows) {
+        const secret = (this.config.env as unknown as Record<string, unknown>)[workflow.trigger.webhookSecretEnv ?? 'ZEBRIC_WEBHOOK_SECRET']
+        if (typeof secret !== 'string' || !secret) continue
+        configured = true
+        if (await verifyWebhookRequest(c.req.raw, rawBody, secret)) authorized.add(workflow.name)
+      }
+      if (!configured) return Response.json({ error: 'Webhook is not configured securely' }, { status: 503 })
+      if (!authorized.size) return Response.json({ error: 'Invalid webhook credentials' }, { status: 401 })
+      let body: unknown = rawBody
+      if (c.req.header('content-type')?.includes('application/json')) {
+        try { body = JSON.parse(rawBody) } catch { return Response.json({ error: 'Invalid JSON body' }, { status: 400 }) }
+      }
+      const jobs = await this.workflowExecutor.triggerWebhook(new URL(c.req.url).pathname, {
+        headers: Object.fromEntries(c.req.raw.headers), body, query: Object.fromEntries(new URL(c.req.url).searchParams),
+      }, workflow => authorized.has(workflow.name))
+      return Response.json({ success: true, jobs: jobs.map(job => ({ id: job.id, workflow: job.workflowName, status: this.publicJobStatus(job.status) })) })
+    })
+
     this.app.get('/api/jobs/:id', async c => {
       const session = await this.resolveApiSession(c.req.raw)
       if (!session) return this.agentError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
-      const job = this.workflowExecutor.getJob(c.req.param('id'))
+      const job = await this.workflowExecutor.getJob(c.req.param('id'), securityId(session))
       if (!job || !job.ownerId || job.ownerId !== securityId(session)) {
         return this.agentError(404, 'JOB_NOT_FOUND', 'The workflow job was not found')
       }
@@ -566,6 +603,21 @@ export class ZebricWorkersEngine {
         error: job.error ?? null,
       })
     })
+
+    for (const operation of ['cancel', 'retry'] as const) {
+      this.app.post(`/api/jobs/:id/${operation}`, async c => {
+        const session = await this.resolveApiSession(c.req.raw)
+        if (!session) return this.agentError(401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+        const id = c.req.param('id')
+        const job = await this.workflowExecutor.getJob(id, securityId(session))
+        if (!job?.ownerId || job.ownerId !== securityId(session)) return this.agentError(404, 'JOB_NOT_FOUND', 'The workflow job was not found')
+        // Agent mutations retain the attribution requirement of other API routes.
+        try { this.requireAgentRunId(c.req.raw, session) } catch { return this.agentError(400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required') }
+        const changed = operation === 'cancel' ? await this.workflowExecutor.cancelJob(id) : await this.workflowExecutor.retryJob(id)
+        if (!changed) return this.agentError(409, 'JOB_STATE_CONFLICT', `The workflow job cannot ${operation} in its current state`)
+        return Response.json({ success: true, id })
+      })
+    }
 
     this.app.post('/actions/:workflowName', async c => {
       const session = await this.sessionManager?.getSession(c.req.raw) ?? null
@@ -795,7 +847,7 @@ export class ZebricWorkersEngine {
     return Response.json({ error: { code, message, retryable } }, { status })
   }
 
-  private publicJobStatus(status: 'running' | 'completed' | 'failed'): 'running' | 'succeeded' | 'failed' {
+  private publicJobStatus(status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'): 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' {
     return status === 'completed' ? 'succeeded' : status
   }
 
@@ -862,16 +914,17 @@ export class ZebricWorkersEngine {
 /**
  * Create a Workers fetch handler
  */
-export function createWorkerHandler(config: Omit<WorkersEngineConfig, 'env'>) {
+export type WorkersHandlerConfig = Omit<WorkersEngineConfig, 'env'> | ((env: WorkersEnv) => Omit<WorkersEngineConfig, 'env'>)
+
+export function createWorkerHandler(config: WorkersHandlerConfig) {
   let engine: ZebricWorkersEngine | undefined
+  const getEngine = (env: WorkersEnv) => engine ??= new ZebricWorkersEngine({ ...(typeof config === 'function' ? config(env) : config), env })
   return {
     async scheduled(controller: ScheduledController, env: WorkersEnv, ctx: ExecutionContext): Promise<void> {
-      engine ??= new ZebricWorkersEngine({ ...config, env })
-      ctx.waitUntil(engine.scheduled(controller.cron))
+      ctx.waitUntil(getEngine(env).scheduled(controller.cron))
     },
     async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
-      engine ??= new ZebricWorkersEngine({ ...config, env })
-      return engine.fetch(request)
+      return getEngine(env).fetch(request)
     }
   }
 }

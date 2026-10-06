@@ -15,7 +15,9 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **D1 workflows** - Fixed transactional create/update/delete workflows execute as one atomic D1 batch
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
-- ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects execute sequentially
+- ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects
+- ✅ **Durable workflow jobs** - Optional Cloudflare Workflows checkpoints, durable delays, retries, timeouts, and lifecycle controls
+- ✅ **Workflow webhooks** - Bearer or timestamped HMAC authentication for inbound triggers
 
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
 `WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
@@ -65,8 +67,8 @@ export default createWorkerHandler({
 })
 ```
 
-`createWorkerHandler` retains one engine per Worker isolate so process-local
-workflow jobs and idempotency replays remain observable across requests.
+`createWorkerHandler` retains one engine per Worker isolate. Bind `WORKFLOWS`
+for durable jobs and workflow submission idempotency across isolates.
 
 ## Authentication
 
@@ -118,7 +120,7 @@ bind a KV namespace as `TEMPLATES_KV`; keys use the `template:` prefix by
 default and the engine preloads all file-backed
 page, slot, and auth templates before serving a request.
 
-## Remaining Node parity gaps
+## Workflows
 
 Workers execute declarative domain commands and general non-transactional workflows.
 Query results and external results can be assigned with `assignTo` and passed to
@@ -131,19 +133,81 @@ Pass `workflowServices` to the engine or handler to inject a shared `ServiceRegi
 email service, notification service, plugin registry, or HTTP client. Webhook steps
 use native `fetch` by default. Incoming webhook integration is available through
 `engine.getWorkflowExecutor().triggerWebhook(path, request, authorize)`; application
-code must authenticate the request and provide the authorization callback.
+code must authenticate the request and provide the authorization callback, or use
+the authenticated `/webhooks/*` routes described below.
 
 Transactional workflows still require a fixed list of database create/update/delete
 steps, submitted as one atomic D1 batch. Transactions with intermediate reads,
 commands, external effects, or control flow are rejected at startup.
 
-Execution is awaited within the request or scheduled event. Delays use isolate timers;
-there is no durable Cloudflare Workflows/Queues backend, automatic retry, cancellation,
-or workflow timeout yet. Jobs and idempotency entries remain process-local, not durable
-across isolates: jobs expire after an hour and are capped at 1000 per isolate, so a retry
-or poll that lands on another isolate can re-execute or 404.
-Node's notification/plugin lifecycle, audit/metrics
-stack, event stream, and upload routes also remain Node-only.
+With a `WORKFLOWS` binding, jobs execute asynchronously through Cloudflare Workflows.
+Completed effects and their typed results are checkpointed; delays use durable sleep.
+Job ownership and lifecycle leases are stored in D1's private
+`_zebric_workflow_jobs` and `_zebric_workflow_job_controls` tables, initialized
+on first use, so authorized polling works across isolates. Workflow-backed Agent API
+idempotency keys also resolve to the same durable instance across isolates and reject
+conflicting input. Command idempotency remains per-isolate.
+
+`retries` sets the maximum total attempts per effect (default 3), and `timeout` sets
+its per-attempt timeout in milliseconds (default 30000). A transactional D1 batch
+is one effect. Explicit retry restarts a failed job from the beginning. As with other
+retrying systems, an effect can finish before its checkpoint is recorded; outbound
+integrations should use idempotency keys when repeating an effect would be harmful.
+
+Without the binding, execution is awaited inline. Inline jobs support the same
+step retry policy, cancellation, and timeout; their metadata and idempotency cache
+remain isolate-local. Cancellation and timeouts stop subsequent steps, but cannot
+undo completed effects or forcibly stop an injected adapter that ignores cancellation.
+Inline jobs expire after an hour and retain at most 1000 terminal jobs per isolate.
+
+Authenticated owners can poll `GET /api/jobs/:id`, cancel with
+`POST /api/jobs/:id/cancel`, and retry failures with `POST /api/jobs/:id/retry`.
+Cookie-authenticated mutations require CSRF; API-key agents must provide
+`X-Agent-Run-ID`. The executor also exposes `getJobs`, `cancelJob`, `retryJob`, and
+`cleanup` for application-managed lifecycle tasks. Durable instances use Cloudflare's
+retention policy; D1 ownership metadata is cleaned explicitly with `cleanup`.
+
+### Durable workflow deployment
+
+Export a Workflow entrypoint in addition to the Worker handler. Use the same
+Blueprint and adapter configuration for both; an environment resolver can construct
+service adapters from each isolate's bindings.
+
+```typescript
+import { createWorkerHandler } from '@zebric/runtime-worker'
+import { createWorkflowEntrypoint } from '@zebric/runtime-worker/workflows'
+import blueprintToml from './blueprint.toml'
+
+const config = { blueprintContent: blueprintToml, blueprintFormat: 'toml' as const }
+export class ZebricWorkflow extends createWorkflowEntrypoint(config) {}
+export default createWorkerHandler(config)
+```
+
+```toml
+[[workflows]]
+name = "zebric-workflows"
+binding = "WORKFLOWS"
+class_name = "ZebricWorkflow"
+
+[triggers]
+crons = ["0 * * * *"] # Must match a workflow trigger.schedule
+```
+
+Incoming `/webhooks/*` routes match workflow `trigger.webhook` paths. Set
+`ZEBRIC_WEBHOOK_SECRET` (or `trigger.webhookSecretEnv`) as a Worker secret. Requests
+must present that secret as a bearer credential, or use a timestamped HMAC:
+`X-Zebric-Webhook-Timestamp` contains Unix seconds and
+`X-Zebric-Webhook-Signature` contains `sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>`.
+Signatures expire after five minutes. Each workflow sharing a path is authorized
+against its own secret. The low-level `triggerWebhook` API still requires an
+application-provided authorization callback.
+
+## Remaining Node parity gaps
+
+D1 transactions still require a fixed mutation batch; dynamic transactional
+workflows require Node. Command idempotency remains per-isolate. Node's
+notification/plugin lifecycle, audit/metrics stack, event stream, and upload routes
+also remain Node-only.
 
 ## Entity API and API keys
 

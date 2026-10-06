@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./workflows": {
+      "types": "./dist/workflows/cloudflare-entrypoint.d.ts",
+      "default": "./dist/workflows/cloudflare-entrypoint.js"
     }
   },
   "files": [
@@ -41,6 +45,7 @@
   "author": "Zebric Team",
   "license": "MIT",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
     "better-auth": "^1.6.6",

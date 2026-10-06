@@ -1,11 +1,13 @@
 import { analyzeTransactionalWorkflow, commandOperationId, generateOpenAPISpec, type Blueprint, type OpenAPISpec } from '@zebric/runtime-core'
 import type { Hono } from 'hono'
 
-export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint): void {
+export interface WorkersDiscoveryOptions { durableWorkflows?: boolean }
+
+export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, options: WorkersDiscoveryOptions = {}): void {
   // The Blueprint is static for the life of the isolate, so build the contract once.
   const publicDiscovery = !blueprint.auth
   let cachedContract: ReturnType<typeof workersContract> | undefined
-  const build = async () => ({ contract: await (cachedContract ??= workersContract(blueprint)) })
+  const build = async () => ({ contract: await (cachedContract ??= workersContract(blueprint, options)) })
   const headers = () => discoveryHeaders(publicDiscovery)
   app.get('/.well-known/zebric-agent.json', async c => {
     const origin = new URL(c.req.url).origin
@@ -32,6 +34,9 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint):
       capabilities: {
         entityApi: true,
         workflowJobs: Boolean(supported.workflows?.length),
+        durableWorkflowJobs: Boolean(options.durableWorkflows && supported.workflows?.length),
+        workflowCancellation: Boolean(supported.workflows?.length),
+        workflowRetries: Boolean(supported.workflows?.length),
         idempotency: true,
         eventStream: false,
         transactionalWorkflows: false,
@@ -44,7 +49,7 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint):
 
   app.get('/api/openapi.json', async c => {
     const { contract } = await build()
-    const spec = generateWorkersOpenApi(blueprint, new URL(c.req.url).origin)
+    const spec = generateWorkersOpenApi(blueprint, new URL(c.req.url).origin, options)
     spec['x-zebric-contract'] = contract
     return Response.json(spec, {
       headers: {
@@ -55,7 +60,7 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint):
   })
 }
 
-export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string): OpenAPISpec {
+export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string, options: WorkersDiscoveryOptions = {}): OpenAPISpec {
   const auth = blueprint.auth ? 'required' as const : 'none' as const
   const skills = blueprint.entities.map(entity => {
     const path = `/api/${entity.name.toLowerCase()}s`
@@ -77,7 +82,17 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string): 
     ...supported,
     skills: [...skills, ...(supported.skills ?? [])],
   }
-  const spec = generateOpenAPISpec(apiBlueprint, baseUrl)
+  const spec = generateOpenAPISpec(apiBlueprint, baseUrl) as OpenAPISpec & {
+    'x-zebric-workflows'?: { durable: boolean; retries: string; timeout: string }
+  }
+  spec['x-zebric-workflows'] = { durable: Boolean(options.durableWorkflows), retries: 'per-step', timeout: 'per-step' }
+  for (const operation of ['cancel', 'retry'] as const) {
+    spec.paths[`/api/jobs/{id}/${operation}`] = { post: {
+      operationId: `${operation}_workflow_job`, summary: `${operation === 'cancel' ? 'Cancel' : 'Retry'} an owned workflow job`,
+      parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+      responses: { '200': { description: 'Job lifecycle operation accepted' }, '401': { description: 'Authentication required' }, '404': { description: 'Job not found' }, '409': { description: 'Job state conflict' } },
+    } }
+  }
   delete spec.paths['/api/audit']
   if (!blueprint.auth?.apiKeys?.length) spec.security = []
   return spec
@@ -85,7 +100,7 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string): 
 
 function supportedBlueprint(blueprint: Blueprint): Blueprint {
   const workflows = (blueprint.workflows ?? []).filter(workflow =>
-    !workflow.transactional || analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).d1BatchEligible
+    workflow.enabled !== false && (!workflow.transactional || analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).d1BatchEligible)
   )
   const workflowNames = new Set(workflows.map(workflow => workflow.name))
   const skills = (blueprint.skills ?? []).flatMap(skill => {
@@ -100,8 +115,8 @@ function supportedBlueprint(blueprint: Blueprint): Blueprint {
   }
 }
 
-async function workersContract(blueprint: Blueprint): Promise<{ version: '1'; fingerprint: string }> {
-  const canonical = JSON.stringify(stableJsonValue(generateWorkersOpenApi(blueprint)))
+async function workersContract(blueprint: Blueprint, options: WorkersDiscoveryOptions): Promise<{ version: '1'; fingerprint: string }> {
+  const canonical = JSON.stringify(stableJsonValue(generateWorkersOpenApi(blueprint, undefined, options)))
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(canonical))
   const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
   return { version: '1', fingerprint: `sha256:${fingerprint}` }

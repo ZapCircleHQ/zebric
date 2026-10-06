@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Miniflare } from 'miniflare'
 import { D1Adapter } from '../../src/database/d1-adapter.js'
+import { D1WorkflowExecutor } from '../../src/workflows/d1-workflow-executor.js'
+import { WorkersQueryExecutor } from '../../src/query/workers-query-executor.js'
 import { ZebricWorkersEngine } from '../../src/engine.js'
 
 describe('D1 atomic batch', () => {
@@ -98,4 +100,26 @@ describe('D1 atomic batch', () => {
     const result = await adapter.query<{ value: string }>('SELECT value FROM records WHERE id = ?', ['workflow-target'])
     expect(result.rows).toEqual([{ value: 'original' }])
   })
+  it('propagates entity events after commit and suppresses them after rollback', async () => {
+    await adapter.query('INSERT INTO records VALUES (?, ?)', ['event-parent', 'original'])
+    const blueprint = {
+      entities: [{ name: 'records', fields: [{ name: 'id', type: 'Text', primary_key: true }, { name: 'value', type: 'Text' }] }],
+      workflows: [
+        { name: 'Commit', retries: 1, transactional: true, trigger: { manual: true }, steps: [{ type: 'query', entity: 'records', action: 'update', where: { id: 'event-parent' }, data: { value: 'committed' } }] },
+        { name: 'Rollback', retries: 1, transactional: true, trigger: { manual: true }, steps: [
+          { type: 'query', entity: 'records', action: 'update', where: { id: 'event-parent' }, data: { value: 'uncommitted' } },
+          { type: 'query', entity: 'records', action: 'create', data: { id: 'event-parent', value: 'collision' } },
+        ] },
+        { name: 'Child', retries: 1, trigger: { entity: 'records', event: 'update' }, steps: [{ type: 'query', entity: 'records', action: 'create', data: { id: 'event-child', value: '{{variables.after.value}}' } }] },
+      ],
+    } as any
+    const executor = new D1WorkflowExecutor(blueprint, adapter, new WorkersQueryExecutor(adapter, blueprint))
+    expect((await executor.triggerManual('Rollback', {})).status).toBe('failed')
+    expect(await executor.getJobs({ workflowName: 'Child' })).toEqual([])
+    expect((await adapter.query('SELECT value FROM records WHERE id = ?', ['event-parent'])).rows).toEqual([{ value: 'original' }])
+    expect((await executor.triggerManual('Commit', {})).status).toBe('completed')
+    expect((await executor.getJobs({ workflowName: 'Child' }))[0].status).toBe('completed')
+    expect((await adapter.query('SELECT value FROM records WHERE id = ?', ['event-child'])).rows).toEqual([{ value: 'committed' }])
+  })
+
 })

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { D1WorkflowExecutor } from './d1-workflow-executor.js'
 
 function executor(steps: any[], integrations: any = {}, queries: any = {}) {
-  return new D1WorkflowExecutor({ workflows: [{ name: 'General', trigger: { manual: true }, steps }] } as any, { batch: vi.fn() } as any, queries, integrations)
+  return new D1WorkflowExecutor({ workflows: [{ name: 'General', retries: 1, trigger: { manual: true }, steps }] } as any, { batch: vi.fn() } as any, queries, integrations)
 }
 
 describe('general Workers workflows', () => {
@@ -58,6 +58,39 @@ describe('general Workers workflows', () => {
     expect(jobs[0].status).toBe('completed')
     expect(create).toHaveBeenCalledExactlyOnceWith('Item', { name: 'child' }, { session })
     expect(jobs[0].ownerId).toBe('actor')
+  })
+
+  it('cancels an inline delay without executing subsequent effects', async () => {
+    const create = vi.fn()
+    const engine = executor([{ type: 'delay', duration: 60000 }, { type: 'query', entity: 'Item', action: 'create', data: { name: 'later' } }], {}, { create })
+    const running = engine.triggerManual('General', {})
+    const [job] = await engine.getJobs()
+    expect(await engine.cancelJob(job.id)).toBe(true)
+    expect((await running).status).toBe('cancelled')
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('times out an uncooperative inline effect and prevents later mutations', async () => {
+    const create = vi.fn()
+    let finish!: (value: unknown) => void
+    const invoke = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const engine = new D1WorkflowExecutor({ workflows: [{ name: 'Timed', trigger: { manual: true }, timeout: 10, steps: [{ type: 'service', service: 'test', operation: 'wait' }, { type: 'query', entity: 'Item', action: 'create', data: { name: 'later' } }] }] } as any, {} as any, { create } as any, { services: { invoke } })
+    const job = await engine.triggerManual('Timed', {})
+    expect(job.status).toBe('failed')
+    expect(job.error).toBe('Workflow execution timed out')
+    finish('late result')
+    await Promise.resolve()
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('retries failed inline jobs from their original inputs', async () => {
+    const invoke = vi.fn().mockRejectedValueOnce(new Error('failure')).mockResolvedValue('success')
+    const engine = executor([{ type: 'service', service: 'test', operation: 'send', assignTo: 'result' }], { services: { invoke } })
+    const job = await engine.triggerManual('General', { count: 1 })
+    expect(job.status).toBe('failed')
+    expect(await engine.retryJob(job.id)).toBe(true)
+    expect(await engine.getJob(job.id)).toMatchObject({ status: 'completed', result: { data: { count: 1 }, result: 'success' } })
   })
 
 })

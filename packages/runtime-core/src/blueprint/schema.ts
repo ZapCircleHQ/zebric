@@ -548,6 +548,9 @@ const WorkflowSchema = z.object({
   precondition: AnyRecordSchema.optional(),
   transactional: z.boolean().optional(),
   retries: z.number().int().min(1).optional(),
+  timeout: z.number().int().positive().optional(),
+  enabled: z.boolean().optional(),
+  description: z.string().optional(),
   steps: z.array(WorkflowStepSchema),
 })
 

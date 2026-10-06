@@ -6,7 +6,7 @@
 
 // Workers-specific exports
 export { ZebricWorkersEngine, createWorkerHandler } from './engine.js'
-export type { WorkersEnv, WorkersEngineConfig, WorkersAuthConfig } from './engine.js'
+export type { WorkersEnv, WorkersEngineConfig, WorkersAuthConfig, WorkersHandlerConfig } from './engine.js'
 
 // Platform services
 export * from './database/index.js'
@@ -35,3 +35,5 @@ export { generateWorkersOpenApi, registerWorkersDiscoveryRoutes } from './api/di
 
 export { D1WorkflowExecutor } from './workflows/d1-workflow-executor.js'
 export type { WorkersWorkflowServices, WorkersWorkflowJob } from './workflows/d1-workflow-executor.js'
+
+export type { DurableWorkflowPayload, DurableWorkflowStep, DurableWorkflowBinding } from './workflows/durable-workflow.js'
