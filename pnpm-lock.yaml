@@ -671,6 +671,9 @@ importers:
       hono:
         specifier: ^4.12.14
         version: 4.12.14
+      ulid:
+        specifier: ^3.0.2
+        version: 3.0.2
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20260421.1

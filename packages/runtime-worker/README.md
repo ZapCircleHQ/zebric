@@ -122,6 +122,25 @@ bind a KV namespace as `TEMPLATES_KV`; keys use the `template:` prefix by
 default and the engine preloads all file-backed
 page, slot, and auth templates before serving a request.
 
+## Entity values
+
+Workers creates generate missing ULID primary keys and apply Blueprint field
+defaults, including `false`, `0`, and date defaults of `"now"`. They also populate
+`createdAt`, `updatedAt`, and missing user ownership fields from the session,
+matching Node creates. Explicit values override defaults, including `null`.
+
+Declared Boolean fields accept booleans, `0`/`1`, and form strings
+`"true"`/`"false"`, `"on"`/`"off"`, `"1"`/`"0"` (empty strings mean false).
+Writes store SQLite integers; reads restore JavaScript booleans before policy
+checks and rendering. Rules such as `{ published = true }` allow published rows
+while continuing to hide drafts. Other field types keep their original values.
+
+These behaviors apply to transactional workflows and prepared batch mutations
+as well as regular CRUD. SQL ID defaults and Boolean coercion triggers are no
+longer needed for new writes. Existing incorrectly stored rows require a data
+correction before removing their workarounds; restore the Blueprint's intended
+read rules when deploying the updated runtime.
+
 ## Workflows
 
 Workers execute declarative domain commands and general workflows.

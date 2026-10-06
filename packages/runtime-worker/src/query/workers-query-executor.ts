@@ -6,6 +6,7 @@
  */
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
+import { ulid } from 'ulid'
 import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
 import { D1Adapter } from '../database/d1-adapter.js'
 import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
@@ -84,7 +85,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const result = await this.adapter.query(sql, compiledWhere.params)
     const secured = await filterRecordsByReadPolicy(
       entity,
-      result.rows as Record<string, any>[],
+      (result.rows as Record<string, any>[]).map(record => this.normalizeRecord(entity, record)),
       context.session,
       this.policyEvaluator,
       this.permissionManager,
@@ -107,7 +108,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     assertProtectedMutation(entityDef, data, context)
 
     // Drop fields the caller may not write, then check entity-level create access.
-    const writable = filterWritableFields(entityDef, data, context.session)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
     await assertEntityAccess({
       entity: entityDef,
       action: 'create',
@@ -118,7 +119,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     })
 
     // Filter data to only include defined fields
-    const filteredData = this.filterFields(entityDef, writable)
+    const filteredData = this.filterFields(entityDef, this.applyCreateDefaults(entityDef, writable, context))
 
     // Build INSERT query
     const fields = Object.keys(filteredData)
@@ -133,7 +134,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, values)
-    return filterReadableFields(entityDef, result.rows[0] || { ...filteredData }, context.session)
+    return filterReadableFields(entityDef, this.normalizeRecord(entityDef, result.rows[0] || filteredData), context.session)
   }
 
   /**
@@ -159,7 +160,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     // Drop fields the caller may not write, then authorize the stored resource.
     // Proposed ownership values must not grant access to the update itself.
-    const writable = filterWritableFields(entityDef, data, context.session)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
     await assertEntityAccess({
       entity: entityDef,
       action: 'update',
@@ -192,7 +193,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const result = await this.adapter.query(sql, [...values, id])
     return filterReadableFields(
       entityDef,
-      result.rows[0] || { ...(existing ?? {}), ...filteredData, id },
+      this.normalizeRecord(entityDef, result.rows[0] || { ...(existing ?? {}), ...filteredData, id }),
       context.session
     )
   }
@@ -245,7 +246,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     if (action === 'create') {
       if (!data) throw new Error('Create action requires data')
       assertProtectedMutation(entityDef, data, context)
-      const writable = filterWritableFields(entityDef, data, context.session)
+      const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
       await assertEntityAccess({
         entity: entityDef,
         action: 'create',
@@ -254,7 +255,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
         permissionManager: this.permissionManager,
         policyEvaluator: this.policyEvaluator,
       })
-      const filtered = this.filterFields(entityDef, writable)
+      const filtered = this.filterFields(entityDef, this.applyCreateDefaults(entityDef, writable, context))
       const fields = Object.keys(filtered)
       if (fields.length === 0) throw new Error(`Create ${entity} has no writable fields`)
       return [{
@@ -294,7 +295,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     if (!data) throw new Error('Update action requires data')
     assertProtectedMutation(entityDef, data, context)
-    const writable = filterWritableFields(entityDef, data, context.session)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
     await assertEntityAccess({
       entity: entityDef,
       action: 'update',
@@ -337,7 +338,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [id])
-    return result.rows[0] || null
+    return result.rows[0] ? this.normalizeRecord(entityDef, result.rows[0]) : null
   }
 
   /**
@@ -413,7 +414,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const result = await this.adapter.query(sql, params)
     const secured = await filterRecordsByReadPolicy(
       entityDef,
-      (result.rows || []) as Record<string, any>[],
+      (result.rows as Record<string, any>[]).map(record => this.normalizeRecord(entityDef, record)),
       options.context?.session,
       this.policyEvaluator,
       this.permissionManager,
@@ -431,6 +432,52 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   private getEntity(name: string): Entity | undefined {
     return this.blueprint.entities?.find((e: Entity) => e.name === name)
+  }
+
+  private applyCreateDefaults(entity: Entity, data: Record<string, any>, context: RequestContext): Record<string, any> {
+    const values = { ...data }
+    const now = new Date().toISOString()
+    for (const field of entity.fields) {
+      if (field.type === 'ULID' && field.primary_key && !values[field.name]) {
+        values[field.name] = ulid()
+      }
+      if (values[field.name] === undefined && field.default !== undefined) {
+        values[field.name] = field.default === 'now' && (field.type === 'DateTime' || field.type === 'Date')
+          ? now
+          : field.default
+      }
+      if (!values[field.name] && ['createdAt', 'updatedAt'].includes(field.name)) {
+        values[field.name] = now
+      }
+      if (!values[field.name] && context.session?.user?.id
+        && (field.name === 'userId' || (field.type === 'Ref' && field.ref === 'User.id'))) {
+        values[field.name] = context.session.user.id
+      }
+    }
+    return values
+  }
+
+  private normalizeInput(entity: Entity, data: Record<string, any>): Record<string, any> {
+    const normalized = { ...data }
+    for (const field of entity.fields) {
+      if (field.type === 'Boolean' && normalized[field.name] !== undefined) {
+        normalized[field.name] = this.coerceForSqlite(normalized[field.name], field.type)
+      }
+    }
+    return this.normalizeRecord(entity, normalized)
+  }
+
+  // D1 exposes SQLite integers. Normalize only declared Boolean fields before
+  // policy evaluation and rendering, without changing numeric or text fields.
+  private normalizeRecord(entity: Entity, record: Record<string, any>): Record<string, any> {
+    const normalized = { ...record }
+    for (const field of entity.fields) {
+      if (field.type !== 'Boolean' || normalized[field.name] == null) continue
+      const value = normalized[field.name]
+      if (value === 1 || value === true) normalized[field.name] = true
+      else if (value === 0 || value === false) normalized[field.name] = false
+    }
+    return normalized
   }
 
   private filterFields(entity: Entity, data: Record<string, any>): Record<string, any> {
@@ -453,6 +500,16 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   private coerceForSqlite(value: any, fieldType?: string): any {
     if (value === undefined) return null
     if (value === null) return null
+    if (fieldType === 'Boolean') {
+      if (typeof value === 'string') {
+        const boolean = value.trim().toLowerCase()
+        if (['true', '1', 'on'].includes(boolean)) return 1
+        if (['false', '0', 'off', ''].includes(boolean)) return 0
+      }
+      if (value === true || value === 1) return 1
+      if (value === false || value === 0) return 0
+      throw new Error('Invalid Boolean value')
+    }
     if (typeof value === 'boolean') return value ? 1 : 0
     if (value instanceof Date) return value.toISOString()
     if (fieldType === 'JSON' && typeof value === 'object') return JSON.stringify(value)
