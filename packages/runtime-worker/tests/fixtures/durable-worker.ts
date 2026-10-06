@@ -14,7 +14,40 @@ const blueprint = {
     }
   ],
   pages: [],
+  auth: { providers: [], apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY', scopes: ['command.item.change'] }] },
+  commands: [
+    {
+      name: 'ChangeCount',
+      entity: 'Item',
+      scopes: ['command.item.change'],
+      availableWhen: 'record.count == 0',
+      input: { count: { type: 'Integer', required: true } },
+      mutations: { count: 'input.count' }
+    }
+  ],
   workflows: [
+    {
+      name: 'Atomic',
+      transactional: true,
+      retries: 1,
+      trigger: { manual: true },
+      steps: [
+        { type: 'query', entity: 'Item', action: 'create', data: { id: 'atomic', count: 0 }, assignTo: 'created' },
+        {
+          type: 'command',
+          command: 'ChangeCount',
+          recordId: '{{variables.created.id}}',
+          input: { count: 11 },
+          assignTo: 'changed'
+        },
+        {
+          type: 'query',
+          entity: 'Item',
+          action: 'create',
+          data: { id: 'atomic-dependent', count: '{{variables.changed.count}}' }
+        }
+      ]
+    },
     {
       name: 'Durable',
       trigger: { manual: true },
@@ -52,6 +85,12 @@ const blueprint = {
 function config(env: WorkersEnv) {
   return {
     blueprint,
+    authProvider: {
+      getAuthInstance: () => ({ handler: () => new Response(null, { status: 204 }) }),
+      getSession: async () => null,
+      hasRole: () => false,
+      ownsResource: () => false
+    },
     workflowServices: {
       services: {
         invoke: async (_service: string, _operation: string, params: Record<string, unknown>) => {
@@ -93,6 +132,7 @@ export default {
       )
       return Response.json(job)
     }
+    if (new URL(request.url).pathname.startsWith('/api/commands/')) return engine.fetch(request)
     const id = new URL(request.url).searchParams.get('id')!
     if (new URL(request.url).pathname === '/cancel')
       return Response.json({ changed: await engine.getWorkflowExecutor().cancelJob(id) })

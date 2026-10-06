@@ -2,7 +2,6 @@ import {
   SYSTEM_SESSION,
   analyzeTransactionalWorkflow,
   evaluateCondition,
-  filterReadableFields,
   type CommandExecutor,
   type ServiceInvoker,
   type Blueprint,
@@ -88,7 +87,7 @@ export interface WorkflowContext {
 const JOB_TTL_MS = 60 * 60 * 1000
 const MAX_JOBS = 1000
 
-/** Executes general workflows sequentially and eligible transactions as atomic D1 batches. */
+/** Executes general workflows and database-only transactions backed by atomic D1 commits. */
 export class D1WorkflowExecutor {
   private readonly workflows = new Map<string, Workflow>()
   private readonly controllers = new Map<string, AbortController>()
@@ -112,7 +111,7 @@ export class D1WorkflowExecutor {
     if (binding) this.jobStore = new D1WorkflowJobStore(db)
     for (const workflow of blueprint.workflows ?? []) {
       const analysis = analyzeTransactionalWorkflow(workflow, blueprint.commands ?? [])
-      if (workflow.transactional && !analysis.d1BatchEligible) {
+      if (workflow.transactional && !analysis.databaseOnly) {
         const reason = analysis.reasons.join('; ')
         throw new Error(`Cloudflare Workers workflow ${workflow.name} is unsupported: ${reason}`)
       }
@@ -511,37 +510,21 @@ export class D1WorkflowExecutor {
     frame: ExecutionFrame
   ): Promise<Record<string, unknown>> {
     if (workflow.transactional) {
-      const execute = async () => {
-        const statements: Array<{ sql: string; params: unknown[] }> = []
-        const mutations: Array<{ step: WorkflowStep; before?: Record<string, unknown>; resultIndex: number }> = []
-        for (const step of workflow.steps) {
-          const where = resolveValue(step.where, context) as Record<string, unknown> | undefined
-          const before =
-            step.action !== 'create' && where?.id != null
-              ? ((await this.queries.findById(step.entity!, String(where.id), { session: context.session })) ??
-                undefined)
-              : undefined
-          const compiled = await this.compileStep(step, context)
-          // The last statement is the mutation; preceding statements are predicate guards.
-          const mutation = compiled.at(-1)
-          if (mutation) mutation.sql += ' RETURNING *'
-          statements.push(...compiled)
-          mutations.push({ step, before, resultIndex: statements.length - 1 })
-        }
-        frame.signal?.throwIfAborted()
-        const results = await this.db.batch<Record<string, unknown>>(statements)
-        const events: EntityEvent[] = mutations.map(({ step, before, resultIndex }) => {
-          const entity = this.blueprint.entities.find((entity) => entity.name === step.entity)!
-          const after = step.action !== 'delete' ? results[resultIndex]?.rows[0] : undefined
-          return {
-            entity: step.entity!,
-            event: step.action as EntityEvent['event'],
-            before,
-            after: after ? filterReadableFields(entity, after, context.session) : undefined
+      const initialVariables = structuredClone(context.variables)
+      const receipt = frame.durable
+        ? {
+            key: JSON.stringify(['workflow', frame.jobId, 'transaction']),
+            fingerprint: await requestFingerprint(workflow.name, JSON.stringify(initialVariables))
           }
-        })
-        return { result: { workflow: workflow.name, mutations: workflow.steps.length }, events }
-      }
+        : undefined
+      const execute = async () =>
+        this.queries.transaction(async () => {
+          const transactionContext = { ...context, variables: structuredClone(initialVariables) }
+          const events: EntityEvent[] = []
+          await this.executeSteps(workflow.steps, transactionContext, { ...frame, durable: undefined, events })
+          frame.signal?.throwIfAborted()
+          return { result: transactionContext.variables, events }
+        }, receipt)
       const output = frame.durable
         ? await frame.durable.do('transaction', this.stepConfig(workflow), execute)
         : await execute()
@@ -653,7 +636,7 @@ export class D1WorkflowExecutor {
             queryContext
           )
           frame.signal?.throwIfAborted()
-          await this.db.batch(statements)
+          await this.queries.executeBatch(statements)
           const updated = await this.queries.findById(step.entity, String(id), queryContext)
           await this.emitEntityEvent({ entity: step.entity, event: 'update', before, after: updated }, context, frame)
           return updated
@@ -667,7 +650,7 @@ export class D1WorkflowExecutor {
             queryContext
           )
           frame.signal?.throwIfAborted()
-          await this.db.batch(statements)
+          await this.queries.executeBatch(statements)
           await this.emitEntityEvent({ entity: step.entity, event: 'delete', before }, context, frame)
           return { deleted: true }
         }
@@ -677,21 +660,33 @@ export class D1WorkflowExecutor {
         if (!this.integrations.commandExecutor || !step.command || !step.recordId)
           throw new Error('Command step is not configured')
         const definition = this.integrations.commandExecutor.registry.get(step.command)
-        const before = definition
-          ? await this.queries.findById(definition.entity, String(resolve(step.recordId)), queryContext)
+        const recordId = String(resolve(step.recordId))
+        const input = resolve(step.input) ?? {}
+        const receipt = frame.durable
+          ? {
+              key: JSON.stringify(['workflow-command', frame.jobId, frame.path]),
+              fingerprint: await requestFingerprint(step.command, recordId, JSON.stringify(input))
+            }
           : undefined
         frame.signal?.throwIfAborted()
-        const result = await this.integrations.commandExecutor.execute({
-          command: step.command,
-          recordId: String(resolve(step.recordId)),
-          input: resolve(step.input) ?? {},
-          context: {
-            session: context.session,
-            source: 'workflow',
-            workflow: context.variables.__zebric.currentWorkflow,
-            workflowContext: context.variables
-          }
-        })
+        const { result, before } = await this.queries.transaction(async () => {
+          const before = definition
+            ? await this.queries.findById(definition.entity, recordId, queryContext).catch(() => undefined)
+            : undefined
+          const result = await this.integrations.commandExecutor!.execute({
+            command: step.command!,
+            recordId,
+            input,
+            context: {
+              session: context.session,
+              source: 'workflow',
+              workflow: context.variables.__zebric.currentWorkflow,
+              workflowContext: context.variables
+            }
+          })
+          frame.signal?.throwIfAborted()
+          return { result, before }
+        }, receipt)
         if (definition)
           await this.emitEntityEvent(
             { entity: definition.entity, event: 'update', before, after: result.record },
@@ -798,19 +793,6 @@ export class D1WorkflowExecutor {
       this.jobs.delete(oldest)
       this.executions.delete(oldest)
     }
-  }
-
-  private async compileStep(
-    step: WorkflowStep,
-    context: WorkflowContext
-  ): Promise<Array<{ sql: string; params: unknown[] }>> {
-    if (step.type !== 'query' || !step.entity || !['create', 'update', 'delete'].includes(String(step.action))) {
-      throw new Error(`Unsupported D1 workflow step: ${String(step.type)}`)
-    }
-    const action = step.action as 'create' | 'update' | 'delete'
-    const data = step.data ? (resolveValue(step.data, context) as Record<string, unknown>) : undefined
-    const where = step.where ? (resolveValue(step.where, context) as Record<string, unknown>) : undefined
-    return this.queries.prepareBatchMutation(step.entity, action, data, where, { session: context.session })
   }
 }
 

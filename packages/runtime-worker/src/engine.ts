@@ -20,6 +20,7 @@ import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
 import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
 import { requestFingerprint, WorkersIdempotencyCache } from './api/idempotency-cache.js'
+import { D1IdempotencyConflict, D1TransactionConflict } from './database/d1-transactions.js'
 import { verifyWebhookRequest } from './security/webhook-auth.js'
 import type { DurableWorkflowBinding } from './workflows/durable-workflow.js'
 import { type WorkersWorkflowServices, D1WorkflowExecutor, securityId } from './workflows/d1-workflow-executor.js'
@@ -446,10 +447,12 @@ export class ZebricWorkersEngine {
               correlationId: c.req.header('x-correlation-id') ?? c.req.header('x-request-id'),
             },
           })
-          await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
+          await this.queryExecutor.afterCommit(async () => {
+            await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
+          })
           return Response.json(result)
         }
-        return await this.withIdempotency(c.req.raw, session, `${command.name}:${c.req.param('id')}`, input, execute)
+        return await this.withIdempotency(c.req.raw, session, `${command.name}:${c.req.param('id')}`, input, execute, true)
       } catch (error) {
         return this.commandError(error)
       }
@@ -467,12 +470,12 @@ export class ZebricWorkersEngine {
       try {
         form = Object.fromEntries(await c.req.raw.formData())
         const input = this.coerceCommandInput(command, form)
-        const result = await this.commandExecutor.execute({
+        const result = await this.queryExecutor.transaction(() => this.commandExecutor.execute({
           command: command.name,
           recordId: this.requireEntityId(c.req.param('id')),
           input,
           context: { session, source: 'ui' },
-        })
+        }))
         await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
         return c.redirect(this.safeRedirect(form.redirect, c.req.header('referer'), c.req.url), 303)
       } catch (error) {
@@ -786,11 +789,19 @@ export class ZebricWorkersEngine {
     operation: string,
     input: Record<string, unknown>,
     execute: () => Promise<Response>,
+    durableCommand = false,
   ): Promise<Response> {
     const key = request.headers.get('idempotency-key')?.trim()
-    if (!key) return execute()
+    if (!key) return durableCommand ? this.queryExecutor.transaction(execute) : execute()
     const url = new URL(request.url)
     const fingerprint = await requestFingerprint(operation, request.method, `${url.pathname}${url.search}`, JSON.stringify(input))
+    if (durableCommand) {
+      const response = await this.queryExecutor.transaction(async () => {
+        const response = await execute()
+        return { status: response.status, headers: [...response.headers.entries()], body: await response.text() }
+      }, { key: JSON.stringify(['command', securityId(session) ?? 'anonymous', key]), fingerprint })
+      return new Response(response.body, { status: response.status, headers: response.headers })
+    }
     const result = await this.idempotency.run(`${securityId(session) ?? 'anonymous'}:${key}`, fingerprint, execute)
     return result.conflict
       ? this.agentError(409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different input')
@@ -828,6 +839,8 @@ export class ZebricWorkersEngine {
   }
 
   private commandError(error: unknown): Response {
+    if (error instanceof D1IdempotencyConflict) return this.agentError(409, 'IDEMPOTENCY_KEY_REUSE', error.message)
+    if (error instanceof D1TransactionConflict) return this.agentError(409, 'TRANSACTION_CONFLICT', error.message, true)
     if (error instanceof DomainError) {
       const status = error.code === 'AUTHORIZATION_FAILED' ? 403
         : error.code === 'COMMAND_UNAVAILABLE' ? 409

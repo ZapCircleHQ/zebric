@@ -17,7 +17,7 @@ export class MockD1Database {
   }
 
   prepare(query: string): any {
-    return new MockD1PreparedStatement(this.db.prepare(query))
+    return new MockD1PreparedStatement(this.db, query)
   }
 
   async dump(): Promise<ArrayBuffer> {
@@ -27,11 +27,7 @@ export class MockD1Database {
   }
 
   async batch<T = unknown>(statements: any[]): Promise<any[]> {
-    const results: any[] = []
-    for (const stmt of statements) {
-      results.push(await stmt.run())
-    }
-    return results
+    return this.db.transaction(() => statements.map(stmt => stmt.executeSync()))()
   }
 
   async exec(query: string): Promise<any> {
@@ -47,7 +43,17 @@ export class MockD1Database {
 class MockD1PreparedStatement {
   private params: unknown[] = []
 
-  constructor(private stmt: Statement) {}
+  constructor(private database: Database.Database, private sql: string) {}
+
+  private get stmt(): Statement { return this.database.prepare(this.sql) }
+
+  executeSync(): any {
+    const stmt = this.stmt
+    let rows: unknown[] = []
+    if (stmt.reader) rows = stmt.all(...this.params)
+    else stmt.run(...this.params)
+    return { success: true, results: rows, meta: {} }
+  }
 
   bind(...values: unknown[]): any {
     this.params = values

@@ -41,6 +41,7 @@ describe('Cloudflare Workflows integration', () => {
       compatibilityDate: '2026-04-28',
       compatibilityFlags: ['nodejs_compat'],
       d1Databases: { DB: 'durable-test' },
+      bindings: { AGENT_KEY: 'secret' },
       workflows: { WORKFLOWS: { name: 'durable-test', className: 'TestWorkflow' } }
     })
     const db = await mf.getD1Database('DB')
@@ -73,6 +74,50 @@ describe('Cloudflare Workflows integration', () => {
     const db = await mf.getD1Database('DB')
     expect(await db.prepare('SELECT count(*) AS count FROM Item').first()).toEqual({ count: 1 })
   })
+  it('executes a read-dependent transaction through the native Workflow entrypoint', async () => {
+    const job = (await (await mf.dispatchFetch('https://edge.example/start?workflow=Atomic')).json()) as any
+    let observed: any
+    await expect
+      .poll(
+        async () => {
+          observed = await (await mf.dispatchFetch(`https://edge.example/poll?id=${job.id}`)).json()
+          return observed.status
+        },
+        { timeout: 10000, interval: 100 }
+      )
+      .toBe('completed')
+    expect(observed.result.changed.count).toBe(11)
+    const db = await mf.getD1Database('DB')
+    expect(await db.prepare('SELECT count FROM Item WHERE id = ?').bind('atomic-dependent').first()).toEqual({
+      count: 11
+    })
+  })
+
+  it('replays durable HTTP command responses across fresh Worker engines', async () => {
+    const db = await mf.getD1Database('DB')
+    await db.prepare('INSERT INTO Item VALUES (?, ?)').bind('http-command', 0).run()
+    const request = (count: number) =>
+      mf.dispatchFetch('https://edge.example/api/commands/change_count/http-command', {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer secret',
+          'content-type': 'application/json',
+          'x-agent-run-id': 'run',
+          'idempotency-key': 'http-command-key'
+        },
+        body: JSON.stringify({ count })
+      })
+    const first = await request(9)
+    expect(first.status).toBe(200)
+    const result = await first.json()
+    await db.prepare('UPDATE Item SET count = 55 WHERE id = ?').bind('http-command').run()
+    const replay = await request(9)
+    expect(replay.status).toBe(200)
+    expect(await replay.json()).toEqual(result)
+    expect((await request(10)).status).toBe(409)
+    expect(await db.prepare('SELECT count FROM Item WHERE id = ?').bind('http-command').first()).toEqual({ count: 55 })
+  })
+
   it('terminates a durably sleeping instance without executing later effects', async () => {
     const job = (await (await mf.dispatchFetch('https://edge.example/start?workflow=Slow')).json()) as any
     await expect

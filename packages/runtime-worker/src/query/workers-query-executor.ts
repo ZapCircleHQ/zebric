@@ -7,6 +7,8 @@
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
 import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
+import { D1Adapter } from '../database/d1-adapter.js'
+import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
 import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
@@ -17,8 +19,24 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     private adapter: SqlStoragePort,
     private blueprint: Blueprint
   ) {
+    if (adapter instanceof D1Adapter) this.adapter = new D1Transactions(adapter, blueprint)
     this.permissionManager = new PermissionManager(blueprint.auth)
     this.policyEvaluator = new PolicyEvaluator(blueprint, this)
+  }
+
+  async transaction<T>(operation: () => Promise<T>, receipt?: TransactionReceipt): Promise<T> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Transactions require a D1 adapter')
+    return this.adapter.transaction(operation, receipt)
+  }
+
+  async afterCommit(effect: () => Promise<void> | void): Promise<void> {
+    if (this.adapter instanceof D1Transactions) await this.adapter.afterCommit(effect)
+    else await effect()
+  }
+
+  async executeBatch(statements: Array<{ sql: string; params?: unknown[] }>): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Atomic batches require a D1 adapter')
+    await this.adapter.batch(statements)
   }
 
   /**

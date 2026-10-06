@@ -36,8 +36,8 @@ describe('general Workers workflows', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('keeps transactional intermediate reads unsupported', () => {
-    expect(() => new D1WorkflowExecutor({ workflows: [{ name: 'Atomic', transactional: true, trigger: { manual: true }, steps: [{ type: 'query', entity: 'Item', action: 'find' }] }] } as any, {} as any, {} as any)).toThrow('unsupported')
+  it('accepts transactional intermediate reads', () => {
+    expect(() => new D1WorkflowExecutor({ workflows: [{ name: 'Atomic', transactional: true, trigger: { manual: true }, steps: [{ type: 'query', entity: 'Item', action: 'find' }] }] } as any, {} as any, {} as any)).not.toThrow()
   })
   it('dispatches cron and authorized webhooks with system sessions', async () => {
     const invoke = vi.fn(async () => 'ok')

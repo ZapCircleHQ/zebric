@@ -12,7 +12,8 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **Entity API** - Node-compatible CRUD paths with API-key roles and scopes
 - ✅ **Discovery** - Honest OpenAPI and `/.well-known/zebric-agent.json` metadata
 - ✅ **Domain commands** - Declarative commands use the shared policy, validation, and protected-field pipeline
-- ✅ **D1 workflows** - Fixed transactional create/update/delete workflows execute as one atomic D1 batch
+- ✅ **D1 transactions** - Database-only workflows support intermediate reads, conditions, loops, and declarative commands with atomic commits
+- ✅ **Durable command replay** - Command mutations and successful responses commit together in D1
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
 - ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects
@@ -91,7 +92,7 @@ wrangler secret put BETTER_AUTH_SECRET
 Better Auth's `user`, `session`, `account`, and `verification` tables must be
 included in your D1 migrations before enabling auth. Generate the schema with
 the Better Auth CLI for the installed version, then apply it with Wrangler.
-Workers auth requires the `nodejs_compat` compatibility flag.
+Workers auth and transactions require the `nodejs_compat` compatibility flag.
 
 For a custom identity service, pass `authProvider` and optionally
 `sessionManager` to `ZebricWorkersEngine`; the provider's standard `handler`
@@ -122,7 +123,7 @@ page, slot, and auth templates before serving a request.
 
 ## Workflows
 
-Workers execute declarative domain commands and general non-transactional workflows.
+Workers execute declarative domain commands and general workflows.
 Query results and external results can be assigned with `assignTo` and passed to
 later steps; nested conditions and loops support assignments too. Query and command
 mutations preserve the initiating session and propagate entity triggers with cycle
@@ -136,9 +137,30 @@ use native `fetch` by default. Incoming webhook integration is available through
 code must authenticate the request and provide the authorization callback, or use
 the authenticated `/webhooks/*` routes described below.
 
-Transactional workflows still require a fixed list of database create/update/delete
-steps, submitted as one atomic D1 batch. Transactions with intermediate reads,
-commands, external effects, or control flow are rejected at startup.
+Transactional workflows support create/update/delete/find queries, intermediate
+results, nested conditions and loops, and declarative commands. External effects
+and unrestricted command handlers are rejected at startup. Commands execute their
+record reads, availability checks, policies, and mutations in the same transaction.
+Entity triggers run after commit and are suppressed on rollback.
+
+D1 evaluates these operations against isolated snapshots of all Blueprint entity
+tables, then validates the original data and schema and commits mutations in one
+atomic batch. Concurrent changes abort the transaction; command APIs return a
+retryable `409 TRANSACTION_CONFLICT`. This also detects newly inserted rows that
+could change a policy result. Nested transactions join the outer transaction
+without opening a savepoint, matching Node. Errors escaping the outer callback
+roll back all its mutations.
+
+Snapshots preserve defaults, generated columns, indexes, and foreign keys between
+Blueprint entities. Custom SQL triggers, virtual tables, and foreign keys pointing
+outside the Blueprint are unsupported. Constraints are checked after each staged
+statement; deferring foreign-key checks across steps is unsupported. Transactions
+have a five minute lifetime; workflow timeouts can impose a shorter limit. Runtime storage uses reserved
+`_zebric_` names. Successful and failed attempts clean their snapshot tables;
+expired workspace manifests are reclaimed by subsequent transactions after an
+interrupted Worker. Snapshot storage and validation scale with the full entity
+dataset, so large databases and frequent concurrent writes can be expensive and
+cause conservative conflicts.
 
 With a `WORKFLOWS` binding, jobs execute asynchronously through Cloudflare Workflows.
 Completed effects and their typed results are checkpointed; delays use durable sleep.
@@ -146,17 +168,32 @@ Job ownership and lifecycle leases are stored in D1's private
 `_zebric_workflow_jobs` and `_zebric_workflow_job_controls` tables, initialized
 on first use, so authorized polling works across isolates. Workflow-backed Agent API
 idempotency keys also resolve to the same durable instance across isolates and reject
-conflicting input. Command idempotency remains per-isolate.
+conflicting input.
+
+Command APIs persist successful responses in `_zebric_command_receipts`, in the
+same atomic batch as their mutations. An `Idempotency-Key` is scoped to the
+authenticated principal; replay returns the original status, headers, and body
+across isolates and restarts. Concurrent requests with the same key commit once;
+reusing a key with a different command, record, or input returns
+`409 IDEMPOTENCY_KEY_REUSE`. Failed transactions save no receipt and can be retried.
+Receipts have no automatic expiry; removing a receipt permits that key to execute
+again. Authentication, scopes, and agent attribution are checked before replay.
+Post-commit command triggers run only for the winning execution; they do not have
+a durable outbox, so interruption after commit can prevent their delivery.
+Transactional workflow results and event intents are also stored atomically,
+protecting mutations if a native Workflow checkpoint is lost. Nontransactional
+workflow command steps use the same durable commit and replay boundary.
 
 `retries` sets the maximum total attempts per effect (default 3), and `timeout` sets
-its per-attempt timeout in milliseconds (default 30000). A transactional D1 batch
+its per-attempt timeout in milliseconds (default 30000). A complete transaction
 is one effect. Explicit retry restarts a failed job from the beginning. As with other
 retrying systems, an effect can finish before its checkpoint is recorded; outbound
 integrations should use idempotency keys when repeating an effect would be harmful.
 
 Without the binding, execution is awaited inline. Inline jobs support the same
-step retry policy, cancellation, and timeout; their metadata and idempotency cache
-remain isolate-local. Cancellation and timeouts stop subsequent steps, but cannot
+step retry policy, cancellation, and timeout; their job metadata and workflow
+submission cache remain isolate-local. Command receipts remain durable without
+a `WORKFLOWS` binding. Cancellation and timeouts stop subsequent steps, but cannot
 undo completed effects or forcibly stop an injected adapter that ignores cancellation.
 Inline jobs expire after an hour and retain at most 1000 terminal jobs per isolate.
 
@@ -204,8 +241,8 @@ application-provided authorization callback.
 
 ## Remaining Node parity gaps
 
-D1 transactions still require a fixed mutation batch; dynamic transactional
-workflows require Node. Command idempotency remains per-isolate. Node's
+Worker transactions currently use full entity snapshots and optimistic conflict
+checks; custom SQL triggers and unrestricted handlers require Node. Node's
 notification/plugin lifecycle, audit/metrics stack, event stream, and upload routes
 also remain Node-only.
 

@@ -38,8 +38,9 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, 
         workflowCancellation: Boolean(supported.workflows?.length),
         workflowRetries: Boolean(supported.workflows?.length),
         idempotency: true,
+        durableCommandIdempotency: true,
         eventStream: false,
-        transactionalWorkflows: false,
+        transactionalWorkflows: true,
         d1BatchWorkflows: Boolean(supported.workflows?.some(workflow => workflow.transactional)),
         domainCommands: Boolean(supported.commands?.length),
         auditHistory: false,
@@ -100,7 +101,7 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string, o
 
 function supportedBlueprint(blueprint: Blueprint): Blueprint {
   const workflows = (blueprint.workflows ?? []).filter(workflow =>
-    workflow.enabled !== false && (!workflow.transactional || analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).d1BatchEligible)
+    workflow.enabled !== false && (!workflow.transactional || analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).databaseOnly)
   )
   const workflowNames = new Set(workflows.map(workflow => workflow.name))
   const skills = (blueprint.skills ?? []).flatMap(skill => {
