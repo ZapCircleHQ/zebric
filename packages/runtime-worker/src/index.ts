@@ -32,3 +32,6 @@ export { WorkersQueryExecutor } from './query/workers-query-executor.js'
 
 // API discovery
 export { generateWorkersOpenApi, registerWorkersDiscoveryRoutes } from './api/discovery.js'
+
+export { D1WorkflowExecutor } from './workflows/d1-workflow-executor.js'
+export type { WorkersWorkflowServices, WorkersWorkflowJob } from './workflows/d1-workflow-executor.js'

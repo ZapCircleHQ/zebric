@@ -20,7 +20,7 @@ import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
 import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
 import { requestFingerprint, WorkersIdempotencyCache } from './api/idempotency-cache.js'
-import { D1WorkflowExecutor, securityId } from './workflows/d1-workflow-executor.js'
+import { type WorkersWorkflowServices, D1WorkflowExecutor, securityId } from './workflows/d1-workflow-executor.js'
 
 export interface WorkersEnv {
   // CloudFlare bindings
@@ -47,6 +47,7 @@ export interface WorkersAuthConfig {
 
 export interface WorkersEngineConfig {
   env: WorkersEnv
+  workflowServices?: WorkersWorkflowServices
   blueprint?: Blueprint // Pre-parsed blueprint
   blueprintContent?: string // Raw blueprint content (JSON/TOML)
   blueprintFormat?: 'json' | 'toml' // Format of blueprintContent
@@ -154,7 +155,7 @@ export class ZebricWorkersEngine {
 
     this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
     this.commandExecutor = new CommandExecutor(this.blueprint, { queryExecutor: this.queryExecutor })
-    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor)
+    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor })
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -818,6 +819,14 @@ export class ZebricWorkersEngine {
     return 500
   }
 
+  getWorkflowExecutor(): D1WorkflowExecutor {
+    return this.workflowExecutor
+  }
+
+  async scheduled(cron: string): Promise<void> {
+    await this.workflowExecutor.triggerSchedule(cron)
+  }
+
   private authCallback(request: Request): string {
     const url = new URL(request.url)
     const raw = url.searchParams.get('callback') ?? url.searchParams.get('redirect') ?? '/'
@@ -856,6 +865,10 @@ export class ZebricWorkersEngine {
 export function createWorkerHandler(config: Omit<WorkersEngineConfig, 'env'>) {
   let engine: ZebricWorkersEngine | undefined
   return {
+    async scheduled(controller: ScheduledController, env: WorkersEnv, ctx: ExecutionContext): Promise<void> {
+      engine ??= new ZebricWorkersEngine({ ...config, env })
+      ctx.waitUntil(engine.scheduled(controller.cron))
+    },
     async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
       engine ??= new ZebricWorkersEngine({ ...config, env })
       return engine.fetch(request)

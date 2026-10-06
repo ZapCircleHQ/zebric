@@ -15,7 +15,7 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **D1 workflows** - Fixed transactional create/update/delete workflows execute as one atomic D1 batch
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
-- ❌ **General workflows** - External effects, intermediate results, control flow, and non-transactional workflows require Node
+- ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects execute sequentially
 
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
 `WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
@@ -120,17 +120,28 @@ page, slot, and auth templates before serving a request.
 
 ## Remaining Node parity gaps
 
-Workers execute declarative domain commands and transactional workflows that
-contain a fixed list of database create/update/delete steps. Eligible workflows
-are compiled up front and submitted through one atomic D1 batch. Workflow-backed
-Agent API skill routes, manual actions, entity triggers, job observation, and
-per-isolate idempotent replay are available for that subset.
+Workers execute declarative domain commands and general non-transactional workflows.
+Query results and external results can be assigned with `assignTo` and passed to
+later steps; nested conditions and loops support assignments too. Query and command
+mutations preserve the initiating session and propagate entity triggers with cycle
+and depth limits. Manual actions and workflow-backed Agent API skills use this executor.
+`createWorkerHandler` also handles configured Cloudflare cron triggers.
 
-Command handlers and workflows with intermediate query results, commands,
-external effects, delays, loops, conditions, or non-transactional execution are
-rejected or omitted from discovery. Jobs and idempotency entries are process-local,
-not durable across isolates: jobs expire after an hour and are capped at 1000 per
-isolate, so a retry or poll that lands on another isolate can re-execute or 404.
+Pass `workflowServices` to the engine or handler to inject a shared `ServiceRegistry`,
+email service, notification service, plugin registry, or HTTP client. Webhook steps
+use native `fetch` by default. Incoming webhook integration is available through
+`engine.getWorkflowExecutor().triggerWebhook(path, request, authorize)`; application
+code must authenticate the request and provide the authorization callback.
+
+Transactional workflows still require a fixed list of database create/update/delete
+steps, submitted as one atomic D1 batch. Transactions with intermediate reads,
+commands, external effects, or control flow are rejected at startup.
+
+Execution is awaited within the request or scheduled event. Delays use isolate timers;
+there is no durable Cloudflare Workflows/Queues backend, automatic retry, cancellation,
+or workflow timeout yet. Jobs and idempotency entries remain process-local, not durable
+across isolates: jobs expire after an hour and are capped at 1000 per isolate, so a retry
+or poll that lands on another isolate can re-execute or 404.
 Node's notification/plugin lifecycle, audit/metrics
 stack, event stream, and upload routes also remain Node-only.
 
@@ -154,7 +165,7 @@ Valid API keys bypass browser CSRF checks, while invalid bearer values do not.
 
 Discovery is available at `/.well-known/zebric-agent.json` and
 `/api/openapi.json`. Worker metadata includes supported declarative commands and
-D1-batch workflow skills while omitting unsupported handlers and workflow shapes.
+general and D1-batch workflow skills while omitting unsupported command handlers.
 
 ## Session Management
 

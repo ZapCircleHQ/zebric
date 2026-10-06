@@ -65,7 +65,7 @@ describe('ZebricWorkersEngine', () => {
       })).not.toThrow()
     })
 
-    it('rejects non-transactional workflows until Workers has a workflow executor', () => {
+    it('accepts non-transactional workflows', () => {
       expect(() => new ZebricWorkersEngine({
         env,
         blueprint: {
@@ -76,7 +76,7 @@ describe('ZebricWorkersEngine', () => {
             steps: [{ type: 'query', entity: 'post', action: 'update' }],
           }],
         } as any,
-      })).toThrow('workflow must declare transactional = true')
+      })).not.toThrow()
     })
   })
 
