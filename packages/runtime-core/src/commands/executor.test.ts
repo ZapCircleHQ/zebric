@@ -54,6 +54,56 @@ class MemoryQueryExecutor implements QueryExecutorPort {
 }
 
 describe('CommandExecutor', () => {
+  it('stages audit and domain events inside the mutation transaction instead of publishing after commit', async () => {
+    let active = false
+    class TransactionExecutor extends MemoryQueryExecutor {
+      override async transaction<T>(operation: () => Promise<T>): Promise<T> {
+        active = true
+        try { return await operation() } finally { active = false }
+      }
+    }
+    const queryExecutor = new TransactionExecutor()
+    const enqueue = vi.fn(async effects => {
+      expect(active).toBe(true)
+      expect(queryExecutor.record.status).toBe('approved')
+      expect(effects.audit[0]).toMatchObject({ eventType: 'domain.command', actionName: 'ApproveRequest' })
+      expect(effects.events[0]).toMatchObject({ name: 'ApproveRequest', data: { status: 'approved' } })
+    })
+    const log = vi.fn()
+    const publish = vi.fn()
+    const executor = new CommandExecutor(blueprint, {
+      queryExecutor, commandEffects: { enqueue }, auditLogger: { log }, eventPublisher: { publish },
+    })
+    await executor.execute({ command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: [], scopes: [] } })
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    expect(log).not.toHaveBeenCalled()
+    expect(publish).not.toHaveBeenCalled()
+  })
+
+  it('aborts the command when transactional effects cannot be staged', async () => {
+    class RollbackExecutor extends MemoryQueryExecutor {
+      override async transaction<T>(operation: () => Promise<T>): Promise<T> {
+        const original = { ...this.record }
+        try { return await operation() } catch (error) { this.record = original; throw error }
+      }
+    }
+    const queryExecutor = new RollbackExecutor()
+    const executor = new CommandExecutor(blueprint, {
+      queryExecutor, commandEffects: { enqueue: async () => { throw new Error('journal failed') } },
+    })
+    await expect(executor.execute({ command: 'ApproveRequest', recordId: 'req-1',
+      actor: { id: 'sarah', type: 'user', roles: [], scopes: [] } })).rejects.toThrow('journal failed')
+    expect(queryExecutor.record.status).toBe('pending')
+  })
+
+  it('requires transaction support before enabling transactional effects', () => {
+    const queryExecutor = new MemoryQueryExecutor()
+    Object.defineProperty(queryExecutor, 'transaction', { value: undefined })
+    expect(() => new CommandExecutor(blueprint, { queryExecutor,
+      commandEffects: { enqueue: async () => {} } })).toThrow('Transactional command effects require transactions')
+    expect(queryExecutor.record.status).toBe('pending')
+  })
   it('uses command policy and availability metadata to decide whether UI may offer it', async () => {
     const queryExecutor = new MemoryQueryExecutor()
     const availabilityBlueprint: Blueprint = {

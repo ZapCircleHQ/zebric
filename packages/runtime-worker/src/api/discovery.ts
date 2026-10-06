@@ -17,6 +17,7 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, 
       name: blueprint.project.name,
       version: blueprint.project.version,
       openapi: `${origin}/api/openapi.json`,
+      events: `${origin}/api/agent/events`,
       contract,
       authentication: blueprint.auth?.apiKeys?.length ? [{ type: 'bearer' }] : [],
       skills: supported.skills?.map(skill => skill.name) ?? [],
@@ -40,11 +41,13 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, 
         idempotency: true,
         durableCommandIdempotency: true,
         durableWorkflowEventOutbox: true,
-        eventStream: false,
+        eventStream: true,
+        durableDomainEvents: true,
         transactionalWorkflows: true,
         d1BatchWorkflows: Boolean(supported.workflows?.some(workflow => workflow.transactional)),
         domainCommands: Boolean(supported.commands?.length),
-        auditHistory: false,
+        auditHistory: true,
+        transactionalAudit: true,
       },
     }, { headers: headers() })
   })
@@ -95,7 +98,13 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string, o
       responses: { '200': { description: 'Job lifecycle operation accepted' }, '401': { description: 'Authentication required' }, '404': { description: 'Job not found' }, '409': { description: 'Job state conflict' } },
     } }
   }
-  delete spec.paths['/api/audit']
+  spec.paths['/api/agent/events'] = { get: {
+    operationId: 'stream_agent_events', summary: 'Stream authorized durable command events',
+    security: [{ bearerAuth: [] }],
+    parameters: [{ name: 'Last-Event-ID', in: 'header', required: false, schema: { type: 'string', pattern: '^[0-9]+$' } }],
+    responses: { '200': { description: 'Server-sent events; reconnect using Last-Event-ID', content: { 'text/event-stream': { schema: { type: 'string' } } } },
+      '400': { description: 'Invalid cursor' }, '401': { description: 'Authentication required' } },
+  } }
   if (!blueprint.auth?.apiKeys?.length) spec.security = []
   return spec
 }

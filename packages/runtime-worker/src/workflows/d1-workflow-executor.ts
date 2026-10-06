@@ -1,5 +1,6 @@
 import {
   SYSTEM_SESSION,
+  actorFromSession,
   analyzeTransactionalWorkflow,
   evaluateCondition,
   type CommandExecutor,
@@ -38,6 +39,7 @@ export interface WorkersWorkflowJob {
 }
 
 export interface WorkersWorkflowServices {
+  auditLifecycle?: boolean
   commandExecutor?: CommandExecutor
   services?: ServiceInvoker
   emailService?: { send(to: string, subject: string, body: string, template?: string): Promise<void> }
@@ -480,12 +482,16 @@ export class D1WorkflowExecutor {
         path: 'steps',
         signal: controller.signal
       })
-      if (this.jobs.get(job.id)?.status !== 'cancelled') job.status = 'completed'
+      if (this.jobs.get(job.id)?.status !== 'cancelled') {
+        if (!workflow.transactional) await this.auditOutcome(job.id, workflow, context, true)
+        job.status = 'completed'
+      }
     } catch (error) {
       console.error(`Workflow ${workflow.name} failed:`, error)
       if (this.jobs.get(job.id)?.status !== 'cancelled') {
         job.status = 'failed'
         job.error = controller.signal.aborted ? 'Workflow execution timed out' : 'Workflow execution failed'
+        await this.auditOutcome(job.id, workflow, context, false).catch(error => console.error('Workflow audit failed:', error))
       }
     } finally {
       job.completedAt = new Date().toISOString()
@@ -515,12 +521,38 @@ export class D1WorkflowExecutor {
       })
     try {
       const result = await this.runSteps(workflow, context, { durable: step, workflow, jobId: job.id, path: 'steps' })
+      if (!workflow.transactional)
+        await step.do('audit.completed', this.stepConfig(workflow), async () => {
+          await this.auditOutcome(job.id, workflow, context, true)
+          return null
+        })
       await this.persistTerminalJob(job.id, 'completed', workflow, step, result)
       return result
     } catch (error) {
+      await step.do('audit.failed', this.stepConfig(workflow), async () => {
+        await this.auditOutcome(job.id, workflow, context, false)
+        return null
+      })
       await this.persistTerminalJob(job.id, 'failed', workflow, step)
       throw error
     }
+  }
+
+  private async auditOutcome(id: string, workflow: Workflow, context: WorkflowContext, success: boolean): Promise<void> {
+    if (!this.integrations.auditLifecycle) return
+    const actor = actorFromSession(context.session)
+    const entity = context.trigger.entity
+    const resource = context.trigger.after ?? context.trigger.before
+    const recordId = resource && typeof resource === 'object' && 'id' in resource ? resource.id : undefined
+    await this.queries.persistRuntimeEffects({ events: [], audit: [{
+      auditId: `workflow:${id}:${success ? 'completed' : 'failed'}`,
+      eventType: success ? 'workflow.completed' : 'workflow.failed',
+      severity: success ? 'info' : 'warning', action: workflow.name, actionName: workflow.name,
+      resource: `workflow:${id}`, success, workflowName: workflow.name,
+      entityType: entity, entityId: recordId == null ? undefined : String(recordId),
+      actorId: actor?.id, actorType: actor?.type, userId: actor?.delegatedBy ?? actor?.id,
+      metadata: { jobId: id }
+    }] })
   }
 
   private async persistTerminalJob(
@@ -572,6 +604,7 @@ export class D1WorkflowExecutor {
               },
               await requestFingerprint(frame.jobId, 'transaction-event', String(index))
             )
+          await this.auditOutcome(frame.jobId, workflow, context, true)
           return { result: transactionContext.variables, events }
         }, receipt)
       const output = frame.durable
@@ -600,14 +633,16 @@ export class D1WorkflowExecutor {
       frame.events.push(event)
       return
     }
-    await this.triggerEntity(
+    const deliver = () => this.triggerEntity(
       event.entity,
       event.event,
       event.before,
       event.after,
       context.session,
       context.variables.__zebric.workflowPath
-    )
+    ).then(() => undefined)
+    if (this.integrations.auditLifecycle) await this.queries.afterCommit(deliver)
+    else await deliver()
   }
 
   private async dispatchEvents(events: EntityEvent[], context: WorkflowContext, frame: ExecutionFrame): Promise<void> {
@@ -658,52 +693,63 @@ export class D1WorkflowExecutor {
   private async executeStep(step: WorkflowStep, context: WorkflowContext, frame: ExecutionFrame): Promise<any> {
     const resolve = (value: unknown): any => resolveValue(value, context)
     frame.signal?.throwIfAborted()
-    const queryContext = { session: context.session }
+    const queryContext = { session: context.session, source: 'workflow' as const, workflow: context.variables.__zebric.currentWorkflow }
     switch (step.type) {
       case 'query': {
         if (!step.entity) throw new Error('Query step requires entity')
         const data = resolve(step.data)
         const where = resolve(step.where)
         if (step.action === 'find') return this.queries.execute({ entity: step.entity, where }, queryContext)
-        if (step.action === 'create') {
-          if (!data) throw new Error('Create action requires data')
-          const created = await this.queries.create(step.entity, data, queryContext)
-          await this.emitEntityEvent({ entity: step.entity, event: 'create', after: created }, context, frame)
-          return created
+        const mutate = async () => {
+          if (step.action === 'create') {
+            if (!data) throw new Error('Create action requires data')
+            const created = await this.queries.create(step.entity, data, queryContext)
+            await this.emitEntityEvent({ entity: step.entity, event: 'create', after: created }, context, frame)
+            return created
+          }
+          const id = typeof where === 'string' ? where : where?.id
+          if (id == null) throw new Error('Mutation requires an id in the where clause')
+          const before = await this.queries.findById(step.entity, String(id), queryContext)
+          if (step.action === 'update') {
+            if (!data) throw new Error('Update action requires data')
+            // Use the guarded batch compiler to preserve additional where predicates.
+            const statements = await this.queries.prepareBatchMutation(
+              step.entity,
+              'update',
+              data,
+              typeof where === 'string' ? { id: where } : where,
+              queryContext
+            )
+            frame.signal?.throwIfAborted()
+            await this.queries.executeBatch(statements)
+            if (this.integrations.auditLifecycle) {
+              const entity = this.blueprint.entities.find(entity => entity.name === step.entity)!
+              await this.queries.auditMutation(entity, 'update', String(id), data, queryContext)
+            }
+            const updated = await this.queries.findById(step.entity, String(id), queryContext)
+            await this.emitEntityEvent({ entity: step.entity, event: 'update', before, after: updated }, context, frame)
+            return updated
+          }
+          if (step.action === 'delete') {
+            const statements = await this.queries.prepareBatchMutation(
+              step.entity,
+              'delete',
+              undefined,
+              typeof where === 'string' ? { id: where } : where,
+              queryContext
+            )
+            frame.signal?.throwIfAborted()
+            await this.queries.executeBatch(statements)
+            if (before && this.integrations.auditLifecycle) {
+              const entity = this.blueprint.entities.find(entity => entity.name === step.entity)!
+              await this.queries.auditMutation(entity, 'delete', String(id), {}, queryContext)
+            }
+            await this.emitEntityEvent({ entity: step.entity, event: 'delete', before }, context, frame)
+            return { deleted: true }
+          }
+          throw new Error('Unknown query action')
         }
-        const id = typeof where === 'string' ? where : where?.id
-        if (id == null) throw new Error('Mutation requires an id in the where clause')
-        const before = await this.queries.findById(step.entity, String(id), queryContext)
-        if (step.action === 'update') {
-          if (!data) throw new Error('Update action requires data')
-          // Use the guarded batch compiler to preserve additional where predicates.
-          const statements = await this.queries.prepareBatchMutation(
-            step.entity,
-            'update',
-            data,
-            typeof where === 'string' ? { id: where } : where,
-            queryContext
-          )
-          frame.signal?.throwIfAborted()
-          await this.queries.executeBatch(statements)
-          const updated = await this.queries.findById(step.entity, String(id), queryContext)
-          await this.emitEntityEvent({ entity: step.entity, event: 'update', before, after: updated }, context, frame)
-          return updated
-        }
-        if (step.action === 'delete') {
-          const statements = await this.queries.prepareBatchMutation(
-            step.entity,
-            'delete',
-            undefined,
-            typeof where === 'string' ? { id: where } : where,
-            queryContext
-          )
-          frame.signal?.throwIfAborted()
-          await this.queries.executeBatch(statements)
-          await this.emitEntityEvent({ entity: step.entity, event: 'delete', before }, context, frame)
-          return { deleted: true }
-        }
-        throw new Error('Unknown query action')
+        return this.integrations.auditLifecycle ? this.queries.transaction(mutate) : mutate()
       }
       case 'command': {
         if (!this.integrations.commandExecutor || !step.command || !step.recordId)

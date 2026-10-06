@@ -124,6 +124,39 @@ describe('Cloudflare Workflows integration', () => {
       .toEqual({ count: 9 })
   })
 
+  it('serves audit history and streams committed command events inside workerd', async () => {
+    const db = await mf.getD1Database('DB')
+    await db.prepare('INSERT INTO Item VALUES (?, ?)').bind('stream-command', 0).run()
+    const response = await mf.dispatchFetch('https://edge.example/api/agent/events', {
+      headers: { authorization: 'Bearer secret' }
+    })
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain(': connected')
+      const changed = await mf.dispatchFetch('https://edge.example/api/commands/change_count/stream-command', {
+        method: 'POST',
+        headers: { authorization: 'Bearer secret', 'content-type': 'application/json', 'x-agent-run-id': 'stream-run' },
+        body: JSON.stringify({ count: 3 })
+      })
+      expect(changed.status).toBe(200)
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Event stream timed out')), 5000) })
+      ])
+      expect(new TextDecoder().decode(chunk.value)).toContain('event: domain.ChangeCount')
+      const history = await mf.dispatchFetch('https://edge.example/api/audit?entity=Item&recordId=stream-command', {
+        headers: { authorization: 'Bearer secret' }
+      })
+      expect(history.status).toBe(200)
+      expect(await history.json()).toMatchObject([{ eventType: 'domain.command', actionName: 'ChangeCount' }])
+    } finally {
+      if (timer) clearTimeout(timer)
+      await reader.cancel()
+    }
+  }, 10000)
+
   it('terminates a durably sleeping instance without executing later effects', async () => {
     const job = (await (await mf.dispatchFetch('https://edge.example/start?workflow=Slow')).json()) as any
     await expect

@@ -56,7 +56,7 @@ describe('general Workers workflows', () => {
     const engine = new D1WorkflowExecutor({ workflows: [{ name: 'Cascade', trigger: { entity: 'Item', event: 'create' }, steps: [{ type: 'query', entity: 'Item', action: 'create', data: { name: 'child' } }] }] } as any, {} as any, { create } as any)
     const jobs = await engine.triggerEntity('Item', 'create', undefined, { id: 'parent' }, session)
     expect(jobs[0].status).toBe('completed')
-    expect(create).toHaveBeenCalledExactlyOnceWith('Item', { name: 'child' }, { session })
+    expect(create).toHaveBeenCalledExactlyOnceWith('Item', { name: 'child' }, { session, source: 'workflow', workflow: 'Cascade' })
     expect(jobs[0].ownerId).toBe('actor')
   })
 

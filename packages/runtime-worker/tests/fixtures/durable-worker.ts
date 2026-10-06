@@ -14,7 +14,7 @@ const blueprint = {
     }
   ],
   pages: [],
-  auth: { providers: [], apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY', scopes: ['command.item.change'] }] },
+  auth: { providers: [], apiKeys: [{ name: 'agent', keyEnv: 'AGENT_KEY', scopes: ['command.item.change', 'entity.item.get'] }] },
   commands: [
     {
       name: 'ChangeCount',
@@ -144,7 +144,7 @@ export default {
       )
       return Response.json(job)
     }
-    if (new URL(request.url).pathname.startsWith('/api/commands/')) return engine.fetch(request, ctx)
+    if (new URL(request.url).pathname.startsWith('/api/')) return engine.fetch(request, ctx)
     const id = new URL(request.url).searchParams.get('id')!
     if (new URL(request.url).pathname === '/cancel')
       return Response.json({ changed: await engine.getWorkflowExecutor().cancelJob(id) })

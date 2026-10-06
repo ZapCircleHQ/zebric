@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import type { Blueprint, SqlStoragePort } from '@zebric/runtime-core'
+import type { Blueprint, SqlStoragePort, CommandEffectsPort } from '@zebric/runtime-core'
+import { D1RuntimeJournal } from '../audit/d1-runtime-journal.js'
 import { D1Adapter } from './d1-adapter.js'
 import { D1WorkflowOutbox, type WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
 
@@ -48,12 +49,14 @@ const transactionLifetime = 5 * 60 * 1000
 export class D1Transactions implements SqlStoragePort {
   private readonly scopes = new AsyncLocalStorage<Scope>()
   private readonly outbox: D1WorkflowOutbox
+  private readonly journal: D1RuntimeJournal
 
   constructor(
     private readonly db: D1Adapter,
     private readonly blueprint: Blueprint
   ) {
     this.outbox = new D1WorkflowOutbox(db)
+    this.journal = new D1RuntimeJournal(db)
     if (blueprint.entities.some((entity) => entity.name.toLowerCase().startsWith('_zebric_')))
       throw new Error('Entity names beginning with _zebric_ are reserved for runtime storage')
   }
@@ -120,6 +123,25 @@ export class D1Transactions implements SqlStoragePort {
     const statement = await this.outbox.prepare(intent, id)
     this.assertActive(scope)
     scope.statements.push(statement)
+  }
+
+  get inTransaction(): boolean { return Boolean(this.scopes.getStore()) }
+
+  async enqueueCommandEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    const scope = this.scopes.getStore()
+    if (!scope) throw new Error('Runtime journal entries require an active transaction')
+    this.assertActive(scope)
+    const statements = await this.journal.prepare(effects)
+    this.assertActive(scope)
+    scope.statements.push(...statements)
+  }
+
+  async persistRuntimeEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    if (this.inTransaction) await this.enqueueCommandEffects(effects)
+    else {
+      const statements = await this.journal.prepare(effects)
+      if (statements.length) await this.db.batch(statements)
+    }
   }
 
   async transaction<T>(operation: () => Promise<T>, receipt?: TransactionReceipt): Promise<T> {

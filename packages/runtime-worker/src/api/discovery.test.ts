@@ -44,7 +44,9 @@ describe('Workers Agent API discovery', () => {
         durableWorkflowEventOutbox: true,
         transactionalWorkflows: true,
         domainCommands: true,
-        auditHistory: false,
+        auditHistory: true,
+        transactionalAudit: true,
+        eventStream: true,
       },
     })
     expect(discovery.contract.fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/)
@@ -55,7 +57,8 @@ describe('Workers Agent API discovery', () => {
     expect(openapi.paths['/api/items']).toHaveProperty('post')
     expect(openapi.paths['/api/items/{id}']).toHaveProperty('put')
     expect(openapi.paths['/api/items/{id}']).toHaveProperty('delete')
-    expect(openapi.paths['/api/audit']).toBeUndefined()
+    expect(openapi.paths['/api/audit']).toHaveProperty('get')
+    expect(openapi.paths['/api/agent/events']).toHaveProperty('get')
     expect(openapi.paths['/api/commands/supported_command/{id}']).toBeDefined()
     expect(openapi.paths['/api/commands/handler_command/{id}']).toBeUndefined()
     expect(openapiResponse.headers.get('etag')).toBe(`"${discovery.contract.fingerprint}"`)

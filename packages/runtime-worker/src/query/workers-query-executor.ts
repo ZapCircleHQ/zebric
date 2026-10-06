@@ -7,11 +7,11 @@
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
-import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
+import type { QueryExecutorPort, RequestContext, SqlStoragePort, CommandEffectsPort } from '@zebric/runtime-core'
 import { D1Adapter } from '../database/d1-adapter.js'
 import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
 import type { WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
-import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, PolicyEvaluator, actorFromSession, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
@@ -19,9 +19,13 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   constructor(
     private adapter: SqlStoragePort,
-    private blueprint: Blueprint
+    private blueprint: Blueprint,
+    private options: { auditMutations?: boolean } = {}
   ) {
     if (adapter instanceof D1Adapter) this.adapter = new D1Transactions(adapter, blueprint)
+    if (options.auditMutations && !(this.adapter instanceof D1Transactions)) {
+      throw new Error('Transactional mutation auditing requires a D1 adapter')
+    }
     this.permissionManager = new PermissionManager(blueprint.auth)
     this.policyEvaluator = new PolicyEvaluator(blueprint, this)
   }
@@ -39,6 +43,32 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   async enqueueWorkflowEvent(intent: WorkflowEventIntent, id?: string): Promise<void> {
     if (!(this.adapter instanceof D1Transactions)) throw new Error('Workflow outbox intents require a D1 adapter')
     await this.adapter.enqueueWorkflowEvent(intent, id)
+  }
+
+  async enqueueCommandEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Runtime journal entries require a D1 adapter')
+    await this.adapter.enqueueCommandEffects(effects)
+  }
+
+  async persistRuntimeEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Runtime journal entries require a D1 adapter')
+    await this.adapter.persistRuntimeEffects(effects)
+  }
+
+  private get requiresAuditTransaction(): boolean {
+    return Boolean(this.options.auditMutations && this.adapter instanceof D1Transactions && !this.adapter.inTransaction)
+  }
+
+  async auditMutation(entity: Entity, action: 'create' | 'update' | 'delete', id: string, data: Record<string, any>, context: RequestContext): Promise<void> {
+    if (!this.options.auditMutations || context.commandMutation) return
+    const actor = context.actor ?? actorFromSession(context.session)
+    await this.enqueueCommandEffects({ events: [], audit: [{
+      eventType: `data.${action}`, severity: 'info', action, resource: `${entity.name}:${id}`, success: true,
+      entityType: entity.name, entityId: id, userId: actor?.delegatedBy ?? actor?.id,
+      actorId: actor?.id, actorType: actor?.type, workflowName: context.workflow,
+      correlationId: context.correlationId,
+      metadata: { mutation: filterWritableFields(entity, data, context.session), source: context.source, workflow: context.workflow }
+    }] })
   }
 
   async executeBatch(statements: Array<{ sql: string; params?: unknown[] }>): Promise<void> {
@@ -100,6 +130,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
    * Create a new record
    */
   async create(entity: string, data: Record<string, any>, context: RequestContext): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.create(entity, data, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -134,7 +165,9 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, values)
-    return filterReadableFields(entityDef, this.normalizeRecord(entityDef, result.rows[0] || filteredData), context.session)
+    const record = this.normalizeRecord(entityDef, result.rows[0] || filteredData)
+    await this.auditMutation(entityDef, 'create', String(record.id), filteredData, context)
+    return filterReadableFields(entityDef, record, context.session)
   }
 
   /**
@@ -146,6 +179,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     data: Record<string, any>,
     context: RequestContext
   ): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.update(entity, id, data, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -191,6 +225,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
+    await this.auditMutation(entityDef, 'update', id, writable, context)
     return filterReadableFields(
       entityDef,
       this.normalizeRecord(entityDef, result.rows[0] || { ...(existing ?? {}), ...filteredData, id }),
@@ -202,6 +237,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
    * Delete a record
    */
   async delete(entity: string, id: string, context: RequestContext): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.delete(entity, id, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -226,6 +262,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     await this.adapter.query(sql, [id])
+    if (existing) await this.auditMutation(entityDef, 'delete', id, {}, context)
   }
 
   /**

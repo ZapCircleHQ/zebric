@@ -19,6 +19,8 @@ import { WorkersBetterAuthProvider } from './auth/better-auth-provider.js'
 import { WorkersApiKeyRegistry, agentHasScopes } from './auth/api-key-auth.js'
 import { R2Storage } from './storage/r2-storage.js'
 import { registerWorkersDiscoveryRoutes } from './api/discovery.js'
+import { D1RuntimeJournal } from './audit/d1-runtime-journal.js'
+import { registerJournalRoutes } from './api/journal-routes.js'
 import { requestFingerprint, WorkersIdempotencyCache } from './api/idempotency-cache.js'
 import { D1IdempotencyConflict, D1TransactionConflict } from './database/d1-transactions.js'
 import { verifyWebhookRequest } from './security/webhook-auth.js'
@@ -159,9 +161,12 @@ export class ZebricWorkersEngine {
       this.templateLoader,
     )
 
-    this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint)
-    this.commandExecutor = new CommandExecutor(this.blueprint, { queryExecutor: this.queryExecutor })
-    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor }, config.env.WORKFLOWS)
+    this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint, { auditMutations: true })
+    this.commandExecutor = new CommandExecutor(this.blueprint, {
+      queryExecutor: this.queryExecutor,
+      commandEffects: { enqueue: effects => this.queryExecutor.enqueueCommandEffects(effects) },
+    })
+    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor, auditLifecycle: true }, config.env.WORKFLOWS)
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -209,6 +214,10 @@ export class ZebricWorkersEngine {
 
     registerWorkersDiscoveryRoutes(this.app, this.blueprint, { durableWorkflows: Boolean(this.config.env.WORKFLOWS) })
     this.registerCommandRoutes()
+    registerJournalRoutes(this.app, {
+      blueprint: this.blueprint, journal: new D1RuntimeJournal(this.db), queries: this.queryExecutor,
+      resolveSession: request => this.resolveApiSession(request),
+    })
     this.registerWorkflowRoutes()
     this.registerEntityApiRoutes()
 

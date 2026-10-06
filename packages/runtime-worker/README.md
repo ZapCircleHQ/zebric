@@ -15,6 +15,8 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **D1 transactions** - Database-only workflows support intermediate reads, conditions, loops, and declarative commands with atomic commits
 - ✅ **Durable command replay** - Command mutations and successful responses commit together in D1
 - ✅ **Workflow event outbox** - Atomic trigger intents with leased delivery, retries, and recovery across restarts
+- ✅ **Audit history** - D1-backed command, CRUD write, and workflow outcome records with authorized history queries
+- ✅ **Durable command events** - Transactional event journal and authenticated SSE delivery across isolates with reconnect cursors
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
 - ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects
@@ -286,12 +288,48 @@ Signatures expire after five minutes. Each workflow sharing a path is authorized
 against its own secret. The low-level `triggerWebhook` API still requires an
 application-provided authorization callback.
 
+## Audit history and command events
+
+The engine records successful commands and CRUD writes in `_zebric_audit`.
+Mutation history commits in the same D1 batch as the mutation and, when present,
+its command receipt. Rollbacks save no successful mutation history, and receipt
+replay does not append another entry. Workflow mutations include the workflow name;
+transactional workflow completion is also recorded inside its commit. Failed
+workflow outcomes are recorded separately after rollback. Stable workflow audit
+IDs prevent duplicate lifecycle entries when a native checkpoint is replayed.
+
+`GET /api/audit?entity=Item&recordId=item-1` returns newest entries first, with
+optional `command`, `workflow`, `actorId`, and `limit` filters (`limit` is 1–200,
+default 50). Authentication and current record read access are required; agent
+credentials also need `entity.item.get`. Unreadable mutation fields are removed
+from responses, and common password, secret, token, authorization, cookie, and API-key fields are
+redacted before storage. Deleted or inaccessible records have no public history
+through this route. Scheduled/manual workflow outcomes without a domain record
+remain available through the trusted `D1RuntimeJournal` storage API.
+
+Commands also append routing metadata to `_zebric_domain_events` inside the same
+commit. `GET /api/agent/events` streams SSE events such as `domain.ApproveRequest`,
+using the Node route and event envelope. Events contain command, entity, record,
+actor, and correlation metadata; they do not contain record values. Delivery is
+private to the initiating credential or user, requires current record read access,
+and checks agent entity scopes. Sessions and record access are rechecked during
+delivery. Changes from other Worker isolates are visible because the stream polls
+D1 once per second while idle; heartbeats are sent every 15 seconds. Disconnects
+release the polling timer.
+
+Without `Last-Event-ID`, a connection starts with new events. To resume, supply the
+last numeric SSE ID in that header; `Last-Event-ID: 0` replays all authorized events
+for the credential. Clients should remember the last processed ID and handle
+redelivery on reconnect. Audit and event rows are retained without automatic
+pruning. The tables are initialized automatically; no extra binding is required.
+Audited CRUD uses the same snapshot transactions and SQL restrictions as workflows.
+
 ## Remaining Node parity gaps
 
 Worker transactions currently use full entity snapshots and optimistic conflict
 checks; custom SQL triggers and unrestricted handlers require Node. Node's
-notification/plugin lifecycle, audit/metrics stack, event stream, and upload routes
-also remain Node-only.
+notification/plugin lifecycle, metrics stack, broader authentication/security audit
+coverage, and upload routes also remain Node-only.
 
 ## Entity API and API keys
 
