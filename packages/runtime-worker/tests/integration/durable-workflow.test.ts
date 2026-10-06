@@ -116,6 +116,12 @@ describe('Cloudflare Workflows integration', () => {
     expect(await replay.json()).toEqual(result)
     expect((await request(10)).status).toBe(409)
     expect(await db.prepare('SELECT count FROM Item WHERE id = ?').bind('http-command').first()).toEqual({ count: 55 })
+    await expect
+      .poll(async () => db.prepare('SELECT count FROM Item WHERE id = ?').bind('command-child').first(), {
+        timeout: 10000,
+        interval: 100
+      })
+      .toEqual({ count: 9 })
   })
 
   it('terminates a durably sleeping instance without executing later effects', async () => {

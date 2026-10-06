@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Blueprint, SqlStoragePort } from '@zebric/runtime-core'
 import { D1Adapter } from './d1-adapter.js'
+import { D1WorkflowOutbox, type WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
 
 type Statement = { sql: string; params?: unknown[] }
 type Table = {
@@ -46,11 +47,13 @@ const transactionLifetime = 5 * 60 * 1000
  */
 export class D1Transactions implements SqlStoragePort {
   private readonly scopes = new AsyncLocalStorage<Scope>()
+  private readonly outbox: D1WorkflowOutbox
 
   constructor(
     private readonly db: D1Adapter,
     private readonly blueprint: Blueprint
   ) {
+    this.outbox = new D1WorkflowOutbox(db)
     if (blueprint.entities.some((entity) => entity.name.toLowerCase().startsWith('_zebric_')))
       throw new Error('Entity names beginning with _zebric_ are reserved for runtime storage')
   }
@@ -108,6 +111,15 @@ export class D1Transactions implements SqlStoragePort {
       this.assertActive(scope)
       scope.effects.push(effect)
     } else await effect()
+  }
+
+  async enqueueWorkflowEvent(intent: WorkflowEventIntent, id?: string): Promise<void> {
+    const scope = this.scopes.getStore()
+    if (!scope) throw new Error('Workflow outbox intents require an active transaction')
+    this.assertActive(scope)
+    const statement = await this.outbox.prepare(intent, id)
+    this.assertActive(scope)
+    scope.statements.push(statement)
   }
 
   async transaction<T>(operation: () => Promise<T>, receipt?: TransactionReceipt): Promise<T> {

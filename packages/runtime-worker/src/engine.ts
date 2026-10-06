@@ -220,7 +220,7 @@ export class ZebricWorkersEngine {
   /**
    * Handle incoming request
    */
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, ctx?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {
     try {
       if (!this.templatesReady && this.templateLoader instanceof KVTemplateLoader) {
         this.templatesReady = this.templateLoader.preload(this.collectFileTemplates()).catch(error => {
@@ -230,7 +230,11 @@ export class ZebricWorkersEngine {
         })
       }
       await this.templatesReady
-      return await this.app.fetch(request, this.config.env)
+      const response = await this.app.fetch(request, this.config.env)
+      const recovery = this.deliverWorkflowEvents()
+      if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(recovery)
+      else await recovery
+      return response
     } catch (error) {
       console.error('Request handling error:', error)
       return new Response(
@@ -437,9 +441,11 @@ export class ZebricWorkersEngine {
         this.requireAgentRunId(c.req.raw, session)
         const input = await this.parseOptionalJsonObject(c.req.raw)
         const execute = async () => {
+          const recordId = this.requireEntityId(c.req.param('id'))
+          const before = await this.queryExecutor.findById(command.entity, recordId, { session }).catch(() => undefined)
           const result = await this.commandExecutor.execute({
             command: command.name,
-            recordId: this.requireEntityId(c.req.param('id')),
+            recordId,
             input,
             context: {
               session,
@@ -447,9 +453,7 @@ export class ZebricWorkersEngine {
               correlationId: c.req.header('x-correlation-id') ?? c.req.header('x-request-id'),
             },
           })
-          await this.queryExecutor.afterCommit(async () => {
-            await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
-          })
+          await this.workflowExecutor.enqueueEntityEvent({ entity: command.entity, event: 'update', before, after: result.record, session })
           return Response.json(result)
         }
         return await this.withIdempotency(c.req.raw, session, `${command.name}:${c.req.param('id')}`, input, execute, true)
@@ -470,13 +474,17 @@ export class ZebricWorkersEngine {
       try {
         form = Object.fromEntries(await c.req.raw.formData())
         const input = this.coerceCommandInput(command, form)
-        const result = await this.queryExecutor.transaction(() => this.commandExecutor.execute({
-          command: command.name,
-          recordId: this.requireEntityId(c.req.param('id')),
-          input,
-          context: { session, source: 'ui' },
-        }))
-        await this.workflowExecutor.triggerEntity(command.entity, 'update', undefined, result.record, session)
+        await this.queryExecutor.transaction(async () => {
+          const recordId = this.requireEntityId(c.req.param('id'))
+          const before = await this.queryExecutor.findById(command.entity, recordId, { session }).catch(() => undefined)
+          const result = await this.commandExecutor.execute({
+            command: command.name,
+            recordId,
+            input,
+            context: { session, source: 'ui' },
+          })
+          await this.workflowExecutor.enqueueEntityEvent({ entity: command.entity, event: 'update', before, after: result.record, session })
+        })
         return c.redirect(this.safeRedirect(form.redirect, c.req.header('referer'), c.req.url), 303)
       } catch (error) {
         console.error(`Command ${command.name} failed:`, error)
@@ -889,7 +897,16 @@ export class ZebricWorkersEngine {
   }
 
   async scheduled(cron: string): Promise<void> {
+    await this.deliverWorkflowEvents()
     await this.workflowExecutor.triggerSchedule(cron)
+  }
+
+  async deliverWorkflowEvents(limit = 25): Promise<{ delivered: number; failed: number }> {
+    try { return await this.workflowExecutor.deliverPendingEvents(limit) }
+    catch (error) {
+      console.error('Workflow outbox recovery failed:', error)
+      return { delivered: 0, failed: 1 }
+    }
   }
 
   private authCallback(request: Request): string {
@@ -936,8 +953,8 @@ export function createWorkerHandler(config: WorkersHandlerConfig) {
     async scheduled(controller: ScheduledController, env: WorkersEnv, ctx: ExecutionContext): Promise<void> {
       ctx.waitUntil(getEngine(env).scheduled(controller.cron))
     },
-    async fetch(request: Request, env: WorkersEnv, _ctx: ExecutionContext): Promise<Response> {
-      return getEngine(env).fetch(request)
+    async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
+      return getEngine(env).fetch(request, ctx)
     }
   }
 }

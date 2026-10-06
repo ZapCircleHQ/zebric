@@ -14,6 +14,7 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 - ✅ **Domain commands** - Declarative commands use the shared policy, validation, and protected-field pipeline
 - ✅ **D1 transactions** - Database-only workflows support intermediate reads, conditions, loops, and declarative commands with atomic commits
 - ✅ **Durable command replay** - Command mutations and successful responses commit together in D1
+- ✅ **Workflow event outbox** - Atomic trigger intents with leased delivery, retries, and recovery across restarts
 - ✅ **File-backed templates** - Bundle imported files or preload them from KV
 - ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
 - ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects
@@ -178,8 +179,35 @@ reusing a key with a different command, record, or input returns
 `409 IDEMPOTENCY_KEY_REUSE`. Failed transactions save no receipt and can be retried.
 Receipts have no automatic expiry; removing a receipt permits that key to execute
 again. Authentication, scopes, and agent attribution are checked before replay.
-Post-commit command triggers run only for the winning execution; they do not have
-a durable outbox, so interruption after commit can prevent their delivery.
+
+Command-triggered workflow events and transactional workflow events are persisted
+in `_zebric_workflow_outbox` in the same commit as their mutations and receipts.
+The outbox retains the initiating actor and the readable before/after records;
+provider-specific session fields are omitted. Failed transactions enqueue nothing.
+Replaying a successful command does not enqueue a second event.
+
+Delivery uses fenced leases, lease renewal, and exponential backoff. A failed or
+interrupted delivery stays pending for a later recovery tick. Stable child-job IDs
+prevent duplicate native Workflow submissions, including partial fanout and lost
+acknowledgements. Retained terminal job metadata prevents resubmission if the
+provider no longer reports an instance. Transactional inline child workflows also
+replay their committed
+results. Delivery evaluates triggers against the current Blueprint; a removed or
+disabled trigger is skipped.
+
+Fetch and cron handlers recover pending events, with each recovery tick handling
+up to 25 events. `createWorkerHandler`
+uses `ExecutionContext.waitUntil` for fetch recovery; direct `engine.fetch` calls
+await recovery unless passed an execution context. `engine.deliverWorkflowEvents`
+and `executor.deliverPendingEvents` expose explicit recovery ticks. Configure a
+cron to recover events while the application has no incoming traffic. Committed
+command responses remain successful when trigger delivery needs a retry. Delivered
+outbox rows are retained for diagnostics; pending rows do not expire.
+
+Without a `WORKFLOWS` binding, delivery to nontransactional inline workflows is
+at least once: interruption or lease loss can repeat effects. External integrations
+still need their own idempotency keys.
+
 Transactional workflow results and event intents are also stored atomically,
 protecting mutations if a native Workflow checkpoint is lost. Nontransactional
 workflow command steps use the same durable commit and replay boundary.

@@ -20,6 +20,7 @@ import { createInlineStepRunner } from './inline-step-runner.js'
 import { requestFingerprint } from '../api/idempotency-cache.js'
 import type { D1Adapter } from '../database/d1-adapter.js'
 import type { WorkersQueryExecutor } from '../query/workers-query-executor.js'
+import { D1WorkflowOutbox, type WorkflowEventIntent } from './d1-workflow-outbox.js'
 
 export interface WorkersWorkflowJob {
   id: string
@@ -94,6 +95,7 @@ export class D1WorkflowExecutor {
   private readonly executions = new Map<string, { workflow: Workflow; context: WorkflowContext }>()
   private readonly jobStore?: D1WorkflowJobStore
   private readonly jobs = new Map<string, WorkersWorkflowJob>()
+  private readonly outbox: D1WorkflowOutbox
 
   constructor(
     private readonly blueprint: Blueprint,
@@ -102,6 +104,7 @@ export class D1WorkflowExecutor {
     private readonly integrations: WorkersWorkflowServices = {},
     private readonly binding?: DurableWorkflowBinding
   ) {
+    this.outbox = new D1WorkflowOutbox(db)
     if (
       blueprint.entities?.some((entity) =>
         ['_zebric_workflow_jobs', '_zebric_workflow_job_controls'].includes(entity.name.toLowerCase())
@@ -351,6 +354,35 @@ export class D1WorkflowExecutor {
     return jobs
   }
 
+  /** Stage trigger delivery in the same transaction as its originating mutation. */
+  async enqueueEntityEvent(intent: WorkflowEventIntent, id?: string): Promise<void> {
+    const path = intent.workflowPath ?? []
+    const matches = [...this.workflows.values()].some(
+      (workflow) =>
+        workflow.enabled !== false &&
+        workflow.trigger.entity === intent.entity &&
+        workflow.trigger.event === intent.event &&
+        path.length < 5 &&
+        !path.includes(workflow.name)
+    )
+    if (matches) await this.queries.enqueueWorkflowEvent(intent, id)
+  }
+
+  /** Recover pending trigger deliveries across isolates and restarts. */
+  async deliverPendingEvents(limit = 25): Promise<{ delivered: number; failed: number }> {
+    return this.outbox.drain(async (intent, id) => {
+      await this.triggerEntity(
+        intent.entity,
+        intent.event,
+        intent.before,
+        intent.after,
+        intent.session,
+        intent.workflowPath,
+        `outbox:${id}`
+      )
+    }, limit)
+  }
+
   private async execute(
     name: string,
     context: WorkflowContext,
@@ -363,7 +395,15 @@ export class D1WorkflowExecutor {
       if (stored) {
         if (stored.submissionFingerprint !== fingerprint)
           throw new Error('Idempotency key was reused with different input')
-        if (!this.binding) return stored
+        // The D1 terminal record remains authoritative if the provider has
+        // forgotten its instance. Only unsuccessful submissions may be recreated.
+        if (
+          !this.binding ||
+          stored.status === 'completed' ||
+          stored.status === 'cancelled' ||
+          (stored.status === 'failed' && stored.error !== 'Workflow submission failed')
+        )
+          return stored
         const state = await (await this.binding.get(id)).status()
         if (state.status !== 'unknown') return (await this.getJob(id))!
       }
@@ -523,12 +563,21 @@ export class D1WorkflowExecutor {
           const events: EntityEvent[] = []
           await this.executeSteps(workflow.steps, transactionContext, { ...frame, durable: undefined, events })
           frame.signal?.throwIfAborted()
+          for (const [index, event] of events.entries())
+            await this.enqueueEntityEvent(
+              {
+                ...event,
+                session: context.session,
+                workflowPath: context.variables.__zebric.workflowPath
+              },
+              await requestFingerprint(frame.jobId, 'transaction-event', String(index))
+            )
           return { result: transactionContext.variables, events }
         }, receipt)
       const output = frame.durable
         ? await frame.durable.do('transaction', this.stepConfig(workflow), execute)
         : await execute()
-      await this.dispatchEvents(output.events, context, frame)
+      await this.deliverPendingEvents().catch((error) => console.error('Workflow outbox recovery failed:', error))
       return output.result
     }
     await this.executeSteps(workflow.steps, context, frame)
@@ -685,9 +734,23 @@ export class D1WorkflowExecutor {
             }
           })
           frame.signal?.throwIfAborted()
+          if (definition && frame.durable)
+            await this.enqueueEntityEvent(
+              {
+                entity: definition.entity,
+                event: 'update',
+                before,
+                after: result.record,
+                session: context.session,
+                workflowPath: context.variables.__zebric.workflowPath
+              },
+              await requestFingerprint(frame.jobId, frame.path, 'command-event')
+            )
           return { result, before }
         }, receipt)
-        if (definition)
+        if (frame.durable)
+          await this.deliverPendingEvents().catch((error) => console.error('Workflow outbox recovery failed:', error))
+        else if (definition)
           await this.emitEntityEvent(
             { entity: definition.entity, event: 'update', before, after: result.record },
             context,

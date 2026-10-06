@@ -9,6 +9,7 @@ import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-c
 import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
 import { D1Adapter } from '../database/d1-adapter.js'
 import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
+import type { WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
 import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
@@ -32,6 +33,11 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   async afterCommit(effect: () => Promise<void> | void): Promise<void> {
     if (this.adapter instanceof D1Transactions) await this.adapter.afterCommit(effect)
     else await effect()
+  }
+
+  async enqueueWorkflowEvent(intent: WorkflowEventIntent, id?: string): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Workflow outbox intents require a D1 adapter')
+    await this.adapter.enqueueWorkflowEvent(intent, id)
   }
 
   async executeBatch(statements: Array<{ sql: string; params?: unknown[] }>): Promise<void> {

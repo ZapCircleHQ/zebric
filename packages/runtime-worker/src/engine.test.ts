@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { ZebricWorkersEngine, createWorkerHandler } from './engine.js'
 import { MockD1Database, MockKVNamespace, MockR2Bucket } from './test-helpers/mocks.js'
 
@@ -828,6 +828,23 @@ describe('createWorkerHandler', () => {
     expect(response.status).toBe(200)
     const data = await response.json()
     expect(data.status).toBe('healthy')
+  })
+
+  it('returns the response while waitUntil owns pending outbox recovery', async () => {
+    let finish!: (report: { delivered: number; failed: number }) => void
+    const pending = new Promise<{ delivered: number; failed: number }>(resolve => { finish = resolve })
+    const recovery = vi.spyOn(ZebricWorkersEngine.prototype, 'deliverWorkflowEvents').mockReturnValue(pending)
+    try {
+      const handler = createWorkerHandler({ blueprint: simpleBlueprint })
+      const ctx = { waitUntil: vi.fn() }
+      const response = await handler.fetch(new Request('https://example.com/health'), { DB: new MockD1Database() } as any, ctx as any)
+      expect(response.status).toBe(200)
+      expect(ctx.waitUntil).toHaveBeenCalledExactlyOnceWith(pending)
+    } finally {
+      finish({ delivered: 1, failed: 0 })
+      await pending
+      recovery.mockRestore()
+    }
   })
 
   it('should work with pre-parsed blueprint', () => {

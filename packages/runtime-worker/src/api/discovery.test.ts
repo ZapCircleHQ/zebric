@@ -41,6 +41,7 @@ describe('Workers Agent API discovery', () => {
         entityApi: true,
         workflowJobs: false,
         idempotency: true,
+        durableWorkflowEventOutbox: true,
         transactionalWorkflows: true,
         domainCommands: true,
         auditHistory: false,

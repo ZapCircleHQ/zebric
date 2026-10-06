@@ -34,6 +34,8 @@ export { WorkersQueryExecutor } from './query/workers-query-executor.js'
 export { generateWorkersOpenApi, registerWorkersDiscoveryRoutes } from './api/discovery.js'
 
 export { D1WorkflowExecutor } from './workflows/d1-workflow-executor.js'
+export { D1WorkflowOutbox } from './workflows/d1-workflow-outbox.js'
+export type { WorkflowEventIntent } from './workflows/d1-workflow-outbox.js'
 export type { WorkersWorkflowServices, WorkersWorkflowJob } from './workflows/d1-workflow-executor.js'
 
 export type { DurableWorkflowPayload, DurableWorkflowStep, DurableWorkflowBinding } from './workflows/durable-workflow.js'

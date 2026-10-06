@@ -27,6 +27,18 @@ const blueprint = {
   ],
   workflows: [
     {
+      name: 'CommandChild',
+      trigger: { entity: 'Item', event: 'update', condition: { 'after.id': 'http-command' } },
+      steps: [
+        {
+          type: 'query',
+          entity: 'Item',
+          action: 'create',
+          data: { id: 'command-child', count: '{{variables.after.count}}' }
+        }
+      ]
+    },
+    {
       name: 'Atomic',
       transactional: true,
       retries: 1,
@@ -115,7 +127,7 @@ function config(env: WorkersEnv) {
 export class TestWorkflow extends createWorkflowEntrypoint(config) {}
 
 export default {
-  async fetch(request: Request, env: WorkersEnv): Promise<Response> {
+  async fetch(request: Request, env: WorkersEnv, ctx: ExecutionContext): Promise<Response> {
     // Construct a fresh engine on every request to exercise shared job ownership.
     const engine = new ZebricWorkersEngine({ ...config(env), env })
     if (new URL(request.url).pathname === '/start') {
@@ -132,7 +144,7 @@ export default {
       )
       return Response.json(job)
     }
-    if (new URL(request.url).pathname.startsWith('/api/commands/')) return engine.fetch(request)
+    if (new URL(request.url).pathname.startsWith('/api/commands/')) return engine.fetch(request, ctx)
     const id = new URL(request.url).searchParams.get('id')!
     if (new URL(request.url).pathname === '/cancel')
       return Response.json({ changed: await engine.getWorkflowExecutor().cancelJob(id) })
