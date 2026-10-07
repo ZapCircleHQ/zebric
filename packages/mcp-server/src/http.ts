@@ -2,7 +2,11 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import type { CreateZebricMcpServerOptions } from './server.js'
 import { createHttpRequestState, readMcpHttpBody } from './http-security.js'
 
-export interface ZebricMcpHttpOptions extends Omit<CreateZebricMcpServerOptions, 'eventStream' | 'contract'> {
+export interface ZebricMcpHttpOptions extends Omit<CreateZebricMcpServerOptions, 'eventStream' | 'contract' | 'credential' | 'fetch'> {
+  /** Resolve an upstream credential for this authenticated request; zero-argument providers still work. */
+  credential?: (request: Request) => string | undefined | Promise<string | undefined>
+  /** Custom upstream fetch receives the current MCP request, including during discovery. */
+  fetch?: (input: RequestInfo | URL, init: RequestInit | undefined, request: Request) => Promise<Response>
   /** Explicit opt-in for public applications or authentication enforced by a gateway. */
   allowUnauthenticated?: boolean
   /** Maximum incoming body bytes. Defaults to 1,000,000. */
@@ -63,7 +67,7 @@ export function createZebricMcpHttpHandler(options: ZebricMcpHttpOptions): (requ
         state.requestBodyTimeoutMs,
       )
       if (body instanceof Response) return body
-      const server = await state.createServer()
+      const server = await state.createServer(request)
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
         enableJsonResponse: true,

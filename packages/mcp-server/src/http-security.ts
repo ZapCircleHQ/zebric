@@ -44,12 +44,15 @@ export function createHttpRequestState(options: ZebricMcpHttpOptions) {
     release() {
       active--
     },
-    async createServer() {
+    async createServer(request: Request) {
+      const fetcher: typeof globalThis.fetch | undefined = resolved.fetch
+        ? (input, init) => resolved.fetch!(input, init, request)
+        : undefined
       if (!discovery || Date.now() >= expires) {
         // Single flight for concurrent discovery; keep only one contract per handler.
         expires = Infinity
         discovery = discoverZebricApplication(options.applicationUrl, {
-          fetch: options.fetch,
+          fetch: fetcher,
           timeoutMs: options.timeoutMs,
         }).then(
           (contract) => {
@@ -65,6 +68,8 @@ export function createHttpRequestState(options: ZebricMcpHttpOptions) {
       }
       return createZebricMcpServer({
         ...resolved,
+        fetch: fetcher,
+        credential: resolved.credential ? () => resolved.credential!(request) : undefined,
         eventStream: false,
         contract: await discovery,
       })

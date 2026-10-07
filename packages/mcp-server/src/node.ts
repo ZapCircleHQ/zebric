@@ -19,11 +19,12 @@ export function createZebricMcpNodeHandler(options: ZebricMcpHttpOptions): Reque
       }
       const scheme = 'encrypted' in request.socket && request.socket.encrypted ? 'https' : 'http'
       const url = new URL(request.url ?? '/', `${scheme}://${headers.get('host') ?? 'localhost'}`)
+      const mcpRequest = new Request(url, { headers, method: request.method })
       let rejected = await validateMcpHttpRequest(url, headers, resolved)
       if (
         !rejected &&
         resolved.authorize &&
-        !(await resolved.authorize(new Request(url, { headers, method: request.method })))
+        !(await resolved.authorize(mcpRequest))
       ) {
         rejected = new Response('Unauthorized', { status: 401 })
       }
@@ -51,12 +52,13 @@ export function createZebricMcpNodeHandler(options: ZebricMcpHttpOptions): Reque
           state.requestBodyTimeoutMs,
         )
         if (body instanceof Response) {
-          request.pause()
+          // Discard buffered upload bytes while flushing the rejection, then close the connection.
+          request.resume()
           response.writeHead(body.status, { connection: 'close' })
           response.end(await body.text())
           return
         }
-        const server = await state.createServer()
+        const server = await state.createServer(mcpRequest)
         const transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: undefined,
           enableJsonResponse: true,

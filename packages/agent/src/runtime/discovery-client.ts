@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { fetchWithoutRedirects } from './safe-fetch.js'
 
 const DiscoverySchema = z.object({
   name: z.string(),
@@ -54,9 +55,8 @@ async function fetchJson(
   url: URL,
   timeoutMs: number
 ): Promise<{ ok: boolean; status: number; data?: unknown }> {
-  const response = await fetcher(url, {
+  const response = await fetchWithoutRedirects(fetcher, url, {
     headers: { accept: 'application/json' },
-    redirect: 'error',
     signal: AbortSignal.timeout(timeoutMs),
   })
   return {

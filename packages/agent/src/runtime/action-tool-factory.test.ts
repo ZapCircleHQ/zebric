@@ -50,6 +50,45 @@ const contract: ZebricApplicationContract = {
 }
 
 describe('createRuntimeReadTools', () => {
+  it('uses manual redirect handling for mutation calls and workflow polling', async () => {
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.redirect === 'error') throw new TypeError('Invalid redirect value')
+      expect(init?.redirect).toBe('manual')
+      return String(input).endsWith('/api/start')
+        ? Response.json({ job: { url: '/api/jobs/1' } }, { status: 202 })
+        : Response.json({ status: 'succeeded' })
+    })
+    const local = structuredClone(contract)
+    local.openapi.paths = { '/api/start': { post: { operationId: 'start' } } }
+    const tools = createRuntimeReadTools(local, { applicationName: 'local', fetch: fetcher, mutations: { approve: () => true } })
+    expect(tools[0]!.description).toMatch(/^POST /)
+    expect(JSON.parse(await tools[0]!.invoke({}))).toEqual({ status: 'succeeded' })
+    expect(fetcher).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses redirects from mutation calls and workflow polling', async () => {
+    const local = structuredClone(contract)
+    local.openapi.paths = { '/api/start': { post: { operationId: 'start' } } }
+    for (const redirectDuringPolling of [false, true]) {
+      const fetcher = vi.fn<typeof fetch>(async input => String(input).endsWith('/api/start') && redirectDuringPolling
+        ? Response.json({ job: { url: '/api/jobs/1' } }, { status: 202 })
+        : new Response(null, { status: 302, headers: { location: 'https://evil.example/steal' } }))
+      const tools = createRuntimeReadTools(local, { applicationName: 'local', fetch: fetcher, mutations: { approve: () => true } })
+      await expect(tools[0]!.invoke({})).rejects.toThrow(/redirects are not allowed/)
+      expect(fetcher).toHaveBeenCalledTimes(redirectDuringPolling ? 2 : 1)
+    }
+  })
+
+  it('skips SSE-only operations without permitting arbitrary model-supplied headers', () => {
+    const local = structuredClone(contract)
+    local.openapi.paths = { '/events': { get: {
+      operationId: 'events', parameters: [{ name: 'Last-Event-ID', in: 'header', schema: { type: 'string' } }],
+      responses: { '200': { content: { 'text/event-stream': { schema: { type: 'string' } } } } },
+    } } }
+    expect(createRuntimeReadTools(local, { applicationName: 'local' })).toEqual([])
+    delete (local.openapi.paths['/events']!.get as Record<string, unknown>).responses
+    expect(() => createRuntimeReadTools(local, { applicationName: 'local' })).toThrow(/model-supplied header/)
+  })
   it('turns generated domain command operations into MCP-ready mutation tools', async () => {
     const blueprint: Blueprint = {
       version: '0.6.0',

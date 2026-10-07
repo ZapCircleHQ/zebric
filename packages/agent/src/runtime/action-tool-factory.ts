@@ -1,6 +1,7 @@
 import { tool } from 'langchain'
 import { z } from 'zod'
 import { createHash, randomUUID } from 'node:crypto'
+import { fetchWithoutRedirects } from './safe-fetch.js'
 import type { ZebricApplicationContract } from './discovery-client.js'
 
 type CredentialProvider = () => string | undefined | Promise<string | undefined>
@@ -23,6 +24,8 @@ type OpenApiObjectSchema = Record<string, unknown> & {
 interface OpenApiOperation {
   operationId?: string
   description?: string
+  summary?: string
+  responses?: Record<string, { content?: Record<string, unknown> }>
   parameters?: OpenApiParameter[]
   requestBody?: {
     content?: {
@@ -335,6 +338,11 @@ export function createRuntimeReadTools(
     for (const method of methods) {
       const operation = (pathItem as Record<string, unknown>)[method] as OpenApiOperation | undefined
       if (!operation?.operationId) continue
+      // Streams are consumed through the dedicated event channel, never as finite JSON tools.
+      const responseTypes = Object.entries(operation.responses ?? {})
+        .filter(([status]) => /^2\d\d$/.test(status))
+        .flatMap(([, response]) => Object.keys(response.content ?? {}))
+      if (responseTypes.includes('text/event-stream') && !responseTypes.some(type => type === 'application/json' || type.endsWith('+json'))) continue
       const isMutation = method !== 'get'
       const agentMetadata = parseAgentOperationMetadata(operation, options.applicationName, method)
 
@@ -437,7 +445,6 @@ export function createRuntimeReadTools(
           : undefined
         const requestInit: RequestInit = {
           method: method.toUpperCase(),
-          redirect: 'error',
           headers: {
             accept: 'application/json',
             ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
@@ -456,7 +463,7 @@ export function createRuntimeReadTools(
           if (stateKey && response.status < 500 && response.status !== 429) {
             await options.mutations?.state?.delete(stateKey)
           }
-          throw parseApiError(response, responseBody)
+          throw parseApiError(response, responseBody, credential)
         }
         if (response.status === 202 && options.mutations?.observeJobs !== false) {
           const accepted = JSON.parse(responseBody)
@@ -471,7 +478,7 @@ export function createRuntimeReadTools(
       },
       {
         name: safeToolName(options.applicationName, operation.operationId),
-        description: operation.description ?? `Read ${path} from ${options.applicationName}.`,
+        description: operation.description ?? operation.summary ?? `${isMutation ? method.toUpperCase() : 'Read'} ${path} ${isMutation ? 'in' : 'from'} ${options.applicationName}.`,
         schema: z.object(shape),
       }
       )
@@ -648,7 +655,7 @@ function resolveLocalSchema(
   return resolved as OpenApiObjectSchema
 }
 
-function parseApiError(response: Response, body: string): ZebricApiError {
+function parseApiError(response: Response, body: string, credential?: string): ZebricApiError {
   let envelope: { error?: { message?: unknown; code?: unknown; requestId?: unknown; retryable?: unknown; details?: unknown } } = {}
   try {
     envelope = JSON.parse(body)
@@ -670,7 +677,7 @@ function parseApiError(response: Response, body: string): ZebricApiError {
   const code = typeof envelope.error?.code === 'string' ? envelope.error.code : `HTTP_${status}`
   const requestId = typeof envelope.error?.requestId === 'string'
     ? envelope.error.requestId
-    : response.headers.get('x-request-id') ?? undefined
+    : response.headers.has('x-request-id') ? redactSensitiveText(response.headers.get('x-request-id')!, credential) : undefined
   const retryable = typeof envelope.error?.retryable === 'boolean'
     ? envelope.error.retryable
     : status === 429 || status >= 500
@@ -725,11 +732,10 @@ async function observeJob(
         ...(correlationId ? { 'x-correlation-id': correlationId } : {}),
         ...(credential ? { authorization: `Bearer ${credential}` } : {}),
       },
-      redirect: 'error',
     }, options, true)
     const maxResponseBytes = options.maxResponseBytes ?? 1_000_000
     const body = redactSensitiveText(await readBodyWithLimit(response, maxResponseBytes), credential)
-    if (!response.ok) throw parseApiError(response, body)
+    if (!response.ok) throw parseApiError(response, body, credential)
     const job = JSON.parse(body)
     if (['succeeded', 'failed', 'cancelled'].includes(job.status)) return body
     await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
@@ -746,7 +752,7 @@ async function fetchWithRetry(
 ): Promise<Response> {
   const retry = resolveRetryPolicy(options.retry)
   for (let attempt = 1; attempt <= retry.maxAttempts; attempt++) {
-    const response = await fetcher(input, {
+    const response = await fetchWithoutRedirects(fetcher, input, {
       ...init,
       signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
     })

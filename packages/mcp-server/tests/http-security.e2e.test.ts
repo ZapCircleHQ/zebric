@@ -106,16 +106,13 @@ describe.each(['worker', 'node'] as const)('%s HTTP security regressions', mode 
           incoming.on('error', reject)
           incoming.on('end', () => resolve(new Response(Buffer.concat(buffers), { status: incoming.statusCode })))
         })
-        outgoing.on('error', error => {
-          // An early 413 closes the upload; still consume the server's HTTP response.
-          if ((error as NodeJS.ErrnoException).code !== 'EPIPE') reject(error)
-        })
+        outgoing.on('error', reject)
         // Yield between upload chunks so the client can consume an early 413 response.
         void (async () => {
           for (const chunk of chunks) {
             for (let offset = 0; offset < chunk.length && !responseStarted; offset += 16_384) {
               outgoing.write(chunk.slice(offset, offset + 16_384))
-              await new Promise<void>(resolve => setImmediate(resolve))
+              await new Promise<void>(resolve => setTimeout(resolve, 1))
             }
           }
           if (!keepOpen) outgoing.end()
@@ -209,5 +206,65 @@ describe.each(['worker', 'node'] as const)('%s HTTP security regressions', mode 
     await first
     expect((await post([list])).status).toBe(200)
     expect(upstream).toHaveBeenCalledTimes(3)
+  })
+
+  it('isolates request-specific credentials across concurrent agents while sharing discovery', async () => {
+    const discovery = application()
+    const fetcher = vi.fn<NonNullable<ZebricMcpHttpOptions['fetch']>>(async (input, init, request) => {
+      if (String(input).endsWith('/items')) {
+        const credential = new Headers(init?.headers).get('authorization')
+        expect(credential).toBe(request.headers.get('authorization'))
+        expect(['Bearer agent-A', 'Bearer agent-B']).toContain(credential)
+        return Response.json({ identity: credential === 'Bearer agent-A' ? 'Alice' : 'Bob' })
+      }
+      return discovery(input, init)
+    })
+    const { post } = await setup({
+      fetch: fetcher,
+      authorize: request => ['Bearer agent-A', 'Bearer agent-B'].includes(request.headers.get('authorization') ?? ''),
+      credential: async request => {
+        await new Promise(resolve => setTimeout(resolve, 1))
+        return request.headers.get('authorization')?.slice(7)
+      },
+    })
+    const results = await Promise.all(['agent-A', 'agent-B', 'agent-A'].map(async agent => {
+      const response = await post([read], { authorization: `Bearer ${agent}` })
+      const output = await response.json()
+      expect(JSON.parse(output.result.content[0].text)).toEqual({ identity: agent === 'agent-A' ? 'Alice' : 'Bob' })
+      return response.status
+    }))
+    expect(results).toEqual([200, 200, 200])
+    expect(discovery).toHaveBeenCalledTimes(2)
+  })
+
+  it('preserves structured API errors and redacts credentials in text and structured output', async () => {
+    const discovery = application()
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input).endsWith('/items')) return Response.json({ error: {
+        code: 'TRANSACTION_CONFLICT', message: 'Please retry the request; upstream-secret', retryable: true,
+        requestId: 'req-conflict', details: { reason: 'upstream-secret' },
+      } }, { status: 409 })
+      return discovery(input, init)
+    })
+    const { post } = await setup({ fetch: fetcher })
+    const result = await (await post([write])).json()
+    expect(result.result.isError).toBe(true)
+    expect(result.result.structuredContent).toEqual({ error: {
+      code: 'TRANSACTION_CONFLICT', message: 'Please retry the request; [REDACTED]', retryable: true,
+      status: 409, kind: 'conflict', requestId: 'req-conflict', details: { reason: '[REDACTED]' },
+    } })
+    expect(JSON.parse(result.result.content[0].text)).toEqual(result.result.structuredContent)
+    expect(JSON.stringify(result)).not.toContain('upstream-secret')
+  })
+
+  it('redacts credentials from the response-header request ID fallback', async () => {
+    const discovery = application()
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input).endsWith('/items')
+      ? Response.json({ error: { code: 'DENIED', message: 'Denied', retryable: false } }, { status: 403, headers: { 'x-request-id': 'echo-upstream-secret' } })
+      : discovery(input, init))
+    const { post } = await setup({ fetch: fetcher })
+    const result = await (await post([read])).json()
+    expect(result.result.structuredContent.error.requestId).toBe('echo-[REDACTED]')
+    expect(JSON.stringify(result)).not.toContain('upstream-secret')
   })
 })
