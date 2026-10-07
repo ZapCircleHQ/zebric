@@ -307,6 +307,7 @@ export class SubsystemInitializer {
     }
 
     this.workflowManager = new WorkflowManager({
+      startPaused: true,
       dataLayer: this.queryExecutor,
       pluginRegistry: this.plugins,
       httpClient,
@@ -320,6 +321,7 @@ export class SubsystemInitializer {
       maxRetries: 3,
       jobTimeout: 30000,
       enqueueTransactionalAudit: async (job, _workflow) => {
+        if (this.auditLogger.isEnabled?.() === false) return
         const event = this.buildWorkflowAuditEvent(job, true)
         await this.queryExecutor!.enqueueAuditOutbox({
           id: `workflow:${job.id}:completed`,
@@ -327,6 +329,13 @@ export class SubsystemInitializer {
           payload: JSON.stringify(event),
           createdAt: Date.now(),
         })
+      },
+      enqueueOutcomeAudit: async (job, workflow, success) => {
+        if (this.auditLogger.isEnabled?.() === false) return
+        if (success && workflow.transactional) return
+        const event = this.buildWorkflowAuditEvent(job, success)
+        await this.queryExecutor!.enqueueAuditOutbox({ id: event.auditId, topic: event.eventType,
+          payload: JSON.stringify(event), createdAt: Date.now() })
       },
       deliverAuditOutbox: () => this.deliverAuditOutbox(),
     })
@@ -364,7 +373,7 @@ export class SubsystemInitializer {
         requestId: job.context.trace?.requestId,
         executionId: job.context.trace?.executionId,
       })
-      if (!this.workflowManager?.getWorkflow(job.workflowName)?.transactional) {
+      if (!this.workflowManager?.durable && !this.workflowManager?.getWorkflow(job.workflowName)?.transactional) {
         this.auditLogger.log(this.buildWorkflowAuditEvent(job, true))
       }
     })
@@ -378,7 +387,7 @@ export class SubsystemInitializer {
         executionId: job.context.trace?.executionId,
         error: job.error,
       })
-      this.auditLogger.log(this.buildWorkflowAuditEvent(job, false))
+      if (!this.workflowManager?.durable) this.auditLogger.log(this.buildWorkflowAuditEvent(job, false))
     })
 
     await this.deliverAuditOutbox()
@@ -462,21 +471,27 @@ export class SubsystemInitializer {
 }
 
 export async function drainAuditOutbox(
-  queryExecutor: Pick<QueryExecutor, 'listPendingAuditOutbox' | 'markAuditOutboxDelivered'>,
-  auditLogger: Pick<AuditLogger, 'log'>,
+  queryExecutor: Pick<QueryExecutor, 'listPendingAuditOutbox' | 'markAuditOutboxDelivered'> & Partial<Pick<QueryExecutor, 'transaction' | 'lockRuntimeDelivery'>>,
+  auditLogger: Pick<AuditLogger, 'log'> & Partial<Pick<AuditLogger, 'isEnabled'>>,
   batchSize = 100
 ): Promise<void> {
-  while (true) {
-    const records = await queryExecutor.listPendingAuditOutbox(batchSize)
-    if (records.length === 0) return
-    for (const record of records) {
-      if (record.topic !== AuditEventType.WORKFLOW_COMPLETED) {
-        throw new Error(`Unsupported audit outbox topic ${record.topic}`)
+  const deliver = async () => {
+    if (auditLogger.isEnabled?.() === false) return
+    await queryExecutor.lockRuntimeDelivery?.('command-effects')
+    while (true) {
+      const records = await queryExecutor.listPendingAuditOutbox(batchSize)
+      if (records.length === 0) return
+      for (const record of records) {
+        if (![AuditEventType.WORKFLOW_COMPLETED, AuditEventType.WORKFLOW_FAILED, AuditEventType.DOMAIN_COMMAND].includes(record.topic as AuditEventType)) {
+          throw new Error(`Unsupported audit outbox topic ${record.topic}`)
+        }
+        if (!auditLogger.log(JSON.parse(record.payload))) {
+          throw new Error(`Audit outbox delivery failed for ${record.id}`)
+        }
+        await queryExecutor.markAuditOutboxDelivered(record.id)
       }
-      if (!auditLogger.log(JSON.parse(record.payload))) {
-        throw new Error(`Audit outbox delivery failed for ${record.id}`)
-      }
-      await queryExecutor.markAuditOutboxDelivered(record.id)
     }
   }
+  if (queryExecutor.transaction) await queryExecutor.transaction(deliver)
+  else await deliver()
 }

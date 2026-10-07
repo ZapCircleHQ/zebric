@@ -1,3 +1,4 @@
+import { NodeCommandEffects } from '../database/command-effects.js'
 import { Hono } from 'hono'
 import { serve, type ServerType } from '@hono/node-server'
 import type { Context } from 'hono'
@@ -113,6 +114,7 @@ export class ServerManager {
   private rateLimitStore = new Map<string, { count: number; resetAt: number }>()
   private apiKeys = new Map<string, ApiKeyCredential>()
   private csrfCookieName = 'csrf-token'
+  private commandEffects?: NodeCommandEffects
   private readonly agentEventBus: AgentEventBus
   private commandExecutor: CommandExecutor
   private commandSourceFiles: ReadonlyMap<string, string>
@@ -183,7 +185,11 @@ export class ServerManager {
   private createCommandExecutor(): CommandExecutor {
     const services = this.workflowManager?.getServiceRegistry?.()
       ?? createServiceRegistry(this.blueprint, this.plugins, this.commandExecutionObserver())
+    if (!this.commandEffects && typeof this.queryExecutor.queryRuntime === 'function')
+      this.commandEffects = new NodeCommandEffects(this.queryExecutor, this.agentEventBus, this.auditLogger,
+        error => this.logger.error('Command effects delivery failed; intents remain pending', { error }))
     const executor = new CommandExecutor(this.blueprint, {
+      commandEffects: this.commandEffects,
       queryExecutor: this.queryExecutor,
       services,
       auditLogger: this.auditLogger ? {
@@ -277,7 +283,11 @@ export class ServerManager {
     if (updates.state) this.state = updates.state
     if (updates.authProvider) this.authProvider = updates.authProvider
     if (updates.sessionManager) this.sessionManager = updates.sessionManager
-    if (updates.queryExecutor) this.queryExecutor = updates.queryExecutor
+    if (updates.queryExecutor && updates.queryExecutor !== this.queryExecutor) {
+      await this.commandEffects?.stop()
+      this.commandEffects = undefined
+      this.queryExecutor = updates.queryExecutor
+    }
     if (updates.workflowManager !== undefined) this.workflowManager = updates.workflowManager
     if (updates.plugins) this.plugins = updates.plugins
     if (updates.blueprintAdapter) this.blueprintAdapter = updates.blueprintAdapter
@@ -289,13 +299,17 @@ export class ServerManager {
     if (updates.getHealthStatus) this.getHealthStatusFn = updates.getHealthStatus
     if (updates.commandSourceFiles) this.commandSourceFiles = updates.commandSourceFiles
     this.commandExecutor = this.createCommandExecutor()
+    if (this.server) this.commandEffects?.start()
     await this.loadFileCommandHandlers()
     this.bindCommandAvailability()
     this.workflowManager?.setCommandExecutor?.(this.commandExecutor, this.commandExecutionObserver())
+    if (this.server) this.workflowManager?.start?.()
   }
 
   async start(): Promise<ServerType> {
+    this.commandEffects?.start()
     await this.loadFileCommandHandlers()
+    this.workflowManager?.start?.()
     this.app = new Hono()
     this.app.onError(this.errorHandler.toHonoHandler())
     this.apiKeys = initApiKeys(this.blueprint)
@@ -319,6 +333,7 @@ export class ServerManager {
   }
 
   async stop(): Promise<void> {
+    await this.commandEffects?.stop()
     if (this.server && 'close' in this.server) {
       await new Promise<void>((resolve, reject) => {
         this.server!.close((err?: Error) => {
@@ -460,6 +475,7 @@ export class ServerManager {
       apiKeys: this.apiKeys,
     })
     registerCommandRoutes(this.app, {
+      queryExecutor: this.queryExecutor,
       blueprint: this.blueprint,
       commandExecutor: this.commandExecutor,
       getBlueprint: () => this.blueprint,

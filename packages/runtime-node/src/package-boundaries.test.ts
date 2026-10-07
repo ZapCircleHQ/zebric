@@ -40,13 +40,14 @@ function boundaryViolations(
   packageName: string,
   forbiddenPackages: string[],
   forbidNodeBuiltins: boolean,
+  allowedNodeBuiltins: string[] = [],
 ): string[] {
   const sourceDirectory = resolve(repositoryRoot, 'packages', packageName, 'src')
   return sourceFiles(sourceDirectory).flatMap(file =>
     moduleSpecifiers(file)
       .filter(specifier =>
         forbiddenPackages.some(name => specifier === name || specifier.startsWith(`${name}/`))
-        || (forbidNodeBuiltins && nodeBuiltins.has(specifier))
+        || (forbidNodeBuiltins && nodeBuiltins.has(specifier) && !allowedNodeBuiltins.includes(specifier))
       )
       .map(specifier => `${file.slice(repositoryRoot.length + 1)} -> ${specifier}`)
   )
@@ -86,7 +87,8 @@ describe('runtime dependency direction', () => {
   it('prevents platform adapters from depending on each other', () => {
     expect([
       ...boundaryViolations('runtime-node', ['@zebric/runtime-worker'], false),
-      ...boundaryViolations('runtime-worker', ['@zebric/runtime-node'], true),
+      // Workers nodejs_compat provides AsyncLocalStorage for transaction isolation.
+      ...boundaryViolations('runtime-worker', ['@zebric/runtime-node'], true, ['node:async_hooks']),
     ]).toEqual([])
   })
 

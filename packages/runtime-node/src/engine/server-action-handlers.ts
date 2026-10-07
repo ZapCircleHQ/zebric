@@ -42,6 +42,7 @@ function parseSkillQuery(c: Context, action: SkillAction): Record<string, any> {
 }
 
 export interface ActionHandlerDeps {
+  submission?: { scope: string; fingerprint: string }
   queryExecutor: QueryExecutor
   workflowManager?: WorkflowManager
   onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void
@@ -248,10 +249,12 @@ export async function handleSkillWorkflow(
   }
 
   const job = workflowManager.trigger(workflowName, data, {
+    submission: deps.submission,
     correlationId: getCorrelationId(c),
     requestId: getRequestId(c),
   })
 
+  await workflowManager.ensurePersisted?.(job.id)
   return Response.json({
     success: true,
     job: {
@@ -284,6 +287,10 @@ export async function triggerEntityWorkflows(
   }
 
   try {
+    if (workflowManager.durable) {
+      await workflowManager.deliverPendingEvents()
+      return
+    }
     await workflowManager.triggerEntityEvent(entity, event, { before, after }, {
       trace,
       initiatingSession: trace?.session,

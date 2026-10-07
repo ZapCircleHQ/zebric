@@ -24,6 +24,11 @@ import {
   type ServiceInvoker,
 } from '@zebric/runtime-core'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { createHash } from 'node:crypto'
+import { encodeRuntimeValue, decodeRuntimeValue } from '../database/runtime-codec.js'
+import type { WorkflowStepRunner } from './step-runner.js'
+import { wait } from './step-runner.js'
+import { WorkflowSuspended, WorkflowLeaseLostError } from './workflow-store.js'
 
 export interface EmailService {
   send(to: string, subject: string, body: string, template?: string): Promise<void>
@@ -47,6 +52,7 @@ export interface WorkflowExecutorOptions {
   executionObserver?: ExecutionObserverPort
   services?: ServiceInvoker
   logger?: Logger
+  enqueueEntityEvent?: (event: Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0], id: string) => Promise<void>
   onEntityEvent?: (event: {
     entity: string
     event: 'create' | 'update' | 'delete'
@@ -72,6 +78,11 @@ export class WorkflowExecutor {
   private services?: ServiceInvoker
   private logger?: Logger
   private onEntityEvent?: WorkflowExecutorOptions['onEntityEvent']
+  private readonly executionScope = new AsyncLocalStorage<{
+    runner?: WorkflowStepRunner; signal?: AbortSignal; workflow: Workflow; path: string; atomic: boolean
+    log: (level: WorkflowLog['level'], message: string, data?: any) => void
+  }>()
+  private enqueueEntityEvent?: WorkflowExecutorOptions['enqueueEntityEvent']
   private readonly deferredEntityEvents = new AsyncLocalStorage<Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]>>()
 
   constructor(options: WorkflowExecutorOptions) {
@@ -85,6 +96,7 @@ export class WorkflowExecutor {
     this.services = options.services
     this.logger = options.logger
     this.onEntityEvent = options.onEntityEvent
+    this.enqueueEntityEvent = options.enqueueEntityEvent
   }
 
   setCommandExecutor(commandExecutor: CommandExecutor, executionObserver?: ExecutionObserverPort): void {
@@ -98,7 +110,7 @@ export class WorkflowExecutor {
   async execute(
     workflow: Workflow,
     context: WorkflowContext,
-    options?: { beforeTransactionalCommit?: () => Promise<void> }
+    options?: { beforeTransactionalCommit?: () => Promise<void>; runner?: WorkflowStepRunner; signal?: AbortSignal }
   ): Promise<WorkflowExecutionResult> {
     const logs: WorkflowLog[] = []
     const workflowSpan = this.executionObserver?.startSpan('zebric.workflow', {
@@ -154,53 +166,38 @@ export class WorkflowExecutor {
       }
       const propagation = ((context.variables as any).__zebric ??= {})
       propagation.currentWorkflow = workflow.name
+      if (options?.runner && !propagation.workflowPath?.includes(workflow.name))
+        propagation.workflowPath = [...(propagation.workflowPath ?? []), workflow.name]
 
-      const executeSteps = async () => {
-        for (let i = 0; i < workflow.steps.length; i++) {
-          const step = workflow.steps[i]
-          if (!step) continue
-
-          log('debug', `Executing step ${i + 1}/${workflow.steps.length}: ${step.type}`)
-
-          const stepSpan = this.executionObserver?.startSpan('zebric.workflow.step', {
-            'zebric.workflow.name': workflow.name,
-            'zebric.workflow.step.type': step.type,
-            'zebric.workflow.step.index': i,
-          }, context.trace?.correlationId ?? context.trace?.executionId)
-          try {
-            const result = await this.executeStep(step, context)
-
-            if (step.assignTo && result !== undefined) {
-              context.variables[step.assignTo] = result
-              log('debug', `Assigned result to variable: ${step.assignTo}`, result)
-            }
-            this.executionObserver?.endSpan(stepSpan)
-          } catch (error) {
-            this.executionObserver?.endSpan(stepSpan, error)
-            const errorMessage = error instanceof Error ? error.message : String(error)
-            log('error', `Step ${i + 1} failed: ${errorMessage}`, error)
-            throw error
+      const scope = { runner: options?.runner, signal: options?.signal, workflow, path: 'steps', atomic: false, log }
+      await this.executionScope.run(scope, async () => {
+        const executeSteps = async () => { await this.runSteps(workflow.steps, context, 'steps') }
+        if (workflow.transactional) {
+          if (typeof this.dataLayer.transaction !== 'function') throw new Error(`Transactional workflow ${workflow.name} requires transaction support`)
+          const original = encodeRuntimeValue(context)
+          const executeTransaction = async (signal?: AbortSignal) => {
+            const attempt = options?.runner ? decodeRuntimeValue<WorkflowContext>(original) : context
+            const deferredEvents: Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]> = []
+            await this.executionScope.run({ ...scope, signal, atomic: true }, () =>
+              this.deferredEntityEvents.run(deferredEvents, () => this.dataLayer.transaction(async () => {
+                await this.runSteps(workflow.steps, attempt, 'steps')
+                signal?.throwIfAborted()
+                if (options?.runner && this.enqueueEntityEvent) {
+                  for (const [index, event] of deferredEvents.entries())
+                    await this.enqueueEntityEvent(event, this.eventId(options.runner.identity, `transaction.${index}`))
+                }
+                await options?.beforeTransactionalCommit?.()
+              }))
+            )
+            if (!options?.runner) for (const event of deferredEvents) await this.onEntityEvent?.(event)
+            return attempt.variables
           }
-        }
-      }
-
-      if (workflow.transactional) {
-        if (typeof this.dataLayer.transaction !== 'function') {
-          throw new Error(`Transactional workflow ${workflow.name} requires transaction support`)
-        }
-        const deferredEvents: Array<Parameters<NonNullable<WorkflowExecutorOptions['onEntityEvent']>>[0]> = []
-        await this.deferredEntityEvents.run(deferredEvents, () =>
-          this.dataLayer.transaction(async () => {
-            await executeSteps()
-            await options?.beforeTransactionalCommit?.()
-          })
-        )
-        for (const event of deferredEvents) {
-          await this.onEntityEvent?.(event)
-        }
-      } else {
-        await executeSteps()
-      }
+          context.variables = options?.runner
+            ? await options.runner.run('transaction', executeTransaction, { atomic: true,
+                receipt: options.runner.receipt?.('transaction', original + encodeRuntimeValue(workflow)) })
+            : await executeTransaction(options?.signal)
+        } else await executeSteps()
+      })
 
       log('info', `Workflow completed: ${workflow.name}`)
       this.executionObserver?.endSpan(workflowSpan)
@@ -211,6 +208,10 @@ export class WorkflowExecutor {
         logs,
       }
     } catch (error) {
+      if (error instanceof WorkflowSuspended || error instanceof WorkflowLeaseLostError) {
+        this.executionObserver?.endSpan(workflowSpan, error instanceof WorkflowSuspended ? undefined : error)
+        throw error
+      }
       this.executionObserver?.endSpan(workflowSpan, error)
       const failure = error instanceof DomainError
         ? error
@@ -228,6 +229,48 @@ export class WorkflowExecutor {
         logs,
       }
     }
+  }
+
+  private eventId(identity: string, path: string): string {
+    return createHash('sha256').update(JSON.stringify([identity, path])).digest('hex')
+  }
+
+  private async runSteps(steps: WorkflowStep[], context: WorkflowContext, path: string): Promise<any[]> {
+    const results: any[] = []
+    const scope = this.executionScope.getStore()!
+    for (const [index, step] of steps.entries()) {
+      const key = `${path}.${index}`
+      scope.signal?.throwIfAborted()
+      const result = await this.executionScope.run({ ...scope, path: key }, async () => {
+        scope.log('debug', `Executing step ${index + 1}/${steps.length}: ${step.type}`)
+        const span = this.executionObserver?.startSpan('zebric.workflow.step', {
+          'zebric.workflow.name': scope.workflow.name, 'zebric.workflow.step.type': step.type, 'zebric.workflow.step.index': index,
+        }, context.trace?.correlationId ?? context.trace?.executionId)
+        try {
+          const control = step.type === 'condition' || step.type === 'loop'
+          let value: any
+          if (scope.runner && !scope.atomic && !control) {
+            if (step.type === 'delay') {
+              if (step.duration === undefined) throw new Error('Delay step requires duration')
+              await scope.runner.delay(key, Number(this.resolveVariables(step.duration, context)))
+            } else {
+              const receipt = step.type === 'command' ? scope.runner.receipt?.(key, encodeRuntimeValue([
+                step.command, this.resolveTypedVariables(step.recordId, context), this.resolveTypedVariables(step.input ?? {}, context)
+              ])) : undefined
+              value = await scope.runner.run(key, signal => this.executionScope.run({ ...scope, signal, path: key }, () => this.executeStep(step, context)), {
+                atomic: step.type === 'query' || step.type === 'command', receipt,
+              })
+            }
+          } else value = await this.executeStep(step, context)
+          scope.signal?.throwIfAborted()
+          this.executionObserver?.endSpan(span)
+          return value
+        } catch (error) { this.executionObserver?.endSpan(span, error); throw error }
+      })
+      if (step.assignTo && result !== undefined) context.variables[step.assignTo] = result
+      results.push(result)
+    }
+    return results
   }
 
   /**
@@ -324,9 +367,11 @@ export class WorkflowExecutor {
     }
 
     // Resolve variables in data and where clauses
-    const data = step.data ? this.resolveVariables(step.data, context) : undefined
-    const where = step.where ? this.resolveVariables(step.where, context) : undefined
-    const queryContext = context.session ? { session: context.session } : undefined
+    const data = step.data ? this.resolveTypedVariables(step.data, context) : undefined
+    const where = step.where ? this.resolveTypedVariables(step.where, context) : undefined
+    const queryContext = this.executionScope.getStore()?.runner
+      ? { session: context.session, source: 'workflow' as const, workflow: this.executionScope.getStore()!.workflow.name }
+      : context.session ? { session: context.session } : undefined
 
     switch (step.action) {
       case 'create':
@@ -454,7 +499,7 @@ export class WorkflowExecutor {
     const to = step.to ? this.resolveVariables(step.to, context) : undefined
     const subject = step.subject ? this.resolveVariables(step.subject, context) : undefined
     const body = step.body ? this.resolveVariables(step.body, context) : undefined
-    const params = step.params ? this.resolveVariables(step.params, context) : undefined
+    const params = step.params ? this.resolveTypedVariables(step.params, context) : undefined
     const metadata = step.metadata ? this.resolveVariables(step.metadata, context) : undefined
 
     await this.notificationService.send({
@@ -485,7 +530,7 @@ export class WorkflowExecutor {
       throw new Error('Plugin step requires action_name')
     }
 
-    const params = step.params ? this.resolveVariables(step.params, context) : {}
+    const params = step.params ? this.resolveTypedVariables(step.params, context) : {}
 
     // Get the plugin
     const plugin = this.pluginRegistry.getPlugin(step.plugin)
@@ -512,23 +557,10 @@ export class WorkflowExecutor {
       throw new Error('Condition step requires if clause')
     }
 
-    const condition = this.evaluateCondition(step.if, context)
-
-    if (condition) {
-      // Execute then branch
-      if (step.then) {
-        for (const subStep of step.then) {
-          await this.executeStep(subStep, context)
-        }
-      }
-    } else {
-      // Execute else branch
-      if (step.else) {
-        for (const subStep of step.else) {
-          await this.executeStep(subStep, context)
-        }
-      }
-    }
+    const scope = this.executionScope.getStore()!
+    const choose = async () => this.evaluateCondition(step.if!, context)
+    const condition = scope.runner && !scope.atomic ? await scope.runner.run(`${scope.path}.condition`, choose) : await choose()
+    return this.runSteps(condition ? (step.then ?? []) : (step.else ?? []), context, `${scope.path}.${condition ? 'then' : 'else'}`)
   }
 
   /**
@@ -548,9 +580,9 @@ export class WorkflowExecutor {
     const templateMatch = step.items.match(/^\s*\{\{([^}]+)\}\}\s*$/)
     const itemPath = templateMatch?.[1]?.trim() ?? step.items.trim()
     const pathValue = this.getValueByPath(context, itemPath)
-    const items = pathValue !== undefined
-      ? pathValue
-      : this.resolveVariables(step.items, context)
+    const scope = this.executionScope.getStore()!
+    const resolveItems = async () => pathValue !== undefined ? pathValue : this.resolveVariables(step.items, context)
+    const items = scope.runner && !scope.atomic ? await scope.runner.run(`${scope.path}.items`, resolveItems) : await resolveItems()
 
     if (!Array.isArray(items)) {
       throw new Error(`Loop items must be an array, got: ${typeof items}`)
@@ -572,10 +604,7 @@ export class WorkflowExecutor {
       }
 
       // Execute loop body
-      for (const subStep of step.do) {
-        const result = await this.executeStep(subStep, loopContext)
-        results.push(result)
-      }
+      results.push(...await this.runSteps(step.do, loopContext, `${scope.path}.loop.${i}`))
     }
 
     return results
@@ -585,7 +614,7 @@ export class WorkflowExecutor {
    * Execute a delay step
    */
   private async executeDelay(step: WorkflowStep, context: WorkflowContext): Promise<void> {
-    if (!step.duration) {
+    if (step.duration === undefined) {
       throw new Error('Delay step requires duration')
     }
 
@@ -597,7 +626,9 @@ export class WorkflowExecutor {
       throw new Error(`Invalid delay duration: ${step.duration}`)
     }
 
-    await new Promise(resolve => setTimeout(resolve, duration))
+    const signal = this.executionScope.getStore()?.signal
+    if (signal) await wait(duration, signal)
+    else await new Promise(resolve => setTimeout(resolve, duration))
   }
 
   /**
@@ -795,7 +826,7 @@ export class WorkflowExecutor {
     after: any,
     context: WorkflowContext
   ): Promise<void> {
-    if (!this.onEntityEvent) {
+    if (!this.onEntityEvent && !this.enqueueEntityEvent) {
       return
     }
 
@@ -822,7 +853,11 @@ export class WorkflowExecutor {
       deferred.push(entityEvent)
       return
     }
-    await this.onEntityEvent(entityEvent)
+    const scope = this.executionScope.getStore()
+    scope?.signal?.throwIfAborted()
+    if (scope?.runner && this.enqueueEntityEvent) {
+      await this.enqueueEntityEvent(entityEvent, this.eventId(scope.runner.identity, scope.path))
+    } else await this.onEntityEvent?.(entityEvent)
   }
 
   /**

@@ -122,6 +122,8 @@ export class AuditLogger {
     this.ensureLogDirectory()
   }
 
+  isEnabled(): boolean { return this.config.enabled }
+
   /**
    * Log an audit event (write-once)
    */
@@ -131,6 +133,12 @@ export class AuditLogger {
     }
 
     try {
+      if (event.auditId && existsSync(this.logPath)) {
+        const previous = readFileSync(this.logPath, 'utf8').split('\n')
+        if (previous.some(line => {
+          try { return JSON.parse(line).auditId === event.auditId } catch { return false }
+        })) return true
+      }
       const fullEvent = this.buildEvent(event)
       const logEntry = this.formatLogEntry(fullEvent)
 

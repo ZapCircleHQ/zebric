@@ -56,6 +56,7 @@ export class DatabaseConnection {
     // Run migrations (create tables if they don't exist)
     await this.migrate()
     await this.ensureAuditOutboxTable()
+    await this.ensureRuntimeTables()
   }
 
   /**
@@ -359,6 +360,31 @@ export class DatabaseConnection {
     `
     if (this.config.type === 'postgres') await this.getSession().execute(statement)
     else this.getSession().run(statement)
+  }
+
+  private async ensureRuntimeTables(): Promise<void> {
+    const statements = [
+      `CREATE TABLE IF NOT EXISTS __zbl_command_events (id TEXT PRIMARY KEY, value TEXT NOT NULL, created_at BIGINT NOT NULL, delivered_at BIGINT)`,
+      `CREATE TABLE IF NOT EXISTS __zbl_command_receipts (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, value TEXT NOT NULL)`,
+      `CREATE TABLE IF NOT EXISTS __zbl_workflow_jobs (
+        id TEXT PRIMARY KEY, workflow_name TEXT NOT NULL, workflow_json TEXT NOT NULL, context_json TEXT NOT NULL,
+        status TEXT NOT NULL, job_json TEXT NOT NULL, generation INTEGER NOT NULL DEFAULT 0,
+        available_at BIGINT NOT NULL, lease_token TEXT, lease_expires_at BIGINT
+      )`,
+      `CREATE INDEX IF NOT EXISTS __zbl_workflow_jobs_pending ON __zbl_workflow_jobs (status, available_at, lease_expires_at)`,
+      `CREATE TABLE IF NOT EXISTS __zbl_workflow_steps (
+        job_id TEXT NOT NULL, generation INTEGER NOT NULL, step_key TEXT NOT NULL, value TEXT, wake_at BIGINT, attempts INTEGER NOT NULL DEFAULT 0, retry_at BIGINT,
+        PRIMARY KEY (job_id, generation, step_key)
+      )`,
+      `CREATE TABLE IF NOT EXISTS __zbl_workflow_events (
+        id TEXT PRIMARY KEY, value TEXT NOT NULL, available_at BIGINT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        lease_token TEXT, lease_expires_at BIGINT, delivered_at BIGINT
+      )`
+    ]
+    for (const text of statements) {
+      if (this.config.type === 'postgres') await this.getSession().execute(sql.raw(text))
+      else this.getSession().run(sql.raw(text))
+    }
   }
 
   private async migrationAlreadyApplied(hash: string): Promise<boolean> {

@@ -13,9 +13,16 @@ import { AccessControl, PolicyEvaluator, SYSTEM_SESSION, assertEntityAccess, ass
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { SQLiteSyncDialect } from 'drizzle-orm/sqlite-core'
+import { encodeRuntimeValue, decodeRuntimeValue } from './runtime-codec.js'
 // performance.now() is available as a Web API (no import needed)
 
 export type QueryContext = RequestContext
+
+export interface DurableReceipt { key: string; fingerprint: string }
+export class IdempotencyConflictError extends Error {
+  constructor() { super('Idempotency key was reused with different input') }
+}
 
 export interface AuditOutboxRecord {
   id: string
@@ -31,8 +38,17 @@ export class QueryExecutor {
     token: symbol
     db?: any
     afterCommit: Array<() => Promise<void> | void>
+    closed: boolean
+    signal?: AbortSignal
   }>()
+  private readonly operationSignal = new AsyncLocalStorage<AbortSignal>()
+  withAbortSignal<T>(signal: AbortSignal, operation: () => T): T { return this.operationSignal.run(signal, operation) }
   private activeTransaction?: { token: symbol; done: Promise<void> }
+  private mutationObserver?: (event: { entity: string; event: 'create' | 'update' | 'delete'; before?: any; after?: any; context?: QueryContext }) => Promise<void>
+
+  setMutationObserver(observer: NonNullable<QueryExecutor['mutationObserver']>): void { this.mutationObserver = observer }
+  outsideTransaction<T>(fn: () => T): T { return this.transactionContext.exit(() => this.operationSignal.exit(fn)) }
+
   private transactionTail: Promise<void> = Promise.resolve()
 
   constructor(
@@ -52,9 +68,11 @@ export class QueryExecutor {
    * Calls made through this executor from other async contexts wait until the
    * transaction completes, preventing them from joining a SQLite transaction.
    */
-  async transaction<T>(fn: () => Promise<T>): Promise<T> {
+  async transaction<T>(fn: () => Promise<T>, receipt?: DurableReceipt, signal?: AbortSignal): Promise<T> {
     // Nested callers participate in the existing transaction.
     if (this.transactionContext.getStore()) {
+      this.assertTransactionActive()
+      if (receipt) throw new Error('Durable receipts require the outer transaction')
       return fn()
     }
     await this.waitForTransaction()
@@ -80,11 +98,33 @@ export class QueryExecutor {
     try {
       const db = this.connection.getDb() as any
       const afterCommit: Array<() => Promise<void> | void> = []
+      const scope = { token, afterCommit, closed: false, signal, db: undefined as any }
+      const operation = async () => {
+        this.assertTransactionActive()
+        if (receipt) {
+          if (this.connection.getType() === 'postgres')
+            await this.queryRuntime(sql`SELECT pg_advisory_xact_lock(hashtextextended(${receipt.key}, 0))`)
+          const cached = await this.queryRuntime<{ fingerprint: string; value: string }>(
+            sql`SELECT fingerprint, value FROM __zbl_command_receipts WHERE key = ${receipt.key}`)
+          if (cached[0]) {
+            if (cached[0].fingerprint !== receipt.fingerprint) throw new IdempotencyConflictError()
+            return decodeRuntimeValue<T>(cached[0].value)
+          }
+        }
+        const value = await fn()
+        this.assertTransactionActive()
+        if (receipt) await this.queryRuntime(sql`INSERT INTO __zbl_command_receipts (key, fingerprint, value)
+          VALUES (${receipt.key}, ${receipt.fingerprint}, ${encodeRuntimeValue(value)})`)
+        return value
+      }
       let result: T
       if (this.connection.getType() === 'postgres') {
-        result = await db.transaction((tx: any) =>
-          this.transactionContext.run({ token, db: tx, afterCommit }, fn)
-        )
+        try {
+          result = await db.transaction((tx: any) => {
+            scope.db = tx
+            return this.transactionContext.run(scope, operation)
+          })
+        } finally { scope.closed = true }
         releaseTransaction()
         for (const effect of afterCommit) await effect()
         return result
@@ -94,12 +134,12 @@ export class QueryExecutor {
       if (!sqlite) throw new Error('SQLite connection is not initialized')
       sqlite.exec('BEGIN IMMEDIATE')
       try {
-        result = await this.transactionContext.run({ token, afterCommit }, fn)
+        result = await this.transactionContext.run(scope, operation)
         sqlite.exec('COMMIT')
       } catch (error) {
         sqlite.exec('ROLLBACK')
         throw error
-      }
+      } finally { scope.closed = true }
       releaseTransaction()
       for (const effect of afterCommit) await effect()
       return result
@@ -109,20 +149,54 @@ export class QueryExecutor {
   }
 
   async afterCommit(effect: () => Promise<void> | void): Promise<void> {
+    this.assertTransactionActive()
     const context = this.transactionContext.getStore()
     if (context) context.afterCommit.push(effect)
     else await effect()
   }
 
   private getDb(): any {
+    this.assertTransactionActive()
     return this.transactionContext.getStore()?.db ?? this.connection.getDb()
   }
 
   private async waitForTransaction(): Promise<void> {
+    this.assertTransactionActive()
     const active = this.activeTransaction
     if (active && this.transactionContext.getStore()?.token !== active.token) {
       await active.done
     }
+  }
+
+  private assertTransactionActive(): void {
+    this.operationSignal.getStore()?.throwIfAborted()
+    const scope = this.transactionContext.getStore()
+    if (scope?.closed) throw new Error('Transaction is no longer active')
+    scope?.signal?.throwIfAborted()
+  }
+
+  get inTransaction(): boolean { return Boolean(this.transactionContext.getStore()) }
+  getBlueprint() { return this.connection.getBlueprint() }
+
+  async lockRuntimeDelivery(key: string): Promise<void> {
+    if (!this.inTransaction) throw new Error('Runtime delivery locks require a transaction')
+    if (this.connection.getType() === 'postgres')
+      await this.queryRuntime(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`)
+  }
+
+  /** Trusted runtime storage; callers supply parameterized Drizzle statements. */
+  async queryRuntime<T = Record<string, unknown>>(statement: SQL): Promise<T[]> {
+    await this.waitForTransaction()
+    const db = this.getDb()
+    let result: any
+    if (this.connection.getType() === 'postgres') result = await db.execute(statement)
+    else {
+      const compiled = new SQLiteSyncDialect().sqlToQuery(statement)
+      const prepared = this.connection.getSQLite()!.prepare(compiled.sql)
+      if (prepared.reader) result = prepared.all(...compiled.params)
+      else { prepared.run(...compiled.params); result = [] }
+    }
+    return (Array.isArray(result) ? result : result?.rows ?? []) as T[]
   }
 
   /** Persist an audit intent in the caller's active database transaction. */
@@ -132,7 +206,7 @@ export class QueryExecutor {
       throw new Error('Audit outbox entries must be enqueued inside a database transaction')
     }
     const db = this.getDb() as any
-    const statement = sql`INSERT INTO __zbl_audit_outbox (id, topic, payload, created_at) VALUES (${record.id}, ${record.topic}, ${record.payload}, ${record.createdAt})`
+    const statement = sql`INSERT INTO __zbl_audit_outbox (id, topic, payload, created_at) VALUES (${record.id}, ${record.topic}, ${record.payload}, ${record.createdAt}) ON CONFLICT(id) DO NOTHING`
     if (this.connection.getType() === 'postgres') await db.execute(statement)
     else db.run(statement)
   }
@@ -385,6 +459,7 @@ export class QueryExecutor {
    * Create a new record
    */
   async create(entityName: string, data: Record<string, any>, context?: QueryContext): Promise<any> {
+    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.create(entityName, data, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -444,10 +519,13 @@ export class QueryExecutor {
 
     const start = performance.now()
     try {
+      this.assertTransactionActive()
       const inserted = await (db as any).insert(table).values(dbData).returning()
       const record = inserted?.[0]
       if (record) {
-        return filterReadableFields(entity, this.toCamelCase(record), context?.session)
+        const after = filterReadableFields(entity, this.toCamelCase(record), context?.session)
+        await this.mutationObserver?.({ entity: entityName, event: 'create', after, context })
+        return after
       }
 
       return await this.findById(entityName, data.id, context)
@@ -479,6 +557,7 @@ export class QueryExecutor {
     data: Record<string, any>,
     context?: QueryContext
   ): Promise<any> {
+    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.updateWhere(entityName, id, expected, data, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -533,6 +612,7 @@ export class QueryExecutor {
       // Update record
       const expectedWhere = this.buildWhere(expected, context ?? {}, entityName)
       const whereClause = expectedWhere ? and(eq(table.id, id), expectedWhere) : eq(table.id, id)
+      this.assertTransactionActive()
       const updated = await (db as any)
         .update(table)
         .set(dbData)
@@ -544,7 +624,9 @@ export class QueryExecutor {
       }
 
       // Return updated record
-      return filterReadableFields(entity, this.toCamelCase(updated[0]), context?.session)
+      const after = filterReadableFields(entity, this.toCamelCase(updated[0]), context?.session)
+      await this.mutationObserver?.({ entity: entityName, event: 'update', before: filterReadableFields(entity, existingRecord, context?.session), after, context })
+      return after
     } finally {
       this.metrics?.recordQuery(entityName, 'update', performance.now() - start)
     }
@@ -554,6 +636,7 @@ export class QueryExecutor {
    * Delete a record
    */
   async delete(entityName: string, id: string, context?: QueryContext): Promise<void> {
+    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.delete(entityName, id, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -582,9 +665,11 @@ export class QueryExecutor {
 
     const start = performance.now()
     try {
+      this.assertTransactionActive()
       await (db as any)
         .delete(table)
         .where(eq(table.id, id))
+      await this.mutationObserver?.({ entity: entityName, event: 'delete', before: filterReadableFields(entity, existingRecord, context?.session), context })
     } finally {
       this.metrics?.recordQuery(entityName, 'delete', performance.now() - start)
     }
