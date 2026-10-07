@@ -53,7 +53,9 @@
     "test:browser:install": "playwright install chromium",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "pretest:conformance": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
+    "test:conformance": "vitest run src/conformance.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.0",

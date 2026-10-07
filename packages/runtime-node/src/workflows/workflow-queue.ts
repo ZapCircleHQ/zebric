@@ -18,6 +18,8 @@ export interface WorkflowQueueOptions {
 }
 
 export interface EnqueueOptions {
+  id?: string
+  fingerprint?: string
   priority?: number // Higher priority jobs run first (default: 0)
   timeout?: number // Override default timeout
   retries?: number // Override default retries

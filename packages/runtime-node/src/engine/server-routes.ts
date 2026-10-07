@@ -1,3 +1,4 @@
+import { IdempotencyConflictError } from '../database/query-executor.js'
 import type { Hono } from 'hono'
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
@@ -598,6 +599,7 @@ export function registerActionRoutes(
         requestId: getRequestId(c),
       })
 
+      await workflowManager!.ensurePersisted?.(job.id)
       const redirectTarget = resolveActionRedirect(
         typeof body.redirect === 'string' ? body.redirect : undefined,
         c.req.header('referer')
@@ -713,7 +715,8 @@ export function registerSkillRoutes(
           }
           attribution = method !== 'get' ? resolveAgentAttribution(c, session) : undefined
 
-          const actionDeps = { queryExecutor, workflowManager, onEntityChanged: deps.onEntityChanged }
+          const actionDeps = { queryExecutor, workflowManager, onEntityChanged: deps.onEntityChanged,
+            submission: undefined as { scope: string; fingerprint: string } | undefined }
 
           const executeAction = async (): Promise<Response> => {
             const response = action.workflow
@@ -757,12 +760,17 @@ export function registerSkillRoutes(
             .update(`${action.method}\n${requestTarget}\n${requestBody}`)
             .digest('hex')
           const scope = `${sessionSecurityId(session) || 'anonymous'}:${idempotencyKey}`
+          if (typeof queryExecutor.queryRuntime === 'function') {
+            actionDeps.submission = { scope: `skill:${scope}`, fingerprint }
+            return await durableResponse(queryExecutor, `skill:${scope}`, fingerprint, executeAction)
+          }
           const result = await idempotency.run(scope, fingerprint, executeAction)
           if (result.conflict) {
             return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different request input')
           }
           return result.response
         } catch (error) {
+          if (error instanceof IdempotencyConflictError) return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', error.message)
           console.error(`Skill route error (${skill.name}/${action.name}):`, error)
           const message = error instanceof Error ? error.message : 'Unknown error'
           const status = message.startsWith('Invalid agent attribution:')
@@ -824,7 +832,9 @@ export function registerWorkflowJobRoutes(
     if (!session) session = await sessionManager.getSession(c.req.raw)
     if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
 
-    const job = workflowManager.getJob(c.req.param('id'))
+    const job = workflowManager.getDurableJob
+      ? await workflowManager.getDurableJob(c.req.param('id'))
+      : workflowManager.getJob(c.req.param('id'))
     const ownerId = sessionSecurityId(job?.context.session)
     if (!job || !ownerId || ownerId !== sessionSecurityId(session)) {
       return agentApiError(c, 404, 'JOB_NOT_FOUND', 'The workflow job was not found')
@@ -840,6 +850,25 @@ export function registerWorkflowJobRoutes(
       error: job.status === 'failed' ? 'Workflow execution failed' : null,
     })
   })
+  for (const action of ['cancel', 'retry'] as const) {
+    app.post(`/api/jobs/:id/${action}`, async c => {
+      const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
+      if (!session) return agentApiError(c, 401, 'AUTHENTICATION_REQUIRED', 'Authentication is required')
+      const job = workflowManager.getDurableJob
+        ? await workflowManager.getDurableJob(c.req.param('id')) : workflowManager.getJob(c.req.param('id'))
+      const owner = sessionSecurityId(job?.context.session)
+      if (!job || !owner || owner !== sessionSecurityId(session))
+        return agentApiError(c, 404, 'JOB_NOT_FOUND', 'The workflow job was not found')
+      try { resolveAgentAttribution(c, session) } catch {
+        return agentApiError(c, 400, 'INVALID_AGENT_ATTRIBUTION', 'Valid agent run attribution is required')
+      }
+      const changed = action === 'cancel'
+        ? await workflowManager.cancelDurableJob(job.id) : await workflowManager.retryDurableJob(job.id)
+      if (!changed) return agentApiError(c, 409, 'JOB_STATE_CONFLICT', `The workflow job cannot ${action} in its current state`)
+      return Response.json({ id: job.id, status: action === 'cancel' ? 'cancelled' : 'pending' })
+    })
+  }
+
 }
 
 export function registerAgentEventStreamRoute(
@@ -888,6 +917,13 @@ export function registerAgentEventStreamRoute(
   })
 }
 
+async function parseEntityJson(request: Request): Promise<Record<string, unknown>> {
+  if (!request.headers.get('content-type')?.includes('application/json')) throw new Error('Invalid request: application/json is required')
+  const value: unknown = await request.json().catch(() => null)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid request: JSON object body is required')
+  return value as Record<string, unknown>
+}
+
 export function registerAPIRoutes(
   app: Hono,
   deps: {
@@ -910,7 +946,7 @@ export function registerAPIRoutes(
 
     app.post(entityPath, async (c) => {
       try {
-        const data = await c.req.json<Record<string, any>>()
+        const data = await parseEntityJson(c.req.raw)
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'create')])) throw new Error('Access denied: insufficient agent scope')
         const attribution = resolveAgentAttribution(c, session)
@@ -1004,7 +1040,7 @@ export function registerAPIRoutes(
     app.put(entityPathWithId, async (c) => {
       try {
         const { id } = c.req.param() as { id: string }
-        const data = await c.req.json<Record<string, any>>()
+        const data = await parseEntityJson(c.req.raw)
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'update')])) throw new Error('Access denied: insufficient agent scope')
         const attribution = resolveAgentAttribution(c, session)
@@ -1071,6 +1107,7 @@ export function registerCommandRoutes(
     commandExecutor: CommandExecutor
     getBlueprint?: () => Blueprint
     getCommandExecutor?: () => CommandExecutor
+    queryExecutor?: QueryExecutor
     sessionManager: SessionManager
     workflowManager?: WorkflowManager
     apiKeys: ReadonlyMap<string, { name: string }>
@@ -1163,12 +1200,14 @@ export function registerCommandRoutes(
           .update(`${command.name}\n${c.req.param('id')}\n${JSON.stringify(input ?? {})}`)
           .digest('hex')
         const scope = `${sessionSecurityId(session) ?? 'anonymous'}:${key}`
+        if (typeof deps.queryExecutor?.queryRuntime === 'function') return await durableResponse(deps.queryExecutor, `command:${scope}`, fingerprint, execute)
         const result = await idempotency.run(scope, fingerprint, execute)
         if (result.conflict) {
           return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', 'The idempotency key was reused with different command input')
         }
         return result.response
       } catch (error) {
+        if (error instanceof IdempotencyConflictError) return agentApiError(c, 409, 'IDEMPOTENCY_KEY_REUSE', error.message)
         if (error instanceof DomainError) {
           const status = commandErrorStatus(error)
           return agentApiError(c, status, error.code, error.message, { details: error.details })
@@ -1282,7 +1321,7 @@ async function resolveEntityApiSession(
 
 function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.startsWith('Invalid agent attribution:')) return 400
+  if (message.startsWith('Invalid request:') || message.startsWith('Invalid agent attribution:')) return 400
   if (message.includes('Access denied')) return 403
   if (message.toLowerCase().includes('not found')) return 404
   return 500
@@ -1376,7 +1415,10 @@ export function registerWidgetRoutes(
     queryExecutor,
     sessionManager,
     triggerWorkflow: workflowManager
-      ? (name, data) => { workflowManager.trigger(name, data, {}) }
+      ? async (name, data) => {
+          const job = workflowManager.trigger(name, data, {})
+          await workflowManager.ensurePersisted?.(job.id)
+        }
       : undefined,
   })
 }
@@ -1403,4 +1445,24 @@ export function registerPageRoutes(app: Hono, blueprintAdapter: BlueprintHttpAda
       headers,
     })
   })
+}
+
+async function durableResponse(
+  query: QueryExecutor,
+  key: string,
+  fingerprint: string,
+  execute: () => Promise<Response>
+): Promise<Response> {
+  let saved: { body: string; status: number; headers: [string, string][] }
+  try {
+    saved = await query.transaction(async () => {
+      const response = await execute()
+      if (!response.ok) throw response
+      return { body: await response.text(), status: response.status, headers: Array.from(response.headers.entries()) }
+    }, { key, fingerprint })
+  } catch (error) {
+    if (error instanceof Response) return error
+    throw error
+  }
+  return new Response(saved.body, { status: saved.status, headers: saved.headers })
 }

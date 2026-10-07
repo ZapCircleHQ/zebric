@@ -1,11 +1,16 @@
 import { createServer, type Server } from 'node:http'
 import { once } from 'node:events'
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { request as httpsRequest } from 'node:https'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { startZebricMcpHttpServer } from '../src/node.js'
+import { createZebricMcpHttpHandler } from '../src/http.js'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-describe('Zebric MCP stdio release gate', () => {
+describe.each(['stdio', 'node-http', 'node-https', 'worker-fetch'] as const)('Zebric MCP %s release gate', mode => {
   let application: Server
   let applicationUrl: string
   let requestedPath: string | undefined
@@ -96,7 +101,7 @@ describe('Zebric MCP stdio release gate', () => {
 
   it('initializes, lists generated tools, and calls one through an official MCP client', async () => {
     const client = new Client({ name: 'zebric-release-gate', version: '1.0.0' })
-    const transport = new StdioClientTransport({
+    const stdioTransport = () => new StdioClientTransport({
       command: process.execPath,
       args: [
         join(import.meta.dirname, '../dist/cli.js'), '--connect', applicationUrl,
@@ -104,6 +109,28 @@ describe('Zebric MCP stdio release gate', () => {
       ],
       stderr: 'pipe',
     })
+    let httpServer: Server | undefined
+    let transport
+    if (mode === 'stdio') {
+      transport = stdioTransport()
+    } else if (mode === 'node-http' || mode === 'node-https') {
+      httpServer = await startZebricMcpHttpServer({
+        applicationUrl, port: 0, allowedMutations: ['approve_request'],
+        tls: mode === 'node-https' ? {
+          cert: await readFile(join(import.meta.dirname, 'fixtures/localhost-cert.pem')),
+          key: await readFile(join(import.meta.dirname, 'fixtures/localhost-key.pem')),
+        } : undefined,
+      })
+      const address = httpServer.address()
+      if (!address || typeof address === 'string') throw new Error('MCP did not bind a port')
+      transport = new StreamableHTTPClientTransport(new URL(`${mode === 'node-https' ? 'https' : 'http'}://127.0.0.1:${address.port}/mcp`),
+        mode === 'node-https' ? { fetch: testTlsFetch } : undefined)
+    } else {
+      const handler = createZebricMcpHttpHandler({ applicationUrl, allowedMutations: ['approve_request'], authorize: () => true })
+      transport = new StreamableHTTPClientTransport(new URL('https://worker.example/mcp'), {
+        fetch: (input, init) => handler(new Request(input, init)),
+      })
+    }
     try {
       await client.connect(transport)
       const listed = await client.listTools()
@@ -134,6 +161,34 @@ describe('Zebric MCP stdio release gate', () => {
       expect(commandRequest).toEqual({ method: 'POST', body: JSON.stringify({ comment: 'Looks good' }) })
     } finally {
       await client.close()
+      if (httpServer) {
+        httpServer.close()
+        await once(httpServer, 'close')
+      }
     }
   })
 })
+
+// Test-only fetch adapter for the checked-in self-signed certificate.
+const testTlsFetch: typeof fetch = async (input, init) => {
+  const request = new Request(input, init)
+  const body = request.body ? await request.text() : undefined
+  return new Promise<Response>((resolve, reject) => {
+    const outgoing = httpsRequest(request.url, {
+      method: request.method, headers: Object.fromEntries(request.headers), rejectUnauthorized: false,
+    }, incoming => {
+      const chunks: Buffer[] = []
+      incoming.on('data', chunk => chunks.push(chunk))
+      incoming.on('error', reject)
+      incoming.on('end', () => {
+        const headers = new Headers()
+        for (const [name, value] of Object.entries(incoming.headers)) {
+          if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+        }
+        resolve(new Response(incoming.statusCode === 202 ? null : Buffer.concat(chunks), { status: incoming.statusCode, headers }))
+      })
+    })
+    outgoing.on('error', reject)
+    outgoing.end(body)
+  })
+}

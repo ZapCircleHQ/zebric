@@ -188,14 +188,14 @@ describe('WorkersQueryExecutor access control', () => {
   })
 
   describe('field-level write access', () => {
-    it('drops a hard-protected field on create but still creates the record', async () => {
+    it('drops protected input and populates ownership from the session on create', async () => {
       const created = await executor.create('Doc', {
         id: 'd-1', title: 'T', assigneeId: 'attacker', userId: 'attacker',
       }, member)
       const row = (await adapter.query('SELECT * FROM Doc WHERE id = ?', ['d-1'])).rows[0]
       expect(row.title).toBe('T')
       expect(row.assigneeId ?? null).toBeNull()
-      expect(row.userId ?? null).toBeNull()
+      expect(row.userId).toBe(member.session.user.id)
       void created
     })
 

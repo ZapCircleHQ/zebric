@@ -306,7 +306,7 @@ qaState = "testing"
 qaRunId = "{{ variables.data.attribution.runId }}"
 [workflow.CompleteQA.steps.data]
 qaState = "qa_completed"
-columnId = "{{ variables.targetColumn.id }}"
+columnId = "{{ variables.targetColumn.0.id }}"
 
 [[workflow.CompleteQA.steps]]
 type = "query"
@@ -377,7 +377,7 @@ qaState = "testing"
 qaRunId = "{{ variables.data.attribution.runId }}"
 [workflow.MarkQANeedsWork.steps.data]
 qaState = "needs_work"
-columnId = "{{ variables.targetColumn.id }}"
+columnId = "{{ variables.targetColumn.0.id }}"
 
 [[workflow.MarkQANeedsWork.steps]]
 type = "query"

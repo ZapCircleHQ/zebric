@@ -592,7 +592,12 @@ export interface Workflow {
   trigger: WorkflowTrigger
   precondition?: Record<string, any>
   transactional?: boolean
+  /** Maximum total attempts for a workflow (Workers applies this per durable step). */
   retries?: number
+  /** Execution timeout in milliseconds. */
+  timeout?: number
+  enabled?: boolean
+  description?: string
   steps: WorkflowStep[]
 }
 

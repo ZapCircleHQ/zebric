@@ -122,6 +122,8 @@ export class AuditLogger {
     this.ensureLogDirectory()
   }
 
+  isEnabled(): boolean { return this.config.enabled }
+
   /**
    * Log an audit event (write-once)
    */
@@ -131,6 +133,12 @@ export class AuditLogger {
     }
 
     try {
+      if (event.auditId && existsSync(this.logPath)) {
+        const previous = readFileSync(this.logPath, 'utf8').split('\n')
+        if (previous.some(line => {
+          try { return JSON.parse(line).auditId === event.auditId } catch { return false }
+        })) return true
+      }
       const fullEvent = this.buildEvent(event)
       const logEntry = this.formatLogEntry(fullEvent)
 
@@ -327,14 +335,15 @@ export class AuditLogger {
     const sanitized: Record<string, any> = {}
     let totalSize = 0
 
-    for (const [key, value] of Object.entries(metadata)) {
-      if (value === undefined) continue
+    for (const [key, rawValue] of Object.entries(metadata)) {
+      if (rawValue === undefined) continue
       // Skip sensitive fields
       if (this.isSensitiveField(key)) {
         sanitized[key] = '[REDACTED]'
         continue
       }
 
+      const value = this.redactValue(rawValue)
       const serialized = JSON.stringify(value) ?? ''
       const size = serialized.length
 
@@ -349,6 +358,14 @@ export class AuditLogger {
     }
 
     return sanitized
+  }
+
+  private redactValue(value: unknown): unknown {
+    if (value instanceof Date) return value
+    if (Array.isArray(value)) return value.map(item => this.redactValue(item))
+    if (!value || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, this.isSensitiveField(key) ? '[REDACTED]' : this.redactValue(item)]))
   }
 
   /**
@@ -366,6 +383,8 @@ export class AuditLogger {
       'ssn',
       'credit_card',
       'creditcard',
+      'authorization',
+      'cookie',
     ]
 
     const lower = fieldName.toLowerCase()

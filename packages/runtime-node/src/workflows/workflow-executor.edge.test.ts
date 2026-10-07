@@ -87,12 +87,12 @@ describe('WorkflowExecutor control flow', () => {
 
     expect(result.success).toBe(true)
     expect(action).toHaveBeenNthCalledWith(
-      1, { id: 'a', index: '0' }, expect.objectContaining({ variables: expect.any(Object) }),
+      1, { id: 'a', index: 0 }, expect.objectContaining({ variables: expect.any(Object) }),
     )
     expect(action).toHaveBeenNthCalledWith(
-      2, { id: 'b', index: '1' }, expect.objectContaining({ variables: expect.any(Object) }),
+      2, { id: 'b', index: 1 }, expect.objectContaining({ variables: expect.any(Object) }),
     )
-    expect(result.result?.processed).toEqual([{ id: 'a', index: '0' }, { id: 'b', index: '1' }])
+    expect(result.result?.processed).toEqual([{ id: 'a', index: 0 }, { id: 'b', index: 1 }])
   })
 
   it('also accepts an exact mustache expression as a loop source', async () => {

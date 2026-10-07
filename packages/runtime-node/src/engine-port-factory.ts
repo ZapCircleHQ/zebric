@@ -14,20 +14,28 @@ export function createQueryExecutorPort(
   onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void,
 ): QueryExecutorPort {
   return {
+    transaction: typeof queryExecutor.transaction === 'function' ? fn => queryExecutor.transaction(fn) : undefined,
+    afterCommit: typeof queryExecutor.afterCommit === 'function' ? effect => queryExecutor.afterCommit(effect) : undefined,
     execute: (query, context) => queryExecutor.execute(query, context),
     create: async (entity, data, context) => {
       const result = await queryExecutor.create(entity, data, context)
-      onEntityChanged?.({ entity, event: 'create', id: result?.id, session: context.session })
+      const publish = () => onEntityChanged?.({ entity, event: 'create', id: result?.id, session: context.session })
+      if (queryExecutor.afterCommit) await queryExecutor.afterCommit(publish)
+      else publish()
       return result
     },
     update: async (entity, id, data, context) => {
       const result = await queryExecutor.update(entity, id, data, context)
-      onEntityChanged?.({ entity, event: 'update', id, session: context.session })
+      const publish = () => onEntityChanged?.({ entity, event: 'update', id, session: context.session })
+      if (queryExecutor.afterCommit) await queryExecutor.afterCommit(publish)
+      else publish()
       return result
     },
     delete: async (entity, id, context) => {
       const result = await queryExecutor.delete(entity, id, context)
-      onEntityChanged?.({ entity, event: 'delete', id, session: context.session })
+      const publish = () => onEntityChanged?.({ entity, event: 'delete', id, session: context.session })
+      if (queryExecutor.afterCommit) await queryExecutor.afterCommit(publish)
+      else publish()
       return result
     },
     findById: (entity, id, context) => queryExecutor.findById(entity, id, context),

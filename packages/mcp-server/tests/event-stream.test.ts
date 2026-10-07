@@ -85,6 +85,13 @@ afterEach(async () => {
 })
 
 describe('event-stream hardening', () => {
+  it('uses manual redirect handling for the event stream and refuses redirect responses', async () => {
+    const harness = createHarness(init => {
+      expect(init?.redirect).toBe('manual')
+      return new Response(null, { status: 302, headers: { location: 'https://evil.example/stream' } })
+    })
+    await expect(createZebricMcpServer({ applicationUrl: BASE, fetch: harness.fetch })).rejects.toThrow(/redirects are not allowed/)
+  })
   it('discards malformed and schema-invalid events but still forwards valid ones', async () => {
     const harness = createHarness()
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})

@@ -14,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./workflows": {
+      "types": "./dist/workflows/cloudflare-entrypoint.d.ts",
+      "default": "./dist/workflows/cloudflare-entrypoint.js"
     }
   },
   "files": [
@@ -22,14 +26,16 @@
     "LICENSE"
   ],
   "scripts": {
-    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
-    "pretest:smoke": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
-    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build",
+    "pretest": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build",
+    "pretest:smoke": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build",
+    "pretest:coverage": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build",
     "build": "tsc",
     "test": "vitest run",
     "test:smoke": "vitest run tests/integration/",
     "test:coverage": "vitest run --coverage",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "pretest:conformance": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build",
+    "test:conformance": "vitest run tests/integration/conformance.test.ts"
   },
   "keywords": [
     "zebric",
@@ -41,10 +47,14 @@
   "author": "Zebric Team",
   "license": "MIT",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
+    "better-auth": "^1.6.6",
     "cookie": "^1.0.2",
-    "hono": "^4.12.14"
+    "hono": "^4.12.14",
+    "ulid": "^3.0.2",
+    "@zebric/notifications": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260421.1",

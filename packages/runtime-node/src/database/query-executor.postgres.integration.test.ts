@@ -1,3 +1,5 @@
+import { WorkflowStore, WorkflowLeaseLostError } from '../workflows/workflow-store.js'
+import type { Workflow, WorkflowJob } from '../workflows/types.js'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { ulid } from 'ulid'
 import type { Blueprint } from '@zebric/runtime-core'
@@ -82,6 +84,53 @@ describePostgres('QueryExecutor PostgreSQL transactions', () => {
     expect(pending.some(record => record.id === rolledBackId)).toBe(false)
     await executor.markAuditOutboxDelivered(committedId)
   })
+  it('serializes durable receipt replay across independent PostgreSQL connections', async () => {
+    const other = new DatabaseConnection({ type: 'postgres', url: postgresUrl! }, blueprint)
+    await other.connect()
+    try {
+      const independent = new QueryExecutor(other)
+      const receipt = { key: `postgres-receipt-${ulid()}`, fingerprint: 'same' }
+      const id = ulid()
+      let calls = 0
+      const operation = async (db: QueryExecutor) => {
+        calls++
+        await db.create('TransactionIssue', { id, state: 'completed' })
+        return { id, at: new Date('2025-01-01'), typed: [true, 42, undefined] }
+      }
+      const [first, replay] = await Promise.all([
+        executor.transaction(() => operation(executor), receipt),
+        independent.transaction(() => operation(independent), receipt),
+      ])
+      expect(calls).toBe(1)
+      expect(replay).toEqual(first)
+      await expect(independent.transaction(() => operation(independent), { ...receipt, fingerprint: 'different' }))
+        .rejects.toThrow('Idempotency')
+    } finally { await other.close() }
+  })
+
+  it('fences a reclaimed workflow lease across PostgreSQL connections', async () => {
+    const other = new DatabaseConnection({ type: 'postgres', url: postgresUrl! }, blueprint)
+    await other.connect()
+    let now = Date.now()
+    const workflow: Workflow = { name: `postgres-workflow-${ulid()}`, trigger: { manual: true }, steps: [] }
+    const job: WorkflowJob = { id: ulid(), workflowName: workflow.name, status: 'pending', createdAt: new Date(), attempts: 0,
+      context: { trigger: { type: 'manual' }, variables: {} } }
+    try {
+      const first = new WorkflowStore(executor, 100, () => now)
+      const second = new WorkflowStore(new QueryExecutor(other), 100, () => now)
+      await first.create(job, workflow)
+      const owned = (await first.claim([workflow.name]))!
+      expect(await second.claim([workflow.name])).toBeUndefined()
+      now += 101
+      const reclaimed = (await second.claim([workflow.name]))!
+      await expect(first.saveCheckpoint(owned.job, 'stale', true)).rejects.toBeInstanceOf(WorkflowLeaseLostError)
+      await second.saveCheckpoint(reclaimed.job, 'typed', { date: new Date('2025-01-01'), values: [true, undefined] })
+      expect((await second.checkpoint(reclaimed.job, 'typed')).value).toEqual({ date: new Date('2025-01-01'), values: [true, undefined] })
+      expect(await first.finish(owned.job, 'completed')).toBe(false)
+      expect(await second.finish(reclaimed.job, 'completed')).toBe(true)
+    } finally { await other.close() }
+  })
+
 })
 
 const blueprint: Blueprint = {

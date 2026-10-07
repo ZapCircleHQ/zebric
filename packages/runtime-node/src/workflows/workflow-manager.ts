@@ -10,6 +10,9 @@ import { ServiceRegistry, SYSTEM_SESSION } from '@zebric/runtime-core'
 import type { CommandExecutor, ExecutionObserverPort } from '@zebric/runtime-core'
 import { WorkflowQueue, type WorkflowQueueOptions } from './workflow-queue.js'
 import { WorkflowExecutor } from './workflow-executor.js'
+import { DurableWorkflowQueue, workflowSubmissionId } from './durable-workflow-queue.js'
+import { WorkflowStore, type WorkflowEvent } from './workflow-store.js'
+import { analyzeTransactionalWorkflow } from '@zebric/runtime-core'
 import type { Workflow, WorkflowJob, WorkflowContext, WorkflowTrigger } from './types.js'
 import type { QueryExecutor } from '../database/query-executor.js'
 import type { NotificationManager } from '@zebric/notifications'
@@ -23,35 +26,65 @@ export interface WorkflowManagerOptions extends WorkflowQueueOptions {
   logger?: Logger
   enqueueTransactionalAudit?: (job: WorkflowJob, workflow: Workflow) => Promise<void>
   deliverAuditOutbox?: () => Promise<void>
+  enqueueOutcomeAudit?: (job: WorkflowJob, workflow: Workflow, success: boolean) => Promise<void>
   commandExecutor?: CommandExecutor
   executionObserver?: ExecutionObserverPort
   serviceRegistry?: ServiceRegistry
+  /** Database-backed scheduling is enabled when the data layer supports runtime storage. */
+  durable?: boolean
+  /** Delay recovery while the engine loads command handlers and integration dependencies. */
+  startPaused?: boolean
 }
 
 export class WorkflowManager extends EventEmitter {
-  private queue: WorkflowQueue
+  private queue: WorkflowQueue | DurableWorkflowQueue
+  private eventRecovery?: ReturnType<typeof setInterval>
+  private drainingEvents?: Promise<void>
+  private paused = false
   private executor: WorkflowExecutor
   private logger?: Logger
   private enqueueTransactionalAudit?: WorkflowManagerOptions['enqueueTransactionalAudit']
   private deliverAuditOutbox?: WorkflowManagerOptions['deliverAuditOutbox']
   private readonly maxEntityTriggerDepth = 5
   private readonly serviceRegistry: ServiceRegistry
+  private readonly dataLayer: QueryExecutor
+  private commandDefinitions?: Parameters<typeof analyzeTransactionalWorkflow>[1]
 
   constructor(options: WorkflowManagerOptions) {
     super()
+    this.paused = options.startPaused === true
     this.logger = options.logger
+    this.dataLayer = options.dataLayer
     this.enqueueTransactionalAudit = options.enqueueTransactionalAudit
     this.deliverAuditOutbox = options.deliverAuditOutbox
     this.serviceRegistry = options.serviceRegistry ?? new ServiceRegistry()
 
     // Initialize queue
-    this.queue = new WorkflowQueue({
+    const queueOptions = {
       maxConcurrent: options.maxConcurrent,
       retryDelay: options.retryDelay,
       maxRetries: options.maxRetries,
       jobTimeout: options.jobTimeout,
       logger: options.logger,
-    })
+      onOutcome: options.enqueueOutcomeAudit,
+      startPaused: options.startPaused,
+    }
+    this.queue = options.durable !== false && typeof options.dataLayer.queryRuntime === 'function'
+      ? new DurableWorkflowQueue(new WorkflowStore(options.dataLayer), queueOptions)
+      : new WorkflowQueue(queueOptions)
+    if (this.queue instanceof DurableWorkflowQueue) {
+      options.dataLayer.setMutationObserver(async ({ context, ...event }) => {
+        if (context?.source === 'workflow') return
+        await this.enqueueEntityEvent({ ...event, session: context?.session,
+          trace: { correlationId: context?.correlationId, requestId: undefined } })
+      })
+      this.eventRecovery = setInterval(() => {
+        if (this.paused) return
+        void this.deliverPendingEvents()
+        void this.deliverAuditOutbox?.().catch(error => this.logger?.error('Workflow audit recovery failed', { error }))
+      }, 1000)
+      this.eventRecovery.unref()
+    }
 
     // Initialize executor
     this.executor = new WorkflowExecutor({
@@ -64,6 +97,9 @@ export class WorkflowManager extends EventEmitter {
       executionObserver: options.executionObserver,
       services: this.serviceRegistry,
       logger: options.logger,
+      enqueueEntityEvent: this.queue instanceof DurableWorkflowQueue
+        ? (event, id) => (this.queue as DurableWorkflowQueue).store.enqueueEvent(event, id)
+        : undefined,
       onEntityEvent: async ({ entity, event, before, after, sourceWorkflow, depth, workflowPath, trace, session, attribution }) => {
         await this.triggerEntityEvent(entity, event, { before, after }, {
           sourceWorkflow,
@@ -85,7 +121,14 @@ export class WorkflowManager extends EventEmitter {
     this.setupQueueListeners()
   }
 
+  start(): void {
+    this.paused = false
+    if (this.queue instanceof DurableWorkflowQueue) this.queue.start()
+    void this.deliverPendingEvents()
+  }
+
   setCommandExecutor(commandExecutor: CommandExecutor, executionObserver?: ExecutionObserverPort): void {
+    this.commandDefinitions = commandExecutor.registry?.list?.()
     this.executor.setCommandExecutor(commandExecutor, executionObserver)
     if (executionObserver) this.serviceRegistry.setObserver(executionObserver)
   }
@@ -101,7 +144,10 @@ export class WorkflowManager extends EventEmitter {
     // Execute jobs when they're ready
     this.queue.on('job:execute', async (job: WorkflowJob, workflow: Workflow) => {
       try {
+        this.validateTransactionalWorkflow(workflow)
         const result = await this.executor.execute(workflow, job.context, {
+          runner: this.queue instanceof DurableWorkflowQueue ? this.queue.runner(job, workflow) : undefined,
+          signal: this.queue instanceof DurableWorkflowQueue ? this.queue.signal(job.id) : undefined,
           beforeTransactionalCommit: workflow.transactional && this.enqueueTransactionalAudit
             ? () => this.enqueueTransactionalAudit!(job, workflow)
             : undefined,
@@ -115,15 +161,26 @@ export class WorkflowManager extends EventEmitter {
               this.logger?.error('Audit outbox delivery failed; intent remains pending', { error })
             }
           }
-          this.queue.completeJob(job.id, result.result)
+          await this.queue.completeJob(job.id, result.result)
+          await this.deliverPendingEvents()
         } else {
-          this.queue.failJob(job.id, new Error(result.error || 'Unknown error'))
+          await this.queue.failJob(job.id, new Error(result.error || 'Unknown error'))
         }
       } catch (error) {
-        this.queue.failJob(job.id, error as Error)
+        await this.queue.failJob(job.id, error as Error)
+      } finally {
+        try {
+          await this.deliverAuditOutbox?.()
+        } catch (error) {
+          this.logger?.error('Workflow outcome audit delivery failed; intent remains pending', { error })
+        }
       }
     })
 
+    this.queue.on('job:persistence-failed', (job, error) => {
+      this.logger?.error('Workflow submission could not be persisted', { jobId: job.id, error })
+      this.emit('job:persistence-failed', job, error)
+    })
     // Forward queue events
     this.queue.on('job:enqueued', (job) => this.emit('job:enqueued', job))
     this.queue.on('job:started', (job) => this.emit('job:started', job))
@@ -138,7 +195,19 @@ export class WorkflowManager extends EventEmitter {
   /**
    * Register a workflow
    */
+  private validateTransactionalWorkflow(workflow: Workflow): void {
+    if (workflow.transactional && this.queue instanceof DurableWorkflowQueue) {
+      const analysis = analyzeTransactionalWorkflow(
+        workflow as any, this.commandDefinitions ?? this.dataLayer.getBlueprint().commands ?? []
+      )
+      if (!analysis.databaseOnly) {
+        throw new Error(`Transactional workflow ${workflow.name} must contain database-only steps`)
+      }
+    }
+  }
+
   registerWorkflow(workflow: Workflow): void {
+    this.validateTransactionalWorkflow(workflow)
     this.queue.registerWorkflow(workflow)
   }
 
@@ -172,6 +241,7 @@ export class WorkflowManager extends EventEmitter {
     options?: {
       correlationId?: string
       requestId?: string
+      submission?: { scope: string; fingerprint: string }
     }
   ): WorkflowJob {
     const context: WorkflowContext = {
@@ -193,7 +263,9 @@ export class WorkflowManager extends EventEmitter {
       context.session = data.session
     }
 
-    return this.queue.enqueue(workflowName, context)
+    return this.queue.enqueue(workflowName, context, options?.submission ? {
+      id: workflowSubmissionId(options.submission.scope), fingerprint: options.submission.fingerprint,
+    } : undefined)
   }
 
   /**
@@ -213,6 +285,7 @@ export class WorkflowManager extends EventEmitter {
       initiatingSession?: WorkflowContext['session']
       attribution?: any
       workflowPath?: string[]
+      childKey?: string
     }
   ): Promise<WorkflowJob[]> {
     const normalizedData = this.normalizeEntityEventData(data)
@@ -243,6 +316,7 @@ export class WorkflowManager extends EventEmitter {
     const workflowPath = options?.workflowPath ?? []
 
     for (const workflow of workflows) {
+      if (workflow.enabled === false) continue
       if (this.matchesEntityTrigger(workflow.trigger, entity, event, normalizedData)) {
         if (workflowPath.includes(workflow.name)) {
           this.logger?.warn('Skipping entity trigger because it would create a workflow cycle', {
@@ -283,7 +357,11 @@ export class WorkflowManager extends EventEmitter {
           session: options?.initiatingSession ?? SYSTEM_SESSION,
         }
 
-        const job = this.queue.enqueue(workflow.name, context)
+        const job = this.queue.enqueue(workflow.name, context, options?.childKey ? {
+          id: workflowSubmissionId(JSON.stringify([options.childKey, workflow.name])),
+          fingerprint: workflowSubmissionId(JSON.stringify([options.childKey, workflow.name])),
+        } : undefined)
+        await this.ensurePersisted(job.id)
         jobs.push(job)
       }
     }
@@ -305,6 +383,7 @@ export class WorkflowManager extends EventEmitter {
     const jobs: WorkflowJob[] = []
 
     for (const workflow of workflows) {
+      if (workflow.enabled === false) continue
       if (this.matchesWebhookTrigger(workflow.trigger, path) && authorize(workflow)) {
         const context: WorkflowContext = {
           trace: {
@@ -328,6 +407,7 @@ export class WorkflowManager extends EventEmitter {
         }
 
         const job = this.queue.enqueue(workflow.name, context)
+        await this.ensurePersisted(job.id)
         jobs.push(job)
       }
     }
@@ -343,6 +423,7 @@ export class WorkflowManager extends EventEmitter {
     const jobs: WorkflowJob[] = []
 
     for (const workflow of workflows) {
+      if (workflow.enabled === false) continue
       if (this.matchesScheduleTrigger(workflow.trigger, cronExpression)) {
         const context: WorkflowContext = {
           trace: {
@@ -358,6 +439,7 @@ export class WorkflowManager extends EventEmitter {
         }
 
         const job = this.queue.enqueue(workflow.name, context)
+        await this.ensurePersisted(job.id)
         jobs.push(job)
       }
     }
@@ -370,6 +452,39 @@ export class WorkflowManager extends EventEmitter {
    */
   getJob(id: string): WorkflowJob | undefined {
     return this.queue.getJob(id)
+  }
+
+  get durable(): boolean { return this.queue instanceof DurableWorkflowQueue }
+  async ensurePersisted(id: string): Promise<WorkflowJob | undefined> {
+    return this.queue instanceof DurableWorkflowQueue ? this.queue.ready(id) : this.queue.getJob(id)
+  }
+  async getDurableJob(id: string): Promise<WorkflowJob | undefined> {
+    return this.queue instanceof DurableWorkflowQueue ? this.queue.getDurableJob(id) : this.queue.getJob(id)
+  }
+  async cancelDurableJob(id: string): Promise<boolean> {
+    return this.queue instanceof DurableWorkflowQueue ? this.queue.cancelDurable(id) : this.queue.cancel(id)
+  }
+  async retryDurableJob(id: string): Promise<boolean> {
+    return this.queue instanceof DurableWorkflowQueue ? this.queue.retryDurable(id) : this.queue.retry(id)
+  }
+  async enqueueEntityEvent(event: WorkflowEvent, id?: string): Promise<void> {
+    if (!(this.queue instanceof DurableWorkflowQueue)) throw new Error('Durable workflow events require database scheduling')
+    await this.queue.store.enqueueEvent(event, id)
+  }
+  async deliverPendingEvents(): Promise<void> {
+    if (!(this.queue instanceof DurableWorkflowQueue) || this.paused) return
+    if (this.dataLayer.inTransaction) {
+      await this.dataLayer.afterCommit(() => this.dataLayer.outsideTransaction(() => this.deliverPendingEvents()))
+      return
+    }
+    if (this.drainingEvents) return this.drainingEvents
+    this.drainingEvents = this.queue.store.drainEvents(async (event, id) => {
+      await this.triggerEntityEvent(event.entity, event.event, { before: event.before, after: event.after }, {
+        sourceWorkflow: event.sourceWorkflow, depth: (event.depth ?? -1) + 1, workflowPath: event.workflowPath,
+        trace: event.trace, initiatingSession: event.session, attribution: event.attribution, childKey: id,
+      })
+    }).catch(error => this.logger?.error('Workflow event recovery failed', { error })).finally(() => { this.drainingEvents = undefined })
+    return this.drainingEvents
   }
 
   /**
@@ -411,6 +526,8 @@ export class WorkflowManager extends EventEmitter {
    * Shutdown the workflow manager
    */
   async shutdown(timeoutMs?: number): Promise<void> {
+    if (this.eventRecovery) clearInterval(this.eventRecovery)
+    await this.drainingEvents
     await this.queue.shutdown(timeoutMs)
   }
 

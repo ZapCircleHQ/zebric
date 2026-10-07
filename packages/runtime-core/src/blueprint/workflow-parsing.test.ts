@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { BlueprintParser } from './loader.js'
 
 describe('workflow parsing from TOML', () => {
-  it('preserves an explicit retry limit', () => {
+  it('preserves retry, timeout, and enabled settings', () => {
     const blueprint = new BlueprintParser().parse(`
 version = "1.0"
 
@@ -27,6 +27,8 @@ layout = "list"
 [workflow.UpdateItem]
 trigger = { manual = true }
 retries = 1
+timeout = 2500
+enabled = false
 
 [[workflow.UpdateItem.steps]]
 type = "query"
@@ -34,6 +36,6 @@ entity = "Item"
 action = "update"
 `, 'toml')
 
-    expect(blueprint.workflows?.[0]?.retries).toBe(1)
+    expect(blueprint.workflows?.[0]).toMatchObject({ retries: 1, timeout: 2500, enabled: false })
   })
 })

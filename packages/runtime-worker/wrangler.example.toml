@@ -6,23 +6,24 @@ main = "src/index.ts"
 compatibility_date = "2025-11-09"
 
 # IMPORTANT: Enable file upload support in FormData
-compatibility_flags = ["formdata_parser_supports_files"]
+compatibility_flags = ["nodejs_compat", "formdata_parser_supports_files"]
 
-# Node.js compatibility for npm packages like 'cookie'
-# This enables packages like cookie, jsonwebtoken, etc.
-node_compat = true
+[[rules]]
+type = "Text"
+globs = ["**/*.toml", "**/*.liquid"]
+fallthrough = true
 
 # ============================================================================
 # KV Namespaces (for sessions, cache, etc.)
 # ============================================================================
 
 [[kv_namespaces]]
-binding = "SESSIONS"
+binding = "SESSION_KV"
 id = "your-sessions-kv-namespace-id"
 preview_id = "your-preview-sessions-kv-namespace-id"
 
 [[kv_namespaces]]
-binding = "CACHE"
+binding = "CACHE_KV"
 id = "your-cache-kv-namespace-id"
 preview_id = "your-preview-cache-kv-namespace-id"
 
@@ -34,6 +35,18 @@ preview_id = "your-preview-cache-kv-namespace-id"
 binding = "DB"
 database_name = "zebric-db"
 database_id = "your-database-id"
+
+# Optional durable workflow backend. Export ZebricWorkflow using
+# createWorkflowEntrypoint from @zebric/runtime-worker/workflows.
+# [[workflows]]
+# name = "zebric-workflows"
+# binding = "WORKFLOWS"
+# class_name = "ZebricWorkflow"
+#
+# [triggers]
+# crons = ["0 * * * *"]
+#
+# Inbound workflow webhooks: pnpm wrangler secret put ZEBRIC_WEBHOOK_SECRET
 
 # ============================================================================
 # R2 Storage (for file uploads)
@@ -69,7 +82,9 @@ preview_bucket_name = "zebric-files-preview"
 
 [vars]
 ENVIRONMENT = "development"
-# Add your environment-specific variables here
+# Required when the Blueprint contains [auth]. Store BETTER_AUTH_SECRET with:
+# pnpm wrangler secret put BETTER_AUTH_SECRET
+# BETTER_AUTH_URL = "https://app.example.com"
 
 # ============================================================================
 # Development Configuration
@@ -86,11 +101,11 @@ local_protocol = "http"
 # [env.production]
 # name = "zebric-worker-production"
 # [[env.production.kv_namespaces]]
-# binding = "SESSIONS"
+# binding = "SESSION_KV"
 # id = "your-production-sessions-kv-id"
 #
 # [[env.production.kv_namespaces]]
-# binding = "CACHE"
+# binding = "CACHE_KV"
 # id = "your-production-cache-kv-id"
 #
 # [[env.production.d1_databases]]

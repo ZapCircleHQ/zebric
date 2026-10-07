@@ -6,8 +6,12 @@
  */
 
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
-import type { QueryExecutorPort, RequestContext, SqlStoragePort } from '@zebric/runtime-core'
-import { AccessControl, PermissionManager, PolicyEvaluator, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
+import { ulid } from 'ulid'
+import type { QueryExecutorPort, RequestContext, SqlStoragePort, CommandEffectsPort } from '@zebric/runtime-core'
+import { D1Adapter } from '../database/d1-adapter.js'
+import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
+import type { WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
+import { AccessControl, PermissionManager, PolicyEvaluator, actorFromSession, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private permissionManager: PermissionManager
@@ -15,16 +19,67 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   constructor(
     private adapter: SqlStoragePort,
-    private blueprint: Blueprint
+    private blueprint: Blueprint,
+    private options: { auditMutations?: boolean } = {}
   ) {
+    if (adapter instanceof D1Adapter) this.adapter = new D1Transactions(adapter, blueprint)
+    if (options.auditMutations && !(this.adapter instanceof D1Transactions)) {
+      throw new Error('Transactional mutation auditing requires a D1 adapter')
+    }
     this.permissionManager = new PermissionManager(blueprint.auth)
     this.policyEvaluator = new PolicyEvaluator(blueprint, this)
+  }
+
+  async transaction<T>(operation: () => Promise<T>, receipt?: TransactionReceipt): Promise<T> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Transactions require a D1 adapter')
+    return this.adapter.transaction(operation, receipt)
+  }
+
+  async afterCommit(effect: () => Promise<void> | void): Promise<void> {
+    if (this.adapter instanceof D1Transactions) await this.adapter.afterCommit(effect)
+    else await effect()
+  }
+
+  async enqueueWorkflowEvent(intent: WorkflowEventIntent, id?: string): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Workflow outbox intents require a D1 adapter')
+    await this.adapter.enqueueWorkflowEvent(intent, id)
+  }
+
+  async enqueueCommandEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Runtime journal entries require a D1 adapter')
+    await this.adapter.enqueueCommandEffects(effects)
+  }
+
+  async persistRuntimeEffects(effects: Parameters<CommandEffectsPort['enqueue']>[0]): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Runtime journal entries require a D1 adapter')
+    await this.adapter.persistRuntimeEffects(effects)
+  }
+
+  private get requiresAuditTransaction(): boolean {
+    return Boolean(this.options.auditMutations && this.adapter instanceof D1Transactions && !this.adapter.inTransaction)
+  }
+
+  async auditMutation(entity: Entity, action: 'create' | 'update' | 'delete', id: string, data: Record<string, any>, context: RequestContext): Promise<void> {
+    if (!this.options.auditMutations || context.commandMutation) return
+    const actor = context.actor ?? actorFromSession(context.session)
+    await this.enqueueCommandEffects({ events: [], audit: [{
+      eventType: `data.${action}`, severity: 'info', action, resource: `${entity.name}:${id}`, success: true,
+      entityType: entity.name, entityId: id, userId: actor?.delegatedBy ?? actor?.id,
+      actorId: actor?.id, actorType: actor?.type, workflowName: context.workflow,
+      correlationId: context.correlationId,
+      metadata: { mutation: filterWritableFields(entity, data, context.session), source: context.source, workflow: context.workflow }
+    }] })
+  }
+
+  async executeBatch(statements: Array<{ sql: string; params?: unknown[] }>): Promise<void> {
+    if (!(this.adapter instanceof D1Transactions)) throw new Error('Atomic batches require a D1 adapter')
+    await this.adapter.batch(statements)
   }
 
   /**
    * Execute a Blueprint Query definition
    */
-  async execute(query: Query, context: RequestContext): Promise<any> {
+  async execute(query: Query, context: RequestContext = {}): Promise<any> {
     const entity = this.getEntity(query.entity)
     if (!entity) {
       throw new Error(`Entity not found: ${query.entity}`)
@@ -60,7 +115,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const result = await this.adapter.query(sql, compiledWhere.params)
     const secured = await filterRecordsByReadPolicy(
       entity,
-      result.rows as Record<string, any>[],
+      (result.rows as Record<string, any>[]).map(record => this.normalizeRecord(entity, record)),
       context.session,
       this.policyEvaluator,
       this.permissionManager,
@@ -74,7 +129,8 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Create a new record
    */
-  async create(entity: string, data: Record<string, any>, context: RequestContext): Promise<any> {
+  async create(entity: string, data: Record<string, any>, context: RequestContext = {}): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.create(entity, data, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -83,7 +139,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     assertProtectedMutation(entityDef, data, context)
 
     // Drop fields the caller may not write, then check entity-level create access.
-    const writable = filterWritableFields(entityDef, data, context.session)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
     await assertEntityAccess({
       entity: entityDef,
       action: 'create',
@@ -94,7 +150,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     })
 
     // Filter data to only include defined fields
-    const filteredData = this.filterFields(entityDef, writable)
+    const filteredData = this.filterFields(entityDef, this.applyCreateDefaults(entityDef, writable, context))
 
     // Build INSERT query
     const fields = Object.keys(filteredData)
@@ -109,7 +165,9 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, values)
-    return filterReadableFields(entityDef, result.rows[0] || { ...filteredData }, context.session)
+    const record = this.normalizeRecord(entityDef, result.rows[0] || filteredData)
+    await this.auditMutation(entityDef, 'create', String(record.id), record, context)
+    return filterReadableFields(entityDef, record, context.session)
   }
 
   /**
@@ -121,6 +179,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     data: Record<string, any>,
     context: RequestContext
   ): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.update(entity, id, data, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -135,7 +194,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     // Drop fields the caller may not write, then authorize the stored resource.
     // Proposed ownership values must not grant access to the update itself.
-    const writable = filterWritableFields(entityDef, data, context.session)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
     await assertEntityAccess({
       entity: entityDef,
       action: 'update',
@@ -166,9 +225,10 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
+    await this.auditMutation(entityDef, 'update', id, writable, context)
     return filterReadableFields(
       entityDef,
-      result.rows[0] || { ...(existing ?? {}), ...filteredData, id },
+      this.normalizeRecord(entityDef, result.rows[0] || { ...(existing ?? {}), ...filteredData, id }),
       context.session
     )
   }
@@ -176,7 +236,8 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Delete a record
    */
-  async delete(entity: string, id: string, context: RequestContext): Promise<any> {
+  async delete(entity: string, id: string, context: RequestContext = {}): Promise<any> {
+    if (this.requiresAuditTransaction) return this.transaction(() => this.delete(entity, id, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
       throw new Error(`Entity not found: ${entity}`)
@@ -201,6 +262,96 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     await this.adapter.query(sql, [id])
+    if (existing) await this.auditMutation(entityDef, 'delete', id, {}, context)
+  }
+
+  /**
+   * Authorize and compile one fixed workflow mutation without executing it.
+   * The Worker workflow executor prepares every statement first, then submits
+   * the complete set to D1's atomic batch primitive.
+   */
+  async prepareBatchMutation(
+    entity: string,
+    action: 'create' | 'update' | 'delete',
+    data: Record<string, any> | undefined,
+    where: Record<string, any> | undefined,
+    context: RequestContext,
+  ): Promise<Array<{ sql: string; params: unknown[] }>> {
+    const entityDef = this.getEntity(entity)
+    if (!entityDef) throw new Error(`Entity not found: ${entity}`)
+
+    if (action === 'create') {
+      if (!data) throw new Error('Create action requires data')
+      assertProtectedMutation(entityDef, data, context)
+      const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
+      await assertEntityAccess({
+        entity: entityDef,
+        action: 'create',
+        data: writable,
+        session: context.session,
+        permissionManager: this.permissionManager,
+        policyEvaluator: this.policyEvaluator,
+      })
+      const filtered = this.filterFields(entityDef, this.applyCreateDefaults(entityDef, writable, context))
+      const fields = Object.keys(filtered)
+      if (fields.length === 0) throw new Error(`Create ${entity} has no writable fields`)
+      return [{
+        sql: `INSERT INTO ${this.quoteIdentifier(entity)} (${fields.map(field => this.quoteIdentifier(field)).join(', ')}) VALUES (${fields.map(() => '?').join(', ')})`,
+        params: Object.values(filtered),
+      }]
+    }
+
+    const id = typeof where?.id === 'string' || typeof where?.id === 'number'
+      ? String(where.id)
+      : undefined
+    if (!id) throw new Error(`${action[0]!.toUpperCase()}${action.slice(1)} action requires an id in the where clause`)
+    const mutationWhere = where as Record<string, any>
+    const existing = await this.findByIdUnrestricted(entity, id)
+    if (!existing && action === 'update') throw new Error(`${entity} with id ${id} not found`)
+
+    if (action === 'delete') {
+      if (existing) {
+        await assertEntityAccess({
+          entity: entityDef,
+          action: 'delete',
+          data: existing,
+          session: context.session,
+          permissionManager: this.permissionManager,
+          policyEvaluator: this.policyEvaluator,
+        })
+      }
+      const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
+      return [
+        this.workflowPredicateGuard(entity, id, predicate),
+        {
+          sql: `DELETE FROM ${this.quoteIdentifier(entity)} WHERE ${predicate.sql}`,
+          params: predicate.params,
+        },
+      ]
+    }
+
+    if (!data) throw new Error('Update action requires data')
+    assertProtectedMutation(entityDef, data, context)
+    const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
+    await assertEntityAccess({
+      entity: entityDef,
+      action: 'update',
+      data: existing,
+      session: context.session,
+      permissionManager: this.permissionManager,
+      policyEvaluator: this.policyEvaluator,
+    })
+    const filtered = this.filterFields(entityDef, writable)
+    const fields = Object.keys(filtered)
+    if (fields.length === 0) throw new Error(`Update ${entity} has no writable fields`)
+    const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
+    return [
+      this.workflowPredicateGuard(entity, id, predicate),
+      {
+        sql: `UPDATE ${this.quoteIdentifier(entity)} SET ${fields.map(field => `${this.quoteIdentifier(field)} = ?`).join(', ')} WHERE ${predicate.sql}`,
+        params: [...Object.values(filtered), ...predicate.params],
+      },
+    ]
   }
 
   /**
@@ -224,7 +375,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [id])
-    return result.rows[0] || null
+    return result.rows[0] ? this.normalizeRecord(entityDef, result.rows[0]) : null
   }
 
   /**
@@ -300,7 +451,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     const result = await this.adapter.query(sql, params)
     const secured = await filterRecordsByReadPolicy(
       entityDef,
-      (result.rows || []) as Record<string, any>[],
+      (result.rows as Record<string, any>[]).map(record => this.normalizeRecord(entityDef, record)),
       options.context?.session,
       this.policyEvaluator,
       this.permissionManager,
@@ -318,6 +469,68 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
   private getEntity(name: string): Entity | undefined {
     return this.blueprint.entities?.find((e: Entity) => e.name === name)
+  }
+
+  private applyCreateDefaults(entity: Entity, data: Record<string, any>, context: RequestContext): Record<string, any> {
+    const values = { ...data }
+    const now = new Date().toISOString()
+    for (const field of entity.fields) {
+      if (field.type === 'ULID' && field.primary_key && !values[field.name]) {
+        values[field.name] = ulid()
+      }
+      if (values[field.name] === undefined && field.default !== undefined) {
+        values[field.name] = field.default === 'now' && (field.type === 'DateTime' || field.type === 'Date')
+          ? now
+          : field.default
+      }
+      if (!values[field.name] && ['createdAt', 'updatedAt'].includes(field.name)) {
+        values[field.name] = now
+      }
+      if (!values[field.name] && context.session?.user?.id
+        && (field.name === 'userId' || (field.type === 'Ref' && field.ref === 'User.id'))) {
+        values[field.name] = context.session.user.id
+      }
+    }
+    return values
+  }
+
+  private normalizeInput(entity: Entity, data: Record<string, any>): Record<string, any> {
+    const normalized = { ...data }
+    for (const field of entity.fields) {
+      if (field.type === 'Boolean' && normalized[field.name] !== undefined) {
+        normalized[field.name] = this.coerceForSqlite(normalized[field.name], field.type)
+      }
+      if (field.type === 'DateTime' && Object.prototype.hasOwnProperty.call(normalized, field.name)) {
+        const value = normalized[field.name]
+        if (value === '' || value == null) { normalized[field.name] = null; continue }
+        if (value === 'now') { normalized[field.name] = new Date().toISOString(); continue }
+        const utcValue = typeof value === 'string' && value.includes('T') && !value.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(value)
+          ? `${value}Z` : value
+        const date = utcValue instanceof Date ? utcValue : new Date(utcValue)
+        if (Number.isNaN(date.getTime())) throw new Error(`Invalid DateTime value for ${entity.name}.${field.name}`)
+        normalized[field.name] = date.toISOString()
+      }
+    }
+    for (const field of entity.fields) {
+      if (field.type === 'Boolean' && normalized[field.name] != null) normalized[field.name] = Boolean(normalized[field.name])
+    }
+    return normalized
+  }
+
+  // D1 exposes SQLite integers. Normalize only declared Boolean fields before
+  // policy evaluation and rendering, without changing numeric or text fields.
+  private normalizeRecord(entity: Entity, record: Record<string, any>): Record<string, any> {
+    const normalized = { ...record }
+    for (const field of entity.fields) {
+      if (field.type === 'JSON' && typeof normalized[field.name] === 'string') {
+        normalized[field.name] = JSON.parse(normalized[field.name])
+      }
+      if (field.type !== 'Boolean' || normalized[field.name] == null) continue
+      const value = normalized[field.name]
+      if (value === 1 || value === true) normalized[field.name] = true
+      else if (value === 0 || value === false) normalized[field.name] = false
+    }
+    return normalized
   }
 
   private filterFields(entity: Entity, data: Record<string, any>): Record<string, any> {
@@ -340,9 +553,19 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   private coerceForSqlite(value: any, fieldType?: string): any {
     if (value === undefined) return null
     if (value === null) return null
+    if (fieldType === 'Boolean') {
+      if (typeof value === 'string') {
+        const boolean = value.trim().toLowerCase()
+        if (['true', '1', 'on'].includes(boolean)) return 1
+        if (['false', '0', 'off', ''].includes(boolean)) return 0
+      }
+      if (value === true || value === 1) return 1
+      if (value === false || value === 0) return 0
+      throw new Error('Invalid Boolean value')
+    }
+    if (fieldType === 'JSON') return JSON.stringify(value)
     if (typeof value === 'boolean') return value ? 1 : 0
     if (value instanceof Date) return value.toISOString()
-    if (fieldType === 'JSON' && typeof value === 'object') return JSON.stringify(value)
     if (typeof value === 'object' && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)) {
       return JSON.stringify(value)
     }
@@ -425,6 +648,32 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     if (value instanceof Date) return value.toISOString()
     if (value !== null && typeof value === 'object') return JSON.stringify(value)
     return value
+  }
+
+  private compileWorkflowWhere(entity: Entity, where: Record<string, any>, context: RequestContext): { sql: string; params: any[] } {
+    const predicate = normalizeQueryWhere(where, context, {
+      allowedFields: new Set(entity.fields.map(field => field.name)),
+    })
+    const compiled = this.compilePredicate(predicate)
+    if (!compiled.sql) throw new Error('Workflow mutation requires a where clause')
+    return compiled
+  }
+
+  /**
+   * Turn a stale conditional mutation into a batch failure. If the row still
+   * exists but no longer matches its workflow predicate, this attempts to
+   * insert its existing id and deliberately trips the primary-key constraint.
+   */
+  private workflowPredicateGuard(
+    entity: string,
+    id: string,
+    predicate: { sql: string; params: any[] },
+  ): { sql: string; params: unknown[] } {
+    const table = this.quoteIdentifier(entity)
+    return {
+      sql: `INSERT INTO ${table} ("id") SELECT "id" FROM ${table} WHERE "id" = ? AND (${predicate.sql}) IS NOT TRUE`,
+      params: [id, ...predicate.params],
+    }
   }
 
   private quoteIdentifier(identifier: string): string {

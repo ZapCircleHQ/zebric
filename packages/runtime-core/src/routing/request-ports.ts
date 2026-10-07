@@ -217,6 +217,7 @@ export interface AuditLoggerPort {
 }
 
 export interface LogEvent {
+  auditId?: string
   eventType: string
   severity: string
   action: string
@@ -243,6 +244,8 @@ export interface RuntimePorts {
   renderer?: RendererPort
   auditLogger?: AuditLoggerPort
   eventPublisher?: DomainEventPublisherPort
+  /** Persists command audit and events inside the mutation's transaction. */
+  commandEffects?: CommandEffectsPort
   executionObserver?: ExecutionObserverPort
   services?: import('../services/registry.js').ServiceInvoker
   commandAvailability?: CommandAvailabilityPort
@@ -258,14 +261,20 @@ export interface ExecutionObserverPort {
 }
 
 export interface DomainEventPublisherPort {
-  publish(event: {
-    name: string
-    entity: string
-    recordId: string
-    command: string
-    actor: Actor
-    data?: Record<string, unknown>
-    occurredAt: string
-    correlationId?: string
-  }): void | Promise<void>
+  publish(event: DomainCommandEvent): void | Promise<void>
+}
+
+export interface DomainCommandEvent {
+  name: string
+  entity: string
+  recordId: string
+  command: string
+  actor: Actor
+  data?: Record<string, unknown>
+  occurredAt: string
+  correlationId?: string
+}
+
+export interface CommandEffectsPort {
+  enqueue(effects: { audit: LogEvent[]; events: DomainCommandEvent[] }): Promise<void>
 }

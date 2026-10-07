@@ -1,0 +1,85 @@
+---
+label: Runtime parity
+order: 4
+slug: run/parity
+title: Runtime parity and platform differences
+description: The shared Node and Cloudflare Workers contract, its tests, and deployment constraints.
+---
+
+Zebric's Node and Cloudflare Workers adapters share Blueprint execution contracts.
+The same conformance suite runs against Node SQLite and Miniflare D1 with identical
+expected results. The suite covers:
+
+| Contract | Node and Workers checks |
+| --- | --- |
+| Entity values | Generated IDs, falsy defaults, JSON values, nullable dates, UTC DateTime input |
+| Authorization | Private rows, pagination after filtering, agent scopes, run attribution, CSRF |
+| Queries | Parameter resolution, missing parameters, lookup search |
+| Commands | Protected fields, availability, committed response replay, changed-input conflicts |
+| Transactions | Intermediate reads, nested callbacks, rollback, commit-only effects |
+| Workflows | Typed query results, nested conditions and loops, atomic rollback |
+| HTTP | Page JSON, CRUD, discovery and contract fingerprints, malformed-input rejection |
+
+From the repository root, run:
+
+```bash
+pnpm test:parity
+```
+
+The shared assertions live in `tests/runtime-conformance/contracts.ts`; each runtime
+provides its own database and HTTP fixture. This suite runs in CI and in each
+runtime's regular tests. Additional Worker smoke tests bundle real entrypoints and
+execute them inside `workerd`, including native durable workflows and bundled
+plugins, custom commands, file serving, metrics, and audit writes.
+
+Passing these tests supports parity for the listed behavior. PostgreSQL, provider
+authentication flows, every integration, performance under production load, and
+identical recovery across different job stores require their own validation.
+
+## Deployment differences
+
+| Capability | Node | Workers |
+| --- | --- | --- |
+| Database | SQLite or PostgreSQL | D1 with optimistic snapshot transactions |
+| Durable jobs | Database-backed scheduler by default | Native checkpoints with a `WORKFLOWS` binding; otherwise inline jobs |
+| Templates and plugins | Runtime filesystem loading | Statically imported modules or KV templates |
+| Public files | `/uploads/*` serves local files | `/uploads/*` serves R2 objects outside reserved `_zebric/` |
+| Development email outbox | Appends a local file | Writes private R2 objects; requires `FILES` |
+| Notifications | Console, Slack, email, custom factories | Portable console/Slack, R2 email outbox, custom portable factories |
+| Metrics | Process counters and histograms | The same metric format, scoped to each isolate |
+| Security audit | Append-only file logger | D1 journal; request logging is best-effort |
+| Cache | Memory or Redis | Optional KV; increments are non-atomic and bulk clear is unsupported |
+| Plugin tokens | Built-in Node token lifecycle | Application-provided `pluginAuth` lifecycle |
+| Operations | Hot reload, admin server, Node tracing | Wrangler/bindings and platform observability |
+
+Both runtimes' file routes serve existing public files. Neither provides a generic
+upload API. The development email adapters write outboxes; use a delivery adapter
+for sending mail.
+
+Workers initialize enabled bundled plugins before fetch, cron, and native workflow
+execution. They expose workflow actions and service integrations. Bundle custom
+commands through `commandHandlers`; discovery includes only configured handlers.
+Bundled plugins run as trusted application code, without a separate plugin sandbox.
+
+## D1 transaction constraints
+
+Workers snapshot all Blueprint entity tables, execute database-only steps against
+the snapshot, validate the original data and schema, and commit mutations in one
+atomic batch. Concurrent changes can return retryable `409 TRANSACTION_CONFLICT`,
+including changes to rows that influence authorization. This differs from Node's
+database locking behavior and can produce conservative conflicts.
+
+Custom SQL triggers, virtual tables, foreign keys outside the Blueprint, and
+foreign-key checks deferred across steps are unsupported. Snapshot work scales
+with the entire entity dataset. Validate cost and conflict rates for large or
+frequently written databases. Transactions expire after five minutes; a workflow
+timeout can impose a shorter deadline.
+
+Both runtimes reject external effects and custom command handlers in transactional
+workflows. General workflows support them. External services need idempotency
+because a service may accept an effect before the runtime records its checkpoint.
+An explicit Worker retry restarts execution; Node preserves successful command
+receipts across retry generations. Retention and recovery follow each platform's
+job store rather than an identical implementation.
+
+See [runtime and deployment](/run/runtime/) for bindings and entrypoint examples.

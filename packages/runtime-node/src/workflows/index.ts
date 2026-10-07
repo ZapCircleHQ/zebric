@@ -3,6 +3,8 @@
  */
 
 export * from './workflow-queue.js'
+export * from './durable-workflow-queue.js'
+export * from './workflow-store.js'
 export * from './workflow-manager.js'
 export * from './workflow-executor.js'
 export * from './http-client.js'

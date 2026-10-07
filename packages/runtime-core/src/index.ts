@@ -68,3 +68,6 @@ export * from './widgets/index.js'
 
 // Controls (shared between form fields and widgets)
 export * from './controls/index.js'
+
+export * from './monitoring/metrics.js'
+export * from './monitoring/query-metrics.js'

@@ -5,15 +5,29 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 ## Engine Features
 
 - ✅ **Platform-agnostic business logic** - Uses @zebric/runtime-core for routing, auth, validation
-- ✅ **Session management** - KV-backed sessions with automatic expiration
+- ✅ **Authentication** - Better Auth on D1, the same auth pages/API paths as Node, or an injected provider
+- ✅ **Session management** - Better Auth sessions or optional KV-backed custom sessions
 - ✅ **D1 database** - Cloudflare D1 SQL database adapter
 - ✅ **Shared HTTP routes** - Uses @zebric/runtime-hono for pages, widgets, and lookup search
-- ❌ **Workflows** - Rejected during initialization until a Workers executor is available
+- ✅ **Entity API** - Node-compatible CRUD paths with API-key roles and scopes
+- ✅ **Discovery** - Honest OpenAPI and `/.well-known/zebric-agent.json` metadata
+- ✅ **Domain commands** - Declarative commands use the shared policy, validation, and protected-field pipeline
+- ✅ **D1 transactions** - Database-only workflows support intermediate reads, conditions, loops, and declarative commands with atomic commits
+- ✅ **Durable command replay** - Command mutations and successful responses commit together in D1
+- ✅ **Workflow event outbox** - Atomic trigger intents with leased delivery, retries, and recovery across restarts
+- ✅ **Audit history** - D1-backed command, CRUD write, and workflow outcome records with authorized history queries
+- ✅ **Durable command events** - Transactional event journal and authenticated SSE delivery across isolates with reconnect cursors
+- ✅ **File-backed templates** - Bundle imported files or preload them from KV
+- ✅ **Web security** - Security headers and double-submit CSRF for cookie-authenticated apps
+- ✅ **General workflows** - Queries, intermediate results, commands, services, control flow, delays, and external effects
+- ✅ **Durable workflow jobs** - Optional Cloudflare Workflows checkpoints, durable delays, retries, timeouts, and lifecycle controls
+- ✅ **Workflow webhooks** - Bearer or timestamped HMAC authentication for inbound triggers
 
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
-`WorkersCookieManager`, `KVTemplateLoader`, and `BehaviorRegistry` as low-level
-adapters. These are available for custom Worker composition but are not
-automatically wired into `ZebricWorkersEngine`.
+`WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
+`BehaviorRegistry` as low-level adapters. `CACHE_KV` and `FILES` make cache and
+storage adapters available from the engine. `FILES` also serves public objects
+at `/uploads/<key>`; the reserved `_zebric/` prefix is private. Cache use remains explicit; the remaining adapters support custom Worker composition.
 
 ## Installation
 
@@ -29,12 +43,12 @@ Copy `wrangler.example.toml` to `wrangler.toml` and configure your bindings:
 
 ```toml
 compatibility_date = "2025-11-09"
-compatibility_flags = ["formdata_parser_supports_files"]
-node_compat = true
+compatibility_flags = ["nodejs_compat", "formdata_parser_supports_files"]
 
-[[kv_namespaces]]
-binding = "SESSIONS"
-id = "your-kv-id"
+[[rules]]
+type = "Text"
+globs = ["**/*.toml", "**/*.liquid"]
+fallthrough = true
 
 [[d1_databases]]
 binding = "DB"
@@ -48,47 +62,364 @@ bucket_name = "your-bucket"
 ### 2. Create Your Worker
 
 ```typescript
-import { Hono } from 'hono'
-import { BlueprintHttpAdapter } from '@zebric/runtime-hono'
-import {
-  WorkersSessionManager,
-  WorkersQueryExecutor,
-  D1Adapter
-} from '@zebric/runtime-worker'
-import { blueprint } from './blueprint'
+import { createWorkerHandler } from '@zebric/runtime-worker'
+import blueprintToml from './blueprint.toml'
 
-export interface Env {
-  SESSIONS: KVNamespace
-  DB: D1Database
-}
-
-export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const db = new D1Adapter(env.DB)
-    const queryExecutor = new WorkersQueryExecutor(db, blueprint)
-    const sessionManager = new WorkersSessionManager({
-      kv: env.SESSIONS
-    })
-
-    const adapter = new BlueprintHttpAdapter({
-      blueprint,
-      queryExecutor,
-      sessionManager
-    })
-
-    const app = new Hono()
-    app.get('/health', async () => new Response(JSON.stringify({ status: 'healthy' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    }))
-    app.all('*', (c) => adapter.handle(c.req.raw))
-
-    return app.fetch(request, env, ctx)
-  }
-}
+export default createWorkerHandler({
+  blueprintContent: blueprintToml,
+  blueprintFormat: 'toml',
+})
 ```
 
-> `ZebricWorkersEngine` and `createWorkerHandler` now use this same Hono-based adapter internally. If you already have other Hono routes, you can compose Zebric by mounting the adapter in your existing `app`.
+`createWorkerHandler` retains one engine per Worker isolate. Bind `WORKFLOWS`
+for durable jobs and workflow submission idempotency across isolates.
+
+## Authentication
+
+When the Blueprint contains an `[auth]` block, the engine initializes Better
+Auth directly against the `DB` D1 binding. It mounts `/api/auth/*`,
+`/auth/sign-in`, `/auth/sign-up`, and `/auth/sign-out`, and uses the resulting
+session for page and entity authorization.
+
+Set a stable public origin and a high-entropy secret:
+
+```toml
+[vars]
+BETTER_AUTH_URL = "https://app.example.com"
+```
+
+```bash
+wrangler secret put BETTER_AUTH_SECRET
+```
+
+Better Auth's `user`, `session`, `account`, and `verification` tables must be
+included in your D1 migrations before enabling auth. Generate the schema with
+the Better Auth CLI for the installed version, then apply it with Wrangler.
+Workers auth and transactions require the `nodejs_compat` compatibility flag.
+
+For a custom identity service, pass `authProvider` and optionally
+`sessionManager` to `ZebricWorkersEngine`; the provider's standard `handler`
+is still mounted at the Node-compatible auth API path.
+
+## File-backed templates
+
+Workers do not have a deployment filesystem like Node. Import template files
+as text and pass their contents keyed by the exact Blueprint `source` path:
+
+```typescript
+import pageTemplate from './templates/page.html'
+
+const engine = new ZebricWorkersEngine({
+  env,
+  blueprint,
+  templates: {
+    'templates/page.html': pageTemplate,
+  },
+})
+```
+
+Wrangler imports `.html` as text by default. The configuration above adds text
+module rules for Blueprint `.toml` and template `.liquid` files. Alternatively,
+bind a KV namespace as `TEMPLATES_KV`; keys use the `template:` prefix by
+default and the engine preloads all file-backed
+page, slot, and auth templates before serving a request.
+
+## Entity values
+
+Workers creates generate missing ULID primary keys and apply Blueprint field
+defaults, including `false`, `0`, and date defaults of `"now"`. JSON fields round-trip as structured values. DateTime input accepts ISO dates
+and `datetime-local` strings (interpreted as UTC); blank optional values become
+`null` and invalid dates are rejected before writing. DateTime output is an ISO
+string in Workers and a Date in Node's programmatic query API; JSON responses
+use the same ISO representation.
+
+Creates also populate
+`createdAt`, `updatedAt`, and missing user ownership fields from the session,
+matching Node creates. Explicit values override defaults, including `null`.
+
+Declared Boolean fields accept booleans, `0`/`1`, and form strings
+`"true"`/`"false"`, `"on"`/`"off"`, `"1"`/`"0"` (empty strings mean false).
+Writes store SQLite integers; reads restore JavaScript booleans before policy
+checks and rendering. Rules such as `{ published = true }` allow published rows
+while continuing to hide drafts. Other field types keep their original values.
+
+These behaviors apply to transactional workflows and prepared batch mutations
+as well as regular CRUD. SQL ID defaults and Boolean coercion triggers are no
+longer needed for new writes. Existing incorrectly stored rows require a data
+correction before removing their workarounds; restore the Blueprint's intended
+read rules when deploying the updated runtime.
+
+## Workflows
+
+Workers execute declarative domain commands and general workflows.
+Query results and external results can be assigned with `assignTo` and passed to
+later steps; nested conditions and loops support assignments too. Query and command
+mutations preserve the initiating session and propagate entity triggers with cycle
+and depth limits. Manual actions and workflow-backed Agent API skills use this executor.
+`createWorkerHandler` also handles configured Cloudflare cron triggers.
+
+Pass `workflowServices` to the engine or handler to inject a shared `ServiceRegistry`,
+email service, notification service, plugin registry, or HTTP client. Webhook steps
+use native `fetch` by default. Incoming webhook integration is available through
+`engine.getWorkflowExecutor().triggerWebhook(path, request, authorize)`; application
+code must authenticate the request and provide the authorization callback, or use
+the authenticated `/webhooks/*` routes described below.
+
+Transactional workflows support create/update/delete/find queries, intermediate
+results, nested conditions and loops, and declarative commands. External effects
+and unrestricted command handlers are rejected at startup. Commands execute their
+record reads, availability checks, policies, and mutations in the same transaction.
+Entity triggers run after commit and are suppressed on rollback.
+
+D1 evaluates these operations against isolated snapshots of all Blueprint entity
+tables, then validates the original data and schema and commits mutations in one
+atomic batch. Concurrent changes abort the transaction; command APIs return a
+retryable `409 TRANSACTION_CONFLICT`. This also detects newly inserted rows that
+could change a policy result. Nested transactions join the outer transaction
+without opening a savepoint, matching Node. Errors escaping the outer callback
+roll back all its mutations.
+
+Snapshots preserve defaults, generated columns, indexes, and foreign keys between
+Blueprint entities. Custom SQL triggers, virtual tables, and foreign keys pointing
+outside the Blueprint are unsupported. Constraints are checked after each staged
+statement; deferring foreign-key checks across steps is unsupported. Transactions
+have a five minute lifetime; workflow timeouts can impose a shorter limit. Runtime storage uses reserved
+`_zebric_` names. Successful and failed attempts clean their snapshot tables;
+expired workspace manifests are reclaimed by subsequent transactions after an
+interrupted Worker. Snapshot storage and validation scale with the full entity
+dataset, so large databases and frequent concurrent writes can be expensive and
+cause conservative conflicts.
+
+With a `WORKFLOWS` binding, jobs execute asynchronously through Cloudflare Workflows.
+Completed effects and their typed results are checkpointed; delays use durable sleep.
+Job ownership and lifecycle leases are stored in D1's private
+`_zebric_workflow_jobs` and `_zebric_workflow_job_controls` tables, initialized
+on first use, so authorized polling works across isolates. Workflow-backed Agent API
+idempotency keys also resolve to the same durable instance across isolates and reject
+conflicting input.
+
+Command APIs persist successful responses in `_zebric_command_receipts`, in the
+same atomic batch as their mutations. An `Idempotency-Key` is scoped to the
+authenticated principal; replay returns the original status, headers, and body
+across isolates and restarts. Concurrent requests with the same key commit once;
+reusing a key with a different command, record, or input returns
+`409 IDEMPOTENCY_KEY_REUSE`. Failed transactions save no receipt and can be retried.
+Receipts have no automatic expiry; removing a receipt permits that key to execute
+again. Authentication, scopes, and agent attribution are checked before replay.
+
+Command-triggered workflow events and transactional workflow events are persisted
+in `_zebric_workflow_outbox` in the same commit as their mutations and receipts.
+The outbox retains the initiating actor and the readable before/after records;
+provider-specific session fields are omitted. Failed transactions enqueue nothing.
+Replaying a successful command does not enqueue a second event.
+
+Delivery uses fenced leases, lease renewal, and exponential backoff. A failed or
+interrupted delivery stays pending for a later recovery tick. Stable child-job IDs
+prevent duplicate native Workflow submissions, including partial fanout and lost
+acknowledgements. Retained terminal job metadata prevents resubmission if the
+provider no longer reports an instance. Transactional inline child workflows also
+replay their committed
+results. Delivery evaluates triggers against the current Blueprint; a removed or
+disabled trigger is skipped.
+
+Fetch and cron handlers recover pending events, with each recovery tick handling
+up to 25 events. `createWorkerHandler`
+uses `ExecutionContext.waitUntil` for fetch recovery; direct `engine.fetch` calls
+await recovery unless passed an execution context. `engine.deliverWorkflowEvents`
+and `executor.deliverPendingEvents` expose explicit recovery ticks. Configure a
+cron to recover events while the application has no incoming traffic. Committed
+command responses remain successful when trigger delivery needs a retry. Delivered
+outbox rows are retained for diagnostics; pending rows do not expire.
+
+Without a `WORKFLOWS` binding, delivery to nontransactional inline workflows is
+at least once: interruption or lease loss can repeat effects. External integrations
+still need their own idempotency keys.
+
+Transactional workflow results and event intents are also stored atomically,
+protecting mutations if a native Workflow checkpoint is lost. Nontransactional
+workflow command steps use the same durable commit and replay boundary.
+
+`retries` sets the maximum total attempts per effect (default 3), and `timeout` sets
+its per-attempt timeout in milliseconds (default 30000). A complete transaction
+is one effect. Explicit retry restarts a failed job from the beginning. As with other
+retrying systems, an effect can finish before its checkpoint is recorded; outbound
+integrations should use idempotency keys when repeating an effect would be harmful.
+
+Without the binding, execution is awaited inline. Inline jobs support the same
+step retry policy, cancellation, and timeout; their job metadata and workflow
+submission cache remain isolate-local. Command receipts remain durable without
+a `WORKFLOWS` binding. Cancellation and timeouts stop subsequent steps, but cannot
+undo completed effects or forcibly stop an injected adapter that ignores cancellation.
+Inline jobs expire after an hour and retain at most 1000 terminal jobs per isolate.
+
+Authenticated owners can poll `GET /api/jobs/:id`, cancel with
+`POST /api/jobs/:id/cancel`, and retry failures with `POST /api/jobs/:id/retry`.
+Cookie-authenticated mutations require CSRF; API-key agents must provide
+`X-Agent-Run-ID`. The executor also exposes `getJobs`, `cancelJob`, `retryJob`, and
+`cleanup` for application-managed lifecycle tasks. Durable instances use Cloudflare's
+retention policy; D1 ownership metadata is cleaned explicitly with `cleanup`.
+
+### Durable workflow deployment
+
+Export a Workflow entrypoint in addition to the Worker handler. Use the same
+Blueprint and adapter configuration for both; an environment resolver can construct
+service adapters from each isolate's bindings.
+
+```typescript
+import { createWorkerHandler } from '@zebric/runtime-worker'
+import { createWorkflowEntrypoint } from '@zebric/runtime-worker/workflows'
+import blueprintToml from './blueprint.toml'
+
+const config = { blueprintContent: blueprintToml, blueprintFormat: 'toml' as const }
+export class ZebricWorkflow extends createWorkflowEntrypoint(config) {}
+export default createWorkerHandler(config)
+```
+
+```toml
+[[workflows]]
+name = "zebric-workflows"
+binding = "WORKFLOWS"
+class_name = "ZebricWorkflow"
+
+[triggers]
+crons = ["0 * * * *"] # Must match a workflow trigger.schedule
+```
+
+Incoming `/webhooks/*` routes match workflow `trigger.webhook` paths. Set
+`ZEBRIC_WEBHOOK_SECRET` (or `trigger.webhookSecretEnv`) as a Worker secret. Requests
+must present that secret as a bearer credential, or use a timestamped HMAC:
+`X-Zebric-Webhook-Timestamp` contains Unix seconds and
+`X-Zebric-Webhook-Signature` contains `sha256=<hex HMAC-SHA256(secret, timestamp + "." + rawBody)>`.
+Signatures expire after five minutes. Each workflow sharing a path is authorized
+against its own secret. The low-level `triggerWebhook` API still requires an
+application-provided authorization callback.
+
+## Audit history and command events
+
+The engine records successful commands and CRUD writes in `_zebric_audit`.
+Mutation history commits in the same D1 batch as the mutation and, when present,
+its command receipt. Rollbacks save no successful mutation history, and receipt
+replay does not append another entry. Workflow mutations include the workflow name;
+transactional workflow completion is also recorded inside its commit. Failed
+workflow outcomes are recorded separately after rollback. Stable workflow audit
+IDs prevent duplicate lifecycle entries when a native checkpoint is replayed.
+
+`GET /api/audit?entity=Item&recordId=item-1` returns newest entries first, with
+optional `command`, `workflow`, `actorId`, and `limit` filters (`limit` is 1–200,
+default 50). Authentication and current record read access are required; agent
+credentials also need `entity.item.get`. Unreadable mutation fields are removed
+from responses, and common password, secret, token, authorization, cookie, and API-key fields are
+redacted before storage. Deleted or inaccessible records have no public history
+through this route. Scheduled/manual workflow outcomes without a domain record
+remain available through the trusted `D1RuntimeJournal` storage API.
+
+Commands also append routing metadata to `_zebric_domain_events` inside the same
+commit. `GET /api/agent/events` streams SSE events such as `domain.ApproveRequest`,
+using the Node route and event envelope. Events contain command, entity, record,
+actor, and correlation metadata; they do not contain record values. Delivery is
+private to the initiating credential or user, requires current record read access,
+and checks agent entity scopes. Sessions and record access are rechecked during
+delivery. Changes from other Worker isolates are visible because the stream polls
+D1 once per second while idle; heartbeats are sent every 15 seconds. Disconnects
+release the polling timer.
+
+Without `Last-Event-ID`, a connection starts with new events. To resume, supply the
+last numeric SSE ID in that header; `Last-Event-ID: 0` replays all authorized events
+for the credential. Clients should remember the last processed ID and handle
+redelivery on reconnect. Audit and event rows are retained without automatic
+pruning. The tables are initialized automatically; no extra binding is required.
+Audited CRUD uses the same snapshot transactions and SQL restrictions as workflows.
+
+## Runtime parity and platform constraints
+
+The shared suite in `tests/runtime-conformance/contracts.ts` runs the same
+contracts against Node SQLite and Miniflare D1: values, read policies, pagination,
+query placeholders, protected commands, nested transactions, commit effects,
+transactional workflow control flow and rollback, CRUD, discovery, agent scopes,
+CSRF, and command replay. Run `pnpm test:parity` from the repository root.
+Worker smoke tests also bundle and execute real entrypoints inside `workerd`.
+These checks cover the declared contract; they do not prove equivalent performance
+or every Node integration.
+
+- Worker transactions use full entity snapshots and optimistic conflict checks.
+  Custom SQL triggers, virtual tables, external foreign keys, deferred constraints,
+  and dataset scaling restrictions remain as described above.
+- Durable workflow jobs require a `WORKFLOWS` binding; inline jobs remain local.
+  An explicit Worker job retry restarts execution; integrations must tolerate
+  repeated effects. Node and Cloudflare use different retention/checkpoint stores.
+- Node's filesystem, dynamic plugin loader, PostgreSQL/Redis adapters, hot reload,
+  admin server, and tracing integrations remain platform-specific.
+- Bundled plugins run as trusted application code. The default Worker plugin API
+  exposes query, workflow, event, logging, R2 storage, KV cache, and current-user
+  helpers. Token issuance/revocation requires an application `pluginAuth` provider.
+  KV increments are non-atomic and `clear()` retains its documented limitations.
+
+## Bundled plugins and command handlers
+
+Pass `plugins: { '<blueprint-plugin-name>': importedPlugin }`. Enabled Blueprint
+plugins must be supplied; initialization runs once per engine before requests,
+cron, and native jobs, including when requests arrive concurrently. A failed
+initialization stays failed, avoiding duplicated initialization effects. Required
+auth, cache, and storage bindings are checked before init. Workflow actions and
+named service integrations resolve from the loaded plugins.
+
+Pass `commandHandlers: { '<blueprint-handler-reference>': importedHandler }` for
+custom commands. Supplied handlers appear in discovery and use the shared command
+policy/validation/protected-field pipeline. Unsupplied handlers are omitted.
+Handlers and external effects remain disallowed inside transactional workflows.
+Programmatic workflow callers should first `await engine.ensureReady()`.
+Use an environment resolver for `createWorkerHandler` and `createWorkflowEntrypoint`
+when initialization depends on bindings.
+
+## Notifications, files, and observability
+
+Blueprint notifications initialize automatically. Console and Slack adapters are
+portable; Slack reads `botTokenEnv`, `defaultChannelEnv`, and `signingSecretEnv`
+from bindings, falling back to `SLACK_BOT_TOKEN`, `SLACK_DEFAULT_CHANNEL`, and
+`SLACK_SIGNING_SECRET`. Signed `/notifications/:adapterName/inbound` callbacks
+trigger matching workflows after adapter authentication; verification challenges
+only receive an acknowledgement. Inbound routes use adapter authentication in
+place of browser CSRF.
+
+The development `email` adapter writes one private R2 object per message under
+`_zebric/email-outbox/<adapter>/`, requiring `FILES` and `from` configuration.
+It does not send email. Override it or add adapter types through the per-engine
+`notificationFactories` map. Invalid notification configuration fails startup.
+An explicitly injected `workflowServices.notificationService` takes precedence
+for workflow sends.
+
+Objects outside `_zebric/` in `FILES` are publicly served at `/uploads/<key>`
+with their stored MIME type. This matches Node's static file route. Uploads remain
+application-managed through `getStorage()` or the plugin storage API.
+
+`GET /metrics` exports shared `zbl_*` Prometheus counters and histograms;
+`getMetrics()` returns a snapshot. HTTP labels use route patterns rather than
+record IDs. Counts belong to the current isolate, not the whole deployment.
+Auth outcomes, CSRF violations, denied requests, and page/API reads join mutation
+history in `_zebric_audit`. Request audit persistence is best-effort, matching
+Node's security logger; transactional mutation auditing still commits atomically.
+
+## Entity API and API keys
+
+Workers expose the same generic entity paths as Node:
+
+```text
+GET    /api/items
+POST   /api/items
+GET    /api/items/:id
+PUT    /api/items/:id
+DELETE /api/items/:id
+```
+
+API keys declared in `[[auth.apiKeys]]` are read from Worker secret bindings
+using `keyEnv`. Keys receive their configured roles, scopes, and constraints;
+entity routes require scopes such as `entity.item.list` and
+`entity.item.update`. Agent mutations must also include `X-Agent-Run-ID`.
+Valid API keys bypass browser CSRF checks, while invalid bearer values do not.
+
+Discovery is available at `/.well-known/zebric-agent.json` and
+`/api/openapi.json`. Worker metadata includes supported declarative commands and
+general and D1-batch workflow skills while omitting command handlers that were not bundled.
 
 ## Session Management
 
@@ -110,6 +441,10 @@ const { sessionId, csrfToken } = await sessionManager.createSession(
 const cookie = sessionManager.createSessionCookie(sessionId)
 response.headers.set('Set-Cookie', cookie)
 ```
+
+`WorkersSessionManager` is the lower-level KV session adapter. It remains useful
+for custom auth providers; the engine uses Better Auth sessions by default when
+the Blueprint has `[auth]`.
 
 ### Getting Sessions
 
@@ -378,3 +713,14 @@ pnpm wrangler deploy
 ## License
 
 MIT
+
+## Operational notes
+
+- `BETTER_AUTH_SECRET` is required unless the auth base URL is `localhost`.
+- Entities may not map to reserved API paths (`/api/jobs`, `/api/commands`,
+  `/api/auth`); the engine throws at startup if one does.
+- CSRF checks apply whenever a request carries a session. Valid API-key bearer
+  requests are exempt.
+- Discovery endpoints send open CORS headers only for Blueprints without `[auth]`.
+- A Blueprint with no `[auth]` permissions or entity access rules leaves the entity
+  CRUD API open to anonymous callers, matching core access-control defaults.
