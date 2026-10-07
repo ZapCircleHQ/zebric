@@ -41,3 +41,5 @@ export type { WorkflowEventIntent } from './workflows/d1-workflow-outbox.js'
 export type { WorkersWorkflowServices, WorkersWorkflowJob } from './workflows/d1-workflow-executor.js'
 
 export type { DurableWorkflowPayload, DurableWorkflowStep, DurableWorkflowBinding } from './workflows/durable-workflow.js'
+
+export { BundledPluginRegistry } from './plugins/bundled-plugins.js'

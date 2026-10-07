@@ -67,4 +67,19 @@ describe('AuditLogger agent attribution', () => {
         metadata: expect.objectContaining({ mutation: { status: 'approved' } }),
       })])
   })
+  it('redacts nested mutation secrets and credential headers before storage', () => {
+    root = mkdtempSync(join(tmpdir(), 'zebric-audit-'))
+    const path = join(root, 'audit.log')
+    const logger = new AuditLogger({ logPath: path })
+    logger.log({ eventType: AuditEventType.DATA_CREATE, action: 'Create', metadata: {
+      mutation: { payload: [{ token: 'nested-secret', visible: false }] },
+      headers: { authorization: 'Bearer credential', cookie: 'session=private' },
+    } })
+    const contents = readFileSync(path, 'utf8')
+    expect(contents).not.toContain('nested-secret')
+    expect(contents).not.toContain('Bearer credential')
+    expect(contents).not.toContain('session=private')
+    expect(JSON.parse(contents).metadata.mutation.payload).toEqual([{ token: '[REDACTED]', visible: false }])
+  })
+
 })

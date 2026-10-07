@@ -656,6 +656,9 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
+      '@zebric/notifications':
+        specifier: workspace:*
+        version: link:../notifications
       '@zebric/runtime-core':
         specifier: workspace:*
         version: link:../runtime-core

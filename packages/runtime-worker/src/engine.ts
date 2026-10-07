@@ -4,9 +4,13 @@
  * CloudFlare Workers adapter for Zebric runtime.
  */
 
-import { BlueprintParser, CommandExecutor, DomainError, ValidationFailureError, commandOperationId, detectFormat, ErrorSanitizer, HTMLRenderer, SessionManager, defaultTheme, getInjectedCsrfTokenFromRequest, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
-import type { AuthProvider, Blueprint, Command, SessionManagerPort, TemplateLoader, Theme, UserSession } from '@zebric/runtime-core'
+import { BlueprintParser, CommandExecutor, MetricsRegistry, instrumentQueries, ServiceRegistry, DomainError, ValidationFailureError, commandOperationId, detectFormat, ErrorSanitizer, HTMLRenderer, SessionManager, defaultTheme, getInjectedCsrfTokenFromRequest, injectCsrfTokenIntoRequest } from '@zebric/runtime-core'
+import type { AuthProvider, Blueprint, Command, CommandHandler, EngineAPI, Plugin, SessionManagerPort, TemplateLoader, Theme, UserSession } from '@zebric/runtime-core'
 import { Hono } from 'hono'
+import { createPortableNotificationManager, type AdapterFactory, type NotificationManager } from '@zebric/notifications/portable'
+import { WorkersSecurityAudit } from './audit/security-audit.js'
+import { R2EmailOutbox } from './notifications/r2-email-outbox.js'
+import { BundledPluginRegistry } from './plugins/bundled-plugins.js'
 import { D1Adapter } from './database/d1-adapter.js'
 import { KVCache } from './cache/kv-cache.js'
 import { WorkersSessionManager } from './session/session-manager.js'
@@ -37,7 +41,7 @@ export interface WorkersEnv {
   SESSION_KV?: KVNamespace
   /** Optional source for Blueprint templates with type = "file". */
   TEMPLATES_KV?: KVNamespace
-  /** Creates the storage returned by getStorage(); upload routes are not automatic. */
+  /** Serves stored R2 objects at /uploads/* and exposes getStorage(). */
   FILES?: R2Bucket
 
   // Environment variables
@@ -56,6 +60,13 @@ export interface WorkersAuthConfig {
 export interface WorkersEngineConfig {
   env: WorkersEnv
   workflowServices?: WorkersWorkflowServices
+  notificationFactories?: ReadonlyMap<string, AdapterFactory>
+  /** Statically imported modules keyed by Blueprint plugin name. */
+  plugins?: Readonly<Record<string, Plugin>>
+  /** Statically imported command handlers keyed by Blueprint handler reference. */
+  commandHandlers?: Readonly<Record<string, CommandHandler>>
+  /** Optional plugin token lifecycle supplied by the application identity provider. */
+  pluginAuth?: EngineAPI['auth']
   blueprint?: Blueprint // Pre-parsed blueprint
   blueprintContent?: string // Raw blueprint content (JSON/TOML)
   blueprintFormat?: 'json' | 'toml' // Format of blueprintContent
@@ -89,10 +100,17 @@ export class ZebricWorkersEngine {
   private apiKeys: WorkersApiKeyRegistry
   private commandExecutor: CommandExecutor
   private workflowExecutor: D1WorkflowExecutor
+  private readonly metrics = new MetricsRegistry()
+  private readonly securityAudit: WorkersSecurityAudit
+  private readonly notifications: NotificationManager
+  private readonly plugins: BundledPluginRegistry
+  private readonly services: ServiceRegistry
+  private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   private idempotency = new WorkersIdempotencyCache()
 
   constructor(private config: WorkersEngineConfig) {
     this.db = new D1Adapter(config.env.DB)
+    this.securityAudit = new WorkersSecurityAudit(this.db)
 
     if (config.env.CACHE_KV) {
       this.cache = new KVCache(config.env.CACHE_KV)
@@ -115,7 +133,18 @@ export class ZebricWorkersEngine {
       throw new Error('Blueprint must be provided via config.blueprint, config.blueprintContent, or env.BLUEPRINT')
     }
 
+    this.plugins = new BundledPluginRegistry(this.blueprint, config.plugins)
+    this.services = new ServiceRegistry(this.blueprint.services, {
+      resolveHandler: (service, operation) => {
+        const name = service.plugin ?? service.name
+        const integrations = this.plugins.get(name)?.plugin.integrations
+        const implementation = integrations?.[service.name] ?? integrations?.[name] ?? integrations
+        const handler = implementation?.[operation]
+        return typeof handler === 'function' ? (params, context) => handler(params, context) : undefined
+      },
+    })
     this.apiKeys = new WorkersApiKeyRegistry(this.blueprint, config.env)
+    this.notifications = createPortableNotificationManager(this.blueprint.notifications, config.env as unknown as Record<string, unknown>, new Map([['email', (adapter: Parameters<AdapterFactory>[0]) => new R2EmailOutbox(adapter, config.env.FILES)], ...(config.notificationFactories ?? [])]))
 
     this.authProvider = config.authProvider
     if (!this.authProvider && this.blueprint.auth) {
@@ -161,12 +190,14 @@ export class ZebricWorkersEngine {
       this.templateLoader,
     )
 
-    this.queryExecutor = new WorkersQueryExecutor(this.db, this.blueprint, { auditMutations: true })
+    this.queryExecutor = instrumentQueries(new WorkersQueryExecutor(this.db, this.blueprint, { auditMutations: true }), this.metrics)
     this.commandExecutor = new CommandExecutor(this.blueprint, {
       queryExecutor: this.queryExecutor,
+      services: config.workflowServices?.services ?? this.services,
       commandEffects: { enqueue: effects => this.queryExecutor.enqueueCommandEffects(effects) },
     })
-    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { ...config.workflowServices, commandExecutor: this.commandExecutor, auditLifecycle: true }, config.env.WORKFLOWS)
+    for (const [reference, handler] of Object.entries(config.commandHandlers ?? {})) this.commandExecutor.registerHandler(reference, handler)
+    this.workflowExecutor = new D1WorkflowExecutor(this.blueprint, this.db, this.queryExecutor, { notificationService: this.notifications, pluginRegistry: this.plugins, services: this.services, ...config.workflowServices, commandExecutor: this.commandExecutor, auditLifecycle: true }, config.env.WORKFLOWS)
     const rendererPort = {
       renderPage: (context: any) => this.renderer.renderPage(context)
     }
@@ -186,6 +217,7 @@ export class ZebricWorkersEngine {
           return available.filter(([, allowed]) => allowed).map(([name]) => name)
         },
       },
+      auditLogger: this.securityAudit,
       errorSanitizer: new ErrorSanitizer(false),
     })
 
@@ -196,6 +228,9 @@ export class ZebricWorkersEngine {
       this.registerCsrfProtection()
     }
     this.app.get('/health', async () => this.handleHealthCheck())
+    this.app.get('/metrics', c => c.text(this.metrics.toPrometheus(), 200, { 'Content-Type': 'text/plain; version=0.0.4; charset=utf-8' }))
+    this.registerUploadRoutes()
+    this.registerNotificationRoutes()
 
     if (this.authProvider) {
       this.registerAuthRoutes()
@@ -212,7 +247,7 @@ export class ZebricWorkersEngine {
       sessionManager: this.sessionManager,
     })
 
-    registerWorkersDiscoveryRoutes(this.app, this.blueprint, { durableWorkflows: Boolean(this.config.env.WORKFLOWS) })
+    registerWorkersDiscoveryRoutes(this.app, this.blueprint, { durableWorkflows: Boolean(this.config.env.WORKFLOWS), commandHandlers: Object.keys(config.commandHandlers ?? {}) })
     this.registerCommandRoutes()
     registerJournalRoutes(this.app, {
       blueprint: this.blueprint, journal: new D1RuntimeJournal(this.db), queries: this.queryExecutor,
@@ -231,6 +266,7 @@ export class ZebricWorkersEngine {
    */
   async fetch(request: Request, ctx?: Pick<ExecutionContext, 'waitUntil'>): Promise<Response> {
     try {
+      await this.ensureReady()
       if (!this.templatesReady && this.templateLoader instanceof KVTemplateLoader) {
         this.templatesReady = this.templateLoader.preload(this.collectFileTemplates()).catch(error => {
           // Do not cache a failed preload; the next request retries.
@@ -239,7 +275,7 @@ export class ZebricWorkersEngine {
         })
       }
       await this.templatesReady
-      const response = await this.app.fetch(request, this.config.env)
+      const response = await this.securityAudit.run(async () => this.app.fetch(request, this.config.env))
       const recovery = this.deliverWorkflowEvents()
       if (typeof ctx?.waitUntil === 'function') ctx.waitUntil(recovery)
       else await recovery
@@ -249,7 +285,6 @@ export class ZebricWorkersEngine {
       return new Response(
         JSON.stringify({
           error: 'Internal Server Error',
-          message: error instanceof Error ? error.message : String(error)
         }),
         {
           status: 500,
@@ -308,10 +343,106 @@ export class ZebricWorkersEngine {
     return this.sessionManager
   }
 
+  /** Await this before programmatic workflow execution; fetch, cron, and native jobs do so automatically. */
+  async ensureReady(): Promise<void> {
+    await this.plugins.initialize(this.getEngineAPI(), {
+      db: true, auth: Boolean(this.sessionManager), storage: Boolean(this.storage), cache: Boolean(this.cache),
+    })
+  }
+
+  getPlugins(): BundledPluginRegistry { return this.plugins }
+
+  getEngineAPI(): EngineAPI {
+    const requireCache = () => { if (!this.cache) throw new Error('Plugin cache requires CACHE_KV'); return this.cache }
+    const requireStorage = () => { if (!this.storage) throw new Error('Plugin storage requires FILES'); return this.storage }
+    return {
+      db: this.queryExecutor,
+      blueprint: this.blueprint,
+      auth: this.config.pluginAuth ?? {
+        getCurrentUser: async request => (await this.sessionManager?.getSession(request))?.user ?? null,
+        createSession: async () => { throw new Error('Plugin token creation requires config.pluginAuth') },
+        invalidateSession: async () => { throw new Error('Plugin token invalidation requires config.pluginAuth') },
+      },
+      storage: {
+        upload: (key, data, options) => requireStorage().store(key, data, options?.contentType),
+        download: async key => {
+          const body = await requireStorage().retrieve(key)
+          if (!body) throw new Error(`File not found: ${key}`)
+          return new Response(body).arrayBuffer()
+        },
+        delete: key => requireStorage().delete(key),
+        getUrl: key => `/uploads/${key.split('/').map(encodeURIComponent).join('/')}`,
+      },
+      cache: {
+        get: key => requireCache().get(key), set: (key, value, ttl) => requireCache().set(key, value, ttl),
+        delete: key => requireCache().delete(key), incr: key => requireCache().incr(key),
+        exists: key => requireCache().exists(key), clear: () => requireCache().clear(),
+      },
+      workflows: { trigger: async (name, context) => { await this.workflowExecutor.triggerManual(name, context, context?.session) } },
+      on: (event, listener) => { this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener]) },
+      emit: (event, data) => { for (const listener of this.listeners.get(event) ?? []) listener(data) },
+      log: { debug: console.debug, info: console.info, warn: console.warn, error: console.error },
+    }
+  }
+
+  getMetrics() { return this.metrics.getSnapshot() }
+
+  getNotificationManager(): NotificationManager { return this.notifications }
+
+  private registerUploadRoutes(): void {
+    if (!this.config.env.FILES) return
+    this.app.get('/uploads/*', async c => {
+      let key: string
+      try { key = decodeURIComponent(new URL(c.req.url).pathname.slice('/uploads/'.length)) }
+      catch { return c.json({ error: 'File not found' }, 404) }
+      if (!key || key === '_zebric' || key.startsWith('_zebric/') || key.split('/').some(part => part === '.' || part === '..') || key.includes('\\')) {
+        return c.json({ error: 'File not found' }, 404)
+      }
+      const object = await this.config.env.FILES!.get(key)
+      if (!object) return c.json({ error: 'File not found' }, 404)
+      return new Response(object.body, { headers: {
+        'Content-Type': object.httpMetadata?.contentType ?? 'application/octet-stream',
+        'Content-Length': String(object.size),
+      } })
+    })
+  }
+
+  private registerNotificationRoutes(): void {
+    this.app.all('/notifications/:adapterName/inbound', async c => {
+      const request = c.req.raw.clone()
+      const response = await this.notifications.handleRequest(c.req.param('adapterName'), c.req.raw)
+      if (!response.ok) return response
+      const contentType = request.headers.get('content-type') ?? ''
+      let body: unknown
+      try {
+        body = contentType.includes('application/json') ? await request.json()
+          : contentType.includes('application/x-www-form-urlencoded') ? Object.fromEntries(await request.formData())
+          : await request.text()
+      } catch { body = undefined }
+      if ((body as { type?: string } | undefined)?.type !== 'url_verification') {
+        const path = new URL(request.url).pathname
+        await this.workflowExecutor.triggerWebhook(path, {
+          headers: Object.fromEntries(request.headers), body,
+          query: Object.fromEntries(new URL(request.url).searchParams),
+        }, workflow => workflow.trigger.webhook === path)
+      }
+      return response
+    })
+  }
+
   private registerSecurityHeaders(): void {
     this.app.use('*', async (c, next) => {
-      await next()
-      c.header('X-Request-ID', c.req.header('x-request-id') || crypto.randomUUID())
+      const start = this.metrics.now()
+      const requestId = c.req.header('x-request-id') || crypto.randomUUID()
+      try { await next() }
+      finally { this.metrics.recordRequest(c.req.routePath, c.res.status, this.metrics.now() - start) }
+      if (c.res.status === 401 || c.res.status === 403) {
+        this.securityAudit.log({ eventType: 'access.denied', severity: 'warning', action: c.req.method,
+          resource: new URL(c.req.url).pathname, success: false, requestId })
+      }
+      c.header('X-Request-ID', requestId)
+      c.header('X-Trace-ID', requestId)
+      c.header('X-XSS-Protection', '1; mode=block')
       c.header('Content-Security-Policy', [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline'",
@@ -333,7 +464,12 @@ export class ZebricWorkersEngine {
         if (!instance?.handler) {
           return Response.json({ error: 'Authentication handler is not configured' }, { status: 501 })
         }
-        return await instance.handler(c.req.raw)
+        const response = await instance.handler(c.req.raw)
+        const path = new URL(c.req.url).pathname
+        this.securityAudit.log({ eventType: response.ok ? 'auth.success' : 'auth.failure',
+          severity: response.ok ? 'info' : 'warning', action: c.req.method, resource: path,
+          success: response.ok, requestId: c.req.header('x-request-id') })
+        return response
       } catch (error) {
         console.error('Auth route error:', error)
         return Response.json({ error: 'Authentication failed' }, { status: 500 })
@@ -366,7 +502,7 @@ export class ZebricWorkersEngine {
     this.app.use('*', async (c, next) => {
       const request = c.req.raw
       const method = request.method.toUpperCase()
-      if (new URL(request.url).pathname.startsWith('/webhooks/')) { await next(); return c.res }
+      if (['/webhooks/', '/notifications/'].some(prefix => new URL(request.url).pathname.startsWith(prefix))) { await next(); return c.res }
       const safe = method === 'GET' || method === 'HEAD' || method === 'OPTIONS'
       const cookieToken = WorkersCookieManager.get(request, 'csrf-token')?.trim()
 
@@ -401,6 +537,7 @@ export class ZebricWorkersEngine {
 
       const submitted = await this.extractCsrfToken(request)
       if (!cookieToken || !submitted || cookieToken !== submitted.trim()) {
+        this.securityAudit.log({ eventType: 'csrf.violation', severity: 'warning', action: request.method, resource: new URL(request.url).pathname, success: false })
         return Response.json({ error: 'Invalid CSRF token' }, { status: 403 })
       }
       injectCsrfTokenIntoRequest(request, cookieToken)
@@ -432,7 +569,7 @@ export class ZebricWorkersEngine {
   }
 
   private supportedCommands(): Command[] {
-    return (this.blueprint.commands ?? []).filter(command => !command.handler)
+    return (this.blueprint.commands ?? []).filter(command => !command.handler || Boolean(this.config.commandHandlers?.[command.handler]))
   }
 
   private registerCommandRoutes(): void {
@@ -750,7 +887,15 @@ export class ZebricWorkersEngine {
       if (!agentHasScopes(session, [`entity.${entity.toLowerCase()}.${action}`])) {
         throw new Error('Access denied: insufficient agent scope')
       }
-      return await execute(session)
+      const response = await execute(session)
+      if ((action === 'list' || action === 'get') && response.ok) {
+        this.securityAudit.log({ eventType: 'data.read', severity: 'info', action,
+          resource: new URL(c.req.url).pathname, entityType: entity, entityId: c.req.param('id'),
+          userId: session?.user?.id, actorId: session?.actor?.id ?? session?.user?.id,
+          actorType: session?.actor?.type ?? (session ? 'user' : undefined), success: true,
+          requestId: c.req.header('x-request-id') })
+      }
+      return response
     } catch (error) {
       const label = action === 'get' ? 'Find' : `${action[0]!.toUpperCase()}${action.slice(1)}`
       console.error(`${label} ${entity} error:`, error)
@@ -906,6 +1051,7 @@ export class ZebricWorkersEngine {
   }
 
   async scheduled(cron: string): Promise<void> {
+    await this.ensureReady()
     await this.deliverWorkflowEvents()
     await this.workflowExecutor.triggerSchedule(cron)
   }

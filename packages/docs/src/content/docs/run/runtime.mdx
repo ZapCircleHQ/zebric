@@ -78,8 +78,9 @@ export default createWorkerHandler({
 })
 ```
 
-The handler retains one engine per isolate, which is required for process-local
-workflow job observation and idempotency replay.
+The handler retains one engine per isolate and initializes bundled plugins once.
+Command receipts and event outbox entries persist in D1. Bind `WORKFLOWS` for
+durable workflow jobs and submission replay across isolates.
 
 `WorkersEnv` requires `DB` (D1). When the Blueprint declares `[auth]`, the
 Worker runtime uses Better Auth on that D1 binding and mounts the same
@@ -93,10 +94,12 @@ alternative: store each template under `template:<source>` and the engine will
 preload referenced templates before rendering. `SESSION_KV` remains available
 for custom KV-backed session integrations. `CACHE_KV` creates the adapter
 returned by `engine.getCache()`, but request execution does not use it
-automatically. `FILES` similarly creates the R2 adapter returned by
-`engine.getStorage()`. The engine applies double-submit CSRF protection when
-auth is configured. Upload routes and the separate KV session-backed CSRF
-adapter remain low-level components for custom composition.
+automatically. `FILES` creates the R2 adapter returned by `engine.getStorage()` and serves
+stored objects at `/uploads/<key>`, matching Node's public file-serving route.
+The reserved `_zebric/` object prefix is private and cannot be served there.
+These routes serve existing files; neither runtime provides a generic upload API.
+The engine applies double-submit CSRF protection when auth or sessions are configured.
+The separate KV session-backed CSRF adapter remains available for custom composition.
 
 Workers also expose Node-compatible `/api/<entities>` CRUD routes. Blueprint
 API keys are loaded from Worker secret bindings named by `keyEnv`, with roles,
@@ -105,13 +108,53 @@ can inspect the supported Worker surface at `/.well-known/zebric-agent.json`
 and `/api/openapi.json`.
 
 Workers execute declarative commands through the shared core command pipeline.
-They also support transactional workflows made only of a fixed list of
-create/update/delete query steps; those mutations are compiled and committed in
-one atomic D1 batch. Workflow-backed Agent API skills return observable jobs and
-support per-isolate idempotent replay. Command handlers, intermediate workflow
-results, dynamic control flow, delays, and external effects remain Node-only;
-unsupported operations are omitted from discovery. Worker jobs and idempotency
-entries are process-local rather than durable across isolates.
+Bundle custom command handlers in `commandHandlers`, keyed by their Blueprint
+handler references. General workflows support intermediate query results, typed
+assignments, nested conditions and loops, services, notifications, external effects,
+and delays. Database-only transactional workflows support reads and declarative
+commands with atomic D1 commits and rollback; custom handlers and external effects
+are rejected inside transactional workflows on both runtimes.
+
+With a `WORKFLOWS` binding, workflow jobs use Cloudflare's durable checkpoints,
+delays, retries, and owner-authorized polling, cancellation, and retry routes.
+Without it, workflows run inline and their job metadata and submission replay
+remain isolate-local; command receipts remain durable. Configure native workflows:
+
+```typescript
+import { createWorkerHandler } from '@zebric/runtime-worker'
+import { createWorkflowEntrypoint } from '@zebric/runtime-worker/workflows'
+import blueprintToml from './blueprint.toml'
+
+const config = { blueprintContent: blueprintToml, blueprintFormat: 'toml' as const }
+export class ZebricWorkflow extends createWorkflowEntrypoint(config) {}
+export default createWorkerHandler(config)
+```
+
+```toml
+[[workflows]]
+name = "zebric-workflows"
+binding = "WORKFLOWS"
+class_name = "ZebricWorkflow"
+```
+
+Workers initialize Blueprint notifications automatically. Console and Slack use
+portable adapters; Slack secrets come from Worker bindings and inbound requests
+at `/notifications/<adapter>/inbound` require valid Slack signatures. Email writes
+to a private R2 outbox under `_zebric/email-outbox/`; as with Node's file outbox,
+this development adapter does not deliver mail. Supply `notificationFactories`
+for a delivery provider or another adapter type.
+
+Statically import plugins into the handler's `plugins` map, keyed by Blueprint
+plugin name. Enabled modules initialize once before fetch, cron, or native workflow
+execution. Their workflow actions and named service integrations are available to
+the executor. All bundled plugins are trusted application code; Worker bundling
+does not create a sandbox for a plugin declaring limited trust.
+
+Command, CRUD mutation, and workflow history is persisted in D1. Workers also
+record auth outcomes, CSRF violations, denied requests, and successful page/API
+reads. `/metrics` uses the same Prometheus counters and histograms as Node, with
+isolate-local HTTP/query totals. See [runtime parity and platform differences](/run/parity/)
+for the tested contract and deployment constraints.
 
 ```toml
 # wrangler.toml

@@ -25,7 +25,8 @@
     "release:check": "node scripts/check-release-versions.mjs",
     "release": "pnpm release:check && pnpm build && changeset publish",
     "build:templates": "node scripts/build-layout-templates.mjs",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "test:parity": "pnpm --filter @zebric/runtime-node test:conformance && pnpm --filter @zebric/runtime-worker test:conformance"
   },
   "devDependencies": {
     "@changesets/cli": "^2.31.0",

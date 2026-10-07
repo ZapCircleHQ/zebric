@@ -1,7 +1,7 @@
 import { analyzeTransactionalWorkflow, commandOperationId, generateOpenAPISpec, type Blueprint, type OpenAPISpec } from '@zebric/runtime-core'
 import type { Hono } from 'hono'
 
-export interface WorkersDiscoveryOptions { durableWorkflows?: boolean }
+export interface WorkersDiscoveryOptions { durableWorkflows?: boolean; commandHandlers?: readonly string[] }
 
 export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, options: WorkersDiscoveryOptions = {}): void {
   // The Blueprint is static for the life of the isolate, so build the contract once.
@@ -12,7 +12,7 @@ export function registerWorkersDiscoveryRoutes(app: Hono, blueprint: Blueprint, 
   app.get('/.well-known/zebric-agent.json', async c => {
     const origin = new URL(c.req.url).origin
     const { contract } = await build()
-    const supported = supportedBlueprint(blueprint)
+    const supported = supportedBlueprint(blueprint, options)
     return Response.json({
       name: blueprint.project.name,
       version: blueprint.project.version,
@@ -82,7 +82,7 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string, o
       ],
     }
   })
-  const supported = supportedBlueprint(blueprint)
+  const supported = supportedBlueprint(blueprint, options)
   const apiBlueprint: Blueprint = {
     ...supported,
     skills: [...skills, ...(supported.skills ?? [])],
@@ -109,7 +109,7 @@ export function generateWorkersOpenApi(blueprint: Blueprint, baseUrl?: string, o
   return spec
 }
 
-function supportedBlueprint(blueprint: Blueprint): Blueprint {
+function supportedBlueprint(blueprint: Blueprint, options: WorkersDiscoveryOptions): Blueprint {
   const workflows = (blueprint.workflows ?? []).filter(workflow =>
     workflow.enabled !== false && (!workflow.transactional || analyzeTransactionalWorkflow(workflow, blueprint.commands ?? []).databaseOnly)
   )
@@ -120,7 +120,7 @@ function supportedBlueprint(blueprint: Blueprint): Blueprint {
   })
   return {
     ...blueprint,
-    commands: (blueprint.commands ?? []).filter(command => !command.handler),
+    commands: (blueprint.commands ?? []).filter(command => !command.handler || options.commandHandlers?.includes(command.handler)),
     workflows,
     skills,
   }

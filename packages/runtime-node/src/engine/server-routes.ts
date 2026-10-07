@@ -917,6 +917,13 @@ export function registerAgentEventStreamRoute(
   })
 }
 
+async function parseEntityJson(request: Request): Promise<Record<string, unknown>> {
+  if (!request.headers.get('content-type')?.includes('application/json')) throw new Error('Invalid request: application/json is required')
+  const value: unknown = await request.json().catch(() => null)
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid request: JSON object body is required')
+  return value as Record<string, unknown>
+}
+
 export function registerAPIRoutes(
   app: Hono,
   deps: {
@@ -939,7 +946,7 @@ export function registerAPIRoutes(
 
     app.post(entityPath, async (c) => {
       try {
-        const data = await c.req.json<Record<string, any>>()
+        const data = await parseEntityJson(c.req.raw)
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'create')])) throw new Error('Access denied: insufficient agent scope')
         const attribution = resolveAgentAttribution(c, session)
@@ -1033,7 +1040,7 @@ export function registerAPIRoutes(
     app.put(entityPathWithId, async (c) => {
       try {
         const { id } = c.req.param() as { id: string }
-        const data = await c.req.json<Record<string, any>>()
+        const data = await parseEntityJson(c.req.raw)
         const session = await resolveEntityApiSession(c, sessionManager, apiKeys)
         if (!agentHasScopes(session, [entityScope(entity.name, 'update')])) throw new Error('Access denied: insufficient agent scope')
         const attribution = resolveAgentAttribution(c, session)
@@ -1314,7 +1321,7 @@ async function resolveEntityApiSession(
 
 function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
   const message = error instanceof Error ? error.message : String(error)
-  if (message.startsWith('Invalid agent attribution:')) return 400
+  if (message.startsWith('Invalid request:') || message.startsWith('Invalid agent attribution:')) return 400
   if (message.includes('Access denied')) return 403
   if (message.toLowerCase().includes('not found')) return 404
   return 500

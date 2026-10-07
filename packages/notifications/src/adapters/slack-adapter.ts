@@ -1,5 +1,4 @@
 import type { NotificationAdapter, NotificationPayload } from '../types.js'
-import { createHmac, timingSafeEqual } from 'node:crypto'
 
 export interface SlackAdapterConfig {
   botToken: string
@@ -95,7 +94,7 @@ export class SlackAdapter implements NotificationAdapter {
     }
 
     const rawBody = await request.text()
-    if (!this.verifySlackSignature(request, rawBody, this.config.signingSecret)) {
+    if (!await this.verifySlackSignature(request, rawBody, this.config.signingSecret)) {
       return Response.json({ error: 'Invalid Slack signature' }, { status: 401 })
     }
 
@@ -176,7 +175,7 @@ export class SlackAdapter implements NotificationAdapter {
     }
   }
 
-  private verifySlackSignature(request: Request, rawBody: string, signingSecret: string): boolean {
+  private async verifySlackSignature(request: Request, rawBody: string, signingSecret: string): Promise<boolean> {
     const timestamp = request.headers.get('x-slack-request-timestamp')
     const signature = request.headers.get('x-slack-signature')
     if (!timestamp || !signature) {
@@ -194,14 +193,10 @@ export class SlackAdapter implements NotificationAdapter {
     }
 
     const base = `v0:${timestamp}:${rawBody}`
-    const computed = `v0=${createHmac('sha256', signingSecret).update(base).digest('hex')}`
-
-    const sigBuffer = Buffer.from(signature, 'utf8')
-    const computedBuffer = Buffer.from(computed, 'utf8')
-    if (sigBuffer.length !== computedBuffer.length) {
-      return false
-    }
-
-    return timingSafeEqual(sigBuffer, computedBuffer)
+    if (!/^v0=[a-f0-9]{64}$/.test(signature)) return false
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(signingSecret),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['verify'])
+    const bytes = new Uint8Array(signature.slice(3).match(/../g)!.map(pair => Number.parseInt(pair, 16)))
+    return crypto.subtle.verify('HMAC', key, bytes, new TextEncoder().encode(base))
   }
 }

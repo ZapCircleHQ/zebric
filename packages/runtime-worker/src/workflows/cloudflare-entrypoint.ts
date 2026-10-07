@@ -16,6 +16,7 @@ export function createWorkflowEntrypoint(
         ...(typeof config === 'function' ? config(this.env) : config),
         env: this.env
       })
+      await engine.ensureReady()
       return engine.getWorkflowExecutor().runDurable(event.payload, step)
     }
   }

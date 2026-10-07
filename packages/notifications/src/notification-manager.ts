@@ -6,7 +6,7 @@ import type {
   NotificationsConfig,
 } from './types.js'
 
-type AdapterFactory = (config: NotificationAdapterConfig) => NotificationAdapter
+export type AdapterFactory = (config: NotificationAdapterConfig) => NotificationAdapter
 
 const adapterFactories = new Map<string, AdapterFactory>()
 
@@ -47,13 +47,14 @@ export class NotificationManager {
   private adapters = new Map<string, NotificationAdapter>()
   private defaultAdapter?: string
 
-  constructor(config?: NotificationsConfig) {
+  constructor(config?: NotificationsConfig, factories: ReadonlyMap<string, AdapterFactory> = adapterFactories, options: { strict?: boolean } = {}) {
     const normalized = normalizeConfig(config)
     this.defaultAdapter = normalized.default
 
     for (const adapterConfig of normalized.adapters) {
-      const factory = adapterFactories.get(adapterConfig.type)
+      const factory = factories.get(adapterConfig.type)
       if (!factory) {
+        if (options.strict) throw new Error(`No notification adapter registered for type ${adapterConfig.type}`)
         console.warn(`No notification adapter registered for type "${adapterConfig.type}"`)
         continue
       }
@@ -61,6 +62,7 @@ export class NotificationManager {
         const adapter = factory(adapterConfig)
         this.adapters.set(adapterConfig.name, adapter)
       } catch (error) {
+        if (options.strict) throw error
         console.error(`Failed to initialize notification adapter "${adapterConfig.name}":`, error)
       }
     }

@@ -212,7 +212,9 @@ describe('D1 workflow delivery outbox', () => {
     const blocked = new Promise<void>((resolve) => {
       finish = resolve
     })
-    const store = new D1WorkflowOutbox(db, { leaseMs })
+    let leaseClock = Date.now() + 1000
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const store = new D1WorkflowOutbox(db, { leaseMs, now: () => leaseClock })
     const running = store.drain(async () => {
       started()
       await blocked
@@ -221,6 +223,10 @@ describe('D1 workflow delivery outbox', () => {
     const initial = (await db.query<any>('SELECT lease_expires_at FROM _zebric_workflow_outbox')).rows[0]
       .lease_expires_at
     try {
+      // Advance the lease clock beyond the original deadline, then run a renewal.
+      // D1 round trips may take longer than 300ms on a busy CI host.
+      leaseClock += leaseMs + 1
+      await vi.advanceTimersByTimeAsync(100)
       await expect
         .poll(
           async () =>
@@ -228,11 +234,12 @@ describe('D1 workflow delivery outbox', () => {
         )
         .toBeGreaterThan(initial + leaseMs)
       const second = vi.fn()
-      expect(await new D1WorkflowOutbox(db).drain(second)).toEqual({ delivered: 0, failed: 0 })
+      expect(await new D1WorkflowOutbox(db, { now: () => leaseClock }).drain(second)).toEqual({ delivered: 0, failed: 0 })
       expect(second).not.toHaveBeenCalled()
     } finally {
       finish()
       await running
+      vi.useRealTimers()
     }
   })
 
@@ -387,6 +394,8 @@ describe('D1 workflow delivery outbox', () => {
   })
 
   it('processes newly queued child events without recursive drains', async () => {
+    // Keep the offset clock advancing as child transactions take real time.
+    outbox = new D1WorkflowOutbox(db, { now: () => Date.now() + 1000 })
     await enqueue('parent-event')
     const deliver = vi.fn(async (_event: WorkflowEventIntent, id: string) => {
       if (id === 'parent-event') {

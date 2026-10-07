@@ -79,7 +79,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Execute a Blueprint Query definition
    */
-  async execute(query: Query, context: RequestContext): Promise<any> {
+  async execute(query: Query, context: RequestContext = {}): Promise<any> {
     const entity = this.getEntity(query.entity)
     if (!entity) {
       throw new Error(`Entity not found: ${query.entity}`)
@@ -129,7 +129,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Create a new record
    */
-  async create(entity: string, data: Record<string, any>, context: RequestContext): Promise<any> {
+  async create(entity: string, data: Record<string, any>, context: RequestContext = {}): Promise<any> {
     if (this.requiresAuditTransaction) return this.transaction(() => this.create(entity, data, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
@@ -166,7 +166,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     const result = await this.adapter.query(sql, values)
     const record = this.normalizeRecord(entityDef, result.rows[0] || filteredData)
-    await this.auditMutation(entityDef, 'create', String(record.id), filteredData, context)
+    await this.auditMutation(entityDef, 'create', String(record.id), record, context)
     return filterReadableFields(entityDef, record, context.session)
   }
 
@@ -236,7 +236,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   /**
    * Delete a record
    */
-  async delete(entity: string, id: string, context: RequestContext): Promise<any> {
+  async delete(entity: string, id: string, context: RequestContext = {}): Promise<any> {
     if (this.requiresAuditTransaction) return this.transaction(() => this.delete(entity, id, context))
     const entityDef = this.getEntity(entity)
     if (!entityDef) {
@@ -500,8 +500,21 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       if (field.type === 'Boolean' && normalized[field.name] !== undefined) {
         normalized[field.name] = this.coerceForSqlite(normalized[field.name], field.type)
       }
+      if (field.type === 'DateTime' && Object.prototype.hasOwnProperty.call(normalized, field.name)) {
+        const value = normalized[field.name]
+        if (value === '' || value == null) { normalized[field.name] = null; continue }
+        if (value === 'now') { normalized[field.name] = new Date().toISOString(); continue }
+        const utcValue = typeof value === 'string' && value.includes('T') && !value.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(value)
+          ? `${value}Z` : value
+        const date = utcValue instanceof Date ? utcValue : new Date(utcValue)
+        if (Number.isNaN(date.getTime())) throw new Error(`Invalid DateTime value for ${entity.name}.${field.name}`)
+        normalized[field.name] = date.toISOString()
+      }
     }
-    return this.normalizeRecord(entity, normalized)
+    for (const field of entity.fields) {
+      if (field.type === 'Boolean' && normalized[field.name] != null) normalized[field.name] = Boolean(normalized[field.name])
+    }
+    return normalized
   }
 
   // D1 exposes SQLite integers. Normalize only declared Boolean fields before
@@ -509,6 +522,9 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   private normalizeRecord(entity: Entity, record: Record<string, any>): Record<string, any> {
     const normalized = { ...record }
     for (const field of entity.fields) {
+      if (field.type === 'JSON' && typeof normalized[field.name] === 'string') {
+        normalized[field.name] = JSON.parse(normalized[field.name])
+      }
       if (field.type !== 'Boolean' || normalized[field.name] == null) continue
       const value = normalized[field.name]
       if (value === 1 || value === true) normalized[field.name] = true
@@ -547,9 +563,9 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       if (value === false || value === 0) return 0
       throw new Error('Invalid Boolean value')
     }
+    if (fieldType === 'JSON') return JSON.stringify(value)
     if (typeof value === 'boolean') return value ? 1 : 0
     if (value instanceof Date) return value.toISOString()
-    if (fieldType === 'JSON' && typeof value === 'object') return JSON.stringify(value)
     if (typeof value === 'object' && !ArrayBuffer.isView(value) && !(value instanceof ArrayBuffer)) {
       return JSON.stringify(value)
     }

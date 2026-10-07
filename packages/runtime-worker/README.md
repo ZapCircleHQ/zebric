@@ -26,8 +26,8 @@ Cloudflare Workers runtime adapter for Zebric. Provides platform-specific implem
 The package also exports `KVCache`, `R2Storage`, `WorkersCSRFProtection`,
 `WorkersCookieManager`, `KVTemplateLoader`, `BundledTemplateLoader`, and
 `BehaviorRegistry` as low-level adapters. `CACHE_KV` and `FILES` make cache and
-storage adapters available from the engine, but request execution does not use
-them automatically; the remaining adapters support custom Worker composition.
+storage adapters available from the engine. `FILES` also serves public objects
+at `/uploads/<key>`; the reserved `_zebric/` prefix is private. Cache use remains explicit; the remaining adapters support custom Worker composition.
 
 ## Installation
 
@@ -127,7 +127,13 @@ page, slot, and auth templates before serving a request.
 ## Entity values
 
 Workers creates generate missing ULID primary keys and apply Blueprint field
-defaults, including `false`, `0`, and date defaults of `"now"`. They also populate
+defaults, including `false`, `0`, and date defaults of `"now"`. JSON fields round-trip as structured values. DateTime input accepts ISO dates
+and `datetime-local` strings (interpreted as UTC); blank optional values become
+`null` and invalid dates are rejected before writing. DateTime output is an ISO
+string in Workers and a Date in Node's programmatic query API; JSON responses
+use the same ISO representation.
+
+Creates also populate
 `createdAt`, `updatedAt`, and missing user ownership fields from the session,
 matching Node creates. Explicit values override defaults, including `null`.
 
@@ -324,12 +330,74 @@ redelivery on reconnect. Audit and event rows are retained without automatic
 pruning. The tables are initialized automatically; no extra binding is required.
 Audited CRUD uses the same snapshot transactions and SQL restrictions as workflows.
 
-## Remaining Node parity gaps
+## Runtime parity and platform constraints
 
-Worker transactions currently use full entity snapshots and optimistic conflict
-checks; custom SQL triggers and unrestricted handlers require Node. Node's
-notification/plugin lifecycle, metrics stack, broader authentication/security audit
-coverage, and upload routes also remain Node-only.
+The shared suite in `tests/runtime-conformance/contracts.ts` runs the same
+contracts against Node SQLite and Miniflare D1: values, read policies, pagination,
+query placeholders, protected commands, nested transactions, commit effects,
+transactional workflow control flow and rollback, CRUD, discovery, agent scopes,
+CSRF, and command replay. Run `pnpm test:parity` from the repository root.
+Worker smoke tests also bundle and execute real entrypoints inside `workerd`.
+These checks cover the declared contract; they do not prove equivalent performance
+or every Node integration.
+
+- Worker transactions use full entity snapshots and optimistic conflict checks.
+  Custom SQL triggers, virtual tables, external foreign keys, deferred constraints,
+  and dataset scaling restrictions remain as described above.
+- Durable workflow jobs require a `WORKFLOWS` binding; inline jobs remain local.
+  An explicit Worker job retry restarts execution; integrations must tolerate
+  repeated effects. Node and Cloudflare use different retention/checkpoint stores.
+- Node's filesystem, dynamic plugin loader, PostgreSQL/Redis adapters, hot reload,
+  admin server, and tracing integrations remain platform-specific.
+- Bundled plugins run as trusted application code. The default Worker plugin API
+  exposes query, workflow, event, logging, R2 storage, KV cache, and current-user
+  helpers. Token issuance/revocation requires an application `pluginAuth` provider.
+  KV increments are non-atomic and `clear()` retains its documented limitations.
+
+## Bundled plugins and command handlers
+
+Pass `plugins: { '<blueprint-plugin-name>': importedPlugin }`. Enabled Blueprint
+plugins must be supplied; initialization runs once per engine before requests,
+cron, and native jobs, including when requests arrive concurrently. A failed
+initialization stays failed, avoiding duplicated initialization effects. Required
+auth, cache, and storage bindings are checked before init. Workflow actions and
+named service integrations resolve from the loaded plugins.
+
+Pass `commandHandlers: { '<blueprint-handler-reference>': importedHandler }` for
+custom commands. Supplied handlers appear in discovery and use the shared command
+policy/validation/protected-field pipeline. Unsupplied handlers are omitted.
+Handlers and external effects remain disallowed inside transactional workflows.
+Programmatic workflow callers should first `await engine.ensureReady()`.
+Use an environment resolver for `createWorkerHandler` and `createWorkflowEntrypoint`
+when initialization depends on bindings.
+
+## Notifications, files, and observability
+
+Blueprint notifications initialize automatically. Console and Slack adapters are
+portable; Slack reads `botTokenEnv`, `defaultChannelEnv`, and `signingSecretEnv`
+from bindings, falling back to `SLACK_BOT_TOKEN`, `SLACK_DEFAULT_CHANNEL`, and
+`SLACK_SIGNING_SECRET`. Signed `/notifications/:adapterName/inbound` callbacks
+trigger matching workflows after adapter authentication; verification challenges
+only receive an acknowledgement. Inbound routes use adapter authentication in
+place of browser CSRF.
+
+The development `email` adapter writes one private R2 object per message under
+`_zebric/email-outbox/<adapter>/`, requiring `FILES` and `from` configuration.
+It does not send email. Override it or add adapter types through the per-engine
+`notificationFactories` map. Invalid notification configuration fails startup.
+An explicitly injected `workflowServices.notificationService` takes precedence
+for workflow sends.
+
+Objects outside `_zebric/` in `FILES` are publicly served at `/uploads/<key>`
+with their stored MIME type. This matches Node's static file route. Uploads remain
+application-managed through `getStorage()` or the plugin storage API.
+
+`GET /metrics` exports shared `zbl_*` Prometheus counters and histograms;
+`getMetrics()` returns a snapshot. HTTP labels use route patterns rather than
+record IDs. Counts belong to the current isolate, not the whole deployment.
+Auth outcomes, CSRF violations, denied requests, and page/API reads join mutation
+history in `_zebric_audit`. Request audit persistence is best-effort, matching
+Node's security logger; transactional mutation auditing still commits atomically.
 
 ## Entity API and API keys
 
@@ -351,7 +419,7 @@ Valid API keys bypass browser CSRF checks, while invalid bearer values do not.
 
 Discovery is available at `/.well-known/zebric-agent.json` and
 `/api/openapi.json`. Worker metadata includes supported declarative commands and
-general and D1-batch workflow skills while omitting unsupported command handlers.
+general and D1-batch workflow skills while omitting command handlers that were not bundled.
 
 ## Session Management
 
