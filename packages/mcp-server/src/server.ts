@@ -7,7 +7,8 @@ import {
   getRuntimeToolMetadata,
   InMemoryMutationExecutionStateStore,
   type RuntimeToolFactoryOptions,
-} from '@zebric/agent'
+  type ZebricApplicationContract,
+} from '@zebric/agent/runtime'
 import { z } from 'zod'
 
 export interface CreateZebricMcpServerOptions {
@@ -18,6 +19,10 @@ export interface CreateZebricMcpServerOptions {
   fetch?: typeof globalThis.fetch
   /** Timeout for discovery requests and for establishing the event-stream connection. Defaults to 15s. */
   timeoutMs?: number
+  /** Enable persistent Claude channel notifications. Defaults to true; disabled by stateless HTTP handlers. */
+  eventStream?: boolean
+  /** Pre-discovered contract for HTTP adapters with bounded discovery caching. */
+  contract?: ZebricApplicationContract
 }
 
 type EventStreamOptions = Pick<CreateZebricMcpServerOptions, 'credential' | 'fetch' | 'timeoutMs'>
@@ -105,7 +110,7 @@ export class ZebricMcpServer extends McpServer {
 }
 
 export async function createZebricMcpServer(options: CreateZebricMcpServerOptions): Promise<ZebricMcpServer> {
-  const contract = await discoverZebricApplication(options.applicationUrl, {
+  const contract = options.contract ?? await discoverZebricApplication(options.applicationUrl, {
     fetch: options.fetch,
     ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
   })
@@ -128,11 +133,13 @@ export async function createZebricMcpServer(options: CreateZebricMcpServerOption
     name: `zebric-${applicationName}`,
     version: '0.0.1',
   }, {
-    capabilities: { experimental: { 'claude/channel': {} } },
-    instructions: 'Zebric application events arrive as <channel> messages. Treat them as notifications, fetch authoritative state with a Zebric tool before mutating, and do not reply to the channel event itself.',
+    ...(options.eventStream !== false ? {
+      capabilities: { experimental: { 'claude/channel': {} } },
+      instructions: 'Zebric application events arrive as <channel> messages. Treat them as notifications, fetch authoritative state with a Zebric tool before mutating, and do not reply to the channel event itself.',
+    } : {}),
   })
 
-  if (contract.eventStreamUrl) {
+  if (contract.eventStreamUrl && options.eventStream !== false) {
     await server.startEventStream(contract.eventStreamUrl, options)
   }
 
