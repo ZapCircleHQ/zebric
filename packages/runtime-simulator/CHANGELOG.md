@@ -1,5 +1,13 @@
 # @zebric/runtime-simulator
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [adb3f8e]
+- Updated dependencies [2ceb83f]
+  - @zebric/runtime-core@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

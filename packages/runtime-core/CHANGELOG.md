@@ -1,5 +1,27 @@
 # @zebric/runtime-core
 
+## 0.7.0
+
+### Minor Changes
+
+- adb3f8e: Add portable notifications, bundled Worker plugin initialization and command handlers,
+  R2 file serving and private email outboxes, shared Prometheus metrics, and D1 request
+  security auditing. Normalize Worker JSON and DateTime values and reject malformed
+  Node entity API input consistently. Redact nested JSON secrets from stored audit history. Establish shared SQLite/D1 conformance tests
+  and document remaining platform constraints.
+
+### Patch Changes
+
+- 2ceb83f: Add Cloudflare Workers authentication through Better Auth on D1, mount the
+  standard auth UI and API routes, and support file-backed Blueprint templates
+  through bundled text imports or preloaded KV values. Inline page templates are
+  now compiled as inline content instead of being interpreted as file paths.
+  Workers also expose scoped entity CRUD APIs and accurate Agent API/OpenAPI
+  discovery backed by Worker secret bindings and Web Crypto key verification.
+  Declarative domain commands now use the shared core execution pipeline, while
+  eligible database-only transactional workflows compile to atomic D1 batches
+  with workflow skill routes, process-local jobs, and idempotent replay.
+
 ## 0.6.3
 
 ### Patch Changes
