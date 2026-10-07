@@ -1,6 +1,6 @@
 {
   "name": "@zebric/runtime-hono",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "description": "Shared Hono adapter for Zebric runtimes",
   "repository": {
     "type": "git",

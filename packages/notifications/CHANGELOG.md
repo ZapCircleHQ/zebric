@@ -1,5 +1,21 @@
 # @zebric/notifications
 
+## 0.7.0
+
+### Minor Changes
+
+- adb3f8e: Add portable notifications, bundled Worker plugin initialization and command handlers,
+  R2 file serving and private email outboxes, shared Prometheus metrics, and D1 request
+  security auditing. Normalize Worker JSON and DateTime values and reject malformed
+  Node entity API input consistently. Redact nested JSON secrets from stored audit history. Establish shared SQLite/D1 conformance tests
+  and document remaining platform constraints.
+
+### Patch Changes
+
+- Updated dependencies [adb3f8e]
+- Updated dependencies [2ceb83f]
+  - @zebric/runtime-core@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

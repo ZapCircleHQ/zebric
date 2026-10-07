@@ -1,5 +1,18 @@
 # @zebric/mcp-server
 
+## 0.7.0
+
+### Minor Changes
+
+- d8d5502: Add stateless MCP Streamable HTTP handlers for Node HTTP/S and Cloudflare Workers, with CLI transport selection, TLS, mandatory public authentication or explicit opt-in, and origin validation. Bound and validate request bodies before discovery, enforce concurrency and body-read deadlines, and cache/coalesce discovery. Preserve stdio and persistent Claude channels. Expose the agent runtime separately so Workers do not import Node authoring and CLI modules.
+
+### Patch Changes
+
+- 860f493: Use portable manual redirect handling with explicit redirect refusal, exclude SSE-only operations from finite JSON tools, and correct mutation descriptions. Preserve structured Agent API tool errors and support request-specific HTTP credentials and upstream fetch context while sharing discovery caching.
+- Updated dependencies [d8d5502]
+- Updated dependencies [860f493]
+  - @zebric/agent@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @zebric/cli
 
+## 0.7.0
+
+### Patch Changes
+
+- Updated dependencies [d946f63]
+- Updated dependencies [adb3f8e]
+- Updated dependencies [2ceb83f]
+  - @zebric/runtime-node@0.7.0
+  - @zebric/runtime-core@0.7.0
+
 ## 0.6.3
 
 ### Patch Changes
