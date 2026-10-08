@@ -5,6 +5,7 @@
  * Supports SQLite and PostgreSQL.
  */
 
+import { changeJournalSchema } from '@zebric/runtime-core'
 import { drizzle as drizzleSQLite } from 'drizzle-orm/better-sqlite3'
 import Database from 'better-sqlite3'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
@@ -364,6 +365,7 @@ export class DatabaseConnection {
 
   private async ensureRuntimeTables(): Promise<void> {
     const statements = [
+      changeJournalSchema(this.config.type === 'postgres'),
       `CREATE TABLE IF NOT EXISTS __zbl_command_events (id TEXT PRIMARY KEY, value TEXT NOT NULL, created_at BIGINT NOT NULL, delivered_at BIGINT)`,
       `CREATE TABLE IF NOT EXISTS __zbl_command_receipts (key TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, value TEXT NOT NULL)`,
       `CREATE TABLE IF NOT EXISTS __zbl_workflow_jobs (

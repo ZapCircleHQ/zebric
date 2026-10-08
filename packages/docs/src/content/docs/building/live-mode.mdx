@@ -1,0 +1,47 @@
+---
+title: Live Mode
+description: Keep open Zebric pages synchronized with committed application changes.
+---
+
+Enable Live Mode on a board, queue, dashboard, or detail page:
+
+```toml
+[page."/tasks"]
+title = "Task Board"
+auth = "required"
+layout = "list"
+live = true
+
+[page."/tasks".query.tasks]
+entity = "Task"
+```
+
+Live Mode works on both Node and Cloudflare Workers without additional services or bindings. The page renders normally first. When relevant application data changes, the browser fetches a fresh server-rendered page and replaces its main content. Authentication and read permissions apply to both the live connection and every refreshed view.
+
+Updates are server-driven. Changes made through Zebric UI forms, the HTTP API, MCP tools, commands, and workflows all invalidate the same view after their mutations commit. Failed or rolled-back mutations do not produce changes. For example, an agent can claim a task through MCP while a human watches the task board, and the board updates without a manual reload.
+
+Dependencies are tracked by entity. Queries, widget entities and columns, form entities, and lookup entities contribute dependencies. Any mutation to a dependent entity can refresh the entire main content, even when that particular record is outside the displayed query. Phase 1 does not patch individual cards or rows.
+
+Rapid updates are combined. Live Mode preserves window scroll, focus, and text selection where practical, and initializes forms and controls again after replacement. Unsaved form edits block content replacement even after the field loses focus. A successful enhanced-form save, resetting the form, or reverting edits allows a pending update to proceed. Input typed while a refresh is being fetched is protected too.
+
+A small status indicator displays **Live**, **Updating**, or **Reconnecting**. Temporary connection failures use polling to catch up, and returning to a suspended tab reconciles its view. Notifications contain only an invalidation cursor; they do not carry record values or audit entries. Durable mutation metadata allows reconciliation across runtime restarts.
+
+Direct SQL writes and changes made outside supported Zebric mutation paths may not generate notifications. Route application mutations through Zebric to obtain Live Mode updates. Live Mode provides eventual view synchronization, not exactly-once event delivery, collaborative editing, or presence.
+
+For deployment troubleshooting, the internal `/_zebric/live` endpoint supports a streaming connection and a polling fallback. Proxies should permit streaming without buffering. Transport choice is automatic and does not change the meaning of `live = true`.
+
+## Load and retention policies
+
+Both policies are configured with an optional top-level `[live]` section. The values shown are the defaults:
+
+```toml
+[live]
+reauthorize_interval_seconds = 30  # minimum 1
+change_retention_hours = 24        # 0 keeps the journal forever
+```
+
+**Re-authorization.** Each open live connection checks for changes once per second using a single cheap journal query. Session validity and read permissions (which re-run the page's queries) are fully re-checked when the connection opens, at most every `reauthorize_interval_seconds` (default 30) afterward, and always immediately before an invalidation is sent. A revoked session or permission therefore stops a stream within that interval, and never receives a notification after losing access. An idle page costs about one small query per second per open tab.
+
+**Change journal retention.** Mutation metadata lives in the `_zebric_changes` table and holds no record values. Rows older than `change_retention_hours` (default 24) are pruned automatically (at most once every 10 minutes per process), and the newest row is always kept so cursors never move backwards. A client whose cursor is older than the oldest retained row, such as a tab suspended for longer than the retention window, is told to refresh its view rather than risk missing changes. Setting `change_retention_hours = 0` disables pruning, which lets the table grow without bound. Retention changes take effect when the runtime restarts. Pruning is best effort: failures are ignored and retried on a later check.
+
+**Live setup failures.** If Live Mode cannot be initialized for a page request (for example, the journal is unavailable), the page is served normally without live updates instead of failing. Page queries on live pages follow the same error handling as other pages.

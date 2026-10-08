@@ -1,55 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { CommandExecutor, Blueprint, QueryExecutorPort, UserSession } from '../../packages/runtime-core/src/index.js'
+import type { CommandExecutor, QueryExecutorPort, UserSession } from '../../packages/runtime-core/src/index.js'
 
-export const session = { user: { id: 'operator', email: 'operator@example.test', roles: ['operator'] } } as UserSession
-export const blueprint: Blueprint = {
-  version: '0.6.0',
-  project: { name: 'Runtime conformance', version: '1.0.0', runtime: { min_version: '0.6.0' } },
-  auth: { providers: [], apiKeys: [
-    { name: 'writer', keyEnv: 'WRITER_KEY', roles: ['operator'], scopes: ['*'] },
-    { name: 'reader', keyEnv: 'READER_KEY', roles: ['operator'], scopes: ['entity.item.list', 'entity.item.get'] },
-  ] },
-  entities: [{
-    name: 'Item',
-    fields: [
-      { name: 'id', type: 'ULID', primary_key: true },
-      { name: 'title', type: 'Text' },
-      { name: 'published', type: 'Boolean', default: false },
-      { name: 'priority', type: 'Integer', default: 0 },
-      { name: 'status', type: 'Text', default: 'draft', write: 'command-only', commands: ['PublishItem'] },
-      { name: 'payload', type: 'JSON' },
-      { name: 'scheduledAt', type: 'DateTime' },
-      { name: 'createdAt', type: 'DateTime', default: 'now' },
-      { name: 'updatedAt', type: 'DateTime' },
-    ],
-    access: { read: { or: [{ published: true }, 'authenticated'] }, create: 'authenticated', update: 'authenticated', delete: 'authenticated' },
-  }],
-  pages: [{ path: '/items', title: 'Items', layout: 'list', auth: 'optional', queries: { items: { entity: 'Item' } } }],
-  workflows: [
-    { name: 'CopyItems', trigger: { manual: true }, transactional: true, retries: 1, steps: [
-      { type: 'query', action: 'find', entity: 'Item', assignTo: 'items' },
-      { type: 'loop', items: 'variables.items', do: [
-        { type: 'condition', if: { 'variables.item.published': false }, then: [
-          { type: 'query', action: 'create', entity: 'Item', data: {
-            id: 'copy-{{variables.item.id}}', title: '{{variables.item.title}}',
-            priority: '{{variables.item.priority}}', payload: '{{variables.item.payload}}',
-          } },
-        ] },
-      ] },
-    ] },
-    { name: 'RollbackWorkflow', trigger: { manual: true }, transactional: true, retries: 1, steps: [
-      { type: 'query', action: 'create', entity: 'Item', data: { id: 'workflow-rollback' } },
-      { type: 'query', action: 'create', entity: 'Item', data: { id: 'workflow-rollback' } },
-    ] },
-  ],
-  commands: [{ name: 'PublishItem', entity: 'Item', availableWhen: { status: 'draft' }, mutations: { status: 'published', published: true } }],
-}
+import { session } from './fixtures.js'
+export { blueprint, session } from './fixtures.js'
 
 export interface ConformanceRuntime {
   queries: QueryExecutorPort
   commands: Pick<CommandExecutor, 'execute'>
   fetch(path: string, init?: RequestInit): Promise<Response>
   runWorkflow(name: string): Promise<string>
+  setSession(value: UserSession | null): void
   cleanup(): Promise<void>
 }
 
@@ -62,6 +22,215 @@ export function runtimeConformance(name: string, create: () => Promise<Conforman
     afterEach(async () => { await runtime?.cleanup() })
     const seed = (id: string, data: Record<string, unknown> = {}) => runtime.queries.create('Item', { id, title: id, ...data }, context)
     const wire = (value: unknown) => JSON.parse(JSON.stringify(value))
+
+    const livePoll = async (cursor: string, path = '/live-items') => {
+      const response = await runtime.fetch('/_zebric/live?' + new URLSearchParams({ path, cursor, transport: 'poll' }))
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    const renderCursor = async () => {
+      const response = await runtime.fetch('/live-items')
+      expect(response.status).toBe(200)
+      const html = await response.text()
+      const cursor = /data-zebric-live-cursor="(\d+)"/.exec(html)?.[1]
+      expect(cursor).toBeDefined()
+      return cursor!
+    }
+
+    it('renders live metadata only on opted-in pages', async () => {
+      expect(await renderCursor()).toBe('0')
+      expect(await (await runtime.fetch('/items')).text()).not.toContain('data-zebric-live-cursor')
+      expect((await runtime.fetch('/_zebric/live?path=/items')).status).toBe(404)
+      expect((await runtime.fetch('/_zebric/live?path=//external.example')).status).toBe(400)
+      expect((await runtime.fetch('/_zebric/live?path=/live-items&cursor=invalid')).status).toBe(400)
+    })
+
+    it('reconciles the render-to-subscribe race and duplicate reconnects', async () => {
+      const cursor = await renderCursor()
+      await seed('raced')
+      const event = await livePoll(cursor)
+      expect(event).toEqual({ type: 'invalidate', cursor: expect.any(String) })
+      expect(await livePoll(cursor)).toEqual(event)
+      expect(await livePoll(event.cursor)).toEqual({ type: 'current', cursor: event.cursor })
+      expect(await (await runtime.fetch('/live-items')).text()).toContain('raced')
+    })
+
+    it.each(['UI', 'HTTP', 'MCP', 'command', 'workflow'])('%s mutations invalidate the same live page', async source => {
+      await seed('source')
+      const cursor = await renderCursor()
+      if (source === 'UI') {
+        expect((await runtime.fetch('/new-item', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' }, body: '{"title":"UI change"}' })).status).toBe(200)
+      } else if (source === 'MCP') {
+        const { mutateThroughMcp } = await import('../../packages/mcp-server/tests/live-mutation-helper.js')
+        await mutateThroughMcp(runtime.fetch)
+      } else if (source === 'HTTP') {
+        const headers: Record<string, string> = { 'content-type': 'application/json' }
+        expect((await runtime.fetch('/api/items/source', { method: 'PUT', headers, body: JSON.stringify({ title: source + ' change' }) })).status).toBe(200)
+      } else if (source === 'command') {
+        await runtime.commands.execute({ command: 'PublishItem', recordId: 'source', context })
+      } else expect(await runtime.runWorkflow('CopyItems')).toBe('completed')
+      expect(await livePoll(cursor)).toMatchObject({ type: 'invalidate' })
+    })
+
+    it.each(['UpdateItem', 'DeleteItem'])('guarded %s workflow changes invalidate live views', async name => {
+      await seed('source')
+      const cursor = await renderCursor()
+      expect(await runtime.runWorkflow(name)).toBe('completed')
+      expect(await livePoll(cursor)).toMatchObject({ type: 'invalidate' })
+    })
+
+    it('exposes stable, ordered committed change events independently of audit records', async () => {
+      await seed('event')
+      await runtime.queries.update('Item', 'event', { title: 'updated' }, context)
+      const events = await runtime.queries.liveChanges!.changesAfter('0')
+      expect(events.map(event => event.operation)).toEqual(['create', 'update'])
+      expect(events.map(event => event.entity)).toEqual(['Item', 'Item'])
+      expect(new Set(events.map(event => event.id)).size).toBe(2)
+      expect(Number(events[1].cursor)).toBeGreaterThan(Number(events[0].cursor))
+      expect(await runtime.queries.liveChanges!.changesAfter('0')).toEqual(events)
+      expect(events[0]).not.toHaveProperty('metadata')
+    })
+
+    it('does not publish rolled-back command or workflow mutations', async () => {
+      const cursor = await renderCursor()
+      await expect(runtime.queries.transaction!(async () => { await seed('abort'); throw new Error('abort') })).rejects.toThrow('abort')
+      expect(await runtime.runWorkflow('RollbackWorkflow')).toBe('failed')
+      expect(await livePoll(cursor)).toEqual({ type: 'current', cursor })
+    })
+
+    it('does not advance the journal for rejected HTTP writes or command replay', async () => {
+      await seed('source')
+      const cursor = await renderCursor()
+      const headers = { 'content-type': 'application/json' }
+      const protectedWrite = await runtime.fetch('/api/items/source', { method: 'PUT', headers, body: '{"status":"published"}' })
+      expect(protectedWrite.ok).toBe(false)
+      expect(await runtime.queries.findById('Item', 'source', context)).toMatchObject({ status: 'draft', published: false })
+      expect((await runtime.fetch('/api/items', { method: 'POST', headers, body: '{invalid' })).status).toBe(400)
+      expect(await livePoll(cursor)).toEqual({ type: 'current', cursor })
+      const publish = () => runtime.fetch('/api/commands/publish_item/source', {
+        method: 'POST', headers: { ...headers, 'idempotency-key': 'live-replay' }, body: '{}',
+      })
+      const first = await publish()
+      expect(first.status).toBe(200)
+      const committed = await runtime.queries.liveChanges!.currentCursor()
+      expect(await livePoll(cursor)).toEqual({ type: 'invalidate', cursor: committed })
+      expect(await (await publish()).json()).toEqual(await first.json())
+      expect(await livePoll(committed)).toEqual({ type: 'current', cursor: committed })
+    })
+
+    it('keeps successful journal pagination stable across creates, updates, and deletes', async () => {
+      const source = runtime.queries.liveChanges!
+      const cursor = await source.currentCursor()
+      await seed('paged')
+      await runtime.queries.update('Item', 'paged', { title: 'changed' }, context)
+      await runtime.queries.delete('Item', 'paged', context)
+      const all = await source.changesAfter(cursor)
+      expect(all.map(event => [event.operation, event.recordId])).toEqual([
+        ['create', 'paged'], ['update', 'paged'], ['delete', 'paged'],
+      ])
+      const first = await source.changesAfter(cursor, 1)
+      const rest = await source.changesAfter(first[0].cursor, 2)
+      expect([...first, ...rest]).toEqual(all)
+      expect(await source.changesAfter(rest[1].cursor)).toEqual([])
+      for (const event of all) {
+        expect(Number.isNaN(Date.parse(event.timestamp))).toBe(false)
+        expect(Object.keys(event).sort()).toEqual(['cursor', 'entity', 'id', 'operation', 'recordId', 'timestamp'])
+      }
+      expect(await livePoll(cursor)).toEqual({ type: 'invalidate', cursor: all[2].cursor })
+    })
+
+    it('commits nested mutations together and removes all nested events on rollback', async () => {
+      const source = runtime.queries.liveChanges!
+      const cursor = await source.currentCursor()
+      await runtime.queries.transaction!(async () => {
+        await seed('nested')
+        await runtime.queries.transaction!(async () => {
+          await runtime.queries.update('Item', 'nested', { title: 'committed nested' }, context)
+        })
+      })
+      const committed = await source.currentCursor()
+      expect((await source.changesAfter(cursor)).map(event => event.operation)).toEqual(['create', 'update'])
+      await expect(runtime.queries.transaction!(async () => {
+        await runtime.queries.transaction!(async () => { await runtime.queries.delete('Item', 'nested', context) })
+        throw new Error('outer rollback')
+      })).rejects.toThrow('outer rollback')
+      expect(await runtime.queries.findById('Item', 'nested', context)).toMatchObject({ title: 'committed nested' })
+      expect(await source.changesAfter(committed)).toEqual([])
+      expect(await livePoll(committed)).toEqual({ type: 'current', cursor: committed })
+    })
+
+    it('advances past unrelated changes without losing the next relevant invalidation', async () => {
+      const cursor = await renderCursor()
+      await runtime.queries.create('Other', { id: 'unrelated' }, context)
+      const skipped = await runtime.queries.liveChanges!.currentCursor()
+      expect(await livePoll(cursor)).toEqual({ type: 'current', cursor: skipped })
+      await seed('relevant')
+      const current = await runtime.queries.liveChanges!.currentCursor()
+      expect(await livePoll(skipped)).toEqual({ type: 'invalidate', cursor: current })
+      expect(await livePoll(current)).toEqual({ type: 'current', cursor: current })
+    })
+
+    it('filters dependencies and reconciles durable cursors after disconnect', async () => {
+      const source = runtime.queries.liveChanges!
+      const cursor = await source.currentCursor()
+      await runtime.queries.create('Other', { id: 'other' }, context)
+      expect(await livePoll(cursor)).toMatchObject({ type: 'current' })
+      await seed('offline')
+      expect(await source.reconcile([{ entity: 'Other' }], await source.currentCursor())).toMatchObject({ changed: false })
+      expect(await source.reconcile([{ entity: 'Item' }], cursor)).toMatchObject({ changed: true })
+      expect(await source.reconcile([{ entity: 'Item' }], '999999999')).toMatchObject({ changed: true })
+    })
+
+    it('rejects anonymous and expired subscriptions and reauthorizes fresh projections', async () => {
+      await seed('private')
+      await seed('public', { published: true })
+      expect((await runtime.fetch('/_zebric/live?path=/live-secret&transport=poll')).status).toBe(403)
+      expect((await runtime.fetch('/live-secret')).status).not.toBe(200)
+      runtime.setSession(null)
+      expect((await runtime.fetch('/_zebric/live?path=/live-items&transport=poll')).status).toBe(401)
+      const publicResponse = await runtime.fetch('/live-public', { headers: { accept: 'application/json' } })
+      expect(publicResponse.status).toBe(200)
+      expect((await publicResponse.json()).data.items.map((row: { id: string }) => row.id)).toEqual(['public'])
+      runtime.setSession({ ...session, expiresAt: new Date(0) })
+      expect((await runtime.fetch('/_zebric/live?path=/live-items&transport=poll')).status).toBe(401)
+    })
+
+    it('SSE catches up from the render cursor without exposing audit or record data', async () => {
+      const cursor = await renderCursor()
+      await seed('sse-secret', { title: 'sensitive record title' })
+      const abort = new AbortController()
+      const response = await runtime.fetch('/_zebric/live?' + new URLSearchParams({ path: '/live-items', cursor }), { signal: abort.signal, headers: { 'last-event-id': cursor } })
+      expect(response.headers.get('content-type')).toBe('text/event-stream')
+      const reader = response.body!.getReader()
+      let data = ''
+      while (!data.includes('event: invalidate')) {
+        const chunk = await reader.read()
+        expect(chunk.done).toBe(false)
+        data += new TextDecoder().decode(chunk.value)
+      }
+      expect(data).toMatch(/data: \{"type":"invalidate","cursor":"\d+"\}/)
+      expect(data).not.toContain('sensitive record title')
+      expect(data).not.toContain('Item')
+      abort.abort()
+      await reader.cancel()
+    })
+
+    it('reauthorizes open SSE connections and closes safely when page authentication is revoked', async () => {
+      const cursor = await renderCursor()
+      const response = await runtime.fetch('/_zebric/live?' + new URLSearchParams({ path: '/live-items', cursor }))
+      const reader = response.body!.getReader()
+      await reader.read()
+      runtime.setSession(null)
+      let data = ''
+      for (;;) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        data += new TextDecoder().decode(chunk.value)
+      }
+      expect(data).toContain('event: unavailable')
+      expect(data).not.toContain('event: invalidate')
+      await reader.cancel()
+    })
 
     it('generates IDs and preserves falsy Blueprint defaults without mutating input', async () => {
       const input = { title: 'New item' }

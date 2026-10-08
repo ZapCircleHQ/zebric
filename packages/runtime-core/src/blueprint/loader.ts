@@ -120,6 +120,7 @@ export class BlueprintParser {
       plugins: Array.isArray(parsed.plugins) ? [...parsed.plugins] : undefined,
       skills: Array.isArray(parsed.skills) ? [...parsed.skills] : undefined,
       auth: parsed.auth,
+      live: parsed.live,
       ui: parsed.ui,
       ux: parsed.ux,
       design_adapter: parsed.design_adapter,

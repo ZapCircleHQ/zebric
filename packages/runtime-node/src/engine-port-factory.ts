@@ -14,6 +14,7 @@ export function createQueryExecutorPort(
   onEntityChanged?: (change: { entity: string; event: 'create' | 'update' | 'delete'; id?: string; session?: any }) => void,
 ): QueryExecutorPort {
   return {
+    liveChanges: queryExecutor.liveChanges,
     transaction: typeof queryExecutor.transaction === 'function' ? fn => queryExecutor.transaction(fn) : undefined,
     afterCommit: typeof queryExecutor.afterCommit === 'function' ? effect => queryExecutor.afterCommit(effect) : undefined,
     execute: (query, context) => queryExecutor.execute(query, context),

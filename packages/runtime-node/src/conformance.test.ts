@@ -14,7 +14,8 @@ runtimeConformance('Node SQLite', async () => {
   await connection.connect()
   const queries = new QueryExecutor(connection)
   const app = new Hono()
-  const sessionManager = { getSession: async () => session }
+  let currentSession: typeof session | null = session
+  const sessionManager = { getSession: async () => currentSession }
   const apiKeys = createApiKeyRegistry(['writer', 'reader'].map(name => ({ token: `${name}-key`, credential: {
     name, agentId: name, credentialId: name, displayName: name, roles: ['operator'],
     scopes: name === 'writer' ? ['*'] : ['entity.item.list', 'entity.item.get'],
@@ -34,7 +35,7 @@ runtimeConformance('Node SQLite', async () => {
   workflows.setCommandExecutor(commands)
   for (const workflow of blueprint.workflows ?? []) workflows.registerWorkflow(workflow as Parameters<typeof workflows.registerWorkflow>[0])
   registerPageRoutes(app, new BlueprintHttpAdapter({ blueprint, queryExecutor: queries, sessionManager, theme: defaultTheme }))
-  return { queries, commands, fetch: (path, init) => {
+  return { queries, commands, setSession: value => { currentSession = value }, fetch: (path, init) => {
     const headers = new Headers(init?.headers)
     if (!headers.has('cookie')) headers.set('cookie', 'csrf-token=conformance')
     if (!headers.has('x-csrf-token')) headers.set('x-csrf-token', 'conformance')

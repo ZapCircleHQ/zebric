@@ -22,6 +22,7 @@ export interface Blueprint {
   skills?: SkillConfig[]
   commands?: Command[]
   services?: ServiceConfig[]
+  live?: LiveConfig
 }
 
 export interface ProjectConfig {
@@ -183,8 +184,16 @@ export interface ServiceConfig {
 // Pages
 // ============================================================================
 
+export interface LiveConfig {
+  /** Seconds between full session/permission re-checks on an open live stream (default 30). */
+  reauthorize_interval_seconds?: number
+  /** Hours of change-journal history to keep; 0 keeps it forever (default 24). */
+  change_retention_hours?: number
+}
+
 export interface Page {
   path: string
+  live?: boolean
   title: string
   auth?: 'required' | 'optional' | 'none'
   layout?: 'list' | 'detail' | 'form' | string

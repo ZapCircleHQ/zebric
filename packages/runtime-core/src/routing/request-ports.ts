@@ -50,6 +50,7 @@ export interface HttpResponse {
  * Query executor port - executes data queries
  */
 export interface QueryExecutorPort {
+  readonly liveChanges?: import('../live/live.js').LiveChangeSource
   execute(query: Query, context: RequestContext): Promise<any>
   create(entity: string, data: Record<string, any>, context: RequestContext): Promise<any>
   update(entity: string, id: string, data: Record<string, any>, context: RequestContext): Promise<any>
@@ -104,6 +105,7 @@ export interface FlashMessage {
 }
 
 export interface RenderContext {
+  liveCursor?: string
   page: any // Page type
   data: Record<string, any>
   params: Record<string, string>
@@ -239,6 +241,7 @@ export interface LogEvent {
 
 /** Application services consumed by the platform-neutral request handler. */
 export interface RuntimePorts {
+  liveChanges?: import('../live/live.js').LiveChangeSource
   queryExecutor?: QueryExecutorPort
   sessionManager?: SessionManagerPort
   renderer?: RendererPort

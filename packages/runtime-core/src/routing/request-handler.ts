@@ -33,6 +33,7 @@ import {
 } from './request-utils.js'
 import { executeFormAction, validateForm, checkFormAuthorization } from './form-processor.js'
 import { resolveSession, buildLoginRedirect } from './session-resolver.js'
+import { discoverLiveDependencies, type LiveChangeSource } from '../live/live.js'
 
 export interface RequestHandlerConfig extends RuntimePorts {
   blueprint: Blueprint
@@ -49,9 +50,11 @@ export class RequestHandler {
   private commandAvailability?: CommandAvailabilityPort
   private errorSanitizer?: ErrorSanitizer
   private defaultOrigin: string
+  private configLiveChanges?: LiveChangeSource
 
   constructor(config: RequestHandlerConfig) {
     this.blueprint = config.blueprint
+    this.configLiveChanges = config.liveChanges ?? config.queryExecutor?.liveChanges
     this.queryExecutor = config.queryExecutor
     this.sessionManager = config.sessionManager
     this.renderer = config.renderer
@@ -101,15 +104,32 @@ export class RequestHandler {
         }
       }
 
+      // Capture before queries: changes during rendering are reconciled on subscribe.
+      // Live setup is best effort: any failure degrades to a static page instead of a 500.
+      let liveCursor: string | undefined
+      if (page.live) {
+        try {
+          liveCursor = await this.configLiveChanges?.currentCursor()
+          if (liveCursor !== undefined && this.queryExecutor) {
+            for (const dependency of discoverLiveDependencies(page)) {
+              await this.queryExecutor.execute({ entity: dependency.entity, limit: 1 }, { session })
+            }
+          }
+        } catch (error) {
+          console.error('Live setup failed, serving static page:', error)
+          liveCursor = undefined
+        }
+      }
       // Execute queries
       const data: Record<string, any> = {}
       if (page.queries) {
         for (const [name, queryDef] of Object.entries(page.queries)) {
-          data[name] = await this.executeQuery(queryDef, {
+          const context = {
             params: match.params,
             query: match.query,
             session
-          })
+          }
+          data[name] = await this.executeQuery(queryDef, context, page.live)
         }
       }
 
@@ -140,7 +160,8 @@ export class RequestHandler {
           query: match.query,
           flash,
           csrfToken,
-          availableCommands
+          availableCommands,
+          liveCursor
         }, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
       } else {
         // Render HTML
@@ -152,10 +173,14 @@ export class RequestHandler {
           session,
           flash,
           csrfToken,
-          availableCommands
+          availableCommands,
+          liveCursor
         })
 
-        return htmlResponse(200, html, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
+        return htmlResponse(200, html, {
+          ...(flash ? { 'Set-Cookie': clearFlashCookieHeader() } : {}),
+          ...(page.live ? { 'Cache-Control': 'no-store', Vary: 'Cookie, Authorization' } : {}),
+        })
       }
     } catch (error) {
       return this.handleError(error, session, page.path, request)
@@ -452,7 +477,8 @@ export class RequestHandler {
   // Helper Methods
   // ==========================================================================
 
-  private async executeQuery(queryDef: Query, context: RequestContext): Promise<any> {
+  /** `strictAccess` (live pages) surfaces access denial like the live endpoint does instead of rendering `[]`. */
+  private async executeQuery(queryDef: Query, context: RequestContext, strictAccess = false): Promise<any> {
     if (!this.queryExecutor) {
       console.warn('No query executor available, returning empty array')
       return []
@@ -461,6 +487,7 @@ export class RequestHandler {
     try {
       return await this.queryExecutor.execute(queryDef, context)
     } catch (error) {
+      if (strictAccess && (String(error).includes('Access denied') || (error as { code?: string })?.code === 'AUTHORIZATION_FAILED')) throw error
       console.error('Query execution error:', error)
       return []
     }

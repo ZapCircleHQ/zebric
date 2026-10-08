@@ -14,8 +14,10 @@ import { renderFlash } from './feedback-renderer.js'
 import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
 import { renderDesignSystemStyles, resolveDesignSystem, withDesignSystemTheme } from './design-system.js'
 import { ZEBRIC_VERSION } from '../version.generated.js'
+import { LIVE_CLIENT_RUNTIME } from '../live/client.js'
 
 export interface WrapInDocumentOptions {
+  liveCursor?: string
   includeClientRuntime?: boolean
   /** @deprecated Use includeClientRuntime. */
   includeWidgetRuntime?: boolean
@@ -131,7 +133,7 @@ export class DocumentWrapper {
 
           ${renderNavigation(this.blueprint, this.theme, session, currentPath).html}
 
-          <main id="main-content" role="main" aria-label="Main content" class="min-h-screen py-8">
+          <main id="main-content" ${options?.liveCursor !== undefined ? `data-zebric-live-cursor="${escapeHtml(options.liveCursor)}"` : ''} role="main" aria-label="Main content" class="min-h-screen py-8">
             ${renderFlash(this.blueprint, flash).html}
             ${content.html}
           </main>
@@ -139,6 +141,7 @@ export class DocumentWrapper {
           ${this.renderFooter().html}
           ${this.renderClientScript().html}
           ${widgetScript}
+          ${options?.liveCursor !== undefined ? LIVE_CLIENT_RUNTIME : ''}
           ${this.reloadScript || ''}
         </body>
       </html>
@@ -232,8 +235,10 @@ export class DocumentWrapper {
         })()
 
         // Minimal form enhancement
-        document.querySelectorAll('form[data-enhance]').forEach(form => {
+        function enhanceForms() { document.querySelectorAll('form[data-enhance]').forEach(form => {
           if (form.dataset.enhance === 'none') return
+          if (form.dataset.zebricEnhanced) return
+          form.dataset.zebricEnhanced = 'true'
 
           form.addEventListener('submit', async (e) => {
             e.preventDefault()
@@ -326,19 +331,23 @@ export class DocumentWrapper {
                 } else {
                   alert(result?.message || 'An error occurred')
                 }
-              } else if (result?.message) {
-                alert(result.message)
+              } else {
+                form.dispatchEvent(new CustomEvent('zebric:form-settled', { bubbles: true, detail: { success: true } }))
+                if (result?.message) alert(result.message)
               }
             } catch (error) {
               alert('An error occurred')
             } finally {
+              form.dispatchEvent(new CustomEvent('zebric:form-settled', { bubbles: true }))
               if (submitBtn) {
                 submitBtn.textContent = originalText || 'Submit'
                 submitBtn.disabled = false
               }
             }
           })
-        })
+        }) }
+        enhanceForms()
+        document.addEventListener('zebric:enhance', enhanceForms)
       </script>
     `)
   }

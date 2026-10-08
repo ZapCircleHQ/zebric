@@ -14,6 +14,7 @@ import {
   type ErrorSanitizer
 } from '@zebric/runtime-core'
 import type { MiddlewareHandler } from 'hono'
+import { handleLive } from './live-endpoint.js'
 
 export interface BlueprintAdapterConfig extends RuntimePorts {
   blueprint: Blueprint
@@ -60,7 +61,8 @@ export class BlueprintHttpAdapter implements HttpRequestAdapter {
       auditLogger: config.auditLogger,
       commandAvailability: config.commandAvailability,
       errorSanitizer: config.errorSanitizer,
-      defaultOrigin: config.defaultOrigin
+      defaultOrigin: config.defaultOrigin,
+      liveChanges: config.liveChanges ?? config.queryExecutor?.liveChanges
     })
   }
 
@@ -95,6 +97,7 @@ export class BlueprintHttpAdapter implements HttpRequestAdapter {
    */
   async handle(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/_zebric/live') return handleLive(request, this.blueprint, this.config)
     const match = this.routeMatcher.match(url.pathname + url.search, this.blueprint.pages)
 
     if (!match) {

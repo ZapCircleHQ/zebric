@@ -19,7 +19,10 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     document.querySelectorAll('[data-control]').forEach(function(el) {
       var kind = el.getAttribute('data-control')
       var fn = INITS[kind]
-      if (fn) fn(el)
+      if (fn && !el.dataset.zebricControlInitialized) {
+        el.dataset.zebricControlInitialized = 'true'
+        fn(el)
+      }
     })
   }
 
@@ -171,6 +174,8 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
   }
 
   function startColumnEdit(el, config) {
+    if (el.hasAttribute('data-zebric-inline-edit')) return
+    el.setAttribute('data-zebric-inline-edit', '')
     var original = el.textContent || ''
     el.setAttribute('contenteditable', 'true')
     el.focus()
@@ -180,6 +185,10 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     if (sel) { sel.removeAllRanges(); sel.addRange(range) }
 
     var finished = false
+    function settled() {
+      el.removeAttribute('data-zebric-inline-edit')
+      el.dispatchEvent(new CustomEvent('zebric:inline-edit-settled', { bubbles: true }))
+    }
     function finish(commit) {
       if (finished) return
       finished = true
@@ -189,18 +198,19 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
       var trimmed = (el.textContent || '').trim()
       if (!commit || trimmed === original.trim() || !trimmed) {
         el.textContent = original
+        settled()
         return
       }
       el.textContent = trimmed
       var column = el.closest('[data-column-id]')
-      if (!column) return
+      if (!column) { settled(); return }
       var field = el.getAttribute('data-column-field') || 'name'
       sendEvent(config.pagePath, 'column_rename',
         { entity: config.columnEntity, id: column.getAttribute('data-column-id') },
         { field: field, value: trimmed }
       ).then(function(result) {
         if (!result) el.textContent = original
-      })
+      }).finally(settled)
     }
     function onBlur() { finish(true) }
     function onKey(e) {
@@ -358,6 +368,7 @@ export const WIDGET_CLIENT_RUNTIME = `<script>
     })
   }
 
+  document.addEventListener('zebric:enhance', init)
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init)
   } else {
