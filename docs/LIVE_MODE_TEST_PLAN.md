@@ -47,6 +47,10 @@ by the MCP mutation helper. The browser job installs Chromium, ffmpeg and Linux
 system dependencies and uploads reports plus failure screenshots/videos/traces.
 Its path filters include shared conformance fixtures, MCP/agent dependencies,
 runtime configuration, lockfiles and the Dispatch example used by browser tests.
+Worker test prehooks also build `@zebric/agent` and its dependency graph, including
+the compiled `@zebric/agent/runtime` export used by the MCP helper. This applies to
+smoke, conformance, full and coverage runs; the separate worker smoke CI job does
+not inherit compiled files from the build job.
 
 `packages/runtime-node/tests/playwright/live.e2e.spec.ts` runs Chromium against an
 ephemeral TCP listener, production Hono route registration, SQLite, command
@@ -79,7 +83,7 @@ From the repository root:
 
 ```sh
 # Build shared dependencies, then invoke each suite directly.
-pnpm --filter @zebric/runtime-node run pretest
+pnpm --filter @zebric/agent... build
 pnpm --filter @zebric/runtime-core exec vitest run src/live
 pnpm --filter @zebric/runtime-hono exec vitest run src/live-endpoint.test.ts
 pnpm --filter @zebric/runtime-node exec vitest run src/conformance.test.ts src/database/live-restart.test.ts
