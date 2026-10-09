@@ -1,6 +1,6 @@
 {
   "name": "@zebric/themes",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Zebric Themes - Built-in themes for Zebric Engine",
   "type": "module",
   "main": "./dist/index.js",
