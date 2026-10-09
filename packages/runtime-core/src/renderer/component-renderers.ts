@@ -5,7 +5,7 @@
  * Delegates to focused modules for form, action bar, and data section rendering.
  */
 
-import type { Blueprint, Page, PageUXConfig } from '../types/blueprint.js'
+import type { Blueprint, Page, PageUXConfig, QueryColumn } from '../types/blueprint.js'
 import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '../security/html-escape.js'
@@ -50,8 +50,19 @@ export class ComponentRenderers {
   /**
    * Render table of items
    */
-  renderTable(items: any[], entity?: any, page?: Page): SafeHtml {
-    const fields = this.utils.getDisplayFields(items[0], entity)
+  renderTable(items: any[], entity?: any, page?: Page, options: { columns?: QueryColumn[] } = {}): SafeHtml {
+    // An explicit `columns` list on the page query wins; otherwise show the entity's displayable fields.
+    const explicitColumns = this.utils.resolveColumns(options.columns, entity)
+    const fields: Array<{ name: string; type: string; label?: string; wrap?: boolean; showIdentifiers?: boolean }> =
+      explicitColumns.length > 0 ? explicitColumns : this.utils.getDisplayFields(items[0], entity)
+    // Long free text wraps (it would otherwise be cut off); short values stay on one line.
+    const wraps = fields.map(f => this.utils.shouldWrapColumn(f.type, items.map(item => item[f.name]), (f as { wrap?: boolean }).wrap))
+    const cellClass = (index: number, extra = '') => {
+      const base = wraps[index]
+        ? this.theme.tableCell.replace('whitespace-nowrap', 'whitespace-normal break-words align-top max-w-md')
+        : this.theme.tableCell
+      return `${base} ${extra}`.trim()
+    }
     const detailPath = this.utils.getEntityPagePath(entity?.name, 'detail')
     const editPath = this.utils.getEntityPagePath(entity?.name, 'update')
     const entityName = entity?.name || 'items'
@@ -73,13 +84,14 @@ export class ComponentRenderers {
     return html`
       <div class="${this.theme.card}" data-zebric-ux-pattern="${ux?.pattern || ''}" data-zebric-density="${density}">
         <p class="px-6 pt-6 text-sm zb-text-secondary">${rowCountDescription}</p>
+        <div class="overflow-x-auto">
         <table class="${this.theme.table}">
           <caption class="sr-only">${tableCaption}</caption>
           <thead>
             <tr>
               ${safe(fields.map(f => html`
                 <th scope="col" class="${this.theme.tableHeader}">
-                  ${this.utils.formatFieldName(f.name)}
+                  ${f.label ?? this.utils.formatFieldName(f.name)}
                 </th>
               `.html).join(''))}
               <th scope="col" class="${this.theme.tableHeader}">Actions</th>
@@ -105,9 +117,9 @@ export class ComponentRenderers {
                   ${rowClickOpenDetail ? safe(`data-row-click="open-detail" onclick="if (!event.target.closest('a, button, form, input, select, textarea')) window.location.href='${escapeJs(detailHref)}'"`) : ''}
                 >
                   ${safe(fields.map((f, index) => {
-                    const value = this.utils.formatValue(item[f.name], f.type)
+                    const value = this.utils.formatValue(item[f.name], f.type, { showIdentifiers: f.showIdentifiers })
                     return html`
-                      <td class="${this.theme.tableCell} ${densityClass}">
+                      <td class="${cellClass(index, densityClass)}">
                         ${index === 0 && canViewDetails
                           ? html`
                             <a
@@ -151,6 +163,7 @@ export class ComponentRenderers {
               }).join(''))}
           </tbody>
         </table>
+        </div>
       </div>
     `
   }
@@ -168,7 +181,7 @@ export class ComponentRenderers {
             <dt class="text-sm font-medium zb-text-secondary">
               ${this.utils.formatFieldName(f.name)}
             </dt>
-            <dd class="mt-1 text-sm zb-text-primary${f.type === 'LongText' || f.type === 'JSON' ? ' whitespace-pre-wrap break-words' : ''}${f.type === 'JSON' ? ' font-mono zb-code text-xs' : ''}">${this.utils.formatValue(record[f.name], f.type)}</dd>
+            <dd class="mt-1 text-sm zb-text-primary${f.type === 'LongText' || f.type === 'JSON' ? ' whitespace-pre-wrap break-words' : ''}${f.type === 'JSON' ? ' font-mono zb-code text-xs' : ''}">${this.utils.formatValue(record[f.name], f.type, { showIdentifiers: f.showIdentifiers })}</dd>
           </div>
         `.html).join(''))}
       </dl>
@@ -294,7 +307,7 @@ export class ComponentRenderers {
       this.blueprint,
       this.theme,
       this.utils,
-      (items, entity) => this.renderTable(items, entity, context.page),
+      (items, entity, options) => this.renderTable(items, entity, context.page, options),
       _entity
     )
   }

@@ -70,6 +70,10 @@ export interface Field {
   write?: 'command-only'
   /** Optional command allow-list for a command-only field. */
   commands?: string[]
+  /**
+   * JSON fields hide keys that look like technical identifiers (such as `id`) when displayed. Set this to show every key.
+   */
+  show_identifiers?: boolean
 }
 
 export type FieldType =
@@ -337,11 +341,20 @@ export interface PageBehavior {
 }
 
 export interface ActionBarConfig {
+  /** May contain `{field}` placeholders, filled from the record. */
   title?: string
+  /** May contain `{field}` placeholders, filled from the record. */
   description?: string
   statusField?: string
   statusLabel?: string
   showStatus?: boolean
+  /** Title and description to use instead when the status field has a given value, keyed by that value. */
+  byStatus?: Record<string, { title?: string; description?: string }>
+  /**
+   * Generated controls for the entity's domain commands. Omit to show every command that is currently available,
+   * `false` to show none, or a list of command names to show only those.
+   */
+  commands?: boolean | string[]
   actions?: ActionBarAction[]
   secondaryActions?: ActionBarAction[]
 }
@@ -363,6 +376,12 @@ export interface ActionBarAction {
   errorMessage?: string
 }
 
+/** How a page query's rows are presented. When unset, related sections choose from the entity name. */
+export type QueryDisplay = 'table' | 'feed' | 'checklist' | 'timeline'
+
+/** A table column: a field name, or a field with a label and wrapping override. */
+export type QueryColumn = string | { field: string; label?: string; wrap?: boolean }
+
 export interface Query {
   entity: string
   where?: Record<string, any>
@@ -370,6 +389,14 @@ export interface Query {
   limit?: number
   offset?: number
   include?: string[]
+  /** Presentation: how a page shows these rows. Not used when the query runs. */
+  display?: QueryDisplay
+  /** Presentation: heading of the related section (default: the query name, formatted). */
+  title?: string
+  /** Presentation: text shown when there are no rows. */
+  empty?: string
+  /** Presentation: columns of a table, in order. Default: the entity's displayable fields. */
+  columns?: QueryColumn[]
 }
 
 export interface Form {

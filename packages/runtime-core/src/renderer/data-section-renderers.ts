@@ -5,7 +5,7 @@
  * checklists, timelines, and activity feeds.
  */
 
-import type { Blueprint } from '../types/blueprint.js'
+import type { Blueprint, Query, QueryColumn, QueryDisplay } from '../types/blueprint.js'
 import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { html, SafeHtml, safe } from '../security/html-escape.js'
@@ -73,36 +73,71 @@ export function renderActivityFeed(items: any[], utils: RendererUtils, _theme?: 
 /**
  * Render a smart section based on entity name heuristics
  */
+type SectionTableRenderer = (items: any[], entity: any, options?: { columns?: QueryColumn[] }) => SafeHtml
+
+/** The message shown when a section has no rows: the query's own `empty` text, or a default. */
+function emptyMessage(query: Query | undefined, fallback: string): SafeHtml {
+  return html`<p class="zb-text-secondary">${query?.empty ?? fallback}</p>`
+}
+
+/**
+ * Render a section with the presentation the blueprint asked for (`display` on the page query).
+ */
+export function renderExplicitSection(
+  display: QueryDisplay,
+  title: string,
+  items: any[],
+  entity: any,
+  utils: RendererUtils,
+  renderTable: SectionTableRenderer,
+  query?: Query
+): SafeHtml {
+  if (items.length === 0) return emptyMessage(query, `No ${utils.formatFieldName(title).toLowerCase()} found`)
+  switch (display) {
+    case 'table': return renderTable(items, entity, { columns: query?.columns })
+    case 'feed': return renderActivityFeed(items, utils)
+    case 'checklist': return renderChecklist(items, utils)
+    case 'timeline': return renderRampTimeline(items, utils)
+  }
+}
+
+/**
+ * Render a smart section. An explicit `display` on the query decides how rows are shown; without one, the
+ * presentation is chosen from the entity's name (a convention kept for existing blueprints).
+ */
 export function renderSmartSection(
   title: string,
   items: any[],
   entity: any,
   utils: RendererUtils,
-  renderTable: (items: any[], entity: any) => SafeHtml
+  renderTable: SectionTableRenderer,
+  query?: Query
 ): SafeHtml {
+  if (query?.display) return renderExplicitSection(query.display, title, items, entity, utils, renderTable, query)
+
   const hint = ((entity?.name as string) || title || '').toLowerCase()
 
   if (hint.includes('task')) {
     return items.length > 0
       ? renderChecklist(items, utils)
-      : html`<p class="zb-text-secondary">No tasks found</p>`
+      : emptyMessage(query, 'No tasks found')
   }
 
   if (hint.includes('milestone') || hint.includes('timeline')) {
     return items.length > 0
       ? renderRampTimeline(items, utils)
-      : html`<p class="zb-text-secondary">No milestones yet</p>`
+      : emptyMessage(query, 'No milestones yet')
   }
 
   if (hint.includes('activity') || hint.includes('event')) {
     return items.length > 0
       ? renderActivityFeed(items, utils)
-      : html`<p class="zb-text-secondary">No recent activity</p>`
+      : emptyMessage(query, 'No recent activity')
   }
 
   return items.length > 0
-    ? renderTable(items, entity)
-    : html`<p class="zb-text-secondary">No ${utils.formatFieldName(title).toLowerCase()} found</p>`
+    ? renderTable(items, entity, { columns: query?.columns })
+    : emptyMessage(query, `No ${utils.formatFieldName(title).toLowerCase()} found`)
 }
 
 /**
@@ -113,7 +148,7 @@ export function renderRelatedData(
   blueprint: Blueprint,
   theme: Theme,
   utils: RendererUtils,
-  renderTable: (items: any[], entity: any) => SafeHtml,
+  renderTable: SectionTableRenderer,
   _entity?: any
 ): SafeHtml {
   const { page, data } = context
@@ -130,8 +165,8 @@ export function renderRelatedData(
       ${safe(relatedQueries.map(([name, query]) => {
         const items = Array.isArray(data[name]) ? data[name] : []
         const relatedEntity = blueprint.entities.find(e => e.name === (query as any).entity)
-        const sectionTitle = utils.formatFieldName(name)
-        const rendered = renderSmartSection(sectionTitle, items, relatedEntity, utils, renderTable)
+        const sectionTitle = (query as Query).title ?? utils.formatFieldName(name)
+        const rendered = renderSmartSection(sectionTitle, items, relatedEntity, utils, renderTable, query as Query)
 
         return html`
           <div class="mb-6">
