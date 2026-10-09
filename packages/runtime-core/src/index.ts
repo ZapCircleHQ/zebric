@@ -7,6 +7,8 @@
 
 // Platform Ports
 export * from './ports.js'
+export * from './live/live.js'
+export * from './live/change-journal.js'
 export * from './audit/types.js'
 
 // Blueprint Types & Schemas

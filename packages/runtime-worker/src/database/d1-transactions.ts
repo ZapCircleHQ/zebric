@@ -1,3 +1,4 @@
+import { SqlChangeJournal, changeJournalSchema, resolveLiveConfig, CHANGE_TABLE } from '@zebric/runtime-core'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Blueprint, SqlStoragePort, CommandEffectsPort } from '@zebric/runtime-core'
 import { D1RuntimeJournal } from '../audit/d1-runtime-journal.js'
@@ -47,6 +48,22 @@ const transactionLifetime = 5 * 60 * 1000
  * before commit. Whole-table validation also detects policy reads and phantoms.
  */
 export class D1Transactions implements SqlStoragePort {
+  private changeReady?: Promise<void>
+  readonly changeJournal: SqlChangeJournal
+  async initializeChanges(): Promise<void> {
+    this.changeReady ??= this.db.query(changeJournalSchema()).then(() => undefined).catch(error => { this.changeReady = undefined; throw error })
+    await this.changeReady
+  }
+
+  async enqueueChange(entity: string, operation: 'create' | 'update' | 'delete', id: string): Promise<void> {
+    await this.initializeChanges()
+    const statement = this.changeJournal.prepare(entity, operation, id)
+    const scope = this.scopes.getStore()
+    if (!scope) throw new Error('Changes require an active transaction')
+    this.assertActive(scope)
+    scope.statements.push(statement)
+  }
+
   private readonly scopes = new AsyncLocalStorage<Scope>()
   private readonly outbox: D1WorkflowOutbox
   private readonly journal: D1RuntimeJournal
@@ -55,6 +72,7 @@ export class D1Transactions implements SqlStoragePort {
     private readonly db: D1Adapter,
     private readonly blueprint: Blueprint
   ) {
+    this.changeJournal = new SqlChangeJournal(db, resolveLiveConfig(blueprint).changeRetentionMs)
     this.outbox = new D1WorkflowOutbox(db)
     this.journal = new D1RuntimeJournal(db)
     if (blueprint.entities.some((entity) => entity.name.toLowerCase().startsWith('_zebric_')))
@@ -104,7 +122,14 @@ export class D1Transactions implements SqlStoragePort {
   async batch<T = unknown>(statements: Statement[]): Promise<Array<{ rows: T[] }>> {
     if (!this.scopes.getStore()) return this.db.batch<T>(statements)
     const results: Array<{ rows: T[] }> = []
-    for (const statement of statements) results.push(await this.query<T>(statement.sql, statement.params))
+    for (const statement of statements) {
+      if (statement.sql.startsWith(`INSERT INTO ${CHANGE_TABLE} `)) {
+        const scope = this.scopes.getStore()!
+        this.assertActive(scope)
+        scope.statements.push(statement)
+        results.push({ rows: [] })
+      } else results.push(await this.query<T>(statement.sql, statement.params))
+    }
     return results
   }
 

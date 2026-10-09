@@ -114,7 +114,7 @@ export class HTMLRenderer {
    */
   renderPage(context: RenderContext): string {
     const { page } = context
-    const wrapOpts = { includeClientRuntime: pageNeedsClientRuntime(page) }
+    const wrapOpts = { includeClientRuntime: pageNeedsClientRuntime(page), liveCursor: page.live ? context.liveCursor : undefined }
 
     // Widgets take precedence over layouts — if a widget is declared, render it.
     if (pageHasWidget(page)) {

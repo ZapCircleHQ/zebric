@@ -14,9 +14,10 @@ export default defineConfig({
     timeout: 5_000,
   },
   use: {
+    channel: process.env.PLAYWRIGHT_CHANNEL,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: process.env.PLAYWRIGHT_VIDEO === 'off' ? 'off' : 'retain-on-failure',
   },
   projects: [
     {

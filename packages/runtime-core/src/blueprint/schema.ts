@@ -509,6 +509,7 @@ const WidgetSchema = z.object({
 
 const PageSchema = z.object({
   path: z.string(),
+  live: z.boolean().optional(),
   title: z.string(),
   auth: z.enum(['required', 'optional', 'none']).optional(),
   layout: z.string().optional(),
@@ -730,6 +731,13 @@ const ProjectConfigSchema = z.object({
   }),
 })
 
+const LiveConfigSchema = z.object({
+  /** Seconds between full session/permission re-checks on an open live stream. */
+  reauthorize_interval_seconds: z.number().min(1).optional(),
+  /** Hours of change-journal history to keep; 0 keeps it forever. */
+  change_retention_hours: z.number().min(0).optional(),
+})
+
 export const BlueprintSchema = z.object({
   version: z.string(),
   hash: z.string().optional(),
@@ -747,6 +755,7 @@ export const BlueprintSchema = z.object({
   skills: z.array(SkillConfigSchema).optional(),
   commands: z.array(CommandSchema).optional(),
   services: z.array(ServiceConfigSchema).optional(),
+  live: LiveConfigSchema.optional(),
 })
 
 /** Schema for a TOML file participating in a composed Blueprint. */

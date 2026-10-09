@@ -5,6 +5,7 @@
  * Translates Blueprint Query definitions into SQL and executes them via D1Adapter.
  */
 
+import type { LiveChangeSource } from '@zebric/runtime-core'
 import type { Query, Entity, Blueprint, QueryPredicate } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import type { QueryExecutorPort, RequestContext, SqlStoragePort, CommandEffectsPort } from '@zebric/runtime-core'
@@ -14,6 +15,26 @@ import type { WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
 import { AccessControl, PermissionManager, PolicyEvaluator, actorFromSession, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
+  private get recordsLiveChanges(): boolean { return Boolean(this.blueprint.pages?.some(page => page.live)) }
+  get liveChanges(): LiveChangeSource | undefined {
+    const adapter = this.adapter
+    if (!(adapter instanceof D1Transactions)) return undefined
+    return {
+      currentCursor: async () => { await adapter.initializeChanges(); return adapter.changeJournal.currentCursor() },
+      changesAfter: async (cursor, limit) => { await adapter.initializeChanges(); return adapter.changeJournal.changesAfter(cursor, limit) },
+      reconcile: async (dependencies, cursor) => { await adapter.initializeChanges(); return adapter.changeJournal.reconcile(dependencies, cursor) },
+    }
+  }
+  private async recordChange(entity: string, operation: 'create' | 'update' | 'delete', id: string): Promise<void> {
+    if (this.recordsLiveChanges && this.adapter instanceof D1Transactions) await this.adapter.enqueueChange(entity, operation, id)
+  }
+
+  private async changeStatements(entity: string, operation: 'create' | 'update' | 'delete', id?: string) {
+    if (!this.recordsLiveChanges || !(this.adapter instanceof D1Transactions)) return []
+    await this.adapter.initializeChanges()
+    return [this.adapter.changeJournal.prepare(entity, operation, id)]
+  }
+
   private permissionManager: PermissionManager
   private readonly policyEvaluator: PolicyEvaluator
 
@@ -56,7 +77,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
   }
 
   private get requiresAuditTransaction(): boolean {
-    return Boolean(this.options.auditMutations && this.adapter instanceof D1Transactions && !this.adapter.inTransaction)
+    return Boolean((this.options.auditMutations || this.recordsLiveChanges) && this.adapter instanceof D1Transactions && !this.adapter.inTransaction)
   }
 
   async auditMutation(entity: Entity, action: 'create' | 'update' | 'delete', id: string, data: Record<string, any>, context: RequestContext): Promise<void> {
@@ -166,6 +187,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
 
     const result = await this.adapter.query(sql, values)
     const record = this.normalizeRecord(entityDef, result.rows[0] || filteredData)
+    await this.recordChange(entity, 'create', String(record.id))
     await this.auditMutation(entityDef, 'create', String(record.id), record, context)
     return filterReadableFields(entityDef, record, context.session)
   }
@@ -225,6 +247,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     const result = await this.adapter.query(sql, [...values, id])
+    await this.recordChange(entity, 'update', id)
     await this.auditMutation(entityDef, 'update', id, writable, context)
     return filterReadableFields(
       entityDef,
@@ -262,7 +285,10 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     `
 
     await this.adapter.query(sql, [id])
-    if (existing) await this.auditMutation(entityDef, 'delete', id, {}, context)
+    if (existing) {
+      await this.recordChange(entity, 'delete', id)
+      await this.auditMutation(entityDef, 'delete', id, {}, context)
+    }
   }
 
   /**
@@ -295,7 +321,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       const filtered = this.filterFields(entityDef, this.applyCreateDefaults(entityDef, writable, context))
       const fields = Object.keys(filtered)
       if (fields.length === 0) throw new Error(`Create ${entity} has no writable fields`)
-      return [{
+      return [...await this.changeStatements(entity, action, filtered.id == null ? undefined : String(filtered.id)), {
         sql: `INSERT INTO ${this.quoteIdentifier(entity)} (${fields.map(field => this.quoteIdentifier(field)).join(', ')}) VALUES (${fields.map(() => '?').join(', ')})`,
         params: Object.values(filtered),
       }]
@@ -322,6 +348,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
       }
       const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
       return [
+        ...(existing ? await this.changeStatements(entity, action, id) : []),
         this.workflowPredicateGuard(entity, id, predicate),
         {
           sql: `DELETE FROM ${this.quoteIdentifier(entity)} WHERE ${predicate.sql}`,
@@ -346,6 +373,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     if (fields.length === 0) throw new Error(`Update ${entity} has no writable fields`)
     const predicate = this.compileWorkflowWhere(entityDef, mutationWhere, context)
     return [
+      ...await this.changeStatements(entity, action, id),
       this.workflowPredicateGuard(entity, id, predicate),
       {
         sql: `UPDATE ${this.quoteIdentifier(entity)} SET ${fields.map(field => `${this.quoteIdentifier(field)} = ?`).join(', ')} WHERE ${predicate.sql}`,

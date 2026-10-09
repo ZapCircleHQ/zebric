@@ -10,10 +10,13 @@ runtimeConformance('Workers D1', async () => {
     compatibilityDate: '2026-04-28', d1Databases: { DB: 'conformance' } })
   const DB = await mf.getD1Database('DB')
   await DB.exec('CREATE TABLE Item (id TEXT PRIMARY KEY, title TEXT, published INTEGER, priority INTEGER, status TEXT, payload TEXT, scheduledAt TEXT, createdAt TEXT, updatedAt TEXT)')
-  const engine = new ZebricWorkersEngine({ env: { DB, WRITER_KEY: 'writer-key', READER_KEY: 'reader-key' } as any, blueprint, authProvider: { getAuthInstance: () => ({}), getSession: async () => session, hasRole: () => true, ownsResource: () => true, cleanup: async () => {} }, sessionManager: { getSession: async () => session } })
+  await DB.exec('CREATE TABLE Other (id TEXT PRIMARY KEY); CREATE TABLE Secret (id TEXT PRIMARY KEY)')
+  let currentSession: typeof session | null = session
+  const engine = new ZebricWorkersEngine({ env: { DB, WRITER_KEY: 'writer-key', READER_KEY: 'reader-key' } as any, blueprint, authProvider: { getAuthInstance: () => ({}), getSession: async () => currentSession, hasRole: () => true, ownsResource: () => true, cleanup: async () => {} }, sessionManager: { getSession: async () => currentSession } })
   const queries = new WorkersQueryExecutor(new D1Adapter(DB), blueprint)
   return {
     queries,
+    setSession: value => { currentSession = value },
     commands: new CommandExecutor(blueprint, { queryExecutor: queries }),
     fetch: (path, init) => {
       const headers = new Headers(init?.headers)

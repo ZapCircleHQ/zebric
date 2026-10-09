@@ -5,6 +5,7 @@
  * Translates Blueprint query syntax to SQL.
  */
 
+import { SqlChangeJournal, resolveLiveConfig, type LiveChangeSource } from '@zebric/runtime-core'
 import { eq, ne, and, or, gt, gte, lt, lte, like, ilike, inArray, isNull, isNotNull, asc, desc, sql, SQL } from 'drizzle-orm'
 import type { Query, Entity, QueryPredicate, RequestContext } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
@@ -32,6 +33,27 @@ export interface AuditOutboxRecord {
 }
 
 export class QueryExecutor {
+  readonly liveChanges: LiveChangeSource
+  private readonly changeJournal: SqlChangeJournal
+  private get recordsLiveChanges(): boolean {
+    return typeof this.connection.getBlueprint === 'function' && Boolean(this.connection.getBlueprint()?.pages?.some(page => page.live))
+  }
+
+  private async recordChange(entity: string, operation: 'create' | 'update' | 'delete', id: string): Promise<void> {
+    if (!this.recordsLiveChanges) return
+    // PostgreSQL sequence allocation must follow commit order for reconciliation.
+    await this.lockRuntimeDelivery('live-changes')
+    const statement = this.changeJournal.prepare(entity, operation, id)
+    await this.queryChangeStorage(statement.sql, statement.params)
+  }
+
+  private async queryChangeStorage<T>(text: string, params: unknown[] = []): Promise<{ rows: T[] }> {
+    const parts = text.split('?')
+    const chunks: SQL[] = [sql.raw(parts[0]!)]
+    for (let i = 0; i < params.length; i++) chunks.push(sql`${params[i]}`, sql.raw(parts[i + 1]!))
+    return { rows: await this.queryRuntime<T>(sql.join(chunks, sql.raw(''))) }
+  }
+
   private permissionManager?: PermissionManager
   private readonly policyEvaluator: PolicyEvaluator
   private readonly transactionContext = new AsyncLocalStorage<{
@@ -56,10 +78,15 @@ export class QueryExecutor {
     permissionManager?: PermissionManager,
     private metrics?: MetricsRegistry
   ) {
-    this.permissionManager = permissionManager
     const blueprint = typeof (connection as any).getBlueprint === 'function'
       ? (connection as any).getBlueprint()
       : undefined
+    this.changeJournal = new SqlChangeJournal(
+      { query: (text, params) => this.queryChangeStorage(text, params) },
+      resolveLiveConfig(blueprint).changeRetentionMs,
+    )
+    this.liveChanges = this.changeJournal
+    this.permissionManager = permissionManager
     this.policyEvaluator = new PolicyEvaluator(blueprint, this)
   }
 
@@ -459,7 +486,7 @@ export class QueryExecutor {
    * Create a new record
    */
   async create(entityName: string, data: Record<string, any>, context?: QueryContext): Promise<any> {
-    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.create(entityName, data, context))
+    if ((this.mutationObserver || this.recordsLiveChanges) && !this.inTransaction) return this.transaction(() => this.create(entityName, data, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -524,6 +551,7 @@ export class QueryExecutor {
       const record = inserted?.[0]
       if (record) {
         const after = filterReadableFields(entity, this.toCamelCase(record), context?.session)
+        await this.recordChange(entityName, 'create', String(record.id))
         await this.mutationObserver?.({ entity: entityName, event: 'create', after, context })
         return after
       }
@@ -557,7 +585,7 @@ export class QueryExecutor {
     data: Record<string, any>,
     context?: QueryContext
   ): Promise<any> {
-    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.updateWhere(entityName, id, expected, data, context))
+    if ((this.mutationObserver || this.recordsLiveChanges) && !this.inTransaction) return this.transaction(() => this.updateWhere(entityName, id, expected, data, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -625,6 +653,7 @@ export class QueryExecutor {
 
       // Return updated record
       const after = filterReadableFields(entity, this.toCamelCase(updated[0]), context?.session)
+      await this.recordChange(entityName, 'update', id)
       await this.mutationObserver?.({ entity: entityName, event: 'update', before: filterReadableFields(entity, existingRecord, context?.session), after, context })
       return after
     } finally {
@@ -636,7 +665,7 @@ export class QueryExecutor {
    * Delete a record
    */
   async delete(entityName: string, id: string, context?: QueryContext): Promise<void> {
-    if (this.mutationObserver && !this.inTransaction) return this.transaction(() => this.delete(entityName, id, context))
+    if ((this.mutationObserver || this.recordsLiveChanges) && !this.inTransaction) return this.transaction(() => this.delete(entityName, id, context))
     await this.waitForTransaction()
     const db = this.getDb()
     const table = this.connection.getTable(entityName)
@@ -669,6 +698,7 @@ export class QueryExecutor {
       await (db as any)
         .delete(table)
         .where(eq(table.id, id))
+      await this.recordChange(entityName, 'delete', id)
       await this.mutationObserver?.({ entity: entityName, event: 'delete', before: filterReadableFields(entity, existingRecord, context?.session), context })
     } finally {
       this.metrics?.recordQuery(entityName, 'delete', performance.now() - start)

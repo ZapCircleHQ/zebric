@@ -55,7 +55,9 @@
     "test:coverage": "vitest run --coverage",
     "clean": "rm -rf dist",
     "pretest:conformance": "pnpm --filter @zebric/runtime-core build && pnpm --filter @zebric/runtime-hono build && pnpm --filter @zebric/notifications build && pnpm --filter @zebric/observability build",
-    "test:conformance": "vitest run src/conformance.test.ts"
+    "test:conformance": "vitest run src/conformance.test.ts",
+    "pretest:browser:live": "pnpm run pretest:browser",
+    "test:browser:live": "playwright test --config=playwright.config.ts live.browser.spec.ts live.e2e.spec.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.0",

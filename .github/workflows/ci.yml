@@ -170,10 +170,13 @@ jobs:
           pnpm --filter @zebric/notifications build
           pnpm --filter @zebric/observability build
           pnpm --filter @zebric/runtime-worker build
+          pnpm --filter @zebric/runtime-node build
+          pnpm --filter @zebric/agent build
 
       - name: Run tests
         run: |
           pnpm --filter @zebric/runtime-core test
+          pnpm --filter @zebric/runtime-hono test
           pnpm --filter @zebric/runtime-node test
           pnpm --filter @zebric/runtime-worker test
           pnpm --filter @zebric/cli test

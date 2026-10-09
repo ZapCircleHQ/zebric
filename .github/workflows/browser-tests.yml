@@ -6,13 +6,22 @@ on:
   pull_request:
     branches: [main, develop]
     paths:
-      - 'packages/runtime-core/src/**'
-      - 'packages/runtime-node/src/**'
-      - 'packages/runtime-worker/src/**'
-      - 'packages/runtime-hono/src/**'
+      - 'packages/runtime-core/**'
+      - 'packages/runtime-node/**'
+      - 'packages/runtime-worker/**'
+      - 'packages/runtime-hono/**'
+      - 'packages/agent/**'
+      - 'packages/mcp-server/**'
+      - 'packages/notifications/**'
+      - 'packages/observability/**'
       - 'packages/runtime-simulator/src/**'
       - 'packages/themes/**'
-      - 'packages/runtime-node/tests/playwright/**'
+      - 'tests/runtime-conformance/**'
+      - 'examples/zebric-dispatch/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
       - '.github/workflows/browser-tests.yml'
 
 concurrency:
@@ -53,15 +62,14 @@ jobs:
           pnpm --filter @zebric/notifications build
           pnpm --filter @zebric/observability build
           pnpm --filter @zebric/runtime-node build
+          pnpm --filter @zebric/agent build
 
       - name: Install Playwright browsers
-        run: pnpm --filter @zebric/runtime-node test:browser:install
+        run: pnpm --filter @zebric/runtime-node exec playwright install --with-deps chromium ffmpeg
 
-      - name: Run browser tests (PR subset — rendering + journeys)
+      - name: Run browser tests (PR subset — rendering + journeys + live)
         if: github.event_name == 'pull_request'
-        run: |
-          pnpm --filter @zebric/runtime-node test:browser:rendering
-          pnpm --filter @zebric/runtime-node test:browser:journeys
+        run: pnpm --filter @zebric/runtime-node exec playwright test --config=playwright.config.ts --grep '@rendering|@journey|@live'
         env:
           CI: true
 
@@ -76,5 +84,7 @@ jobs:
         if: always()
         with:
           name: playwright-report
-          path: packages/runtime-node/playwright-report/
+          path: |
+            packages/runtime-node/playwright-report/
+            packages/runtime-node/test-results/
           retention-days: 14
