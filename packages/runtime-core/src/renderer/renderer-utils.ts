@@ -94,6 +94,10 @@ export class RendererUtils {
 
     switch (type) {
       case 'DateTime':
+        // A timestamp without its time is useless for activity and audit views, and a bare time is ambiguous because the
+        // server's zone differs from the reader's (Cloudflare Workers always render in UTC), so name the zone.
+        return new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
+
       case 'Date':
         return new Date(value).toLocaleDateString()
 

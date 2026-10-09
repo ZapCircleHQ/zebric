@@ -354,7 +354,7 @@ export class LayoutRenderers {
             ? this.utils.resolveEntityLink(this.utils.getEntityPagePath(entity?.name, 'detail')!, entity?.name || '', item)
             : undefined
         const metadata = (board.card.fields || []).map((fieldPath) => html`
-          <span class="rounded border border-gray-200 px-2 py-1 text-xs text-gray-600">
+          <span class="rounded border zb-border px-2 py-1 text-xs zb-text-secondary">
             <span class="sr-only">${this.utils.formatFieldName(fieldPath)}: </span>
             ${getBoardValue(item, fieldPath) ?? '—'}
           </span>
@@ -377,7 +377,7 @@ export class LayoutRenderers {
             <h3 class="${this.theme.heading3}">
               ${href ? html`<a href="${href}" class="${this.theme.linkPrimary}">${cardTitle}</a>` : cardTitle}
             </h3>
-            ${description ? html`<p class="mt-2 text-sm text-gray-600">${description}</p>` : ''}
+            ${description ? html`<p class="mt-2 text-sm zb-text-secondary">${description}</p>` : ''}
             ${metadata.length ? html`<div class="mt-3 flex flex-wrap gap-2">${safe(metadata.map((entry) => entry.html).join(''))}</div>` : ''}
             ${moves.length ? html`
               <details class="mt-4 text-sm">
@@ -393,21 +393,21 @@ export class LayoutRenderers {
 
       return html`
         <section
-          class="min-w-0 rounded-lg bg-gray-100 p-3"
+          class="min-w-0 rounded-lg zb-surface-muted p-3"
           data-board-column="${column.value}"
           aria-labelledby="board-column-${columnIndex}"
         >
           <header class="mb-3">
             <div class="flex items-center justify-between gap-2">
               <h2 id="board-column-${columnIndex}" class="${this.theme.heading3}">${column.label}</h2>
-              <span class="text-sm text-gray-500" aria-label="${columnItems.length} cards">${columnItems.length}</span>
+              <span class="text-sm zb-text-secondary" aria-label="${columnItems.length} cards">${columnItems.length}</span>
             </div>
-            ${column.description ? html`<p class="mt-1 text-xs text-gray-500">${column.description}</p>` : ''}
+            ${column.description ? html`<p class="mt-1 text-xs zb-text-secondary">${column.description}</p>` : ''}
           </header>
           <div class="space-y-3" data-board-cards>
             ${cards.length
               ? safe(cards.map((card) => card.html).join(''))
-              : html`<p class="py-8 text-center text-sm text-gray-500">No cards</p>`}
+              : html`<p class="py-8 text-center text-sm zb-text-secondary">No cards</p>`}
           </div>
         </section>
       `
@@ -417,7 +417,7 @@ export class LayoutRenderers {
       <div class="${this.theme.container}" data-zebric-primitive="board">
         <header class="${this.theme.pageHeader}">
           <h1 class="${this.theme.heading1}">${page.title}</h1>
-          <p class="mt-1 text-sm text-gray-600">${items.length} cards</p>
+          <p class="mt-1 text-sm zb-text-secondary">${items.length} cards</p>
         </header>
         <div
           class="mt-6 grid gap-4 overflow-auto pb-4"
@@ -439,7 +439,7 @@ export class LayoutRenderers {
 
     const content = html`
       <div>
-        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <h2 class="mt-6 text-center text-3xl font-extrabold zb-text-primary">
           Sign in to your account
         </h2>
       </div>
@@ -454,7 +454,7 @@ export class LayoutRenderers {
               type="email"
               autocomplete="email"
               required
-              class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+              class="zb-control appearance-none rounded-none relative block w-full px-3 py-2 border zb-border placeholder-gray-500 zb-text-primary rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
               placeholder="Email address"
             />
           </div>
@@ -466,7 +466,7 @@ export class LayoutRenderers {
               type="password"
               autocomplete="current-password"
               required
-              class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+              class="zb-control appearance-none rounded-none relative block w-full px-3 py-2 border zb-border placeholder-gray-500 zb-text-primary rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
               placeholder="Password"
             />
           </div>

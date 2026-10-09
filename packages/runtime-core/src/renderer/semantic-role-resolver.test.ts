@@ -41,7 +41,7 @@ describe('semantic role resolver', () => {
   it('falls back to built-in action classes', () => {
     expect(getActionButtonClass(undefined, defaultTheme)).toBe(defaultTheme.buttonPrimary)
     expect(getActionButtonClass('secondary', defaultTheme)).toBe(defaultTheme.buttonSecondary)
-    expect(getActionButtonClass('danger', defaultTheme)).toContain('text-red-600')
+    expect(getActionButtonClass('danger', defaultTheme)).toContain('zb-button-danger')
   })
 
   it('maps status values to semantic roles and classes', () => {
@@ -49,7 +49,7 @@ describe('semantic role resolver', () => {
     expect(getStatusSemanticRole('in_progress')).toBe('status-warning')
     expect(getStatusSemanticRole('rejected')).toBe('status-negative')
     expect(getStatusSemanticRole('unknown')).toBe('status-neutral')
-    expect(getStatusRoleClass('status-positive')).toContain('green')
-    expect(getStatusRoleClass('status-negative')).toContain('red')
+    expect(getStatusRoleClass('status-positive')).toBe('zb-status-positive')
+    expect(getStatusRoleClass('status-negative')).toBe('zb-status-negative')
   })
 })

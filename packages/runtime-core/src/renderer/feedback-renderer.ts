@@ -42,12 +42,12 @@ export function resolveFeedbackMode(
 export function getFlashVariantClasses(type: FlashMessage['type']): string {
   switch (type) {
     case 'success':
-      return 'border-green-300 bg-green-50 text-green-800'
+      return 'zb-feedback-success'
     case 'error':
-      return 'border-red-300 bg-red-50 text-red-800'
+      return 'zb-feedback-error'
     case 'warning':
-      return 'border-yellow-300 bg-yellow-50 text-yellow-800'
+      return 'zb-feedback-warning'
     default:
-      return 'border-blue-200 bg-blue-50 text-blue-800'
+      return 'zb-feedback-info'
   }
 }

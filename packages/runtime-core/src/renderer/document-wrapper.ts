@@ -153,9 +153,9 @@ export class DocumentWrapper {
    */
   private renderFooter(): SafeHtml {
     return safe(`
-      <footer class="border-t border-gray-200 mt-12 py-6">
+      <footer class="border-t zb-border mt-12 py-6">
         <div class="${this.theme.container}">
-          <p class="text-center text-sm text-gray-500">
+          <p class="text-center text-sm zb-text-secondary">
             Powered by Zebric Engine v${ZEBRIC_VERSION}
           </p>
         </div>

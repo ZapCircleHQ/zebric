@@ -10,6 +10,8 @@ export const SEMANTIC_DESIGN_TOKENS = [
   'color-primary-text',
   'color-success',
   'color-warning',
+  'color-error',
+  'color-info',
   'surface-default',
   'surface-card',
   'surface-dialog',
@@ -62,22 +64,41 @@ const COMPONENT_CSS = `
 .zb-heading-medium{font-size:var(--zb-font-size-heading-medium)}
 .zb-heading-small{font-size:var(--zb-font-size-heading-small)}
 .zb-text-secondary{color:var(--zb-text-secondary)}
+.zb-border,.zb-dividers>:not([hidden])~:not([hidden]){border-color:var(--zb-border-default)}
+.zb-surface-muted{background:var(--zb-surface-default);border-color:var(--zb-border-default)}
 .zb-button-primary,[data-zebric-role="primary-action"]{background:var(--zb-color-primary);border-color:var(--zb-color-primary);border-radius:var(--zb-radius-small);color:var(--zb-text-on-primary);font-weight:var(--zb-font-weight-medium)}
 .zb-button-primary:hover,[data-zebric-role="primary-action"]:hover{background:var(--zb-color-primary);filter:brightness(.9)}
 .zb-button-secondary{background:var(--zb-surface-card);border-color:var(--zb-border-default);border-radius:var(--zb-radius-small);color:var(--zb-text-primary);font-weight:var(--zb-font-weight-medium)}
+.zb-button-secondary:hover{background:var(--zb-surface-default)}
+.zb-button-danger,.zb-button-danger:hover{background:var(--zb-surface-card);border-color:var(--zb-color-error,#b91c1c);color:var(--zb-color-error,#b91c1c)}
+.zb-button-ghost,.zb-button-ghost:hover{color:var(--zb-text-secondary);background:transparent}
 .zb-link-primary,.zb-link-primary:hover{color:var(--zb-color-primary-text)}
 .zb-link-secondary{color:var(--zb-text-secondary)}
+.zb-link-secondary:hover,.zb-nav .zb-text-primary:hover{color:var(--zb-text-primary)}
 .zb-table{border-color:var(--zb-border-default)}
 .zb-table-header{background:var(--zb-surface-default);color:var(--zb-text-secondary);font-size:var(--zb-font-size-small);font-weight:var(--zb-font-weight-medium)}
 .zb-table-row,.zb-table-cell{border-color:var(--zb-border-default)}
+.zb-table-row:hover{background:var(--zb-surface-default)}
 .zb-table-cell{color:var(--zb-text-primary)}
 .zb-form{background:var(--zb-surface-card);border-color:var(--zb-border-default);border-radius:var(--zb-radius-small)}
 .zb-label{color:var(--zb-text-primary);font-size:var(--zb-font-size-small);font-weight:var(--zb-font-weight-medium)}
 .zb-control{background:var(--zb-surface-card);border-color:var(--zb-border-default);border-radius:var(--zb-radius-small);color:var(--zb-text-primary);font-family:var(--zb-font-family-body);font-size:var(--zb-font-size-body);line-height:var(--zb-line-height-body)}
 .zb-code{font-family:var(--zb-font-family-mono)}
+.zb-control::placeholder{color:var(--zb-text-secondary)}
 .zb-control:focus{border-color:var(--zb-color-primary-text);outline:2px solid var(--zb-color-primary-text);outline-offset:1px}
 .zb-state-success,[data-zebric-role="status-positive"]{color:var(--zb-color-success)}
 .zb-state-warning,[data-zebric-role="status-warning"]{color:var(--zb-color-warning)}
+.zb-state-error,[data-zebric-role="status-negative"]{color:var(--zb-color-error,#b91c1c)}
+[data-zebric-role="status-neutral"]{color:var(--zb-text-secondary)}
+.zb-status-positive,.zb-status-warning,.zb-status-negative,.zb-status-neutral{background:var(--zb-surface-card);border:1px solid currentColor}
+.zb-status-positive,.zb-feedback-success{color:var(--zb-color-success)}
+.zb-status-warning,.zb-feedback-warning{color:var(--zb-color-warning)}
+.zb-status-negative,.zb-feedback-error{color:var(--zb-color-error,#b91c1c)}
+.zb-status-neutral{color:var(--zb-text-secondary)}
+.zb-feedback-info{color:var(--zb-color-info,#1d4ed8)}
+.zb-feedback-success,.zb-feedback-warning,.zb-feedback-error,.zb-feedback-info{background:var(--zb-surface-card);border-color:currentColor}
+.zb-marker-success{background:var(--zb-color-success)}
+.zb-marker-neutral{background:var(--zb-text-secondary)}
 `
 
 const THEME_SEMANTIC_CLASSES: Partial<Record<keyof Theme, string>> = {
@@ -90,9 +111,12 @@ const THEME_SEMANTIC_CLASSES: Partial<Record<keyof Theme, string>> = {
   card: 'zb-surface-card',
   buttonPrimary: 'zb-button-primary', buttonSecondary: 'zb-button-secondary',
   linkPrimary: 'zb-link-primary', linkSecondary: 'zb-link-secondary',
-  table: 'zb-table', tableHeader: 'zb-table-header', tableRow: 'zb-table-row', tableCell: 'zb-table-cell',
+  table: 'zb-table zb-dividers', tableHeader: 'zb-table-header', tableRow: 'zb-table-row', tableCell: 'zb-table-cell',
   form: 'zb-form', label: 'zb-label', input: 'zb-control', textarea: 'zb-control', select: 'zb-control', fileInput: 'zb-control',
-  errorState: 'zb-state-warning',
+  fieldError: 'zb-state-error',
+  formActions: 'zb-border',
+  emptyState: 'zb-text-secondary', loadingState: 'zb-text-secondary',
+  errorState: 'zb-feedback-error',
 }
 
 /** Add stable semantic classes while preserving a renderer's existing utility classes. */
@@ -118,6 +142,8 @@ const BUILTIN_TOKENS: Record<BuiltinDesignSystemName, Record<SemanticDesignToken
     'color-primary-text': '#171717',
     'color-success': '#15803d',
     'color-warning': '#b45309',
+    'color-error': '#b91c1c',
+    'color-info': '#1d4ed8',
     'surface-default': '#fafafa',
     'surface-card': '#ffffff',
     'surface-dialog': '#ffffff',
@@ -147,6 +173,8 @@ const BUILTIN_TOKENS: Record<BuiltinDesignSystemName, Record<SemanticDesignToken
     'color-primary-text': '#1e3a5f',
     'color-success': '#2f6b3c',
     'color-warning': '#9a6700',
+    'color-error': '#a12622',
+    'color-info': '#24548a',
     'surface-default': '#f5f1e8',
     'surface-card': '#fffdf7',
     'surface-dialog': '#fffdf7',
@@ -176,6 +204,8 @@ const BUILTIN_TOKENS: Record<BuiltinDesignSystemName, Record<SemanticDesignToken
     'color-primary-text': '#6d4aff',
     'color-success': '#12764e',
     'color-warning': '#a84a09',
+    'color-error': '#b42345',
+    'color-info': '#3155a6',
     'surface-default': '#fff9f2',
     'surface-card': '#ffffff',
     'surface-dialog': '#ffffff',
@@ -205,6 +235,8 @@ const BUILTIN_TOKENS: Record<BuiltinDesignSystemName, Record<SemanticDesignToken
     'color-primary-text': '#000000',
     'color-success': '#18794e',
     'color-warning': '#ad5700',
+    'color-error': '#b91c1c',
+    'color-info': '#1d4ed8',
     'surface-default': '#ffffff',
     'surface-card': '#ffffff',
     'surface-dialog': '#ffffff',
@@ -251,6 +283,8 @@ const BUILTIN_DARK_TOKENS: Record<BuiltinDesignSystemName, Partial<Record<Semant
     'text-on-primary': '#171717',
     'color-success': '#4ade80',
     'color-warning': '#fbbf24',
+    'color-error': '#f87171',
+    'color-info': '#93c5fd',
     'surface-default': '#0a0a0a',
     'surface-card': '#171717',
     'surface-dialog': '#171717',
@@ -264,6 +298,8 @@ const BUILTIN_DARK_TOKENS: Record<BuiltinDesignSystemName, Partial<Record<Semant
     'text-on-primary': '#ffffff',
     'color-success': '#6fbf73',
     'color-warning': '#e0a94c',
+    'color-error': '#f29b91',
+    'color-info': '#8fb4e3',
     'surface-default': '#1c1815',
     'surface-card': '#262019',
     'surface-dialog': '#262019',
@@ -277,6 +313,8 @@ const BUILTIN_DARK_TOKENS: Record<BuiltinDesignSystemName, Partial<Record<Semant
     'text-on-primary': '#ffffff',
     'color-success': '#4fd8a0',
     'color-warning': '#ffa552',
+    'color-error': '#ff91b0',
+    'color-info': '#a9bcff',
     'surface-default': '#1a1625',
     'surface-card': '#241d33',
     'surface-dialog': '#241d33',
@@ -290,6 +328,8 @@ const BUILTIN_DARK_TOKENS: Record<BuiltinDesignSystemName, Partial<Record<Semant
     'text-on-primary': '#000000',
     'color-success': '#4ade80',
     'color-warning': '#fbbf24',
+    'color-error': '#f87171',
+    'color-info': '#93c5fd',
     'surface-default': '#000000',
     'surface-card': '#0d0d0d',
     'surface-dialog': '#0d0d0d',
@@ -307,6 +347,8 @@ const FALLBACK_DARK_TOKENS: Partial<Record<SemanticDesignToken, string>> = {
   'text-primary': '#f3f4f6',
   'text-secondary': '#9ca3af',
   'border-default': '#374151',
+  'color-error': '#f87171',
+  'color-info': '#93c5fd',
 }
 
 function safeDesignSystemName(name: string): string | undefined {
@@ -393,5 +435,5 @@ export function renderDesignSystemStyles(configOrSystem?: DesignSystemConfig | R
     .map(href => `<link rel="stylesheet" href="${escapeHtmlAttr(href)}" data-zebric-design-system="${escapeHtmlAttr(system.name)}">`)
     .join('\n')
 
-  return `${links}${links ? '\n' : ''}<style id="zebric-design-system" data-name="${escapeHtmlAttr(system.name)}">${system.css}</style>`
+  return `<style id="zebric-design-system" data-name="${escapeHtmlAttr(system.name)}">${system.css}</style>${links ? `\n${links}` : ''}`
 }

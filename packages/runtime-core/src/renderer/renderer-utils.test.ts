@@ -37,4 +37,26 @@ describe('RendererUtils value formatting', () => {
       nested: { note: 'Called adopter' },
     })
   })
+
+  describe('formatValue for dates', () => {
+    const utils = new RendererUtils()
+    const value = '2026-10-07T20:15:30Z'
+
+    it('shows the time and names the time zone for DateTime values', () => {
+      const shown = utils.formatValue(value, 'DateTime')
+      expect(shown).toBe(new Date(value).toLocaleString(undefined, { timeZoneName: 'short' }))
+      expect(shown).toMatch(/\d{1,2}:\d{2}:\d{2}/)
+      expect(shown).not.toBe(utils.formatValue(value, 'Date'))
+    })
+
+    it('keeps showing only the date for Date values', () => {
+      expect(utils.formatValue(value, 'Date')).toBe(new Date(value).toLocaleDateString())
+      expect(utils.formatValue(value, 'Date')).not.toMatch(/\d{1,2}:\d{2}:\d{2}/)
+    })
+
+    it('shows a dash for missing values', () => {
+      expect(utils.formatValue(null, 'DateTime')).toBe('-')
+      expect(utils.formatValue(undefined, 'Date')).toBe('-')
+    })
+  })
 })

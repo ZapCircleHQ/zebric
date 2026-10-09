@@ -20,12 +20,12 @@ export function renderChecklist(items: any[], utils: RendererUtils, _theme?: The
       ${safe(items.map(item => {
         const isDone = ['done', 'complete', 'completed'].includes(String(item.status || '').toLowerCase())
         return html`
-          <li class="flex items-center justify-between rounded border border-gray-200 px-3 py-2">
+          <li class="flex items-center justify-between rounded border zb-border px-3 py-2">
             <div>
-              <p class="text-sm font-medium text-gray-900">${utils.getRecordLabel(item)}</p>
-              ${item.dueDate ? html`<p class="text-xs text-gray-500">Due ${utils.formatValue(item.dueDate, 'Date')}</p>` : ''}
+              <p class="text-sm font-medium zb-text-primary">${utils.getRecordLabel(item)}</p>
+              ${item.dueDate ? html`<p class="text-xs zb-text-secondary">Due ${utils.formatValue(item.dueDate, 'Date')}</p>` : ''}
             </div>
-            <span class="text-xs font-semibold ${isDone ? 'text-green-600' : 'text-gray-500'}">
+            <span class="text-xs font-semibold ${isDone ? 'zb-state-success' : 'zb-text-secondary'}">
               ${item.status || ''}
             </span>
           </li>
@@ -40,13 +40,13 @@ export function renderChecklist(items: any[], utils: RendererUtils, _theme?: The
  */
 export function renderRampTimeline(items: any[], utils: RendererUtils): SafeHtml {
   return html`
-    <ol class="relative border-l border-gray-200">
+    <ol class="relative border-l zb-border">
       ${safe(items.map(item => html`
         <li class="mb-6 ml-4">
-          <div class="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full ${item.status === 'approved' ? 'bg-green-600' : 'bg-gray-300'}"></div>
-          <p class="text-sm font-medium text-gray-900">${utils.getRecordLabel(item)}</p>
-          ${item.targetDate ? html`<p class="text-xs text-gray-500">Target ${utils.formatValue(item.targetDate, 'Date')}</p>` : ''}
-          ${item.status ? html`<p class="text-xs text-gray-500">Status: ${item.status}</p>` : ''}
+          <div class="absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full ${item.status === 'approved' ? 'zb-marker-success' : 'zb-marker-neutral'}"></div>
+          <p class="text-sm font-medium zb-text-primary">${utils.getRecordLabel(item)}</p>
+          ${item.targetDate ? html`<p class="text-xs zb-text-secondary">Target ${utils.formatValue(item.targetDate, 'Date')}</p>` : ''}
+          ${item.status ? html`<p class="text-xs zb-text-secondary">Status: ${item.status}</p>` : ''}
         </li>
       `.html).join(''))}
     </ol>
@@ -58,11 +58,12 @@ export function renderRampTimeline(items: any[], utils: RendererUtils): SafeHtml
  */
 export function renderActivityFeed(items: any[], utils: RendererUtils, _theme?: Theme): SafeHtml {
   return html`
-    <ul role="list" class="divide-y divide-gray-100 rounded border border-gray-100">
+    <ul role="list" class="divide-y zb-dividers rounded border zb-border">
       ${safe(items.map(item => html`
         <li class="px-4 py-3">
-          <p class="text-sm text-gray-900">${item.title || item.summary || item.action || 'Event'}</p>
-          ${item.timestamp ? html`<p class="text-xs text-gray-500">${utils.formatValue(item.timestamp, 'DateTime')}</p>` : ''}
+          <p class="text-sm zb-text-primary">${item.title || item.summary || item.action || item.kind || item.type || item.name || 'Event'}</p>
+          ${item.detail || item.description || item.message ? html`<p class="text-xs zb-text-secondary whitespace-pre-wrap break-words">${String(item.detail || item.description || item.message)}</p>` : ''}
+          ${item.timestamp || item.createdAt ? html`<p class="text-xs zb-text-secondary">${utils.formatValue(item.timestamp || item.createdAt, 'DateTime')}</p>` : ''}
         </li>
       `.html).join(''))}
     </ul>
@@ -84,24 +85,24 @@ export function renderSmartSection(
   if (hint.includes('task')) {
     return items.length > 0
       ? renderChecklist(items, utils)
-      : html`<p class="text-gray-500">No tasks found</p>`
+      : html`<p class="zb-text-secondary">No tasks found</p>`
   }
 
   if (hint.includes('milestone') || hint.includes('timeline')) {
     return items.length > 0
       ? renderRampTimeline(items, utils)
-      : html`<p class="text-gray-500">No milestones yet</p>`
+      : html`<p class="zb-text-secondary">No milestones yet</p>`
   }
 
   if (hint.includes('activity') || hint.includes('event')) {
     return items.length > 0
       ? renderActivityFeed(items, utils)
-      : html`<p class="text-gray-500">No recent activity</p>`
+      : html`<p class="zb-text-secondary">No recent activity</p>`
   }
 
   return items.length > 0
     ? renderTable(items, entity)
-    : html`<p class="text-gray-500">No ${utils.formatFieldName(title).toLowerCase()} found</p>`
+    : html`<p class="zb-text-secondary">No ${utils.formatFieldName(title).toLowerCase()} found</p>`
 }
 
 /**

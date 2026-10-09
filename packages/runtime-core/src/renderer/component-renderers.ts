@@ -72,7 +72,7 @@ export class ComponentRenderers {
 
     return html`
       <div class="${this.theme.card}" data-zebric-ux-pattern="${ux?.pattern || ''}" data-zebric-density="${density}">
-        <p class="px-6 pt-6 text-sm text-gray-500">${rowCountDescription}</p>
+        <p class="px-6 pt-6 text-sm zb-text-secondary">${rowCountDescription}</p>
         <table class="${this.theme.table}">
           <caption class="sr-only">${tableCaption}</caption>
           <thead>
@@ -89,7 +89,7 @@ export class ComponentRenderers {
             ${items.length === 0
               ? html`
                 <tr class="${this.theme.tableRow}">
-                  <td colspan="${dataColumns + 1}" class="${this.theme.tableCell} text-gray-500">
+                  <td colspan="${dataColumns + 1}" class="${this.theme.tableCell} zb-text-secondary">
                     No rows to display.
                   </td>
                 </tr>
@@ -165,12 +165,10 @@ export class ComponentRenderers {
       <dl class="space-y-4 mt-6">
         ${safe(fields.map(f => html`
           <div>
-            <dt class="text-sm font-medium text-gray-500">
+            <dt class="text-sm font-medium zb-text-secondary">
               ${this.utils.formatFieldName(f.name)}
             </dt>
-            <dd class="mt-1 text-sm text-gray-900">
-              ${this.utils.formatValue(record[f.name], f.type)}
-            </dd>
+            <dd class="mt-1 text-sm zb-text-primary${f.type === 'LongText' || f.type === 'JSON' ? ' whitespace-pre-wrap break-words' : ''}${f.type === 'JSON' ? ' font-mono zb-code text-xs' : ''}">${this.utils.formatValue(record[f.name], f.type)}</dd>
           </div>
         `.html).join(''))}
       </dl>
@@ -207,7 +205,7 @@ export class ComponentRenderers {
           ? html`
             <button
               onclick="if(confirm('Are you sure?')) { fetch('${this.utils.resolveEntityLink(deletePath, entity.name, record)}', {method:'DELETE'}).then(() => window.location.href='${viewBase}') }"
-              class="${this.theme.buttonSecondary} text-red-600"
+              class="${this.theme.buttonSecondary} zb-button-danger"
             >
               Delete
             </button>

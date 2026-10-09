@@ -40,9 +40,9 @@ describe('feedback renderer', () => {
   })
 
   it('maps flash variants to classes', () => {
-    expect(getFlashVariantClasses('success')).toContain('green')
-    expect(getFlashVariantClasses('error')).toContain('red')
-    expect(getFlashVariantClasses('warning')).toContain('yellow')
-    expect(getFlashVariantClasses('info')).toContain('blue')
+    expect(getFlashVariantClasses('success')).toBe('zb-feedback-success')
+    expect(getFlashVariantClasses('error')).toBe('zb-feedback-error')
+    expect(getFlashVariantClasses('warning')).toBe('zb-feedback-warning')
+    expect(getFlashVariantClasses('info')).toBe('zb-feedback-info')
   })
 })

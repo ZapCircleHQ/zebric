@@ -77,6 +77,12 @@ describe('Zazzle design systems', () => {
     expect(html).toContain('--zb-color-primary:#6d4aff')
   })
 
+  it('loads custom stylesheets after built-in styles in declaration order', () => {
+    const html = renderDesignSystemStyles({ name: 'acme', extends: 'modern', css: ['/base.css', '/overrides.css'] })
+    expect(html.indexOf('</style>')).toBeLessThan(html.indexOf('href="/base.css"'))
+    expect(html.indexOf('href="/base.css"')).toBeLessThan(html.indexOf('href="/overrides.css"'))
+  })
+
   it('supports a custom system from scratch', () => {
     const system = resolveDesignSystem({
       name: 'bare',

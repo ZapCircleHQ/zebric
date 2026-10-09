@@ -85,17 +85,17 @@ export function renderActionBar(
 
   return html`
     <div
-      class="mb-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-4 ${stickyFooter ? 'sticky bottom-0 z-10 shadow-sm' : ''}"
+      class="mb-6 rounded-lg border zb-border zb-surface-muted px-4 py-4 ${stickyFooter ? 'sticky bottom-0 z-10 shadow-sm' : ''}"
       data-zebric-primitive="footer-actions"
       data-zebric-action-position="${stickyFooter ? 'sticky-footer' : 'inline'}"
     >
       <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         ${hasHeader ? html`
           <div class="space-y-2">
-            ${config.title ? html`<p class="text-sm font-semibold text-gray-900">${config.title}</p>` : ''}
+            ${config.title ? html`<p class="text-sm font-semibold zb-text-primary">${config.title}</p>` : ''}
             ${hasStatus ? html`
               <div class="flex items-center gap-2 text-sm">
-                <span class="text-gray-500">
+                <span class="zb-text-secondary">
                   ${config.statusLabel || (statusField ? utils.formatFieldName(statusField) : '')}
                 </span>
                 <span
@@ -107,7 +107,7 @@ export function renderActionBar(
               </div>
             ` : ''}
             ${config.description ? html`
-              <p class="text-sm text-gray-600 max-w-prose">${config.description}</p>
+              <p class="text-sm zb-text-secondary max-w-prose">${config.description}</p>
             ` : ''}
           </div>
         ` : ''}
@@ -121,7 +121,7 @@ export function renderActionBar(
       </div>
 
       ${hasSecondary ? html`
-        <div class="mt-3 flex flex-wrap gap-4 text-sm text-gray-600">
+        <div class="mt-3 flex flex-wrap gap-4 text-sm zb-text-secondary">
           ${safe(secondaryActions.map(action => action.html).join(''))}
         </div>
       ` : ''}
@@ -164,11 +164,11 @@ function renderCommandAction(
   }
 
   return html`
-    <details class="relative rounded-lg border border-gray-200 bg-white p-3">
+    <details class="relative rounded-lg border zb-border zb-surface-card p-3">
       <summary class="cursor-pointer list-none ${buttonClass}" data-zebric-role="${semanticRole}"${description}>${label}</summary>
       <form method="POST" action="${action}" class="mt-4 min-w-72 space-y-4">
         ${hidden}
-        ${command.description ? html`<p class="text-sm text-gray-600">${command.description}</p>` : ''}
+        ${command.description ? html`<p class="text-sm zb-text-secondary">${command.description}</p>` : ''}
         ${safe(fields.map(([name, field]) => renderCommandInput(operation, name, field, utils).html).join(''))}
         <button type="submit" class="${buttonClass}" data-zebric-role="${semanticRole}"${confirm}>${label}</button>
       </form>
@@ -191,21 +191,21 @@ function renderCommandInput(
   let control: SafeHtml
   if (field.type === 'Enum') {
     control = html`
-      <select id="${id}" name="${name}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}>
+      <select id="${id}" name="${name}" class="zb-control mt-1 w-full rounded-md border px-3 py-2"${common}>
         ${field.required ? '' : html`<option value="">Select…</option>`}
         ${safe((field.values ?? []).map(value => html`<option value="${value}">${value}</option>`.html).join(''))}
       </select>
     `
   } else if (field.type === 'Boolean') {
     control = html`
-      <select id="${id}" name="${name}" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}>
+      <select id="${id}" name="${name}" class="zb-control mt-1 w-full rounded-md border px-3 py-2"${common}>
         ${field.required ? '' : html`<option value="">Select…</option>`}
         <option value="true">Yes</option>
         <option value="false">No</option>
       </select>
     `
   } else if (field.type === 'LongText' || field.type === 'JSON') {
-    control = html`<textarea id="${id}" name="${name}" rows="3" class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common}></textarea>`
+    control = html`<textarea id="${id}" name="${name}" rows="3" class="zb-control mt-1 w-full rounded-md border px-3 py-2"${common}></textarea>`
   } else {
     const inputType = field.type === 'Integer' || field.type === 'Float'
       ? 'number'
@@ -217,13 +217,13 @@ function renderCommandInput(
             ? 'datetime-local'
             : 'text'
     const step = field.type === 'Float' ? safe(attr('step', 'any')) : safe('')
-    control = html`<input id="${id}" name="${name}" type="${inputType}"${step} class="mt-1 w-full rounded-md border border-gray-300 px-3 py-2"${common} />`
+    control = html`<input id="${id}" name="${name}" type="${inputType}"${step} class="zb-control mt-1 w-full rounded-md border px-3 py-2"${common} />`
   }
   return html`
     <div>
-      <label for="${id}" class="block text-sm font-medium text-gray-700">${label}</label>
+      <label for="${id}" class="zb-label block text-sm font-medium">${label}</label>
       ${control}
-      ${field.description ? html`<p id="${descriptionId}" class="mt-1 text-xs text-gray-500">${field.description}</p>` : ''}
+      ${field.description ? html`<p id="${descriptionId}" class="mt-1 text-xs zb-text-secondary">${field.description}</p>` : ''}
     </div>
   `
 }

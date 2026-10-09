@@ -83,7 +83,7 @@ fields = [
 | `Integer` | Whole numbers |
 | `Float` | Decimal numbers |
 | `Boolean` | true/false |
-| `DateTime` | Date and time |
+| `DateTime` | Date and time (shown with its time zone) |
 | `Date` | Date only |
 | `JSON` | JSON data |
 | `Enum` | Enumerated values (use `values = [...]`) |
@@ -216,6 +216,37 @@ entity = "Post"
 where = { id = "$params.id" }
 include = ["author"]
 ```
+
+### How values are displayed
+
+Detail pages and related lists show each field according to its type. All values are HTML-escaped. Line breaks in `LongText`
+and `JSON` are kept on detail pages and in activity feeds; table cells show values on one line.
+
+| Type | Display |
+|------|---------|
+| `LongText` | Line breaks are kept (detail pages) and long lines wrap |
+| `JSON` | Pretty-printed (monospaced on detail pages). Keys that look like technical identifiers (for example `id`) are left out |
+| `DateTime` | Date, time and time zone, such as `10/8/2026, 2:13:42 AM UTC` |
+| `Date` | Date only |
+| `Boolean` | A check or cross mark |
+| empty | `-` |
+
+The time zone is the **server's**: Cloudflare Workers always render in UTC, and the Node runtime uses the process's zone. The
+zone is named so a reader in another zone is not misled.
+
+Queries other than the page's main record appear as related sections below it. Zebric chooses how to present each one from
+the entity's name, which is worth knowing when a section does not look the way you expect:
+
+| Entity name contains | Presented as |
+|----------------------|--------------|
+| `task` | A checklist |
+| `milestone` or `timeline` | A timeline |
+| `activity` or `event` | An activity feed |
+| anything else | A table |
+
+An **activity feed** shows, for each record, the first of `title`, `summary`, `action`, `kind`, `type` or `name` as its heading;
+the first of `detail`, `description` or `message` beneath it (line breaks kept); and the first of `timestamp` or `createdAt` as
+its time. A record with none of these fields shows the word "Event".
 
 ### Dashboard Page
 
@@ -382,6 +413,35 @@ primary_color = "#3B82F6"
 ```
 
 ### Theming
+
+Zazzle selects visual styles through `[design_system]`. The default is `modern`;
+`classic`, `friendly`, and `minimal` are also built in, each with a dark palette.
+
+```toml
+[design_system]
+name = "acme"
+extends = "friendly"
+css = ["/styles/acme.css"]
+
+[design_system.tokens]
+color-primary = "#5636cc"
+color-error = "#a12622"
+color-info = "#24548a"
+font-family-heading = "Georgia, serif"
+```
+
+Token names become `--zb-*` CSS custom properties. Generated details, related
+feeds, action bars, status badges, feedback, and form controls use semantic
+classes so their colors follow the selected system. Success uses `color-success`,
+warning uses `color-warning`, and errors and destructive actions use `color-error`.
+Informational feedback uses `color-info`. Status badges and feedback use
+`surface-card` as their background.
+
+The navigation color-mode control cycles auto/light/dark and saves the visitor's
+choice locally. Custom token overrides apply to the light palette; inherited dark
+colors come from the base system. Use CSS scoped to
+`html[data-zebric-design-system="acme"][data-zebric-resolved-color-mode="dark"]`
+to customize dark colors.
 
 The renderer ships two `Theme` objects — `defaultTheme` (light) and `darkTheme` — exported from `@zebric/runtime-core`. The `theme` field above is accepted by the schema but not yet wired up to select between them automatically; applying a different theme currently requires passing a `Theme` object to the renderer programmatically rather than by name in the blueprint.
 
