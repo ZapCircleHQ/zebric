@@ -79,6 +79,35 @@ describe('Live page browser behavior @live', () => {
     ;(window as any).liveSource.dispatchEvent(new MessageEvent('invalidate', { data: JSON.stringify({ type: 'invalidate', cursor: String(value) }) }))
   }, cursor)
 
+  it('settles entrance animations on each live refresh and preserves looping animations', async () => {
+    await page.addStyleTag({ content: `
+      @keyframes entrance { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes indicator { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+      #main-content { animation: entrance 60s both; }
+      #version { animation: entrance 60s both; }
+      #title { animation: indicator 60s infinite; }
+    ` })
+    const animations = () => page.evaluate(() => document.getElementById('main-content')!
+      .getAnimations({ subtree: true }).map(animation => ({
+        name: (animation as CSSAnimation).animationName, state: animation.playState,
+      })))
+    expect(await animations()).toEqual(expect.arrayContaining([
+      { name: 'entrance', state: 'running' },
+      { name: 'indicator', state: 'running' },
+    ]))
+    for (version of [1, 2]) {
+      await invalidate()
+      await expect(page.locator('#version')).toHaveText(`Version ${version}`)
+      expect(await animations()).toEqual(expect.arrayContaining([
+        { name: 'entrance', state: 'finished' },
+        { name: 'indicator', state: 'running' },
+      ]))
+      expect((await animations()).filter(animation => animation.name === 'entrance')
+        .every(animation => animation.state === 'finished')).toBe(true)
+      await expect(page.locator('#main-content')).toHaveCSS('opacity', '1')
+    }
+  })
+
   it('defers replacement during column edits and resumes after cancellation', async () => {
     const heading = page.locator('[data-editable="true"]')
     await heading.dblclick()
