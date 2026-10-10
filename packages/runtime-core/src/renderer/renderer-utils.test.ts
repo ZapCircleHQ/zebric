@@ -12,6 +12,12 @@ const blueprint: Blueprint = {
 describe('RendererUtils value formatting', () => {
   const utils = new RendererUtils(blueprint)
 
+  it('interpolates nested fields and named queries without changing payload whitespace', () => {
+    expect(utils.interpolateText('{owner.name}\n{review.title} {missing}', { owner: { name: 'Ada' } }, { review: { title: 'Approved' } }))
+      .toBe('Ada\nApproved ')
+    expect(utils.interpolateText('{review.title}', { review: { title: 'Nested' } })).toBe('Nested')
+  })
+
   it('preserves Text values that happen to have a ULID shape', () => {
     expect(utils.formatValue('ABCDEFGHJKMNPQRSTVWXYZ1234', 'Text'))
       .toBe('ABCDEFGHJKMNPQRSTVWXYZ1234')

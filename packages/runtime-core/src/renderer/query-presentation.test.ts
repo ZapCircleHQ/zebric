@@ -196,7 +196,7 @@ describe('table cells', () => {
   const html = renderer.renderTable(checks, entity).toString()
 
   it('wraps long text instead of cutting it off, and keeps short columns on one line', () => {
-    const cells = [...html.matchAll(/<td class="([^"]*)">/g)].map(m => m[1])
+    const cells = [...html.matchAll(/<td class="([^"]*)"[^>]*>/g)].map(m => m[1])
     const wrapped = cells.filter(c => c.includes('break-words'))
     const nowrap = cells.filter(c => c.includes('whitespace-nowrap'))
     expect(wrapped.length).toBe(2) // the detail column, one cell per row

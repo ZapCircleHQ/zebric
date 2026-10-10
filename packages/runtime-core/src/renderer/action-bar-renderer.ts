@@ -11,6 +11,7 @@ import { RendererUtils } from './renderer-utils.js'
 import { isActionEnabled, isActionVisible, renderPrimaryAction, renderSecondaryAction } from './action-button-renderer.js'
 import { getActionButtonClass, getActionSemanticRole, getStatusRoleClass, getStatusSemanticRole } from './semantic-role-resolver.js'
 import { commandOperationId } from '../api/openapi-generator.js'
+import { resolvePageUX } from './ux-config.js'
 
 export function getStatusFieldName(config: Page['actionBar'], entity?: any): string | null {
   if (!config) return null
@@ -77,7 +78,7 @@ export function renderActionBar(
   const hasHeader = Boolean(config.title || config.description || hasStatus)
   const shouldRender = hasHeader || hasPrimary || hasSecondary
   const stickyFooter =
-    page?.ux?.interaction?.primary_action_position === 'sticky-footer'
+    (blueprint ? resolvePageUX(blueprint, page).interaction : page.ux?.interaction)?.primary_action_position === 'sticky-footer'
 
   if (!shouldRender) {
     return safe('')

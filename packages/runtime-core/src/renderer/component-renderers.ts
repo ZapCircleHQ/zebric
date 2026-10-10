@@ -10,6 +10,8 @@ import type { RenderContext } from '../routing/request-ports.js'
 import type { Theme } from './theme.js'
 import { html, escapeHtml, escapeHtmlAttr, escapeJs, SafeHtml, safe } from '../security/html-escape.js'
 import { RendererUtils } from './renderer-utils.js'
+import { resolvePageUX } from './ux-config.js'
+import type { TablePagination } from './table-pagination.js'
 import { renderFormField as renderFormFieldFn, renderInput as renderInputFn } from './form-renderers.js'
 import { renderActionBar as renderActionBarFn } from './action-bar-renderer.js'
 import {
@@ -50,7 +52,7 @@ export class ComponentRenderers {
   /**
    * Render table of items
    */
-  renderTable(items: any[], entity?: any, page?: Page, options: { columns?: QueryColumn[] } = {}): SafeHtml {
+  renderTable(items: any[], entity?: any, page?: Page, options: { columns?: QueryColumn[]; pagination?: TablePagination; query?: Record<string, string> } = {}): SafeHtml {
     // An explicit `columns` list on the page query wins; otherwise show the entity's displayable fields.
     const explicitColumns = this.utils.resolveColumns(options.columns, entity)
     const fields: Array<{ name: string; type: string; label?: string; wrap?: boolean; showIdentifiers?: boolean }> =
@@ -73,6 +75,14 @@ export class ComponentRenderers {
     const density = ux?.data?.density || this.blueprint.ux?.data?.density || 'comfortable'
     const densityClass = this.getTableDensityClass(density)
     const rowClick = ux?.interaction?.row_click || this.blueprint.ux?.interaction?.row_click
+    const selection = ux.interaction?.selection ?? (rowClick === 'select' ? 'single' : 'none')
+    const primaryKey = entity?.fields?.find((field: any) => field.primary_key)?.name ?? 'id'
+    const filterMode = ux.data?.filters ?? 'none'
+    const pageHref = (number: number) => {
+      const query = new URLSearchParams(options.query ?? {})
+      query.set('zb_page', String(number))
+      return `?${query.toString()}`
+    }
     const canViewDetails = Boolean(detailPath)
     const rowClickOpenDetail = rowClick === 'open-detail' && canViewDetails
 
@@ -82,15 +92,24 @@ export class ComponentRenderers {
     }
 
     return html`
-      <div class="${this.theme.card}" data-zebric-ux-pattern="${ux?.pattern || ''}" data-zebric-density="${density}">
+      <div class="${this.theme.card} ${filterMode === 'sidebar' ? 'zb-table-with-sidebar' : ''}" data-zebric-table data-selection="${selection}" data-pagination="${ux.data?.pagination ?? 'none'}" data-zebric-ux-pattern="${ux?.pattern || ''}" data-zebric-density="${density}">
+        ${filterMode !== 'none' || ux.data?.column_config || selection !== 'none' ? html`
+          <div class="p-4 flex flex-wrap items-center gap-4" data-zebric-table-controls>
+            ${filterMode !== 'none' ? html`<label class="${this.theme.label}">Filter rows<input type="search" class="${this.theme.input}" data-zebric-table-search placeholder="Search loaded rows" /></label>` : ''}
+            ${ux.data?.column_config ? html`<details><summary>Columns</summary><div class="p-2">${safe(fields.map((field, index) => html`<label class="block"><input type="checkbox" checked data-zebric-column-toggle="${index}" /> ${field.label ?? this.utils.formatFieldName(field.name)}</label>`.html).join(''))}</div></details>` : ''}
+            ${selection !== 'none' ? html`<span role="status" aria-live="polite" data-zebric-selection-count>0 selected</span>` : ''}
+          </div>
+        ` : ''}
+        <div data-zebric-table-content>
         <p class="px-6 pt-6 text-sm zb-text-secondary">${rowCountDescription}</p>
         <div class="overflow-x-auto">
         <table class="${this.theme.table}">
           <caption class="sr-only">${tableCaption}</caption>
           <thead>
             <tr>
-              ${safe(fields.map(f => html`
-                <th scope="col" class="${this.theme.tableHeader}">
+              ${selection !== 'none' ? html`<th scope="col" class="${this.theme.tableHeader}">${selection === 'multi' ? html`<input type="checkbox" data-zebric-select-all aria-label="Select visible rows" />` : 'Select'}</th>` : ''}
+              ${safe(fields.map((f, index) => html`
+                <th scope="col" class="${this.theme.tableHeader}" data-zebric-column="${index}">
                   ${f.label ?? this.utils.formatFieldName(f.name)}
                 </th>
               `.html).join(''))}
@@ -101,7 +120,7 @@ export class ComponentRenderers {
             ${items.length === 0
               ? html`
                 <tr class="${this.theme.tableRow}">
-                  <td colspan="${dataColumns + 1}" class="${this.theme.tableCell} zb-text-secondary">
+                  <td colspan="${dataColumns + 1 + (selection !== 'none' ? 1 : 0)}" class="${this.theme.tableCell} zb-text-secondary">
                     No rows to display.
                   </td>
                 </tr>
@@ -114,12 +133,16 @@ export class ComponentRenderers {
                 return html`
                 <tr
                   class="${this.theme.tableRow} ${rowClickOpenDetail ? 'cursor-pointer' : ''}"
+                  data-zebric-row data-search="${fields.map(field => this.utils.formatValue(item[field.name], field.type, { showIdentifiers: field.showIdentifiers })).join(' ').toLocaleLowerCase()}"
+                  ${rowClick === 'select' && selection !== 'none' ? safe('data-row-click="select" tabindex="0"') : ''}
+                  ${rowClick === 'edit' && editPath ? safe(`data-row-click="edit" onclick="if (!event.target.closest('a, button, form, input, select, textarea, label')) window.location.href='${escapeJs(this.utils.resolveEntityLink(editPath, entity?.name, item))}'"`) : ''}
                   ${rowClickOpenDetail ? safe(`data-row-click="open-detail" onclick="if (!event.target.closest('a, button, form, input, select, textarea')) window.location.href='${escapeJs(detailHref)}'"`) : ''}
                 >
+                  ${selection !== 'none' ? html`<td class="${this.theme.tableCell} ${densityClass}"><input type="checkbox" data-zebric-row-select value="${String(item[primaryKey] ?? '')}" aria-label="Select ${itemId}" /></td>` : ''}
                   ${safe(fields.map((f, index) => {
                     const value = this.utils.formatValue(item[f.name], f.type, { showIdentifiers: f.showIdentifiers })
                     return html`
-                      <td class="${cellClass(index, densityClass)}">
+                      <td class="${cellClass(index, densityClass)}" data-zebric-column="${index}">
                         ${index === 0 && canViewDetails
                           ? html`
                             <a
@@ -161,8 +184,12 @@ export class ComponentRenderers {
                 </tr>
               `.html
               }).join(''))}
+            ${items.length > 0 && filterMode !== 'none' ? html`<tr hidden data-zebric-filter-empty><td colspan="${dataColumns + 1 + (selection !== 'none' ? 1 : 0)}" class="${this.theme.tableCell}">No matching rows.</td></tr>` : ''}
           </tbody>
         </table>
+        </div>
+        ${ux.data?.pagination === 'client' ? html`<nav aria-label="Table pages" class="p-4 flex items-center gap-4"><button type="button" class="${this.theme.buttonSecondary}" data-zebric-page-previous>Previous</button><span role="status" data-zebric-page-label></span><button type="button" class="${this.theme.buttonSecondary}" data-zebric-page-next>Next</button></nav>` : ''}
+        ${options.pagination ? html`<nav aria-label="Table pages" class="p-4 flex items-center gap-4">${options.pagination.page > 1 ? html`<a class="${this.theme.buttonSecondary}" href="${pageHref(options.pagination.page - 1)}">Previous</a>` : ''}<span>Page ${options.pagination.page}</span>${options.pagination.hasNext ? html`<a class="${this.theme.buttonSecondary}" href="${pageHref(options.pagination.page + 1)}">Next</a>` : ''}</nav>` : ''}
         </div>
       </div>
     `
@@ -337,8 +364,8 @@ export class ComponentRenderers {
     `)
   }
 
-  private resolvePageUX(page?: Page): PageUXConfig | undefined {
-    return page?.ux
+  private resolvePageUX(page?: Page): PageUXConfig {
+    return resolvePageUX(this.blueprint, page)
   }
 
   private getTableDensityClass(density: string): string {

@@ -445,6 +445,55 @@ to customize dark colors.
 
 The renderer ships two `Theme` objects — `defaultTheme` (light) and `darkTheme` — exported from `@zebric/runtime-core`. The `theme` field above is accepted by the schema but not yet wired up to select between them automatically; applying a different theme currently requires passing a `Theme` object to the renderer programmatically rather than by name in the blueprint.
 
+### Table interactions and navigation
+
+Global UX defaults can be overridden on individual pages. Fields are merged
+within `interaction`, `data`, and `form`; changing one page setting retains the
+other global defaults. Matching entries in `ux.patterns` supply pattern defaults
+between global and page configuration.
+
+```toml
+[ux.navigation]
+model = "sidebar"
+primary = ["Tasks", "Activity"]
+
+[ux.responsive]
+collapse_sidebar = true
+
+[page."/tasks".ux.interaction]
+selection = "multi"
+row_click = "select"
+
+[page."/tasks".ux.data]
+filters = "top-bar"
+column_config = true
+pagination = "client"
+```
+
+Sidebar navigation occupies a left column on desktop and collapses behind a
+Menu button below 48rem. Set `collapse_sidebar = false` to keep its links visible
+on small screens.
+
+Table selection supports `single` or `multi`, including keyboard row selection
+when `row_click = "select"`. Multi-selection includes a select-visible-rows
+checkbox; selection is retained while filtering or changing client pages. The
+table emits a bubbling `zebric:selection-change` event with `detail.ids`. Selection
+alone does not run bulk mutations. `row_click = "edit"` navigates to the entity's
+update page when one exists.
+
+`filters` adds a text filter over the loaded rows, positioned in a top bar or
+sidebar; it does not query the database. `column_config = true` adds column
+visibility controls. Client pagination shows 25 loaded rows at a time. Controls
+are scoped to each table and initialize again after Live Mode replaces content.
+
+For `pagination = "server"`, the main query on a list page uses its `limit` as
+the page size (default 25, maximum 250). Previous/Next links use `zb_page` and
+retain other query parameters. The runtime fetches one lookahead row to decide
+whether Next should be available, then removes it from the returned data.
+Related queries keep their configured limits and offsets. Set `orderBy` on the
+main query for stable ordering across pages. Filtering in this mode searches the
+current page's rows. JSON page responses include `pagination` metadata.
+
 ### Progressive Enhancement
 
 Any value other than `"none"` enables client-side form enhancement: forms render with a `data-enhance` attribute, and a small inline script intercepts submits, does an AJAX `fetch` with CSRF-token forwarding, shows a loading state on the submit button, and redirects or displays inline field errors based on the JSON response — no full page reload. The `"alpine"` and `"htmx"` values are accepted by the schema but don't currently load those libraries; they behave the same as any non-`"none"` value.

@@ -15,6 +15,7 @@ import { WIDGET_CLIENT_RUNTIME } from '../widgets/client-runtime.js'
 import { renderDesignSystemStyles, resolveDesignSystem, withDesignSystemTheme } from './design-system.js'
 import { ZEBRIC_VERSION } from '../version.generated.js'
 import { LIVE_CLIENT_RUNTIME } from '../live/client.js'
+import { UX_CLIENT_RUNTIME } from './ux-client.js'
 
 export interface WrapInDocumentOptions {
   liveCursor?: string
@@ -125,7 +126,7 @@ export class DocumentWrapper {
             }
           </style>
         </head>
-        <body class="${this.theme.body}">
+        <body class="${this.theme.body}${this.blueprint.ux?.navigation?.model === 'sidebar' ? ' zb-app-sidebar' : ''}">
           <!-- Skip navigation link for keyboard users -->
           <a href="#main-content" class="sr-only focus:not-sr-only">
             Skip to main content
@@ -140,6 +141,7 @@ export class DocumentWrapper {
 
           ${this.renderFooter().html}
           ${this.renderClientScript().html}
+          ${UX_CLIENT_RUNTIME}
           ${widgetScript}
           ${options?.liveCursor !== undefined ? LIVE_CLIENT_RUNTIME : ''}
           ${this.reloadScript || ''}

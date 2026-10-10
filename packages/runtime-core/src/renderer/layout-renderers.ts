@@ -115,7 +115,7 @@ export class LayoutRenderers {
       'list.body',
       context,
       { entity, items },
-      () => this.componentRenderers.renderTable(items, entity, page, { columns: page.queries?.[queryName]?.columns })
+      () => this.componentRenderers.renderTable(items, entity, page, { columns: page.queries?.[queryName]?.columns, pagination: context.pagination, query: context.query })
     )
 
     const emptyBody = this.renderSlot(

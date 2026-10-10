@@ -99,6 +99,22 @@ const COMPONENT_CSS = `
 .zb-feedback-success,.zb-feedback-warning,.zb-feedback-error,.zb-feedback-info{background:var(--zb-surface-card);border-color:currentColor}
 .zb-marker-success{background:var(--zb-color-success)}
 .zb-marker-neutral{background:var(--zb-text-secondary)}
+[data-zebric-row][data-selected="true"]{background:var(--zb-surface-default);outline:2px solid var(--zb-color-primary-text);outline-offset:-2px}
+.zb-sidebar-content{display:flex;flex-wrap:wrap;align-items:center;gap:var(--zb-spacing-medium)}
+.zb-sidebar-links{display:flex;flex-direction:column;gap:var(--zb-spacing-medium);width:100%}
+.zb-sidebar-links .zb-nav-actions{flex-wrap:wrap;margin:0}
+.zb-sidebar-toggle{padding:var(--zb-spacing-small);margin-left:auto}
+.zb-sidebar[data-collapse="true"][data-expanded="false"] .zb-sidebar-links{display:none}
+@media(min-width:48rem){
+  .zb-sidebar{position:fixed;inset:0 auto 0 0;width:16rem;height:100dvh;overflow:auto;z-index:20;border-right:1px solid var(--zb-border-default)}
+  .zb-sidebar .container{padding:var(--zb-spacing-medium);width:100%}
+  .zb-sidebar-content{align-items:flex-start;flex-direction:column}
+  .zb-sidebar[data-collapse="true"][data-expanded="false"] .zb-sidebar-links{display:flex}
+  .zb-sidebar-toggle{display:none}
+  .zb-app-sidebar>main,.zb-app-sidebar>footer{margin-left:16rem}
+  .zb-table-with-sidebar{display:grid;grid-template-columns:14rem minmax(0,1fr)}
+  .zb-table-with-sidebar>[data-zebric-table-controls]{align-content:start;flex-direction:column;align-items:stretch;border-right:1px solid var(--zb-border-default)}
+}
 `
 
 const THEME_SEMANTIC_CLASSES: Partial<Record<keyof Theme, string>> = {

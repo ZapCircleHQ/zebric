@@ -37,17 +37,19 @@ export class RendererUtils {
    */
   interpolateText(
     template: string,
-    primary: Record<string, any> | null | undefined,
+    primary?: Record<string, any> | null,
     named: Record<string, Record<string, any> | null | undefined> = {}
   ): string {
+    if (!template) return ''
     if (!template.includes('{')) return template
     return template
-      .replace(/\{([A-Za-z_][\w]*)(?:\.([A-Za-z_][\w]*))?\}/g, (_match, first: string, second?: string) => {
-        const value = second === undefined ? primary?.[first] : named[first]?.[second]
+      .replace(/\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g, (_match, key: string) => {
+        const [first, ...rest] = key.split('.')
+        const value = rest.length && Object.prototype.hasOwnProperty.call(named, first!)
+          ? this.getNestedValue(named[first!] ?? undefined, rest.join('.'))
+          : this.getNestedValue(primary ?? undefined, key)
         return value === undefined || value === null ? '' : String(value)
       })
-      .replace(/\s+/g, ' ')
-      .trim()
   }
 
   /**
@@ -292,20 +294,6 @@ export class RendererUtils {
     // Support both :id and {id} style placeholders
     const withBraces = replaceToken(pathTemplate, /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g)
     return replaceToken(withBraces, /:([a-zA-Z_][a-zA-Z0-9_]*)/g)
-  }
-
-  /**
-   * Interpolate arbitrary text with {placeholders}
-   */
-  interpolateText(template: string, params?: Record<string, any>): string {
-    if (!template) {
-      return ''
-    }
-
-    return template.replace(/\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g, (_, key) => {
-      const value = this.getNestedValue(params, key)
-      return value === undefined || value === null ? '' : String(value)
-    })
   }
 
   private getNestedValue(source: Record<string, any> | undefined, path: string): any {
