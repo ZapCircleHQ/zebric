@@ -219,7 +219,7 @@ export function renderFormField(field: any, theme: Theme, utils: RendererUtils, 
     <div class="${theme.formField}">
       <label for="${fieldName}" class="${theme.label}">
         ${fieldLabel}
-        ${field.required ? '<span class="text-red-500" aria-label="required">*</span>' : ''}
+        ${field.required ? '<span class="zb-state-error" aria-label="required">*</span>' : ''}
       </label>
 
       ${renderInput(field, value, theme, hasError ? errorId : undefined, context)}

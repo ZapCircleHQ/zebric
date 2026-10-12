@@ -91,13 +91,13 @@ export function renderNavigation(
     `
 
   const sidebarClasses = navigationModel === 'sidebar'
-    ? 'md:sticky md:top-0 md:z-20'
+    ? 'zb-sidebar'
     : ''
   const navContentClasses = navigationModel === 'sidebar'
-    ? `${theme.navContent} flex-col items-start gap-4 md:flex-row md:items-center`
+    ? 'zb-sidebar-content'
     : theme.navContent
   const navLinksClasses = navigationModel === 'sidebar'
-    ? `${theme.navLinks} flex flex-wrap items-center gap-4`
+    ? 'zb-sidebar-links'
     : `${theme.navLinks} flex items-center gap-4`
 
   return safe(`
@@ -105,6 +105,7 @@ export function renderNavigation(
       aria-label="Primary navigation"
       class="${theme.nav} ${sidebarClasses}"
       data-zebric-navigation-model="${escapeHtmlAttr(navigationModel)}"
+      ${navigationModel === 'sidebar' ? `data-collapse="${blueprint.ux?.responsive?.collapse_sidebar !== false}" data-expanded="false"` : ''}
     >
       <div class="${theme.container}">
         <div class="${navContentClasses}">
@@ -115,7 +116,8 @@ export function renderNavigation(
           >
             ${escapeHtml(blueprint.project.name)}
           </a>
-          <div class="${navLinksClasses}">
+          ${navigationModel === 'sidebar' && blueprint.ux?.responsive?.collapse_sidebar !== false ? '<button type="button" class="zb-button-secondary zb-sidebar-toggle" data-zebric-sidebar-toggle aria-controls="zebric-sidebar-links" aria-expanded="false">Menu</button>' : ''}
+          <div class="${navLinksClasses}" ${navigationModel === 'sidebar' ? 'id="zebric-sidebar-links"' : ''}>
             ${navItems.join('')}
             <div class="zb-nav-actions" aria-label="Application actions">
               ${notificationControl}

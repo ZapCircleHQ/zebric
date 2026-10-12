@@ -62,6 +62,33 @@ color-primary = "#222222"
 surface-default = "#ffffff"
 ```
 
+## Semantic states and generated content
+
+Generated detail fields, related activity feeds, checklists, timelines, board
+columns, action bars, and footers use semantic text, surface, and border classes.
+Status badges and feedback use `surface-card` for their background and a semantic
+color for their text and border:
+
+| State | Token |
+| --- | --- |
+| Positive / success | `color-success` |
+| Warning | `color-warning` |
+| Negative / error / destructive action | `color-error` |
+| Informational feedback | `color-info` |
+| Neutral status | `text-secondary` |
+
+Each built-in defines these colors in both light and dark mode. Custom systems
+can override them through `[design_system.tokens]`; a system built from scratch
+should define them along with its surface and text tokens. Inherited dark colors
+come from the base system. To customize them separately, use a CSS selector such
+as `html[data-zebric-design-system="acme"][data-zebric-resolved-color-mode="dark"]`.
+
+Command input controls use the same `zb-control` styles as ordinary forms. Status
+classes (`zb-status-positive`, `zb-status-warning`, `zb-status-negative`, and
+`zb-status-neutral`) and feedback classes (`zb-feedback-success`,
+`zb-feedback-warning`, `zb-feedback-error`, and `zb-feedback-info`) are available
+to custom templates too.
+
 ## Dark mode
 
 Every built-in ships a matching dark palette, tuned to stay on-brand (each

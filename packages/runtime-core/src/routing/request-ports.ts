@@ -105,6 +105,7 @@ export interface FlashMessage {
 }
 
 export interface RenderContext {
+  pagination?: import('../renderer/table-pagination.js').TablePagination
   liveCursor?: string
   page: any // Page type
   data: Record<string, any>

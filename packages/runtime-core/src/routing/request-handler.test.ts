@@ -49,6 +49,23 @@ describe('RequestHandler', () => {
   })
 
   describe('handleGet', () => {
+    it('pages the main list query, strips lookahead, and leaves related queries unchanged', async () => {
+      const execute = vi.fn().mockResolvedValueOnce([{ id: '1' }, { id: '2' }, { id: '3' }]).mockResolvedValueOnce([{ id: 'related' }])
+      const handler = new RequestHandler({
+        blueprint: { ...blueprint, ux: { data: { pagination: 'server' } } },
+        queryExecutor: { execute, create: vi.fn(), update: vi.fn(), delete: vi.fn(), findById: vi.fn() },
+      })
+      const page: Page = { path: '/tasks', title: 'Tasks', layout: 'list', auth: 'none', queries: {
+        tasks: { entity: 'Task', limit: 2 }, related: { entity: 'Task', limit: 50 },
+      } }
+      const response = await handler.handleGet(makeMatch(page, { query: { zb_page: '2' } }), makeRequest({ headers: { accept: 'application/json' } }))
+      expect(response.status).toBe(200)
+      expect(execute.mock.calls[0]?.[0]).toEqual({ entity: 'Task', limit: 3, offset: 2 })
+      expect(execute.mock.calls[1]?.[0]).toEqual({ entity: 'Task', limit: 50 })
+      const body = JSON.parse(response.body as string)
+      expect(body.data.tasks).toHaveLength(2)
+      expect(body.pagination).toEqual({ page: 2, pageSize: 2, hasNext: true })
+    })
     it('returns 401 for authenticated page when no session', async () => {
       const log = vi.fn()
       const handler = new RequestHandler({

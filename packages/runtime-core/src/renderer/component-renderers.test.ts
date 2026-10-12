@@ -221,6 +221,61 @@ describe('ComponentRenderers', () => {
       expect(result).toContain('open')
     })
 
+    describe('multi-line values', () => {
+      const entity = {
+        name: 'Decision',
+        fields: [
+          { name: 'question', type: 'LongText' },
+          { name: 'options', type: 'JSON' },
+          { name: 'title', type: 'Text' },
+          { name: 'status', type: 'Enum', values: ['pending'] },
+        ],
+      }
+      const dd = (html: string, label: string) =>
+        new RegExp(`<dt[^>]*>\\s*${label}\\s*</dt>\\s*<dd([^>]*)>([\\s\\S]*?)</dd>`).exec(html)!
+
+      it('keeps line breaks in LongText by rendering it with pre-wrap and no stray surrounding whitespace', () => {
+        const html = renderer.renderDetailFields({ question: 'line one\nline two', title: 't' }, entity).toString()
+        const [, attrs, content] = dd(html, 'Question')
+        expect(attrs).toContain('whitespace-pre-wrap')
+        expect(attrs).toContain('break-words')
+        // pre-wrap shows every character, so the template must not add leading or trailing whitespace of its own
+        expect(content).toBe('line one\nline two')
+      })
+
+      it('renders JSON pretty-printed, monospaced and pre-wrapped', () => {
+        const html = renderer.renderDetailFields({ options: [{ label: 'a' }, { label: 'b' }] }, entity).toString()
+        const [, attrs, content] = dd(html, 'Options')
+        expect(attrs).toContain('whitespace-pre-wrap')
+        expect(attrs).toContain('font-mono')
+        expect(content.startsWith('[')).toBe(true)
+        expect(content).toContain('\n')
+        expect(content.endsWith(']')).toBe(true)
+      })
+
+      it('does not change how other field types render', () => {
+        const html = renderer.renderDetailFields({ title: 'plain', status: 'pending' }, entity).toString()
+        for (const label of ['Title', 'Status']) {
+          const [, attrs] = dd(html, label)
+          expect(attrs).not.toContain('whitespace-pre-wrap')
+          expect(attrs).not.toContain('font-mono')
+        }
+      })
+
+      it('still HTML-escapes LongText and JSON inside the pre-wrap element', () => {
+        const html = renderer.renderDetailFields({
+          question: '<script>alert(1)</script>\n<img src=x onerror=alert(2)>',
+          options: [{ label: '<b onmouseover=alert(3)>' }],
+        }, entity).toString()
+        expect(html).not.toContain('<script>alert(1)')
+        expect(html).not.toContain('<img src=x')
+        expect(html).not.toContain('<b onmouseover')
+        expect(html).toContain('&lt;script&gt;')
+        expect(html).toContain('&lt;img')
+        expect(html).toContain('&lt;b onmouseover')
+      })
+    })
+
     it('renders without entity using record keys', () => {
       const record = { id: '1', customField: 'value' }
       const result = renderer.renderDetailFields(record).toString()
@@ -296,7 +351,7 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderActionBar(page, { id: '1', status: 'in_progress' }, entity).toString()
       expect(result).toContain('in_progress')
       expect(result).toContain('data-zebric-role="status-warning"')
-      expect(result).toContain('bg-yellow-50')
+      expect(result).toContain('zb-status-warning')
     })
 
     it('maps terminal statuses to semantic status roles', () => {
@@ -309,7 +364,7 @@ describe('ComponentRenderers', () => {
       const entity = { name: 'Task', fields: [{ name: 'status', type: 'Text' }] }
       const result = renderer.renderActionBar(page, { id: '1', status: 'done' }, entity).toString()
       expect(result).toContain('data-zebric-role="status-positive"')
-      expect(result).toContain('bg-green-50')
+      expect(result).toContain('zb-status-positive')
     })
 
     it('renders primary action buttons', () => {
@@ -652,7 +707,7 @@ describe('ComponentRenderers', () => {
     it('applies green color for completed statuses', () => {
       const items = [{ id: '1', title: 'Done Task', status: 'completed' }]
       const result = renderer.renderChecklist(items).toString()
-      expect(result).toContain('text-green-600')
+      expect(result).toContain('zb-state-success')
     })
   })
 
@@ -675,8 +730,8 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderRampTimeline(items).toString()
       expect(result).toContain('Milestone 1')
       expect(result).toContain('Milestone 2')
-      expect(result).toContain('bg-green-600') // approved status
-      expect(result).toContain('bg-gray-300') // pending status
+      expect(result).toContain('zb-marker-success') // approved status
+      expect(result).toContain('zb-marker-neutral') // pending status
     })
   })
 
@@ -695,6 +750,44 @@ describe('ComponentRenderers', () => {
       const items = [{ id: '1' }]
       const result = renderer.renderActivityFeed(items).toString()
       expect(result).toContain('Event')
+    })
+
+    describe('records shaped like audit or event rows', () => {
+      it('uses kind, detail and createdAt when there is no title, summary or timestamp', () => {
+        const items = [{ id: '1', kind: 'check.typescript.failed', detail: "error TS18048: 'user' is possibly 'undefined'.", createdAt: '2026-10-07T20:00:00Z' }]
+        const result = renderer.renderActivityFeed(items).toString()
+        expect(result).toContain('check.typescript.failed')
+        expect(result).toContain('error TS18048')
+        expect(result).toContain(new Date('2026-10-07T20:00:00Z').getFullYear().toString())
+        expect(result).not.toContain('>Event<')
+      })
+
+      it('prefers title, then summary, then action, over kind, type and name', () => {
+        const titles = (item: object) => renderer.renderActivityFeed([item]).toString()
+        expect(titles({ title: 'T', summary: 'S', action: 'A', kind: 'K' })).toContain('>T<')
+        expect(titles({ summary: 'S', action: 'A', kind: 'K' })).toContain('>S<')
+        expect(titles({ action: 'A', kind: 'K' })).toContain('>A<')
+        expect(titles({ kind: 'K', type: 'Y', name: 'N' })).toContain('>K<')
+        expect(titles({ type: 'Y', name: 'N' })).toContain('>Y<')
+        expect(titles({ name: 'N' })).toContain('>N<')
+      })
+
+      it('keeps showing timestamp when both timestamp and createdAt are present', () => {
+        const result = renderer.renderActivityFeed([{ title: 'x', timestamp: '2025-01-15T10:00:00Z', createdAt: '2030-06-01T00:00:00Z' }]).toString()
+        expect(result).toContain('2025')
+        expect(result).not.toContain('2030')
+      })
+
+      it('shows multi-line detail with its line breaks and escapes it', () => {
+        const result = renderer.renderActivityFeed([{ kind: 'k', detail: 'a\n<script>alert(1)</script>' }]).toString()
+        expect(result).toMatch(/whitespace-pre-wrap[^>]*>a\n&lt;script&gt;/)
+        expect(result).not.toContain('<script>alert(1)')
+      })
+
+      it('shows no detail line when the record has none', () => {
+        const result = renderer.renderActivityFeed([{ title: 'only a title' }]).toString()
+        expect(result.match(/<p /g)).toHaveLength(1)
+      })
     })
   })
 

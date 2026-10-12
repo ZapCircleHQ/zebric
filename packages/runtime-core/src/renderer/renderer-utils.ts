@@ -12,13 +12,13 @@ export class RendererUtils {
   /**
    * Get display fields from a record and entity definition
    */
-  getDisplayFields(record: any, entity?: any): Array<{name: string, type: string}> {
+  getDisplayFields(record: any, entity?: any): Array<{name: string, type: string, showIdentifiers?: boolean}> {
     // If we have entity definition, use it
     if (entity?.fields) {
       return entity.fields
         .filter((f: any) => !this.isTechnicalIdentifierField(f))
         .filter((f: any) => !['createdAt', 'updatedAt'].includes(f.name))
-        .map((f: any) => ({ name: f.name, type: f.type }))
+        .map((f: any) => ({ name: f.name, type: f.type, ...(f.show_identifiers ? { showIdentifiers: true } : {}) }))
     }
 
     if (!record) return []
@@ -28,6 +28,64 @@ export class RendererUtils {
       .filter(key => !this.isTechnicalIdentifierField({ name: key }))
       .filter(key => !['createdAt', 'updatedAt'].includes(key))
       .map(key => ({ name: key, type: typeof record[key] }))
+  }
+
+  /**
+   * Fill `{field}` placeholders in blueprint text (page titles, action-bar text). `{field}` reads the primary record;
+   * `{query.field}` reads another query's first record. A placeholder with no value becomes empty text, never the
+   * word "undefined". The result is plain text; callers escape it when they put it in HTML.
+   */
+  interpolateText(
+    template: string,
+    primary?: Record<string, any> | null,
+    named: Record<string, Record<string, any> | null | undefined> = {}
+  ): string {
+    if (!template) return ''
+    if (!template.includes('{')) return template
+    return template
+      .replace(/\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g, (_match, key: string) => {
+        const [first, ...rest] = key.split('.')
+        const value = rest.length && Object.prototype.hasOwnProperty.call(named, first!)
+          ? this.getNestedValue(named[first!] ?? undefined, rest.join('.'))
+          : this.getNestedValue(primary ?? undefined, key)
+        return value === undefined || value === null ? '' : String(value)
+      })
+  }
+
+  /**
+   * Resolve a query's `columns` against an entity. Naming a column is explicit, so identifier-looking fields
+   * (which are hidden by default) are allowed here. Unknown names are ignored; if nothing resolves the caller
+   * falls back to the default fields.
+   */
+  resolveColumns(
+    columns: Array<string | { field: string; label?: string; wrap?: boolean }> | undefined,
+    entity?: any
+  ): Array<{ name: string; type: string; label?: string; wrap?: boolean; showIdentifiers?: boolean }> {
+    if (!columns?.length) return []
+    const resolved: Array<{ name: string; type: string; label?: string; wrap?: boolean; showIdentifiers?: boolean }> = []
+    for (const column of columns) {
+      const spec = typeof column === 'string' ? { field: column } : column
+      const def = entity?.fields?.find((f: any) => f.name === spec.field)
+      if (!def && entity?.fields) continue
+      resolved.push({
+        name: spec.field,
+        type: def?.type ?? 'Text',
+        ...(spec.label ? { label: spec.label } : {}),
+        ...(spec.wrap !== undefined ? { wrap: spec.wrap } : {}),
+        ...(def?.show_identifiers ? { showIdentifiers: true } : {}),
+      })
+    }
+    return resolved
+  }
+
+  /**
+   * Whether a table column should wrap its text instead of staying on one line. Long free text must wrap or it
+   * is cut off; short values (dates, numbers, states) stay on one line so rows keep a steady height.
+   */
+  shouldWrapColumn(type: string, values: unknown[], override?: boolean): boolean {
+    if (override !== undefined) return override
+    if (type === 'LongText' || type === 'JSON') return true
+    return values.some(value => typeof value === 'string' && value.length > 48)
   }
 
   /**
@@ -89,11 +147,15 @@ export class RendererUtils {
   /**
    * Format value based on type
    */
-  formatValue(value: any, type: string): string {
+  formatValue(value: any, type: string, options: { showIdentifiers?: boolean } = {}): string {
     if (value === null || value === undefined) return '-'
 
     switch (type) {
       case 'DateTime':
+        // A timestamp without its time is useless for activity and audit views, and a bare time is ambiguous because the
+        // server's zone differs from the reader's (Cloudflare Workers always render in UTC), so name the zone.
+        return new Date(value).toLocaleString(undefined, { timeZoneName: 'short' })
+
       case 'Date':
         return new Date(value).toLocaleDateString()
 
@@ -101,7 +163,7 @@ export class RendererUtils {
         return value ? '✓' : '✗'
 
       case 'JSON':
-        return JSON.stringify(this.redactTechnicalIdentifiers(value), null, 2)
+        return JSON.stringify(options.showIdentifiers ? value : this.redactTechnicalIdentifiers(value), null, 2)
 
       default:
         return String(value)
@@ -232,20 +294,6 @@ export class RendererUtils {
     // Support both :id and {id} style placeholders
     const withBraces = replaceToken(pathTemplate, /\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g)
     return replaceToken(withBraces, /:([a-zA-Z_][a-zA-Z0-9_]*)/g)
-  }
-
-  /**
-   * Interpolate arbitrary text with {placeholders}
-   */
-  interpolateText(template: string, params?: Record<string, any>): string {
-    if (!template) {
-      return ''
-    }
-
-    return template.replace(/\{([a-zA-Z_][a-zA-Z0-9_.]*)\}/g, (_, key) => {
-      const value = this.getNestedValue(params, key)
-      return value === undefined || value === null ? '' : String(value)
-    })
   }
 
   private getNestedValue(source: Record<string, any> | undefined, path: string): any {

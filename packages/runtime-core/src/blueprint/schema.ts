@@ -44,6 +44,7 @@ const FieldSchema = z.object({
   access: z.lazy(() => FieldAccessRulesSchema).optional(), // For field-level access control
   write: z.literal('command-only').optional(),
   commands: z.array(z.string().min(1)).optional(),
+  show_identifiers: z.boolean().optional(),
 })
 
 // ============================================================================
@@ -180,6 +181,11 @@ const ServiceConfigSchema = z.object({
 // Pages
 // ============================================================================
 
+const QueryColumnSchema = z.union([
+  z.string().min(1),
+  z.object({ field: z.string().min(1), label: z.string().optional(), wrap: z.boolean().optional() }),
+])
+
 const QuerySchema = z.object({
   entity: z.string(),
   where: AnyRecordSchema.optional(),
@@ -187,6 +193,10 @@ const QuerySchema = z.object({
   limit: z.number().optional(),
   offset: z.number().optional(),
   include: z.array(z.string()).optional(),
+  display: z.enum(['table', 'feed', 'checklist', 'timeline']).optional(),
+  title: z.string().optional(),
+  empty: z.string().optional(),
+  columns: z.array(QueryColumnSchema).min(1).optional(),
 })
 
 const FormFieldSchema = z.object({
@@ -428,6 +438,8 @@ const ActionBarSchema = z.object({
   statusField: z.string().optional(),
   statusLabel: z.string().optional(),
   showStatus: z.boolean().optional(),
+  byStatus: z.record(StringKeySchema, z.object({ title: z.string().optional(), description: z.string().optional() })).optional(),
+  commands: z.union([z.boolean(), z.array(z.string().min(1))]).optional(),
   actions: z.array(ActionBarActionSchema).optional(),
   secondaryActions: z.array(ActionBarActionSchema).optional(),
 })

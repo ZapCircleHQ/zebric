@@ -37,9 +37,9 @@ export function getActionButtonClass(
     case 'secondary':
       return theme.buttonSecondary
     case 'danger':
-      return `${theme.buttonSecondary} border-red-300 text-red-600 hover:bg-red-50`
+      return `${theme.buttonSecondary} zb-button-danger`
     case 'ghost':
-      return 'px-4 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 rounded-lg border border-transparent'
+      return 'px-4 py-2 text-sm font-medium zb-button-ghost rounded-lg border border-transparent'
     default:
       return theme.buttonPrimary
   }
@@ -62,12 +62,12 @@ export function getStatusSemanticRole(statusValue: unknown): StatusSemanticRole 
 export function getStatusRoleClass(role: StatusSemanticRole): string {
   switch (role) {
     case 'status-positive':
-      return 'bg-green-50 text-green-700'
+      return 'zb-status-positive'
     case 'status-warning':
-      return 'bg-yellow-50 text-yellow-800'
+      return 'zb-status-warning'
     case 'status-negative':
-      return 'bg-red-50 text-red-700'
+      return 'zb-status-negative'
     default:
-      return 'bg-gray-100 text-gray-700'
+      return 'zb-status-neutral'
   }
 }

@@ -34,6 +34,7 @@ import {
 import { executeFormAction, validateForm, checkFormAuthorization } from './form-processor.js'
 import { resolveSession, buildLoginRedirect } from './session-resolver.js'
 import { discoverLiveDependencies, type LiveChangeSource } from '../live/live.js'
+import { resolveTablePagination } from '../renderer/table-pagination.js'
 
 export interface RequestHandlerConfig extends RuntimePorts {
   blueprint: Blueprint
@@ -122,6 +123,7 @@ export class RequestHandler {
       }
       // Execute queries
       const data: Record<string, any> = {}
+      const tablePage = resolveTablePagination(this.blueprint, page, match.query)
       if (page.queries) {
         for (const [name, queryDef] of Object.entries(page.queries)) {
           const context = {
@@ -129,7 +131,14 @@ export class RequestHandler {
             query: match.query,
             session
           }
-          data[name] = await this.executeQuery(queryDef, context, page.live)
+          const isPaged = tablePage && name === Object.keys(page.queries)[0]
+          const rows = await this.executeQuery(isPaged ? tablePage.query : queryDef, context, page.live)
+          if (isPaged && Array.isArray(rows)) {
+            tablePage.pagination.hasNext = rows.length > tablePage.pagination.pageSize
+            data[name] = rows.slice(0, tablePage.pagination.pageSize)
+          } else {
+            data[name] = rows
+          }
         }
       }
 
@@ -161,7 +170,8 @@ export class RequestHandler {
           flash,
           csrfToken,
           availableCommands,
-          liveCursor
+          liveCursor,
+          pagination: tablePage?.pagination
         }, flash ? { 'Set-Cookie': clearFlashCookieHeader() } : undefined)
       } else {
         // Render HTML
@@ -174,7 +184,8 @@ export class RequestHandler {
           flash,
           csrfToken,
           availableCommands,
-          liveCursor
+          liveCursor,
+          pagination: tablePage?.pagination
         })
 
         return htmlResponse(200, html, {

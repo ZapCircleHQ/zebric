@@ -65,6 +65,11 @@ export const LIVE_CLIENT_RUNTIME = `<script>
       cursor = next.dataset.zebricLiveCursor
       remember()
       document.dispatchEvent(new CustomEvent('zebric:enhance'))
+      // Replacing the subtree restarts CSS entrance animations. Settle them before
+      // paint so background updates stay quiet; leave looping indicators running.
+      next.getAnimations({ subtree: true }).forEach(animation => {
+        if (animation instanceof CSSAnimation && Number.isFinite(animation.effect?.getComputedTiming().endTime)) animation.finish()
+      })
       const restored = focusId ? document.getElementById(focusId) : focusName ? Array.from(main().querySelectorAll('[name]')).find(el => el.getAttribute('name') === focusName) : null
       restored?.focus({ preventScroll: true })
       if (selection && restored?.setSelectionRange) try { restored.setSelectionRange(...selection) } catch (_) {}
