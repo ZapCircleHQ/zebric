@@ -1,5 +1,18 @@
 # @zebric/runtime-node
 
+## 0.9.0
+
+### Patch Changes
+
+- Updated dependencies [1e8b2eb]
+- Updated dependencies [1fe47d5]
+- Updated dependencies [1fe47d5]
+- Updated dependencies [af85625]
+  - @zebric/runtime-core@0.9.0
+  - @zebric/notifications@0.9.0
+  - @zebric/runtime-hono@0.9.0
+  - @zebric/observability@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

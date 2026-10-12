@@ -1,5 +1,38 @@
 # @zebric/runtime-core
 
+## 0.9.0
+
+### Minor Changes
+
+- af85625: Implement Zazzle table selection, loaded-row search, column visibility controls,
+  and client pagination, with keyboard selection and Live Mode reinitialization.
+  Add bounded server pagination for the main list query with lookahead and
+  Previous/Next links. Render a real desktop sidebar with an accessible mobile
+  toggle. Resolve global, named-pattern, and page UX defaults consistently,
+  including global sticky-footer action positioning.
+
+  Consolidate duplicate text interpolation methods while preserving nested record
+  fields, named-query placeholders, and workflow payload whitespace.
+
+### Patch Changes
+
+- 1e8b2eb: Skip CSS entrance animations when Live Mode replaces page content so background updates do not repeatedly fade or pulse. Initial page animations and looping indicators continue to run.
+- 1fe47d5: Show field values the way people read them. Detail pages now keep line breaks in `LongText` values and show `JSON`
+  values pretty-printed in a monospaced block, instead of collapsing both into one paragraph. `DateTime` values now show
+  the time and name the time zone (the server's, which is UTC on Cloudflare Workers) instead of only the date; `Date`
+  values are unchanged. Activity feeds now use `kind`, `type` or `name` as the heading, `detail`, `description` or `message`
+  as the body, and `createdAt` as the time when a record has no `title`, `summary`, `action` or `timestamp`, so
+  audit-style and event-log entities no longer render as the word "Event". Values remain HTML-escaped throughout. Tables
+  and lists that show `DateTime` columns now include the time, so those cells are wider.
+- 1fe47d5: Extend Zazzle semantic styling to generated detail fields, related feeds,
+  checklists, timelines, boards, action bars, command controls, and footers.
+  Status badges, feedback, and destructive actions now use design tokens rather
+  than fixed Tailwind colors. Add color-error and color-info to each built-in light
+  and dark palette, and apply semantic styles to error, empty, and loading states.
+  Document the blueprint design-system configuration and custom state colors.
+  Load custom design-system stylesheets after built-in styles so their overrides
+  take effect, preserving their declaration order.
+
 ## 0.8.0
 
 ### Minor Changes
