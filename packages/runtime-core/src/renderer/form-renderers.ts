@@ -130,9 +130,11 @@ export function renderInput(field: any, value: any, theme: Theme, errorId?: stri
 
     case 'checkbox':
       return `
+        <input type="hidden" name="${fieldName}" value="false" />
         <input
           type="checkbox"
           ${baseAttrs}
+          value="true"
           ${value ? 'checked' : ''}
           class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
         />

@@ -223,7 +223,6 @@ export class ComponentRenderers {
 
     const editPath = this.utils.getEntityPagePath(entity.name, 'update')
     const deletePath = this.utils.getEntityPagePath(entity.name, 'delete')
-    const viewBase = this.utils.collectionPath(entity.name)
 
     if (!editPath && !deletePath) {
       return safe('')
@@ -243,12 +242,12 @@ export class ComponentRenderers {
           : ''}
         ${deletePath
           ? html`
-            <button
-              onclick="if(confirm('Are you sure?')) { fetch('${this.utils.resolveEntityLink(deletePath, entity.name, record)}', {method:'DELETE'}).then(() => window.location.href='${viewBase}') }"
+            <a
+              href="${this.utils.resolveEntityLink(deletePath, entity.name, record)}"
               class="${this.theme.buttonSecondary} zb-button-danger"
             >
               Delete
-            </button>
+            </a>
           `
           : ''}
       </div>

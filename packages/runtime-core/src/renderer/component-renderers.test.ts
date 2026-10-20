@@ -309,6 +309,17 @@ describe('ComponentRenderers', () => {
   })
 
   describe('renderDetailActions', () => {
+    it('links to the delete confirmation form instead of issuing an unprotected fetch', () => {
+      blueprint.pages.push({
+        path: '/tasks/:id/delete', title: 'Delete Task', layout: 'form',
+        form: { entity: 'Task', method: 'delete', fields: [] },
+      })
+      const result = renderer.renderDetailActions({ id: '1' }, { name: 'Task' }).toString()
+      expect(result).toMatch(/<a\s+href="&#x2F;tasks&#x2F;1&#x2F;delete"[^>]*>\s*Delete\s*<\/a>/)
+      expect(result).not.toContain('fetch(')
+      expect(result).not.toContain('onclick=')
+    })
+
     it('returns empty string when no entity provided', () => {
       const result = renderer.renderDetailActions({ id: '1' }).toString()
       expect(result.trim()).toBe('')
@@ -574,6 +585,16 @@ describe('ComponentRenderers', () => {
       const result = renderer.renderInput(field, false)
       expect(result).toContain('type="checkbox"')
       expect(result).not.toContain('checked')
+    })
+
+    it.each([false, true])('submits an explicit Boolean for a checkbox checked=%s', (checked) => {
+      const result = renderer.renderInput({ name: 'done', type: 'checkbox' }, checked)
+      const entries = [...result.matchAll(/<input\b[^>]*>/g)].flatMap(([input]) => {
+        if (input.includes('type="checkbox"') && !input.includes('checked')) return []
+        return [[input.match(/name="([^"]+)"/)![1], input.match(/value="([^"]+)"/)![1]]]
+      })
+      // Both native form decoding and the enhanced JSON form use the last value.
+      expect(Object.fromEntries(new URLSearchParams(entries))).toEqual({ done: String(checked) })
     })
 
     it('preserves a zero record value instead of using the default', () => {
