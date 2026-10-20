@@ -2,6 +2,9 @@ packages:
   - 'packages/*'
   - 'plugins/*'
   - 'examples/*'
+  - 'starters/cloudflare-workers'
+
+linkWorkspacePackages: true
 
 autoInstallPeers: false
 

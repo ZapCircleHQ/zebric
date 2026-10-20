@@ -1,17 +1,9 @@
--- Initial migration for Task Manager
--- This schema matches the blueprint.toml entities
-
-CREATE TABLE IF NOT EXISTS Task (
+-- Application schema; ownership is assigned by the runtime, never client input.
+CREATE TABLE Task (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  description TEXT,
-  status TEXT DEFAULT 'pending',
-  priority INTEGER DEFAULT 0,
-  dueDate TEXT,
-  createdAt TEXT DEFAULT CURRENT_TIMESTAMP
+  completed INTEGER NOT NULL DEFAULT 0,
+  userId TEXT NOT NULL,
+  createdAt TEXT NOT NULL
 );
-
--- Index for common queries
-CREATE INDEX IF NOT EXISTS idx_task_status ON Task(status);
-CREATE INDEX IF NOT EXISTS idx_task_priority ON Task(priority);
-CREATE INDEX IF NOT EXISTS idx_task_due_date ON Task(dueDate);
+CREATE INDEX task_owner_created ON Task (userId, createdAt);

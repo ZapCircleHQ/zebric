@@ -182,14 +182,17 @@ importers:
   examples/workers-blog:
     dependencies:
       '@zebric/runtime-worker':
-        specifier: workspace:*
+        specifier: 0.9.0
         version: link:../../packages/runtime-worker
     devDependencies:
       '@cloudflare/workers-types':
-        specifier: ^4.20260421.1
+        specifier: 4.20260421.1
         version: 4.20260421.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
       wrangler:
-        specifier: ^4.84.1
+        specifier: 4.84.1
         version: 4.84.1(@cloudflare/workers-types@4.20260421.1)
 
   examples/zebric-dispatch:
@@ -717,6 +720,22 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+
+  starters/cloudflare-workers:
+    dependencies:
+      '@zebric/runtime-worker':
+        specifier: 0.9.0
+        version: link:../../packages/runtime-worker
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 4.20260421.1
+        version: 4.20260421.1
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      wrangler:
+        specifier: 4.84.1
+        version: 4.84.1(@cloudflare/workers-types@4.20260421.1)
 
 packages:
 

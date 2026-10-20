@@ -1,170 +1,106 @@
-# Zebric Blueprint - Task Manager Example
-# Change this file to create your own application!
-
-version = "1.0.0"
+version = "0.9.0"
 
 [project]
-name = "Task Manager"
+name = "Workers Task Manager"
 version = "1.0.0"
 
 [project.runtime]
-target = "cloudflare-workers"
-min_version = "0.1.0"
+min_version = "0.9.0"
 
-# Entities define your data models
-[[entities]]
-name = "Task"
+[auth]
+providers = ["email"]
 
-[[entities.fields]]
-name = "id"
-type = "ULID"
-primaryKey = true
+[entity.Task]
+fields = [
+  { name = "id", type = "ULID", primary_key = true, access = { write = false } },
+  { name = "title", type = "Text", required = true },
+  { name = "completed", type = "Boolean", default = false },
+  { name = "userId", type = "Text", access = { write = false } },
+  { name = "createdAt", type = "DateTime", default = "now", access = { write = false } }
+]
 
-[[entities.fields]]
-name = "title"
-type = "Text"
-required = true
+[entity.Task.access]
+create = "authenticated"
+read = { userId = "$currentUser.id" }
+update = { userId = "$currentUser.id" }
+delete = { userId = "$currentUser.id" }
 
-[[entities.fields]]
-name = "description"
-type = "LongText"
-
-[[entities.fields]]
-name = "status"
-type = "Text"
-default = "pending"
-
-[[entities.fields]]
-name = "priority"
-type = "Integer"
-default = 0
-
-[[entities.fields]]
-name = "dueDate"
-type = "Date"
-
-[[entities.fields]]
-name = "createdAt"
-type = "DateTime"
-default = "now"
-
-# Pages define your UI routes
-[[pages]]
-path = "/"
-title = "Home"
+[page."/"]
+title = "My Tasks"
+auth = "required"
 layout = "list"
-auth = "none"
 
-[pages.queries.tasks]
+[page."/".query.tasks]
 entity = "Task"
-orderBy = { priority = "desc" }
-limit = 10
+orderBy = { createdAt = "desc" }
 
-[[pages]]
-path = "/tasks"
-title = "All Tasks"
-layout = "list"
-auth = "none"
-
-[pages.queries.tasks]
-entity = "Task"
-orderBy = { priority = "desc" }
-
-[[pages]]
-path = "/tasks/new"
+[page."/tasks/new"]
 title = "New Task"
+auth = "required"
 layout = "form"
-auth = "none"
 
-[pages.form]
+[page."/tasks/new".form]
 entity = "Task"
 method = "create"
 
-[[pages.form.fields]]
+[[page."/tasks/new".form.fields]]
 name = "title"
 type = "text"
 label = "Title"
 required = true
 
-[[pages.form.fields]]
-name = "description"
-type = "textarea"
-label = "Description"
-rows = 4
+[page."/tasks/new".form.onSuccess]
+redirect = "/"
 
-[[pages.form.fields]]
-name = "status"
-type = "text"
-label = "Status"
-placeholder = "pending"
-
-[[pages.form.fields]]
-name = "priority"
-type = "number"
-label = "Priority"
-
-[[pages.form.fields]]
-name = "dueDate"
-type = "date"
-label = "Due Date"
-
-[pages.form.onSuccess]
-redirect = "/tasks"
-message = "Task created successfully"
-
-[[pages]]
-path = "/tasks/:id"
-title = "Task Details"
+[page."/tasks/:id"]
+title = "Task"
+auth = "required"
 layout = "detail"
-auth = "none"
 
-[pages.queries.task]
+[page."/tasks/:id".query.task]
 entity = "Task"
 where = { id = "$params.id" }
-limit = 1
 
-[[pages]]
-path = "/tasks/:id/edit"
+[page."/tasks/:id/edit"]
 title = "Edit Task"
+auth = "required"
 layout = "form"
-auth = "none"
 
-[pages.queries.task]
+[page."/tasks/:id/edit".query.task]
 entity = "Task"
 where = { id = "$params.id" }
-limit = 1
 
-[pages.form]
+[page."/tasks/:id/edit".form]
 entity = "Task"
 method = "update"
 
-[[pages.form.fields]]
+[[page."/tasks/:id/edit".form.fields]]
 name = "title"
 type = "text"
 label = "Title"
 required = true
 
-[[pages.form.fields]]
-name = "description"
-type = "textarea"
-label = "Description"
-rows = 4
+[[page."/tasks/:id/edit".form.fields]]
+name = "completed"
+type = "checkbox"
+label = "Completed"
 
-[[pages.form.fields]]
-name = "status"
-type = "text"
-label = "Status"
+[page."/tasks/:id/edit".form.onSuccess]
+redirect = "/"
 
-[[pages.form.fields]]
-name = "priority"
-type = "number"
-label = "Priority"
+[page."/tasks/:id/delete"]
+title = "Delete Task"
+auth = "required"
+layout = "form"
 
-[[pages.form.fields]]
-name = "dueDate"
-type = "date"
-label = "Due Date"
+[page."/tasks/:id/delete".query.record]
+entity = "Task"
+where = { id = "$params.id" }
 
-[pages.form.onSuccess]
-redirect = "/tasks/:id"
-message = "Task updated successfully"
+[page."/tasks/:id/delete".form]
+entity = "Task"
+method = "delete"
+fields = []
+
+[page."/tasks/:id/delete".form.onSuccess]
+redirect = "/"
