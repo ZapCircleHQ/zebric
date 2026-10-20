@@ -168,8 +168,20 @@ async function smokeCheckpoint(checkpoint, index) {
       assert(home.ok, `${checkpoint.file} public / returned ${home.status}`)
     }
 
+    // Sign-in pages exist only for blueprints that declare [auth]; public blueprints must not expose them.
     const signIn = await fetchOk(`http://${host}:${appPort}/auth/sign-in`, { redirect: 'manual' })
-    assert(signIn.ok, `${checkpoint.file} /auth/sign-in returned ${signIn.status}`)
+    if (parsed.auth) {
+      assert(signIn.ok, `${checkpoint.file} declares [auth] but /auth/sign-in returned ${signIn.status}`)
+    } else {
+      assert(
+        signIn.status === 404,
+        `${checkpoint.file} is public but /auth/sign-in returned ${signIn.status} (expected 404)`
+      )
+    }
+    assert(
+      Boolean(parsed.auth) === checkpoint.protected,
+      `${checkpoint.file} protected=${checkpoint.protected} does not match its [auth] section`
+    )
 
     console.log(`ok ${checkpoint.file}`)
   } finally {
@@ -182,6 +194,15 @@ async function smokeCheckpoint(checkpoint, index) {
   }
 }
 
-for (const [index, checkpoint] of checkpoints.entries()) {
-  await smokeCheckpoint(checkpoint, index)
+// The engine installs process-level exception handlers that shut down with exit code 0,
+// so catch failures here and exit non-zero explicitly instead of letting them escape.
+try {
+  for (const [index, checkpoint] of checkpoints.entries()) {
+    await smokeCheckpoint(checkpoint, index)
+  }
+  console.log(`all ${checkpoints.length} tutorial checkpoints passed`)
+  process.exit(0)
+} catch (error) {
+  console.error(`tutorial checkpoint smoke test FAILED: ${error instanceof Error ? error.message : error}`)
+  process.exit(1)
 }
