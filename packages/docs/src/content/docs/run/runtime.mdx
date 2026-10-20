@@ -65,18 +65,32 @@ The current engine selects the adapter from the `database.url` scheme. Use `sqli
 
 ## Workers Runtime
 
-Deploy to Cloudflare Workers using `@zebric/runtime-worker` — same blueprint format, running on Cloudflare's edge network. The fastest way to start is copying `starters/cloudflare-workers`, which is a single-file entry point:
+See the [Cloudflare deployment guide](/run/cloudflare/) for required setup,
+supported features, the maintained starter/blog, and adapter and operational limitations.
+
+Deploy to Cloudflare Workers using `@zebric/runtime-worker` — same blueprint format, running on Cloudflare's edge network. The fastest way to start is copying `starters/cloudflare-workers`, which is a single-file entry point that fails fast when auth is not explicitly configured:
 
 ```typescript
 // worker.ts
 import { createWorkerHandler } from '@zebric/runtime-worker'
 import blueprintToml from './blueprint.toml'
 
-export default createWorkerHandler({
-  blueprintContent: blueprintToml,
-  blueprintFormat: 'toml',
+export default createWorkerHandler(env => {
+  if (!env.BETTER_AUTH_URL || !env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32) {
+    throw new Error('Set BETTER_AUTH_URL and a BETTER_AUTH_SECRET of at least 32 characters')
+  }
+  const origin = new URL(env.BETTER_AUTH_URL)
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(origin.hostname)
+  if (origin.protocol !== 'https:' && !(local && origin.protocol === 'http:')) {
+    throw new Error('BETTER_AUTH_URL must use HTTPS outside local development')
+  }
+  return { blueprintContent: blueprintToml, blueprintFormat: 'toml' }
 })
 ```
+
+Without these checks the engine falls back to a localhost auth URL and a development
+secret, which is unsafe in a deployed Worker. Blueprints without `[auth]` can pass a
+plain config object instead.
 
 The handler retains one engine per isolate and initializes bundled plugins once.
 Command receipts and event outbox entries persist in D1. Bind `WORKFLOWS` for
@@ -160,7 +174,7 @@ for the tested contract and deployment constraints.
 # wrangler.toml
 name = "my-zebric-app"
 main = "worker.ts"
-compatibility_date = "2025-01-10"
+compatibility_date = "2026-04-28"
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
@@ -171,7 +185,7 @@ database_id = "your-database-id"  # from: wrangler d1 create my-zebric-db
 # Optional
 [[kv_namespaces]]
 binding = "SESSION_KV"
-id = "your-session-kv-id"  # from: wrangler kv:namespace create SESSION_KV
+id = "your-session-kv-id"  # from: wrangler kv namespace create SESSION_KV
 
 ```
 
@@ -207,6 +221,10 @@ wrangler deploy
 ```
 
 ## Observability
+
+The filesystem, admin-port and local monitoring examples below apply to Node.
+Workers uses D1 audit history, isolate-local metrics and Cloudflare observability;
+see the [Workers guide](/run/cloudflare/).
 
 ### Audit Logging
 
