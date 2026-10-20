@@ -19,3 +19,5 @@ allowBuilds:
 overrides:
   'undici@7': '>=7.29.1 <8'
   'sharp@^0.35.0': '>=0.35.5 <0.36'
+  'esbuild@0.27': '>=0.28.1 <0.29'
+  'postcss-selector-parser@6': '>=7.1.6 <8'
