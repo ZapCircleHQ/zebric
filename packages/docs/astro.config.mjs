@@ -87,6 +87,8 @@ export default defineConfig({
 					label: 'Run',
 					items: [
 						{ label: 'Runtime & Deployment', slug: 'run/runtime' },
+						{ label: 'Cloudflare Workers', slug: 'run/cloudflare' },
+						{ label: 'Runtime Parity', slug: 'run/parity' },
 						{ label: 'Dev Server & Debugging', slug: 'run/dev-server' },
 					],
 				},
