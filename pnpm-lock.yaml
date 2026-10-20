@@ -509,8 +509,8 @@ importers:
   packages/runtime-core:
     dependencies:
       liquidjs:
-        specifier: ^10.25.6
-        version: 10.25.6
+        specifier: ^10.30.0
+        version: 10.30.0
       smol-toml:
         specifier: ^1.6.1
         version: 1.6.1
@@ -3862,8 +3862,8 @@ packages:
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
-  liquidjs@10.25.6:
-    resolution: {integrity: sha512-h5ki5HS1PiL9/NmLw3iUcTF1jQswKJd8KLEXNrtSf8XHF0v3c5+d+8llz3N9I5IUdc5rsOuVLb9AVnqvqqscPg==}
+  liquidjs@10.30.0:
+    resolution: {integrity: sha512-Fw4wA+8CZsJkaeLEIlPE3AoponfjEZhj7FQvYNcAEcg7jNRik7mEMoaco382FBdrYlykVf6w4vClPNctz2OYjg==}
     engines: {node: '>=16'}
     hasBin: true
 
@@ -8710,7 +8710,7 @@ snapshots:
 
   lines-and-columns@1.2.4: {}
 
-  liquidjs@10.25.6:
+  liquidjs@10.30.0:
     dependencies:
       commander: 10.0.1
 
