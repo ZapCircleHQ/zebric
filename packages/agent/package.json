@@ -40,12 +40,12 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@langchain/core": "^1.2.5",
-    "@langchain/langgraph": "^1.4.9",
+    "@langchain/core": "^1.2.18",
+    "@langchain/langgraph": "^1.5.1",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-node": "workspace:*",
-    "deepagents": "^1.12.2",
-    "langchain": "^1.5.0",
+    "deepagents": "^1.15.1",
+    "langchain": "^1.5.18",
     "zod": "^4.3.6"
   },
   "devDependencies": {
