@@ -513,8 +513,8 @@ importers:
         specifier: ^10.30.0
         version: 10.30.0
       smol-toml:
-        specifier: ^1.6.1
-        version: 1.6.1
+        specifier: ^1.9.1
+        version: 1.9.1
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -4645,10 +4645,6 @@ packages:
   slash@3.0.0:
     resolution: {integrity: sha512-g9Q1haeby36OSStwb4ntCGGGaKsaVSjQ68fBxoQcutl5fS1vuY18H3wSt3jFyFtrkx+Kz0V1G85A4MyAdDMi2Q==}
     engines: {node: '>=8'}
-
-  smol-toml@1.6.1:
-    resolution: {integrity: sha512-dWUG8F5sIIARXih1DTaQAX4SsiTXhInKf1buxdY9DIg4ZYPZK5nGM1VRIYmEbDbsHt7USo99xSLFu5Q1IqTmsg==}
-    engines: {node: '>= 18'}
 
   smol-toml@1.9.1:
     resolution: {integrity: sha512-j7WyPdf0CJoutMzMoPLF/bVXHtKZIT9Rb4eGeEbWw8X2t5oirjPgpL+OpaENZrILYaXqYwnVH+qgUwVbl+pUJQ==}
@@ -9337,8 +9333,6 @@ snapshots:
       sax: 1.6.0
 
   slash@3.0.0: {}
-
-  smol-toml@1.6.1: {}
 
   smol-toml@1.9.1: {}
 
