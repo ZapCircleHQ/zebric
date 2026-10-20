@@ -29,6 +29,16 @@ Spin up a real SQLite-backed engine in-process and exercise HTTP routes. Include
 
 These live alongside unit tests in `packages/runtime-node/src/**/*.test.ts` and `tests/integration/`.
 
+Cloudflare also has Miniflare/D1 integration and bundled workerd tests in
+`packages/runtime-worker/tests/integration/`. To verify the actual starter and blog
+outside the workspace, run `pnpm test:workers-apps`. It builds and packs the Worker
+runtime/shared packages, installs temporary standalone app copies, checks types
+and deployment bundles, applies local D1 migrations twice, then tests real
+email/password auth, CSRF, ownership, public/draft visibility, form saves and CRUD
+using local Wrangler/workerd servers. It does not deploy or access remote D1.
+CI runs this gate in the Worker smoke job. Set `ZEBRIC_PACKAGE_SMOKE_OFFLINE=1`
+only when every third-party dependency is already cached locally.
+
 ### 3. Browser tests — Playwright (Chromium)
 Start a real engine against the `zebric-dispatch` example blueprint, then drive it with a headless browser. Run automatically on every push to `main` via `browser-tests.yml`.
 
@@ -72,7 +82,7 @@ OPENAI_API_KEY=sk-... RUN_AGENT_BROWSER_E2E=1 \
 | `ci.yml` — Tests | every PR + push to `main`/`develop` | vitest (all packages), coverage upload |
 | `ci.yml` — Quality | every PR + push | tsc, eslint |
 | `ci.yml` — Blueprint smoke | every PR + push | `zebric validate` on example blueprints |
-| `ci.yml` — Worker smoke | every PR + push | runtime-worker integration smoke suite |
+| `ci.yml` — Worker smoke | every PR + push | runtime-worker integration suite and standalone starter/blog package gate |
 | `browser-tests.yml` | push to `main` only | Playwright (all tags) |
 | `release.yml` | push to `main` | changesets publish |
 

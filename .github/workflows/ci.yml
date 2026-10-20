@@ -390,6 +390,9 @@ jobs:
       - name: Run runtime-worker smoke suite
         run: pnpm --filter @zebric/runtime-worker test:smoke
 
+      - name: Verify standalone Workers starter and blog
+        run: pnpm test:workers-apps
+
   playground-smoke-test:
     name: Playground Smoke Tests
     runs-on: ubuntu-latest

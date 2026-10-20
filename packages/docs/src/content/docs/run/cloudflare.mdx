@@ -1,0 +1,147 @@
+---
+label: Cloudflare Workers
+order: 4
+slug: run/cloudflare
+title: Deploying to Cloudflare Workers
+description: Supported Workers features, required deployment setup, and current limitations.
+---
+
+Cloudflare Workers is a supported Zebric deployment target through
+`@zebric/runtime-worker`. It shares rendering, validation, permissions and command
+contracts with the Node runtime, and uses Cloudflare bindings for persistence.
+Deployment packaging, migrations and operational behavior differ from Node.
+
+The runtime has shared conformance tests against D1 and bundled entrypoint tests
+inside workerd. Those tests validate specific behaviors; your authentication
+providers, plugins and production workload still need application testing.
+See [runtime parity](/run/parity/) for the tested contract.
+
+## Supported deployment surface
+
+| Feature | Workers support |
+| --- | --- |
+| Pages, forms, widgets and entity API | Shared rendering, validation and access-control pipeline |
+| Database | D1; application schema is managed through migrations |
+| Authentication | Better Auth email/password on D1 or an injected provider |
+| Agent access | API-key roles/scopes, commands, discovery and audit history |
+| Commands | Declarative commands and statically bundled handlers; durable D1 receipts |
+| Transactional workflows | Database-only execution with optimistic snapshot validation and atomic commit |
+| General workflows | Queries, assignments, loops, services, notifications and external effects |
+| Durable jobs | Native Cloudflare Workflows when `WORKFLOWS` is configured |
+| Live Mode | D1 change journal with shared streaming/polling routes |
+| Templates and plugins | Imported modules/text or KV templates; portable, trusted plugins |
+| Files | Optional R2 storage and public `/uploads/*` serving |
+| Notifications | Console, Slack and custom portable factories; email is an R2 development outbox |
+| Observability | D1 audit, D1 health probe and isolate-local Prometheus metrics |
+
+## Deployment setup
+
+Start with `starters/cloudflare-workers` for a private task app or
+`examples/workers-blog` for public published posts and author-owned drafts/edits.
+Both use a published runtime version, the same Worker entrypoint, explicit D1
+migrations (including auth), and current Wrangler settings. Copy either directory
+into a standalone project, then follow its README:
+
+```bash
+pnpm install
+cp .dev.vars.example .dev.vars
+pnpm db:migrate
+pnpm dev
+```
+
+Register at `/auth/sign-up`. Signup is open in these examples; choose a signup
+policy suitable for your application before launch. The entrypoint requires an
+explicit auth origin and a secret of at least 32 characters, including locally.
+The checked-in auth migration and standalone pnpm override target Better Auth
+1.6.6 with Zebric's `role` field. Keep that pin with the copied app, and run
+`pnpm test:workers-apps` when upgrading auth: an unconstrained clean install
+selected 1.7.7 and hung during session resolution in local workerd verification.
+Review migrations when upgrading the runtime/auth dependency.
+
+These rebuilt apps use fresh application schemas. They are not an in-place
+migration for existing starter/blog deployments; preserve data and prepare a
+schema transition before switching an existing app.
+
+Create the entrypoint and binding configuration following
+[runtime and deployment](/run/runtime/). Then:
+
+1. Create D1 and set the `DB` binding to its ID. Apply application migrations
+   locally and remotely; the Worker does not automatically synchronize entity
+   schema from the Blueprint.
+2. Enable `nodejs_compat` for the pinned compatibility dates shown in this
+   repository. Bundle the Blueprint and templates as text modules.
+3. For `[auth]`, explicitly set `BETTER_AUTH_URL` to the public origin and store
+   `BETTER_AUTH_SECRET` as a secret. Apply Better Auth tables generated for the
+   installed version, including Zebric's additional `role` field. Do not rely on
+   the engine's localhost URL/development-secret defaults in a deployed app.
+   Non-email provider names do not configure social login by themselves.
+4. Configure `WORKFLOWS` and export its entrypoint for jobs that need durable
+   delays/retries and cross-isolate polling. Configure Wrangler cron triggers for
+   schedules and timely outbox recovery during periods without requests.
+5. Add `FILES`, `CACHE_KV`, `SESSION_KV` or `TEMPLATES_KV` only as required.
+   `SESSION_KV` is for custom sessions; default Better Auth uses D1.
+6. Validate the Blueprint, run locally, check the bundle with
+   `wrangler deploy --dry-run`, apply remote migrations and deploy. A successful
+   dry run does not prove application startup or binding correctness; exercise
+   pages, CRUD and authenticated actions in staging.
+
+For a migration directory configured in your application:
+
+```bash
+pnpm exec wrangler d1 migrations apply DB --local
+pnpm exec wrangler dev
+pnpm exec wrangler deploy --dry-run
+pnpm exec wrangler d1 migrations apply DB --remote
+pnpm exec wrangler deploy
+```
+
+When using `--env production`, configure that environment's bindings, vars and
+secrets, and use the same environment for migrations and deployment. Bindings and
+vars are [non-inheritable in Wrangler](https://developers.cloudflare.com/workers/wrangler/configuration/).
+The starter and blog use top-level configuration without incomplete named
+environment blocks.
+
+## Current constraints
+
+**Transactions.** Workers copies all Blueprint entity tables into D1 snapshot
+tables, then validates and commits. Cost scales with the full entity dataset, and
+concurrent writes can return retryable `409 TRANSACTION_CONFLICT`. Custom SQL
+triggers, virtual tables, foreign keys outside the Blueprint, and deferred checks
+across steps are unsupported. External effects and custom handlers cannot run
+inside transactional workflows. Measure dataset size, query cost and conflicts
+before relying on high write throughput. [D1 platform limits](https://developers.cloudflare.com/d1/platform/limits/)
+also constrain query size, bound parameters and invocation query counts.
+
+**Jobs and recovery.** Without `WORKFLOWS`, jobs and submission replay are
+isolate-local. Durable D1 command receipts and trigger intents do not make inline
+execution durable. Outbox recovery runs on requests or cron, processing up to 25
+intents per call by default. Configure a wakeup and backlog monitoring. External
+effects must tolerate retries: a remote service can accept an effect before its
+checkpoint is saved. Post-response background execution is bounded by
+[Workers limits](https://developers.cloudflare.com/workers/platform/limits/).
+
+**KV.** Cache use is explicit. `clear()` currently leaves entries intact;
+increments are non-atomic. TTL values must respect
+[KV's minimum of 60 seconds](https://developers.cloudflare.com/kv/api/write-key-value-pairs/).
+KV-backed custom sessions inherit [eventual consistency](https://developers.cloudflare.com/kv/concepts/how-kv-works/),
+including delayed cross-region visibility of creation and revocation.
+
+**R2 and email.** `R2Storage.list()` currently returns one page without a
+continuation cursor; do not assume a complete bucket listing. R2 may return fewer
+than 1,000 entries per page ([R2 API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)).
+Objects outside `_zebric/` are public through `/uploads/*`. Uploads and private
+downloads require application code. The email adapter requires `FILES` and writes
+private outbox objects; use a delivery adapter to send mail.
+
+**Plugins and operations.** Import plugins and custom handlers statically.
+Filesystem-capability plugins are rejected, native Node dependencies need a
+portable alternative, and plugin tokens require an application-provided
+`pluginAuth`. `/metrics` reports one isolate, while `/health` probes D1 rather than
+every dependency. Node's admin server, filesystem audit logger and blueprint hot
+reload are not Worker services. Rate limiting and other Cloudflare bindings need
+explicit application integration.
+
+Plan retention and monitoring for audit/event history, command receipts,
+delivered outbox entries and durable job records. Live Mode has its own automatic
+change-journal retention, but that does not prune every runtime table. Long-lived
+streams poll D1 and should be included in workload/query-budget testing.

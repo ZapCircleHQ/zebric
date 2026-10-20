@@ -1,0 +1,135 @@
+version = "0.9.0"
+
+[project]
+name = "Workers Blog"
+version = "1.0.0"
+
+[project.runtime]
+min_version = "0.9.0"
+
+[auth]
+providers = ["email"]
+
+[entity.Post]
+fields = [
+  { name = "id", type = "ULID", primary_key = true, access = { write = false } },
+  { name = "title", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "published", type = "Boolean", default = false },
+  { name = "userId", type = "Text", access = { write = false } },
+  { name = "createdAt", type = "DateTime", default = "now", access = { write = false } }
+]
+
+[entity.Post.access]
+create = "authenticated"
+read = { or = [{ published = true }, { userId = "$currentUser.id" }] }
+update = { userId = "$currentUser.id" }
+delete = { userId = "$currentUser.id" }
+
+[page."/"]
+title = "Published Posts"
+auth = "none"
+layout = "list"
+
+[page."/".query.posts]
+entity = "Post"
+where = { published = true }
+orderBy = { createdAt = "desc" }
+
+[page."/posts/mine"]
+title = "My Posts"
+auth = "required"
+layout = "list"
+
+[page."/posts/mine".query.posts]
+entity = "Post"
+where = { userId = "$currentUser.id" }
+orderBy = { createdAt = "desc" }
+
+[page."/posts/new"]
+title = "New Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/new".form]
+entity = "Post"
+method = "create"
+
+[[page."/posts/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "body"
+type = "textarea"
+label = "Body"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "published"
+type = "checkbox"
+label = "Published"
+
+[page."/posts/new".form.onSuccess]
+redirect = "/posts/{id}"
+
+[page."/posts/:id"]
+title = "Post"
+auth = "none"
+layout = "detail"
+
+[page."/posts/:id".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+
+[page."/posts/:id/edit"]
+title = "Edit Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/:id/edit".query.post]
+entity = "Post"
+where = { id = "$params.id" }
+
+[page."/posts/:id/edit".form]
+entity = "Post"
+method = "update"
+
+[[page."/posts/:id/edit".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/:id/edit".form.fields]]
+name = "body"
+type = "textarea"
+label = "Body"
+required = true
+
+[[page."/posts/:id/edit".form.fields]]
+name = "published"
+type = "checkbox"
+label = "Published"
+
+[page."/posts/:id/edit".form.onSuccess]
+redirect = "/posts/{id}"
+
+[page."/posts/:id/delete"]
+title = "Delete Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/:id/delete".query.record]
+entity = "Post"
+where = { id = "$params.id" }
+
+[page."/posts/:id/delete".form]
+entity = "Post"
+method = "delete"
+fields = []
+
+[page."/posts/:id/delete".form.onSuccess]
+redirect = "/"

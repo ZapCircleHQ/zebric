@@ -1,22 +1,24 @@
-name = "zebric-workers-blog"
-main = "src/index.ts"
-compatibility_date = "2024-11-08"
+name = "workers-blog-example"
+main = "worker.ts"
+compatibility_date = "2026-04-28"
+compatibility_flags = ["nodejs_compat"]
 
-# D1 Database binding
+[[rules]]
+type = "Text"
+globs = ["**/*.toml"]
+fallthrough = true
+
 [[d1_databases]]
 binding = "DB"
-database_name = "blog-db"
-database_id = "preview-database-id"
+database_name = "zebric-blog-db"
+database_id = "00000000-0000-0000-0000-000000000000" # Replace with db:create output before remote use
+migrations_dir = "migrations"
 
-# KV Cache binding
-[[kv_namespaces]]
-binding = "CACHE"
-id = "preview-cache-id"
+[observability]
+enabled = true
 
-# R2 Storage binding (optional, for file uploads)
-[[r2_buckets]]
-binding = "STORAGE"
-bucket_name = "blog-storage"
-
-[vars]
-ENVIRONMENT = "development"
+# Production origin; local development uses .dev.vars instead.
+# Uncomment and set your deployed origin before deploying.
+# [vars]
+# BETTER_AUTH_URL = "https://app.example.com"
+# Set the production secret with: pnpm exec wrangler secret put BETTER_AUTH_SECRET

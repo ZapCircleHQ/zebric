@@ -1,18 +1,21 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ES2022",
-    "lib": ["ES2022"],
-    "moduleResolution": "bundler",
-    "resolveJsonModule": true,
-    "types": ["@cloudflare/workers-types"],
+    "module": "ESNext",
+    "lib": [
+      "ES2022",
+      "WebWorker"
+    ],
+    "moduleResolution": "Bundler",
+    "types": [
+      "@cloudflare/workers-types"
+    ],
     "strict": true,
-    "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "allowJs": true,
-    "checkJs": false
+    "noEmit": true
   },
-  "include": ["worker.ts"],
-  "exclude": ["node_modules"]
+  "include": [
+    "worker.ts",
+    "modules.d.ts"
+  ]
 }

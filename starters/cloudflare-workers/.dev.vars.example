@@ -1,0 +1,3 @@
+# Local development only. Copy to .dev.vars; never commit real secrets.
+BETTER_AUTH_URL=http://localhost:8787
+BETTER_AUTH_SECRET=local-development-secret-at-least-32-characters

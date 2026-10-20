@@ -1,0 +1,11 @@
+packages:
+  - .
+
+allowBuilds:
+  esbuild: true
+  workerd: true
+  sharp: false
+
+# Keep auth aligned with the checked-in schema and tested runtime adapter.
+overrides:
+  better-auth: 1.6.6

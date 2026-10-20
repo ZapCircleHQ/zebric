@@ -20,9 +20,9 @@ It is best suited to internal tools, admin surfaces, CRUD workflows, prototypes,
 
 **Key characteristics:**
 - **Configuration-driven**: Define entities, routes, and forms in TOML/JSON instead of code
-- **Runtime interpretation**: No build step; changes to Blueprint files are reflected immediately
+- **Runtime interpretation**: Executes Blueprints directly; Node development reloads files, while Workers bundles and deploys them
 - **Server-side rendering**: Traditional HTML pages with form submissions (not a SPA framework)
-- **Database integration**: Automatic schema generation and CRUD operations from entity definitions
+- **Database integration**: CRUD operations from entity definitions; Node supports schema generation, while Workers uses D1 migrations
 - **AI-friendly**: Designed for AI code generators to create and modify applications iteratively
 
 ## Start Here
@@ -30,6 +30,7 @@ It is best suited to internal tools, admin surfaces, CRUD workflows, prototypes,
 - Documentation: [docs.zebric.dev](https://docs.zebric.dev)
 - Playground and examples: [playground.zebric.dev](https://playground.zebric.dev)
 - npm package: [@zebric/cli](https://www.npmjs.com/package/@zebric/cli)
+- Cloudflare Workers: [deployment guide](https://docs.zebric.dev/run/cloudflare/) and [readiness audit](docs/CLOUDFLARE_READINESS_AUDIT.md)
 
 ## Project Structure
 
@@ -176,10 +177,10 @@ For more patterns, continue with the [documentation](https://docs.zebric.dev) an
 
 ## Technology Stack
 
-- **Runtime**: Node.js 22+
+- **Runtime**: Node.js 22+ or Cloudflare Workers
 - **Language**: TypeScript
 - **HTTP Server**: Hono 4.x
-- **Database ORM**: Drizzle ORM with SQLite and PostgreSQL
+- **Database**: SQLite/PostgreSQL on Node; D1 on Workers
 - **Authentication**: Better Auth (Other providers in the future)
 - **Background Jobs**: BullMQ (optional)
 - **Caching**: Redis (optional)

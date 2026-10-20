@@ -1,33 +1,24 @@
-name = "zebric-app"
+name = "zebric-cloudflare-starter"
 main = "worker.ts"
-compatibility_date = "2025-01-10"
+compatibility_date = "2026-04-28"
 compatibility_flags = ["nodejs_compat"]
 
 [[rules]]
 type = "Text"
-globs = ["**/*.toml", "**/*.liquid"]
+globs = ["**/*.toml"]
 fallthrough = true
 
-# D1 Database (required)
 [[d1_databases]]
 binding = "DB"
 database_name = "zebric-db"
-database_id = "your-database-id-here"  # Get this from: wrangler d1 create zebric-db
+database_id = "00000000-0000-0000-0000-000000000000" # Replace with db:create output before remote use
+migrations_dir = "migrations"
 
-# KV Namespace for custom session integrations (optional)
-# [[kv_namespaces]]
-# binding = "SESSION_KV"
-# id = "your-session-kv-id-here"  # Get this from: wrangler kv:namespace create SESSION_KV
+[observability]
+enabled = true
 
-# KV Namespace for Caching (optional)
-# [[kv_namespaces]]
-# binding = "CACHE_KV"
-# id = "your-cache-kv-id-here"  # Get this from: wrangler kv:namespace create CACHE_KV
-
-# Development settings
-[env.dev]
-name = "zebric-app-dev"
-
-# Production settings
-[env.production]
-name = "zebric-app-production"
+# Production origin; local development uses .dev.vars instead.
+# Uncomment and set your deployed origin before deploying.
+# [vars]
+# BETTER_AUTH_URL = "https://app.example.com"
+# Set the production secret with: pnpm exec wrangler secret put BETTER_AUTH_SECRET
