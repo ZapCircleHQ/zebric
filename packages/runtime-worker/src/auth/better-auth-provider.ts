@@ -55,6 +55,11 @@ export class WorkersBetterAuthProvider implements AuthProvider {
       },
       advanced: {
         useSecureCookies: secure,
+        // Better Auth 1.7.6+ introspects the database schema on first use and shares that
+        // promise across requests, which never settles under workerd + D1 (every auth
+        // lookup hangs). The shipped migration is verified against Better Auth's expected
+        // schema in tests, so skip the runtime check.
+        database: { validateSchema: false },
       },
     })
   }

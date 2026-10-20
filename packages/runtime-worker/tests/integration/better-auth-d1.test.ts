@@ -158,6 +158,21 @@ describe('WorkersBetterAuthProvider on D1', () => {
     expect(toBeAdded.map((t) => t.table)).toEqual([])
   })
 
+  it.each(['starters/cloudflare-workers', 'examples/workers-blog'])(
+    '%s pins the same Better Auth version the runtime is tested with',
+    (app) => {
+      const installed = JSON.parse(
+        readFileSync(new URL('../../node_modules/better-auth/package.json', import.meta.url), 'utf8')
+      ).version
+      const workspace = readFileSync(new URL(`../../../../${app}/pnpm-workspace.yaml`, import.meta.url), 'utf8')
+      expect(workspace).toMatch(new RegExp(`^\\s+better-auth: ${installed.replace(/\./g, '\\.')}\\s*$`, 'm'))
+    }
+  )
+
+  it('disables Better Auth runtime schema validation (it hangs sessions under wrangler dev on 1.7.6+)', () => {
+    expect((auth.options as any).advanced?.database?.validateSchema).toBe(false)
+  })
+
   it('ships identical auth migrations in the starter and the workers-blog example', () => {
     expect(authSql('examples/workers-blog')).toBe(authSql('starters/cloudflare-workers'))
   })

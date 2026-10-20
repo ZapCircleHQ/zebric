@@ -14,3 +14,8 @@ allowBuilds:
   msgpackr-extract: false
   sharp: true
   workerd: true
+
+# Patched transitive versions for advisories whose parents have not released a fix yet.
+overrides:
+  'undici@7': '>=7.29.1 <8'
+  'sharp@^0.35.0': '>=0.35.5 <0.36'

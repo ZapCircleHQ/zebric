@@ -101,7 +101,7 @@ const floors: Record<string, string> = {
   'ip-address': '10.7.1',
 }
 
-function packageJsonFor(name: string, from: NodeRequire): string | undefined {
+function packageJsonFor(name: string, from: ReturnType<typeof createRequire>): string | undefined {
   // Many packages hide package.json behind an exports map, so resolve the entry
   // point and walk up to the manifest that carries the right name.
   let entry: string
@@ -128,7 +128,7 @@ function installedVersions(name: string): string[] {
   // including nested copies (ajv -> fast-uri, express -> proxy-addr/qs, ...).
   const sdkRequire = createRequire(require_resolve('@modelcontextprotocol/sdk/package.json'))
   const versions = new Set<string>()
-  const record = (from: NodeRequire) => {
+  const record = (from: ReturnType<typeof createRequire>) => {
     const file = packageJsonFor(name, from)
     if (file) versions.add(JSON.parse(readFileSync(file, 'utf8')).version)
   }
