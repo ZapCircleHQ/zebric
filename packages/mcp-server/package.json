@@ -41,7 +41,7 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@zebric/agent": "workspace:*",
     "zod": "^4.3.6"
   },
