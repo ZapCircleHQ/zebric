@@ -60,7 +60,7 @@
     "test:browser:live": "playwright test --config=playwright.config.ts live.browser.spec.ts live.e2e.spec.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.0",
+    "@hono/node-server": "^2.1.5",
     "@zebric/notifications": "workspace:*",
     "@zebric/observability": "workspace:*",
     "@zebric/runtime-core": "workspace:*",
@@ -70,7 +70,7 @@
     "bullmq": "^5.75.2",
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.14",
+    "hono": "^4.13.13",
     "ioredis": "^5.3.2",
     "postgres": "^3.4.9",
     "ulid": "^3.0.1",

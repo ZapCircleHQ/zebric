@@ -369,8 +369,8 @@ importers:
   packages/observability:
     dependencies:
       hono:
-        specifier: ^4.12.14
-        version: 4.12.14
+        specifier: ^4.13.13
+        version: 4.13.13
     devDependencies:
       typescript:
         specifier: ^6.0.3
@@ -559,8 +559,8 @@ importers:
         version: link:../runtime-core
     devDependencies:
       hono:
-        specifier: ^4.12.14
-        version: 4.12.14
+        specifier: ^4.13.13
+        version: 4.13.13
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -571,8 +571,8 @@ importers:
   packages/runtime-node:
     dependencies:
       '@hono/node-server':
-        specifier: ^2.0.0
-        version: 2.0.0(hono@4.12.14)
+        specifier: ^2.1.5
+        version: 2.1.5(hono@4.13.13)
       '@zebric/notifications':
         specifier: workspace:*
         version: link:../notifications
@@ -601,8 +601,8 @@ importers:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@4.20260421.1)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(better-sqlite3@12.9.0)(kysely@0.29.7)(postgres@3.4.9)
       hono:
-        specifier: ^4.12.14
-        version: 4.12.14
+        specifier: ^4.13.13
+        version: 4.13.13
       ioredis:
         specifier: ^5.3.2
         version: 5.10.1(supports-color@10.2.2)
@@ -675,8 +675,8 @@ importers:
         specifier: ^1.0.2
         version: 1.1.1
       hono:
-        specifier: ^4.12.14
-        version: 4.12.14
+        specifier: ^4.13.13
+        version: 4.13.13
       ulid:
         specifier: ^3.0.2
         version: 3.0.2
@@ -1446,17 +1446,17 @@ packages:
   '@expressive-code/plugin-text-markers@0.41.7':
     resolution: {integrity: sha512-Ewpwuc5t6eFdZmWlFyeuy3e1PTQC0jFvw2Q+2bpcWXbOZhPLsT7+h8lsSIJxb5mS7wZko7cKyQ2RLYDyK6Fpmw==}
 
-  '@hono/node-server@2.0.0':
-    resolution: {integrity: sha512-n3GfHwwCvHCkGmOwKfxUPOlbfzuO64Sbc5XC4NGPIXxkuOnJrdgExdRKmHfF924r914WRJPT397GdqLvdYTeyQ==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      hono: ^4
-
   '@hono/node-server@2.1.1':
     resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
     engines: {node: '>=20'}
     peerDependencies:
       hono: ^4
+
+  '@hono/node-server@2.1.5':
+    resolution: {integrity: sha512-MgP/I06GdvsilDspMk/qmRzpk8LOUStP6jFAbSRi40W09DhoyUn+Mj7eyKICPqeYKybOjVFLVIAQzvu1bfIa7Q==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4 || ^5.0.0-0
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -3501,6 +3501,10 @@ packages:
 
   hono@4.12.14:
     resolution: {integrity: sha512-am5zfg3yu6sqn5yjKBNqhnTX7Cv+m00ox+7jbaKkrLMRJ4rAdldd1xPd/JzbBWspqaQv6RSTrgFN95EsfhC+7w==}
+    engines: {node: '>=16.9.0'}
+
+  hono@4.13.13:
+    resolution: {integrity: sha512-CQ46U0ZkAGmbT/4UxdzzGJpacP2IeKgY4a5/tOI9AABbpOMfK739wfDXmv1usCk+3RkKj1hQy4/fjhiwa2xlrA==}
     engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
@@ -6289,13 +6293,13 @@ snapshots:
     dependencies:
       '@expressive-code/core': 0.41.7
 
-  '@hono/node-server@2.0.0(hono@4.12.14)':
-    dependencies:
-      hono: 4.12.14
-
   '@hono/node-server@2.1.1(hono@4.12.14)':
     dependencies:
       hono: 4.12.14
+
+  '@hono/node-server@2.1.5(hono@4.13.13)':
+    dependencies:
+      hono: 4.13.13
 
   '@humanfs/core@0.19.2':
     dependencies:
@@ -8429,6 +8433,8 @@ snapshots:
       space-separated-tokens: 2.0.2
 
   hono@4.12.14: {}
+
+  hono@4.13.13: {}
 
   html-escaper@2.0.2: {}
 
