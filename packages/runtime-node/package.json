@@ -65,7 +65,7 @@
     "@zebric/observability": "workspace:*",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
-    "better-auth": "^1.6.6",
+    "better-auth": "^1.7.11",
     "better-sqlite3": "^12.9.0",
     "bullmq": "^5.75.2",
     "chokidar": "^5.0.0",
