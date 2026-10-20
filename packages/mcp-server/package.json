@@ -49,7 +49,7 @@
     "@types/node": "^22.19.17",
     "@zebric/runtime-node": "workspace:*",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22.0.0"

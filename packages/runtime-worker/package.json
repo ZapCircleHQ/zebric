@@ -59,11 +59,11 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260702.1",
     "@types/better-sqlite3": "^7.6.9",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "better-sqlite3": "^12.9.0",
     "miniflare": "^4.20260730.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5",
+    "vitest": "^4.1.12",
     "wrangler": "^4.116.0"
   },
   "peerDependencies": {
