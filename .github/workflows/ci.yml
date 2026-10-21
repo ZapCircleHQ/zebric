@@ -465,6 +465,12 @@ jobs:
       - name: Test documented blueprints
         run: pnpm -C packages/docs test
 
+      - name: Build runtime for tutorial smoke test
+        run: pnpm --filter @zebric/runtime-node... build
+
+      - name: Smoke test tutorial checkpoints
+        run: pnpm -C packages/docs smoke:tutorial-ops
+
       - name: Link check built docs
         uses: lycheeverse/lychee-action@v2
         with:

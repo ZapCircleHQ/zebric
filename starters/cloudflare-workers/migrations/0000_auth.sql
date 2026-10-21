@@ -1,4 +1,4 @@
--- Generated for Better Auth 1.6.6, including the Zebric role field.
+-- Generated for Better Auth 1.6.6 (verified unchanged on 1.7.11), including the Zebric role field.
 -- Regenerate and review on auth/runtime upgrades.
 create table "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" integer not null, "image" text, "createdAt" date not null, "updatedAt" date not null, "role" text);
 

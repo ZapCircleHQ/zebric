@@ -50,21 +50,21 @@
     "@opentelemetry/api": "^1.9.1",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
-    "better-auth": "^1.6.6",
+    "better-auth": "^1.7.11",
     "cookie": "^1.0.2",
-    "hono": "^4.12.14",
+    "hono": "^4.13.13",
     "ulid": "^3.0.2",
     "@zebric/notifications": "workspace:*"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260421.1",
+    "@cloudflare/workers-types": "^4.20260702.1",
     "@types/better-sqlite3": "^7.6.9",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "better-sqlite3": "^12.9.0",
-    "miniflare": "^4.20260421.0",
+    "miniflare": "^4.20260730.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5",
-    "wrangler": "^4.84.1"
+    "vitest": "^4.1.12",
+    "wrangler": "^4.116.0"
   },
   "peerDependencies": {
     "@cloudflare/workers-types": "^4.0.0"

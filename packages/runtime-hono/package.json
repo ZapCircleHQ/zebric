@@ -32,9 +32,9 @@
     "@zebric/runtime-core": "workspace:*"
   },
   "devDependencies": {
-    "hono": "^4.12.14",
+    "hono": "^4.13.13",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   },
   "peerDependencies": {
     "hono": ">=4.0.0"

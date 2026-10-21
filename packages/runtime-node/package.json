@@ -60,21 +60,21 @@
     "test:browser:live": "playwright test --config=playwright.config.ts live.browser.spec.ts live.e2e.spec.ts"
   },
   "dependencies": {
-    "@hono/node-server": "^2.0.0",
+    "@hono/node-server": "^2.1.5",
     "@zebric/notifications": "workspace:*",
     "@zebric/observability": "workspace:*",
     "@zebric/runtime-core": "workspace:*",
     "@zebric/runtime-hono": "workspace:*",
-    "better-auth": "^1.6.6",
+    "better-auth": "^1.7.11",
     "better-sqlite3": "^12.9.0",
-    "bullmq": "^5.75.2",
+    "bullmq": "^5.81.5",
     "chokidar": "^5.0.0",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.12.14",
+    "hono": "^4.13.13",
     "ioredis": "^5.3.2",
     "postgres": "^3.4.9",
     "ulid": "^3.0.1",
-    "ws": "^8.20.0"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.2",
@@ -82,9 +82,9 @@
     "@types/better-sqlite3": "^7.6.9",
     "@types/node": "^22.19.17",
     "@types/ws": "^8.18.1",
-    "@vitest/coverage-v8": "^4.1.5",
+    "@vitest/coverage-v8": "^4.1.12",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22.0.0"
