@@ -201,3 +201,15 @@ describe('BrowserMemoryQueryExecutor access conformance', () => {
       .rejects.toThrow('Access denied: Cannot read Document')
   })
 })
+
+describe('BrowserMemoryQueryExecutor immutable fields', () => {
+  it('accepts initial ownership and rejects reassignment', async () => {
+    const entity = { ...dogEntity, fields: [...dogEntity.fields, { name: 'accountId', type: 'Text' as const, immutable: true }] }
+    const executor = new BrowserMemoryQueryExecutor({ entities: [entity] } as unknown as Blueprint,
+      { Dog: [] }, new SimulatorLogger())
+    const created = await executor.create('Dog', { id: 'fixed', accountId: 'account-1' }, {})
+    expect(created.accountId).toBe('account-1')
+    await expect(executor.update('Dog', 'fixed', { accountId: 'account-2' }, {})).rejects.toThrow('Immutable fields')
+    expect(await executor.findById('Dog', 'fixed', {})).toMatchObject({ accountId: 'account-1' })
+  })
+})

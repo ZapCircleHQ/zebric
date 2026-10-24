@@ -14,9 +14,9 @@ kept visible even when the demo succeeds.
 
 | Priority | Gap | CRM consequence | Workaround |
 |---|---|---|---|
-| P0 | Delegated agent row authorization | Static agent keys cannot inherit Sarah's or Mike's team visibility | Broad agent row access plus narrow action scopes; production blocker |
-| P1 | Relation-aware team access | Membership rows cannot authorize related CRM rows | Snapshot `ownerId` and one `assistantEmail` on every scoped entity |
-| P1 | Workflow-only protected fields | Roles able to run transitions can also call generic entity update | Do not expose generic writes in UI/skill; guarded compare-and-set workflows |
+| P0 | Delegated agent row authorization | Static agent keys cannot inherit Sarah's or Mike's team visibility | Explicit team membership plus narrow scopes; trusted delegation still needed |
+| P1 | Relation-aware team access | Resolved: stored active membership authorizes rows | Immutable team/parent references |
+| P1 | Workflow-only protected fields | Resolved: protected fields and immutable review drafts | Workflow-scoped domain commands |
 | P1 | Typed external-response transforms | Places dedupe/count and LLM JSON parsing are not robustly expressible | Stage results; explicit duplicate review; reviewed classification command |
 | P1 | SendGrid Inbound Parse mismatch | Native webhook expects JSON plus Zebric auth, not SendGrid multipart | Narrow deployment-edge normalization adapter required |
 | P2 | Data-grid composition | No saved views, CSV, safe bulk commands, or inline-edit policy | Local filter/selection enhancement; no fake bulk mutation |
@@ -25,55 +25,26 @@ kept visible even when the demo succeeds.
 | P2 | User application profile | Better Auth User cannot hold `active` or team fields and is not queryable | TeamMembership entity; seed roles through trusted DB write |
 | P3 | Human-readable references | No transactional sequence primitive | Use stable ULIDs/seed ids |
 
-## G-01 — Delegated agent authorization (P0)
+## G-01 — Trusted delegation remains a host responsibility (P0)
 
-- **Desired:** an agent acting for Sarah receives exactly Sarah's AE/team rows,
-  and audit retains both Sarah as initiator and the agent as executor.
-- **Current behavior:** API-key principals have their own `agentId`, scopes, and
-  declared constraints, but the compatibility user has no `role`. Runtime
-  resource/row constraints are not enforced, and a key cannot inherit a human
-  session.
-- **Consequence:** owner rules comparing `ownerId = $currentUser.id` return no
-  human-owned rows. Granting the `user` role broad row access makes the north-star
-  demo usable but is not equivalent authorization.
-- **Workaround:** every scoped row carries `agentAccessId = "crm-sales-agent"` and
-  access compares it to the principal id. Only semantic skill routes are exposed
-  and scopes remove approval permission. The README labels the key development-only.
-- **Framework direction:** delegated principals containing initiator and executor,
-  with enforced row constraints that access conditions can reference.
-- **Acceptance:** Sarah-delegated and Mike-delegated agents receive disjoint list
-  results, while audit stores both principal identities.
+Static API keys cannot prove which human delegated a request. Demo agent access
+now requires explicit active `TeamMembership` rows, provisioned by the seed.
+The broad `agentAccessId` snapshot workaround has been removed. Production hosts
+must bind delegated identity securely or provision the agent's teams explicitly.
 
-## G-02 — Relation-aware authorization (P1)
+## G-02 — Relation-aware authorization (resolved)
 
-- **Desired:** `Account.team.memberships` determines AE/assistant access and any
-  number of assistants can support a team.
-- **Current behavior:** entity access conditions compare only fields on the current
-  row with primitive `$currentUser` fields. They cannot traverse `team` or ask
-  whether a membership record exists.
-- **Consequence:** every Account, Contact, Lead, Opportunity, Activity,
-  Conversation, Message, Task, ProspectSearch, ProspectCandidate, and Insight
-  needs copied ownership data. The demo supports one authorization assistant per
-  row even though `TeamMembership` models more.
-- **Workaround:** `ownerId` plus `assistantEmail` snapshots and manager/admin role
-  branches. Outreach approval also requires the `assistant`, `manager`, or `admin`
-  role and row access to the message. This is secure for the declared snapshot but
-  creates reassignment fanout and cannot distinguish two assistants on one team.
-- **Framework direction:** relation/exists predicates in access filters, evaluated
-  identically by list, detail, API, workflow, and MCP paths.
+Policies traverse stored `team.memberships`, filtered to active rows. Parent
+links and `teamId` are immutable, and create policies require matching parent
+teams. Deactivating a membership revokes access without rewriting CRM records.
+Owner/email snapshots are no longer authorization inputs.
 
-## G-03 — Workflow-only lifecycle fields (P1)
+## G-03 — Workflow-only lifecycle fields (resolved)
 
-- **Desired:** stage, approval, classification, disposition, and insight status can
-  only change through named domain commands.
-- **Current behavior:** a workflow's writes use the caller's same entity update
-  permission. Setting update false also blocks the workflow; granting it permits a
-  direct entity update route.
-- **Workaround:** skills and custom UI expose only workflows; workflows use
-  preconditions and compare-and-set `where` clauses. Generic APIs remain a boundary
-  an authorized caller could abuse.
-- **Framework direction:** command-only fields or workflow-capability writes, with
-  direct CRUD rejected across all transports.
+Lifecycle commands are scoped to their semantic workflows. Outreach content,
+recipients, author, and designated reviewer cannot be edited after creation;
+approval attribution is command-only and uses the actual actor. Independent
+review is enforced even when the caller reaches generic entity/command APIs.
 
 ## G-04 — External data transformation (P1)
 

@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3000",
     "validate": "zebric validate --blueprint blueprint.toml",
-    "seed:user": "bash seed-dev-user.sh"
+    "seed:user": "bash seed-dev-user.sh",
+    "predev": "pnpm --dir ../.. --filter @zebric/cli... build",
+    "pretest": "pnpm --dir ../.. --filter @zebric/cli... build",
+    "test": "node --test security.test.mjs"
   },
   "dependencies": {
     "@zebric/cli": "workspace:*",

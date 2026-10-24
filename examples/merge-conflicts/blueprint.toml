@@ -33,8 +33,10 @@ fields = [
 [entity.ConflictResolution]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "pullRequestId", type = "Ref", ref = "PullRequest.id", required = true, index = true },
+  { name = "pullRequestId", type = "Ref", ref = "PullRequest.id", required = true, index = true, immutable = true },
   { name = "status", type = "Enum", values = ["detected", "analyzing", "resolving", "validating", "awaiting_approval", "approved", "applying", "completed", "failed", "abandoned"], default = "detected", index = true, write = "command-only", commands = ["ApproveConflictResolution", "RejectConflictResolution"] },
+  { name = "reviewedById", type = "Text", write = "command-only", commands = ["ApproveConflictResolution", "RejectConflictResolution"] },
+  { name = "reviewReason", type = "LongText", write = "command-only", commands = ["ApproveConflictResolution", "RejectConflictResolution"] },
   { name = "failure", type = "LongText" },
   { name = "publishedCommit", type = "Text" },
   { name = "createdAt", type = "DateTime", default = "now" },
@@ -72,7 +74,7 @@ fields = [
 [entity.ReviewDecision]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "resolutionId", type = "Ref", ref = "ConflictResolution.id", required = true, index = true },
+  { name = "resolutionId", type = "Ref", ref = "ConflictResolution.id", required = true, unique = true, immutable = true },
   { name = "decision", type = "Enum", values = ["approved", "rejected", "revise"], required = true },
   { name = "reviewerId", type = "Text", required = true },
   { name = "reason", type = "LongText" },
@@ -80,19 +82,27 @@ fields = [
 ]
 
 [command.ApproveConflictResolution]
+scopes = ["conflicts.review"]
 entity = "ConflictResolution"
 label = "Approve resolution"
 policy = "actor.roles contains 'reviewer' || actor.roles contains 'admin'"
 availableWhen = "record.status == 'awaiting_approval'"
-mutations = { status = "approved", updatedAt = "now" }
+mutations = { status = "approved", reviewedById = "actor.effectiveId", reviewReason = "input.reason", updatedAt = "now" }
+[command.ApproveConflictResolution.input.reason]
+type = "LongText"
+required = true
 
 [command.RejectConflictResolution]
+scopes = ["conflicts.review"]
 entity = "ConflictResolution"
 label = "Reject resolution"
 style = "danger"
 policy = "actor.roles contains 'reviewer' || actor.roles contains 'admin'"
 availableWhen = "record.status == 'awaiting_approval'"
-mutations = { status = "abandoned", updatedAt = "now" }
+mutations = { status = "abandoned", reviewedById = "actor.effectiveId", reviewReason = "input.reason", updatedAt = "now" }
+[command.RejectConflictResolution.input.reason]
+type = "LongText"
+required = true
 
 [page."/"]
 title = "Conflict resolutions"
@@ -118,15 +128,10 @@ precondition = { "variables.data.record.status" = "awaiting_approval" }
 transactional = true
 
 [[workflow.ApproveResolution.steps]]
-type = "query"
-entity = "ReviewDecision"
-action = "create"
-data = { resolutionId = "{{ variables.data.record.id }}", decision = "approved", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
-
-[[workflow.ApproveResolution.steps]]
 type = "command"
 command = "ApproveConflictResolution"
 recordId = "{{ variables.data.record.id }}"
+input = { reason = "{{ variables.data.payload.reason }}" }
 
 [workflow.RejectResolution]
 trigger = { manual = true }
@@ -134,15 +139,10 @@ precondition = { "variables.data.record.status" = "awaiting_approval" }
 transactional = true
 
 [[workflow.RejectResolution.steps]]
-type = "query"
-entity = "ReviewDecision"
-action = "create"
-data = { resolutionId = "{{ variables.data.record.id }}", decision = "rejected", reviewerId = "{{ variables.data.session.user.id }}", reason = "{{ variables.data.payload.reason }}" }
-
-[[workflow.RejectResolution.steps]]
 type = "command"
 command = "RejectConflictResolution"
 recordId = "{{ variables.data.record.id }}"
+input = { reason = "{{ variables.data.payload.reason }}" }
 
 [auth]
 providers = ["email"]
@@ -157,3 +157,33 @@ keyEnv = "MERGE_CONFLICT_AGENT_API_KEY"
 agentId = "merge-conflict-reviewer"
 roles = ["reviewer"]
 scopes = ["conflicts.read", "conflicts.review"]
+
+# Review evidence must exactly match a protected transition and its stored actor.
+[entity.ReviewDecision.relations]
+resolution = { type = "belongsTo", entity = "ConflictResolution", foreign_key = "resolutionId" }
+
+[entity.ReviewDecision.access]
+read = "actor.roles contains 'reviewer' || actor.roles contains 'admin'"
+create = "record.reviewerId == actor.effectiveId && record.reviewerId == record.resolution.reviewedById && record.reason == record.resolution.reviewReason && ((record.decision == 'approved' && record.resolution.status == 'approved') || (record.decision == 'rejected' && record.resolution.status == 'abandoned'))"
+update = false
+delete = false
+
+[workflow.RecordApprovalEvidence]
+trigger = { entity = "ConflictResolution", event = "update", condition = { "before.status" = "awaiting_approval", "after.status" = "approved" } }
+transactional = true
+
+[[workflow.RecordApprovalEvidence.steps]]
+type = "query"
+entity = "ReviewDecision"
+action = "create"
+data = { resolutionId = "{{ variables.after.id }}", decision = "approved", reviewerId = "{{ variables.after.reviewedById }}", reason = "{{ variables.after.reviewReason }}" }
+
+[workflow.RecordRejectionEvidence]
+trigger = { entity = "ConflictResolution", event = "update", condition = { "before.status" = "awaiting_approval", "after.status" = "abandoned" } }
+transactional = true
+
+[[workflow.RecordRejectionEvidence.steps]]
+type = "query"
+entity = "ReviewDecision"
+action = "create"
+data = { resolutionId = "{{ variables.after.id }}", decision = "rejected", reviewerId = "{{ variables.after.reviewedById }}", reason = "{{ variables.after.reviewReason }}" }

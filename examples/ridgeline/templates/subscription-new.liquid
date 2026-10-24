@@ -19,7 +19,7 @@
     <label for="customerId">Account</label>
     <select id="customerId" required>
       {% for customer in data.customers %}
-        <option value="{{ customer.id }}" data-email="{{ customer.email }}">{{ customer.name }}</option>
+        <option value="{{ customer.id }}">{{ customer.name }}</option>
       {% endfor %}
     </select>
     <label for="productId">Product</label>
@@ -46,10 +46,8 @@
 (function(){
   document.getElementById('sub-form').addEventListener('submit', function(){
     var customerSel = document.getElementById('customerId');
-    var opt = customerSel.options[customerSel.selectedIndex];
     var payload = {
       customerId: customerSel.value,
-      customerEmail: opt ? opt.dataset.email : '',
       productId: document.getElementById('productId').value,
       frequency: document.getElementById('frequency').value,
       quantity: parseInt(document.getElementById('quantity').value, 10) || 1,

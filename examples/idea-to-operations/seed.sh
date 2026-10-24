@@ -9,7 +9,8 @@ DEMO_PASSWORD="${DEMO_PASSWORD:-NorthstarDemo1!}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DB_PATH="${DB_PATH:-$SCRIPT_DIR/data/app.db}"
 COOKIE_JAR="$(mktemp)"
-trap 'rm -f "$COOKIE_JAR"' EXIT
+SNAPSHOTS="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR" "$SNAPSHOTS"' EXIT
 CSRF_TOKEN="${CSRF_TOKEN:-ops-seed-csrf}"
 
 post_json() {
@@ -28,8 +29,18 @@ post_auth() {
 # Lifecycle stage is command-only in 0.6. Trusted fixtures restore their
 # historical snapshots in SQL after creating records at the safe default.
 add() {
-  local payload
-  payload="$(sed -E 's/"stage":"[^"]+",//g')"
+  local payload fields="" table="${1%s}"
+  case "$1" in
+    decisions) table="Decision"; fields="status outcome decision rationale selectedAlternativeId decidedById decidedByName decidedAt" ;;
+    initiatives) table="Initiative"; fields="planApprovedAt health healthReason launchApprovedAt operationalOwnerId operationalOwnerName runbookUrl stage ownerId ownerName launchedAt retiredAt" ;;
+    milestones) table="Milestone"; fields="status completedAt" ;;
+    readinesschecks) table="ReadinessCheck"; fields="status notes completedAt" ;;
+    observations) table="Observation"; fields="status resultingInitiativeId" ;;
+    operationalcapabilitys) table="OperationalCapability"; fields="status" ;;
+    dependencys) table="Dependency"; fields="status" ;;
+  esac
+  # Word splitting here passes the fixed blueprint-owned field names individually.
+  payload="$(python3 "$SCRIPT_DIR/../seed-fixtures.py" prepare "$table" "$SNAPSHOTS" $fields)"
   post_json "/api/$1" "$payload" >/dev/null
 }
 
@@ -305,11 +316,7 @@ add risks <<JSON
 {"id":"risk_export_1","initiativeId":"init_data_export","title":"Row cap frustrates enterprise customers","likelihood":"high","impact":"medium","mitigation":"CSV Export initiative under discovery.","ownerId":"$OLIVIA","ownerName":"Olivia Reyes","status":"accepted"}
 JSON
 
-# Creating a high/high risk fires the HighRiskHealth automation, which sets the
-# portal to at_risk (last event wins; see ZEBRIC_GAPS). Re-assert the intended
-# blocked state, which outranks at_risk, the way a human owner would.
-sleep 3  # let the queued automation land first
-curl -fsS -X PUT "$BASE_URL/api/initiatives/init_portal" -b "$COOKIE_JAR" -H "Cookie: csrf-token=$CSRF_TOKEN" -H "x-csrf-token: $CSRF_TOKEN" -H "content-type: application/json" -d '{"health":"blocked","healthReason":"Milestone blocked: Billing integration; contract risk open"}' >/dev/null
+# Historical health snapshots are restored locally after fixture creation.
 
 echo "Creating readiness checks..."
 i=0
@@ -366,6 +373,8 @@ for spec in \
 {"id":"act_$i","initiativeId":"$init","type":"$type","summary":"$summary","actorName":"$actor","occurredAt":"$at"}
 JSON
 done
+
+python3 "$SCRIPT_DIR/../seed-fixtures.py" restore "$DB_PATH" "$SNAPSHOTS"
 
 sqlite3 "$DB_PATH" <<SQL
 UPDATE initiative SET stage = 'discovery' WHERE id = 'init_csv_export';

@@ -16,6 +16,8 @@ This example is an executable, policy-driven merge-conflict resolution workflow.
 
 ## Run it
 
+Requires Node.js 22+, Git, Python 3, and macOS or Linux. Python supplies descriptor-relative, no-follow file access for the Git adapter.
+
 From the repository root:
 
 ```bash
@@ -48,7 +50,8 @@ The caller is responsible for cloning/fetching the PR, checking out a resolution
 
 ## Safety notes
 
-- Candidate paths are constrained to the configured worktree.
+- Candidates must target the exact inspected conflict. Descriptor-relative file access rejects symlinks, hard links, Git metadata, and unrelated paths, including links swapped after inspection.
+- Review attribution and reason are stored by the approval/rejection command. Evidence rows must match that stored transition and reviewer; each resolution has at most one review record.
 - Validation commands are trusted repository configuration and run through `/bin/sh`; never accept them from an untrusted PR payload.
 - Automatic publishing can be disabled with `autoPublish: false`.
 - High/unknown risk, unknown classification, explicit model concern, and exhausted retries all require human review.

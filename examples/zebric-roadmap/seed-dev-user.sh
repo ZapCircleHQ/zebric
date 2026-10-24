@@ -6,14 +6,18 @@ CSRF_TOKEN="${CSRF_TOKEN:-roadmapdevtoken}"
 DEV_EMAIL="${DEV_EMAIL:-roadmap@zebric.local}"
 DEV_PASSWORD="${DEV_PASSWORD:-RoadmapPass123!}"
 DEV_NAME="${DEV_NAME:-Roadmap Editor}"
-COOKIE_JAR="${COOKIE_JAR:-.dev-user.cookies}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DB_PATH="${DB_PATH:-$SCRIPT_DIR/data/app.db}"
+SEED_DIR="$(mktemp -d)"
+COOKIE_JAR="${COOKIE_JAR:-$SCRIPT_DIR/.dev-user.cookies}"
+trap 'rm -rf "$SEED_DIR"' EXIT
 
 SIGNUP_PAYLOAD="{\"email\":\"$DEV_EMAIL\",\"password\":\"$DEV_PASSWORD\",\"name\":\"$DEV_NAME\"}"
 SIGNIN_PAYLOAD="{\"email\":\"$DEV_EMAIL\",\"password\":\"$DEV_PASSWORD\"}"
 
 printf 'Seeding roadmap editor against %s\n' "$BASE_URL"
 
-SIGNUP_HTTP=$(curl -sS -o /tmp/zebric-roadmap-signup.json -w "%{http_code}" \
+SIGNUP_HTTP=$(curl -sS -o "$SEED_DIR/signup.json" -w "%{http_code}" \
   -c "$COOKIE_JAR" \
   -H "Cookie: csrf-token=$CSRF_TOKEN" \
   -H "x-csrf-token: $CSRF_TOKEN" \
@@ -28,7 +32,15 @@ else
   printf 'Sign-up returned HTTP %s; attempting sign-in for an existing user.\n' "$SIGNUP_HTTP"
 fi
 
-SIGNIN_HTTP=$(curl -sS -o /tmp/zebric-roadmap-signin.json -w "%{http_code}" \
+# This seed is a trusted local provisioning tool; public sign-up never grants editor.
+USER_ID=$(sqlite3 -bail "$DB_PATH" "SELECT id FROM user WHERE email = '$(printf '%s' "$DEV_EMAIL" | sed "s/'/''/g")';")
+if [[ -z "$USER_ID" ]]; then
+  echo "No provisioned identity found" >&2
+  exit 1
+fi
+sqlite3 -bail "$DB_PATH" "UPDATE user SET role = 'editor' WHERE id = '$(printf '%s' "$USER_ID" | sed "s/'/''/g")';"
+
+SIGNIN_HTTP=$(curl -sS -o "$SEED_DIR/signin.json" -w "%{http_code}" \
   -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
   -H "Cookie: csrf-token=$CSRF_TOKEN" \
   -H "x-csrf-token: $CSRF_TOKEN" \
@@ -38,7 +50,7 @@ SIGNIN_HTTP=$(curl -sS -o /tmp/zebric-roadmap-signin.json -w "%{http_code}" \
   -d "$SIGNIN_PAYLOAD")
 
 if [[ "$SIGNIN_HTTP" != "200" && "$SIGNIN_HTTP" != "201" ]]; then
-  printf 'Sign-in failed (HTTP %s): %s\n' "$SIGNIN_HTTP" "$(cat /tmp/zebric-roadmap-signin.json 2>/dev/null || true)"
+  printf 'Sign-in failed (HTTP %s): %s\n' "$SIGNIN_HTTP" "$(cat "$SEED_DIR/signin.json" 2>/dev/null || true)"
   exit 1
 fi
 

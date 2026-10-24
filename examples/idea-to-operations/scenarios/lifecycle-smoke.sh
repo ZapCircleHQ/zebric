@@ -120,10 +120,11 @@ sleep 2
 LDEC="$(pick decisions "x['initiativeId']=='init_csv_export' and x['kind']=='approve_launch'" id)"
 run dana RecordDecision Decision "$LDEC" /decisions '{"outcome":"approved","decision":"Launch approved","rationale":"Ready."}'
 check "launch decision is decided" wait_for decisions "$LDEC" status decided
-api owen POST /api/dependencys '{"id":"dep_smoke_block","sourceType":"initiative","sourceId":"init_csv_export","sourceLabel":"CSV Export","targetType":"initiative","targetId":"init_data_export","targetLabel":"Data Export v1","type":"blocks_launch","status":"open","description":"Smoke-test blocker"}' >"$DIR/last"; expect "owner records a blocking dependency" '^(200|201)$'
+api owen POST /api/dependencys '{"id":"dep_smoke_block","sourceType":"initiative","sourceId":"init_csv_export","sourceLabel":"CSV Export","targetType":"initiative","targetId":"init_data_export","targetLabel":"Data Export v1","type":"blocks_launch","description":"Smoke-test blocker"}' >"$DIR/last"; expect "owner records a blocking dependency" '^(200|201)$'
 run dana ApproveLaunch Initiative init_csv_export "$IPAGE" "{\"decisionId\":\"$LDEC\",\"operationalOwnerId\":\"$OLIVIA_ID\",\"operationalOwnerName\":\"Olivia Reyes\",\"runbookUrl\":\"https://wiki.northstar.example/runbooks/csv\"}"; sleep 2
 check "launch approval refused while a blocks_launch dependency is open" test -z "$(api dana GET /api/initiatives/init_csv_export | field launchApprovedAt | grep -v None)"
-api owen PUT /api/dependencys/dep_smoke_block '{"status":"satisfied"}' >"$DIR/last"; expect "owner satisfies the dependency" '^(200|204)$'
+run owen ResolveDependency Initiative init_csv_export "$IPAGE" '{"dependencyId":"dep_smoke_block","status":"satisfied"}'; expect "owner satisfies a completed target through the guarded workflow" '^(200|202)$'
+check "dependency is satisfied" wait_for dependencys dep_smoke_block status satisfied
 run dana ApproveLaunch Initiative init_csv_export "$IPAGE" "{\"decisionId\":\"$LDEC\",\"operationalOwnerId\":\"$OLIVIA_ID\",\"operationalOwnerName\":\"Olivia Reyes\",\"runbookUrl\":\"https://wiki.northstar.example/runbooks/csv\"}"; expect "approve launch" '^(200|202)$'
 sleep 2
 run owen TransitionToOperations Initiative init_csv_export "$IPAGE" '{}'; expect "transition to operations" '^(200|202)$'

@@ -75,6 +75,47 @@ describe('PolicyEvaluator', () => {
     }))
   })
 
+  it('ignores caller-supplied nested relation objects when authorizing membership', async () => {
+    const evaluator = new PolicyEvaluator(blueprint, queryExecutor)
+    const actor = { id: 'bob', type: 'user' as const, roles: [], scopes: [] }
+    const record = {
+      id: 'account-1', teamId: 'team-1',
+      team: { id: 'fake', members: [{ userId: 'bob' }] },
+    }
+    await expect(evaluator.evaluate('record.team.members.userId contains actor.effectiveId', {
+      actor, record, entity: 'Account',
+    })).resolves.toBe(false)
+    expect(record.team.members[0]!.userId).toBe('bob')
+  })
+
+  it('filters stored collection relations and pins their foreign key to the parent', async () => {
+    const scoped = structuredClone(blueprint)
+    scoped.entities.find(entity => entity.name === 'Team')!.relations!.members!.where = {
+      active: true, teamId: 'forged-team',
+    }
+    const execute = vi.fn(async query => query.where?.active === true && query.where?.teamId === 'team-1'
+      ? [{ userId: 'sarah' }] : [])
+    const evaluator = new PolicyEvaluator(scoped, { ...queryExecutor, execute })
+    await expect(evaluator.evaluate('record.team.members.userId contains actor.effectiveId', {
+      actor: { id: 'sarah', type: 'user', roles: [], scopes: [] },
+      entity: 'Account', record: { id: 'account-1', teamId: 'team-1' },
+    })).resolves.toBe(true)
+    expect(execute).toHaveBeenCalledWith(expect.objectContaining({
+      where: { active: true, teamId: 'team-1' },
+    }), expect.anything())
+  })
+
+  it('authorizes omitted nullable fields as null without mutating the create payload', async () => {
+    const scoped = structuredClone(blueprint)
+    scoped.entities[0]!.fields.push({ name: 'contactId', type: 'Text', nullable: true })
+    const record = { id: 'account-1', teamId: 'team-1' }
+    const evaluator = new PolicyEvaluator(scoped, queryExecutor)
+    await expect(evaluator.evaluate('record.contactId == null', {
+      actor: { id: 'sarah', type: 'user', roles: [], scopes: [] }, entity: 'Account', record,
+    })).resolves.toBe(true)
+    expect(record).not.toHaveProperty('contactId')
+  })
+
   it('preserves actor identity separately from effective delegated identity', async () => {
     const evaluator = new PolicyEvaluator()
     await expect(evaluator.evaluate(

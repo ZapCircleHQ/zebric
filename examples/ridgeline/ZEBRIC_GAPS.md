@@ -1,5 +1,40 @@
 # Zebric gaps found while building Ridgeline Coffee
 
+## Ownership migration
+
+Email-based ownership has been removed. Admin-provisioned CustomerMembership
+rows bind stable Better Auth user IDs to account IDs. Relation-aware policy
+expressions authorize accounts, orders, subscriptions, warehouses, and child
+records against those stored memberships. Creation workflows look up the account
+under the caller's session and copy its stored ID/type; child links come from the
+server-created parent. Direct API creates undergo the same membership policies.
+Truck shipments also require a warehouse belonging to the order's account.
+
+Dogfooding exposed two reusable server guards: relation hydration must ignore
+embedded request objects, and account/parent references must be immutable after
+creation. The shared evaluator now resolves relations from storage, and
+`immutable = true` is enforced by Node, Workers (including prepared workflow
+batches), and the simulator. These replace the old email snapshot workaround.
+
+Existing demo databases get explicit membership links by rerunning `seed.sh`
+after starting the rebuilt runtime. Other databases require reviewed admin
+provisioning using user IDs; no runtime email-based claims are made. The old
+snapshot columns may remain but have no authorization effect.
+
+Regression coverage includes forged account IDs, mismatched legacy emails,
+embedded membership objects, foreign parent/warehouse IDs, immutable references,
+login/contact email changes, multi-login membership, and revocation in an active
+session. Pricing, inventory arithmetic, and truck capacity calculations remain
+separate validation gaps described below; this migration addresses ownership.
+
+## Current example maintenance
+
+The current runtime requires custom Liquid actions to declare their workflows in
+an action bar and identify the page's primary entity. Subscription row actions
+now declare pause/resume/cancel, and custom order/subscription creation pages
+explicitly declare their form entities. The seeded smoke test exercises all of
+these routes, customer scoping, and lifecycle protection against the built runtime.
+
 ## 0.6.0 migration update
 
 - Fixed: SQL-safe identifiers and reserved-name regression coverage.
@@ -16,9 +51,12 @@ source, including three real bugs found only by running the app end to end.
 Priorities describe impact on the next Zebric release, not shortcuts to add
 more Ridgeline-specific code.
 
-## Gap summary
+## Historical gap summary
 
-| Priority | Gap | Ridgeline consequence | 0.5 direction |
+The entries below preserve the original findings. The migration update above
+records resolved items; G-01, G-04, and G-05 are no longer open framework gaps.
+
+| Priority | Gap | Ridgeline consequence | Original direction |
 |---|---|---|---|
 | P0 | SQL-reserved-word entity names | An entity named `Order` fails to boot the app at all | Quote generated identifiers, or validate entity names against the target dialect's reserved words |
 | P0 | Custom fields on `[entity.User]` are silently dropped | A declared `customerId` field never reaches the real Better Auth table; no error at validate or boot time | Validate declared User fields against Better Auth's actual schema, or document the real column set |
@@ -45,8 +83,7 @@ platform gaps:
 
 - **`entity.access.read` conditions apply automatically as row filters on every
   read**, not just single-record authorization checks. Declaring
-  `read = { or = [{ role = staff }, { role = admin }, { customerEmail =
-  "$currentUser.email" }] }` once on `SalesOrder` is enough for the dashboard,
+  a relation-aware membership policy once on `SalesOrder` is enough for the dashboard,
   the orders list, and the order detail page to each show the right rows with
   no `where` clause of their own.
 - **Liquid (`liquidjs`) is unrestricted**, not a sandboxed subset. `{% assign
@@ -59,7 +96,10 @@ platform gaps:
   denormalized or faked. This is worth documenting as the recommended pattern
   rather than something authors have to discover from the renderer source.
 
-## G-01 — SQL-reserved-word entity names break the app (P0)
+## G-01 — SQL-reserved-word entity names break the app (resolved)
+
+Resolved by SQL-safe identifier generation and reserved-name regression coverage.
+The account below describes the original failure.
 
 - **Desired behavior:** `[entity.Order]` creates a normal table.
 - **What happened:** `zebric validate` accepted the blueprint, but
@@ -140,7 +180,11 @@ platform gaps:
 - **Acceptance test:** `[page."/admin/users"].query.users = { entity = "User"
   }` returns real accounts instead of an empty array with a logged error.
 
-## G-04 — No relation-traversing access control (P1)
+## G-04 — No relation-traversing access control (resolved)
+
+The current PolicyEvaluator supports declared relation traversal and membership
+collections. Ridgeline now uses this capability instead of denormalized email
+snapshots. The account below describes the original limitation.
 
 - **Desired behavior:** `OrderItem` and `Shipment` rows are visible only to
   the customer who owns the parent `SalesOrder` (or staff/admin), without
@@ -176,7 +220,11 @@ platform gaps:
   verified by inspecting the response body, not just the response's declared
   primary record.
 
-## G-05 — Workflow-only protected fields (P1)
+## G-05 — Workflow-only protected fields (resolved)
+
+Resolved with command-only lifecycle fields and transactional command steps.
+The current smoke test verifies direct writes are rejected and order transitions
+update shipments together. The account below describes the original limitation.
 
 Same shape as `zebric-dispatch`'s G-01, confirmed again here with one
 addition.

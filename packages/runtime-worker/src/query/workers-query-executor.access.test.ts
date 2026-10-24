@@ -53,7 +53,7 @@ const blueprint: Blueprint = {
       fields: [
         { name: 'id', type: 'ULID', primary_key: true },
         { name: 'title', type: 'Text' },
-        { name: 'ownerId', type: 'Text' },
+        { name: 'ownerId', type: 'Text', immutable: true },
       ],
       access: {
         read: 'record.ownerId == actor.effectiveId',
@@ -91,6 +91,15 @@ describe('WorkersQueryExecutor access control', () => {
     )
 
   describe('entity-level checks', () => {
+    it('rejects immutable ownership changes in direct and prepared workflow updates', async () => {
+      await executor.create('PolicyDoc', { id: 'fixed-owner', ownerId: 'user-1', title: 'Owned' }, system)
+      await expect(executor.update('PolicyDoc', 'fixed-owner', { ownerId: 'user-2' }, member))
+        .rejects.toThrow('Immutable fields')
+      await expect(executor.prepareBatchMutation('PolicyDoc', 'update', { ownerId: 'user-2' },
+        { id: 'fixed-owner' }, member)).rejects.toThrow('Immutable fields')
+      expect(await executor.findById('PolicyDoc', 'fixed-owner', member)).toMatchObject({ ownerId: 'user-1' })
+    })
+
     it('applies read rules and strips unreadable fields', async () => {
       await adapter.query(
         'INSERT INTO Doc (id, title, userId, secret) VALUES (?, ?, ?, ?)',

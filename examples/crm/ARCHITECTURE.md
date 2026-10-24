@@ -37,8 +37,6 @@ small classification schema.
 
 ## What does not fit cleanly
 
-- Team authorization needs relation-aware row rules. The current implementation
-  denormalizes `ownerId` and one `assistantEmail` onto every team-scoped record.
 - An agent credential cannot carry the initiating human's authorization context.
 - External responses need typed transforms: Places result counts/deduplication and
   parsing an LLM's JSON content cannot be expressed robustly.
@@ -46,7 +44,7 @@ small classification schema.
 - A real Google Maps browser widget needs safe client-side key/config binding.
 - Bulk semantic commands, saved views, CSV import/export, and server-side table
   filtering are not exposed as composable blueprint primitives.
-- Workflow writes and direct CRUD writes share entity update permission.
+- Lifecycle fields now use workflow-scoped commands; direct CRUD cannot mutate them.
 
 Those are framework-shaped needs, not reasons to build a separate CRM backend.
 

@@ -105,9 +105,16 @@ export class PolicyEvaluator {
     if (!entity) return record
 
     const hydrated = { ...record }
+    // Omitted nullable fields are SQL NULL, including while authorizing a create.
+    for (const field of entity.fields) {
+      if (field.nullable && hydrated[field.name] === undefined) hydrated[field.name] = null
+    }
     const paths = expressionPaths(expression)
       .filter(path => path.startsWith('record.'))
       .map(path => path.slice(7).split('.'))
+    // Discard every declared relation supplied by the caller. Only load stored
+    // records, including nested relations, through the query executor below.
+    for (const name of Object.keys(entity.relations ?? {})) delete hydrated[name]
     for (const path of paths) await this.hydratePath(hydrated, entity, path)
     return hydrated
   }
@@ -130,7 +137,13 @@ export class PolicyEvaluator {
     if (!relatedEntity) return
 
     if (!Object.prototype.hasOwnProperty.call(value, part)) {
-      value[part] = await this.loadRelation(value, relation)
+      const loaded = await this.loadRelation(value, relation)
+      const clean = (row: Record<string, unknown>) => {
+        const copy = { ...row }
+        for (const name of Object.keys(relatedEntity.relations ?? {})) delete copy[name]
+        return copy
+      }
+      value[part] = Array.isArray(loaded) ? loaded.map(clean) : loaded ? clean(loaded) : null
     }
     if (remaining.length === 0 || value[part] == null) return
     const related = value[part]
@@ -166,7 +179,7 @@ export class PolicyEvaluator {
     if (typeof id !== 'string') return relation.type === 'hasMany' ? [] : null
     const rows = await this.queryExecutor.execute({
       entity: relation.entity,
-      where: { [relation.foreign_key]: id },
+      where: { ...relation.where, [relation.foreign_key]: id },
       limit: relation.type === 'hasOne' ? 1 : undefined,
     }, { session: SYSTEM_SESSION }) as Record<string, unknown>[]
     return relation.type === 'hasOne' ? rows[0] ?? null : rows

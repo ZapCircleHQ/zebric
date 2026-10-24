@@ -1319,7 +1319,12 @@ async function resolveEntityApiSession(
   return sessionManager.getSession(c.req.raw)
 }
 
-function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 500 {
+function entityApiErrorStatus(error: unknown): 400 | 403 | 404 | 409 | 422 | 500 {
+  if (error instanceof DomainError) {
+    if (error.code === 'VALIDATION_FAILED') return 422
+    if (error.code === 'PROTECTED_FIELD_MUTATION') return 409
+    if (error.code === 'AUTHORIZATION_FAILED') return 403
+  }
   const message = error instanceof Error ? error.message : String(error)
   if (message.startsWith('Invalid request:') || message.startsWith('Invalid agent attribution:')) return 400
   if (message.includes('Access denied')) return 403

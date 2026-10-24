@@ -47,7 +47,28 @@ MAYA_ID="$(sqlite3 "$DB_PATH" "SELECT id FROM user WHERE email='maya@crm.local' 
 
 post_auth /api/auth/sign-in/email "{\"email\":\"admin@crm.local\",\"password\":\"$DEMO_PASSWORD\"}" >/dev/null
 
+migrate_demo_teams() {
+  sqlite3 -bail "$DB_PATH" <<SQL
+UPDATE crm_account SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = crm_account.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE contact SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = contact.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE lead SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = lead.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE opportunity SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = opportunity.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE activity SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = activity.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE conversation SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = conversation.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE message SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = message.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE task SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = task.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE prospect_search SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = prospect_search.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE prospect_candidate SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = prospect_candidate.owner_id LIMIT 1) WHERE team_id IS NULL;
+UPDATE insight SET team_id = (SELECT id FROM sales_team WHERE account_executive_id = insight.owner_id LIMIT 1) WHERE team_id IS NULL;
+INSERT OR IGNORE INTO team_membership (id, team_id, user_id, user_email, user_name, team_role, active)
+VALUES ('member_agent_sarah', 'team_sarah', 'crm-sales-agent', 'agent@crm.local', 'CRM Sales Agent', 'agent', 1),
+       ('member_agent_mike', 'team_mike', 'crm-sales-agent', 'agent@crm.local', 'CRM Sales Agent', 'agent', 1),
+       ('member_agent_jordan', 'team_jordan', 'crm-sales-agent', 'agent@crm.local', 'CRM Sales Agent', 'agent', 1);
+SQL
+}
+
 if curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/salesteams" | grep -q 'team_sarah'; then
+  migrate_demo_teams
   echo "CRM demo data already exists; leaving it unchanged."
   exit 0
 fi
@@ -109,11 +130,13 @@ done
 
 echo "Creating prospect search and staged Google Places candidates..."
 post_json /api/prospectsearchs "{\"id\":\"search_vets_austin\",\"query\":\"independent veterinary clinics\",\"location\":\"Round Rock, Texas\",\"latitude\":30.5083,\"longitude\":-97.6789,\"radiusMeters\":32187,\"status\":\"completed\",\"requestedById\":\"crm-sales-agent\",\"requestedByType\":\"agent\",\"ownerId\":\"$SARAH_ID\",\"ownerName\":\"Sarah Kim\",\"assistantEmail\":\"nia@crm.local\",\"resultCount\":8,\"externalRequestId\":\"demo-places-request\",\"completedAt\":\"2026-09-27T15:00:00Z\"}" >/dev/null
+post_json /api/prospectsearchs "{\"id\":\"search_vets_mike\",\"query\":\"independent veterinary clinics\",\"location\":\"Round Rock, Texas\",\"latitude\":30.5083,\"longitude\":-97.6789,\"radiusMeters\":32187,\"status\":\"completed\",\"requestedById\":\"crm-sales-agent\",\"requestedByType\":\"agent\",\"ownerId\":\"$MIKE_ID\",\"ownerName\":\"Mike Torres\",\"assistantEmail\":\"leo@crm.local\",\"resultCount\":8,\"externalRequestId\":\"demo-places-request\",\"completedAt\":\"2026-09-27T15:00:00Z\"}" >/dev/null
 for i in $(seq 1 8); do
   disposition="recommended"; [ "$i" -eq 3 ] && disposition="potential_duplicate"; team="team_sarah"; owner="$SARAH_ID"; owner_name="Sarah Kim"; assistant="nia@crm.local"
   [ "$i" -gt 4 ] && team="team_mike" && owner="$MIKE_ID" && owner_name="Mike Torres" && assistant="leo@crm.local"
+  search="search_vets_austin"; [ "$i" -gt 4 ] && search="search_vets_mike"
   duplicate="null"; [ "$i" -eq 3 ] && duplicate='"acct_3"'
-  post_json /api/prospectcandidates "{\"id\":\"candidate_$i\",\"searchId\":\"search_vets_austin\",\"externalSource\":\"google_places\",\"externalId\":\"places-demo-$i\",\"name\":\"North Austin Veterinary Candidate $i\",\"address\":\"$((600+i)) Research Blvd, Austin, TX\",\"city\":\"Austin\",\"latitude\":30.$((40+i)),\"longitude\":-97.$((60+i)),\"category\":\"veterinary_care\",\"rating\":4.$((i%5)),\"reviewCount\":$((35+i*17)),\"website\":\"https://candidate-$i.test\",\"phone\":\"+1-512-555-$(printf '%04d' $((400+i)))\",\"evaluation\":\"Independent clinic with strong reviews and local growth indicators.\",\"score\":$((92-i*3)),\"disposition\":\"$disposition\",\"potentialDuplicateAccountId\":$duplicate,\"ownerId\":\"$owner\",\"ownerName\":\"$owner_name\",\"teamId\":\"$team\",\"assistantEmail\":\"$assistant\"}" >/dev/null
+  post_json /api/prospectcandidates "{\"id\":\"candidate_$i\",\"searchId\":\"$search\",\"externalSource\":\"google_places\",\"externalId\":\"places-demo-$i\",\"name\":\"North Austin Veterinary Candidate $i\",\"address\":\"$((600+i)) Research Blvd, Austin, TX\",\"city\":\"Austin\",\"latitude\":30.$((40+i)),\"longitude\":-97.$((60+i)),\"category\":\"veterinary_care\",\"rating\":4.$((i%5)),\"reviewCount\":$((35+i*17)),\"website\":\"https://candidate-$i.test\",\"phone\":\"+1-512-555-$(printf '%04d' $((400+i)))\",\"evaluation\":\"Independent clinic with strong reviews and local growth indicators.\",\"score\":$((92-i*3)),\"disposition\":\"$disposition\",\"potentialDuplicateAccountId\":$duplicate,\"ownerId\":\"$owner\",\"ownerName\":\"$owner_name\",\"teamId\":\"$team\",\"assistantEmail\":\"$assistant\"}" >/dev/null
 done
 
 echo "Creating conversations, messages, tasks, activities, and insights..."
@@ -132,6 +155,8 @@ done
 post_json /api/insights '{"id":"insight_stale_1","type":"stale_account","accountId":"acct_6","ownerId":"'"$JORDAN_ID"'","ownerName":"Jordan Bell","assistantEmail":"maya@crm.local","severity":"high","summary":"Capitol Family Medicine has no recorded activity","evidence":"lastActivityAt is empty while the account remains a customer.","suggestedAction":"Schedule a relationship check-in","generatedAt":"2026-09-28T12:00:00Z","expiresAt":"2026-10-05T12:00:00Z","generator":"deterministic:stale-account-v1"}' >/dev/null
 post_json /api/insights '{"id":"insight_next_1","type":"opportunity_without_next_action","accountId":"acct_4","opportunityId":"opp_4","ownerId":"'"$SARAH_ID"'","ownerName":"Sarah Kim","assistantEmail":"nia@crm.local","severity":"medium","summary":"Round Rock opportunity needs a concrete next action","evidence":"The opportunity is open and closing soon; its next step has not been confirmed after the last meeting.","suggestedAction":"Create a follow-up task","generatedAt":"2026-09-28T12:00:00Z","expiresAt":"2026-10-05T12:00:00Z","generator":"deterministic:next-action-v1"}' >/dev/null
 post_json /api/insights '{"id":"insight_interested_1","type":"interested_prospect","accountId":"acct_1","contactId":"contact_1","ownerId":"'"$SARAH_ID"'","ownerName":"Sarah Kim","assistantEmail":"nia@crm.local","severity":"urgent","summary":"Hill Country requested a demo","evidence":"Inbound message msg_reply_1 was classified interested because the sender asked to see a demo next week.","suggestedAction":"Schedule the demo within one business day","generatedAt":"2026-09-28T14:35:00Z","expiresAt":"2026-10-02T14:35:00Z","generator":"classification-rule-v1"}' >/dev/null
+
+migrate_demo_teams
 
 # Trusted fixture setup for non-default lifecycle snapshots. Runtime writes to
 # these fields remain command-only on every application transport.

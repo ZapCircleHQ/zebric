@@ -7,7 +7,7 @@ the system of record and its business transitions live in
 [`blueprint.toml`](blueprint.toml), not in a companion application server.
 
 The design follows the patterns proven by the Ridgeline and Dispatch examples:
-row-level ownership snapshots, semantic workflows instead of generic status
+stored active team memberships, semantic workflows instead of generic status
 mutation, scoped agent actions, application activity alongside framework audit,
 and explicit approval boundaries.
 
@@ -16,7 +16,7 @@ and explicit approval boundaries.
 - Accounts, contacts, leads, six-stage opportunities, activities, tasks,
   conversations, and messages.
 - Three AE teams, supporting assistants, manager visibility, and row-scoped
-  owner/assistant access.
+  membership access.
 - Google Places Text Search (New) staging into `ProspectCandidate`, keeping
   external discoveries separate from authoritative CRM records.
 - Candidate promotion, lead qualification/rejection/reassignment, opportunity
@@ -142,10 +142,18 @@ stop for human approval, inspect replies, advance pipeline, and answer “what n
 my attention?” from persisted insights and tasks. It does not expose generic
 stage, disposition, approval, or insight-status mutation.
 
-Static API keys currently cannot inherit the initiating human's team constraint.
-Rows therefore carry an `agentAccessId` snapshot matching the demo sales-agent
-principal, with action scopes narrowing its routes. This is broad CRM access and a
-documented P0 production blocker, not a claim of equivalent delegated authorization.
+Team access comes from active `TeamMembership` rows and immutable `teamId`
+references. Parent records must belong to that team; changing copied owner or
+email fields cannot grant access. The seed explicitly provisions the development
+agent in each demo team. A production agent needs deliberately provisioned team
+membership or trusted delegated identity; a static key does not prove delegation.
+
+Messages retain the server-derived author and an immutable draft, recipient list,
+and designated reviewer. Approval requires an independent reviewer or manager
+and applies to that exact draft. Create a replacement draft to change content.
+
+Rerun the seed against an existing demo database to backfill canonical teams and
+agent memberships. Restart after rebuilding the runtime.
 
 ## Validate
 

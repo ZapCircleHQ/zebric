@@ -64,6 +64,7 @@ surface-elevated = "card"
 
 [entity.Volunteer]
 fields = [
+  { name = "userId", type = "Text", required = true, unique = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
   { name = "name", type = "Text", required = true },
   { name = "email", type = "Email", required = true, unique = true },
@@ -74,6 +75,7 @@ fields = [
 
 [entity.Dog]
 fields = [
+  { name = "applicationId", type = "Text", nullable = true, write = "command-only", commands = ["ClaimDogForInterest", "ReleaseRejectedDog"] },
   { name = "id", type = "ULID", primary_key = true },
   { name = "name", type = "Text", required = true },
   { name = "breed", type = "Text", required = true },
@@ -81,7 +83,7 @@ fields = [
   { name = "weight", type = "Float" },
   { name = "sex", type = "Enum", values = ["Female", "Male"], required = true },
   { name = "photoUrl", type = "Text" },
-  { name = "status", type = "Enum", values = ["Intake", "Foster", "Available", "Application Pending", "Meet & Greet Required", "Approved", "Pending Pickup", "Adopted", "Unavailable"], default = "Intake" },
+  { name = "status", type = "Enum", values = ["Intake", "Foster", "Available", "Application Pending", "Meet & Greet Required", "Approved", "Pending Pickup", "Adopted", "Unavailable"], default = "Intake", write = "command-only", commands = ["SetDogAvailability", "ClaimDogForInterest", "PrepareDogPickup", "FinishDogAdoption", "ReleaseRejectedDog"] },
   { name = "temperament", type = "LongText" },
   { name = "energyLevel", type = "Enum", values = ["Low", "Moderate", "High"], default = "Moderate" },
   { name = "goodWithKids", type = "Boolean", default = false },
@@ -125,16 +127,16 @@ applications = { type = "hasMany", entity = "AdoptionApplication", foreign_key =
 [entity.AdoptionApplication]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true },
-  { name = "applicantId", type = "Ref", ref = "Applicant.id", required = true, index = true },
-  { name = "status", type = "Enum", values = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required", "Approved", "Rejected", "Withdrawn", "Completed"], default = "Submitted" },
+  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true, immutable = true },
+  { name = "applicantId", type = "Ref", ref = "Applicant.id", required = true, index = true, immutable = true },
+  { name = "status", type = "Enum", values = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required", "Approved", "Rejected", "Withdrawn", "Completed"], default = "Submitted", write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
   { name = "submittedAt", type = "DateTime", default = "now" },
-  { name = "reviewedBy", type = "Ref", ref = "Volunteer.id" },
+  { name = "reviewedBy", type = "Ref", ref = "Volunteer.id", write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
   { name = "reviewNotes", type = "LongText" },
-  { name = "meetAndGreetRequired", type = "Boolean", default = false },
-  { name = "meetAndGreetReason", type = "LongText" },
-  { name = "homeVisitRequired", type = "Boolean", default = false },
-  { name = "decision", type = "Enum", values = ["Approved", "Rejected", "Withdrawn", "Completed"] },
+  { name = "meetAndGreetRequired", type = "Boolean", default = false, write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
+  { name = "meetAndGreetReason", type = "LongText", write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
+  { name = "homeVisitRequired", type = "Boolean", default = false, write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
+  { name = "decision", type = "Enum", values = ["Approved", "Rejected", "Withdrawn", "Completed"], write = "command-only", commands = ["ReviewApplicationState", "ApproveApplicationState", "RejectApplicationState", "RequireHomeVisitState", "CompleteAdoptionState", "RequireMeetAndGreet"] },
   { name = "decisionAt", type = "DateTime" },
   { name = "decisionNotes", type = "LongText" }
 ]
@@ -209,7 +211,7 @@ fields = [
 [entity.AdoptionInterest]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true },
+  { name = "dogId", type = "Ref", ref = "Dog.id", required = true, index = true, immutable = true },
   { name = "firstName", type = "Text", required = true },
   { name = "lastName", type = "Text", required = true },
   { name = "email", type = "Email", required = true },
@@ -663,14 +665,14 @@ limit = 200
 [workflow.SetDogStatus]
 description = "Manual dog status change with audit event."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.payload.status" = ["Available", "Unavailable"], "variables.data.record.status" = ["Intake", "Foster", "Available", "Unavailable"] }
 
 [[workflow.SetDogStatus.steps]]
-type = "query"
-entity = "Dog"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "{{ variables.data.payload.status }}" }
+type = "command"
+command = "SetDogAvailability"
+recordId = "{{ variables.data.record.id }}"
+input = { status = "{{ variables.data.payload.status }}" }
 
 [[workflow.SetDogStatus.steps]]
 type = "query"
@@ -681,6 +683,14 @@ data = { actor = "Volunteer", eventType = "Dog status updated", summary = "Dog s
 [workflow.SubmitAdoptionInterest]
 description = "Public adoption interest creates applicant, application, simulated emails, tasks, activity, and workflow history."
 trigger = { entity = "AdoptionInterest", event = "create" }
+transactional = true
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "Dog"
+action = "find"
+where = { id = "{{ trigger.after.dogId }}" }
+assignTo = "dog"
 
 [[workflow.SubmitAdoptionInterest.steps]]
 type = "query"
@@ -694,32 +704,31 @@ type = "query"
 entity = "AdoptionApplication"
 action = "create"
 assignTo = "application"
-data = { dogId = "{{ trigger.after.dogId }}", applicantId = "{{ variables.applicant.id }}", status = "Submitted", meetAndGreetRequired = false, homeVisitRequired = false }
+data = { dogId = "{{ trigger.after.dogId }}", applicantId = "{{ variables.applicant.id }}" }
 
 [[workflow.SubmitAdoptionInterest.steps]]
-type = "query"
-entity = "Dog"
-action = "update"
-where = { id = "{{ trigger.after.dogId }}" }
-data = { status = "Application Pending" }
-
-[[workflow.SubmitAdoptionInterest.steps]]
-type = "query"
-entity = "OutgoingMessage"
-action = "create"
-data = { toEmail = "{{ trigger.after.email }}", subject = "Thanks for your interest in Bella", body = "Hi {{ trigger.after.firstName }},\nThank you for your interest in adopting Bella.\nA Friendly Paws volunteer will review your application and contact you about next steps.\nFriendly Paws Dog Rescue", template = "applicant-confirmation", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+type = "command"
+command = "ClaimDogForInterest"
+recordId = "{{ trigger.after.dogId }}"
+input = { applicationId = "{{ variables.application.id }}" }
 
 [[workflow.SubmitAdoptionInterest.steps]]
 type = "query"
 entity = "OutgoingMessage"
 action = "create"
-data = { toEmail = "volunteers@friendlypaws.example", subject = "New adoption application for Bella", body = "A new adoption application has been submitted for Bella.\nApplicant:\n{{ trigger.after.firstName }} {{ trigger.after.lastName }}\nReview the application in Friendly Paws.", template = "volunteer-notification", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+data = { toEmail = "{{ trigger.after.email }}", subject = "Thanks for your interest in {{ variables.dog.0.name }}", body = "Hi {{ trigger.after.firstName }},\nThank you for your interest in adopting {{ variables.dog.0.name }}.\nA Friendly Paws volunteer will review your application and contact you about next steps.\nFriendly Paws Dog Rescue", template = "applicant-confirmation", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
+
+[[workflow.SubmitAdoptionInterest.steps]]
+type = "query"
+entity = "OutgoingMessage"
+action = "create"
+data = { toEmail = "volunteers@friendlypaws.example", subject = "New adoption application for {{ variables.dog.0.name }}", body = "A new adoption application has been submitted for {{ variables.dog.0.name }}.\nApplicant:\n{{ trigger.after.firstName }} {{ trigger.after.lastName }}\nReview the application in Friendly Paws.", template = "volunteer-notification", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}" }
 
 [[workflow.SubmitAdoptionInterest.steps]]
 type = "query"
 entity = "ActivityEvent"
 action = "create"
-data = { actor = "Public Applicant", eventType = "Application submitted", summary = "Application submitted for Bella by {{ trigger.after.firstName }} {{ trigger.after.lastName }}", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { dogId = "{{ trigger.after.dogId }}" } }
+data = { actor = "Public Applicant", eventType = "Application submitted", summary = "Application submitted for {{ variables.dog.0.name }} by {{ trigger.after.firstName }} {{ trigger.after.lastName }}", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { dogId = "{{ trigger.after.dogId }}" } }
 
 [[workflow.SubmitAdoptionInterest.steps]]
 type = "query"
@@ -731,7 +740,7 @@ data = { actor = "System", eventType = "Messages generated", summary = "Applican
 type = "condition"
 if = { "trigger.after.hasExistingPets" = true }
 then = [
-  { type = "query", entity = "AdoptionApplication", action = "update", where = { id = "{{ variables.application.id }}" }, data = { status = "Meet & Greet Required", meetAndGreetRequired = true, meetAndGreetReason = "Applicant has existing pets" } },
+  { type = "command", command = "RequireMeetAndGreet", recordId = "{{ variables.application.id }}" },
   { type = "query", entity = "Task", action = "create", data = { title = "Schedule Meet & Greet", description = "Applicant has existing pets. Schedule an introduction before approval.", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", status = "Open", priority = "High", createdByWorkflow = true } },
   { type = "query", entity = "ActivityEvent", action = "create", data = { actor = "System", eventType = "Meet & greet rule applied", summary = "Meet & Greet Required: applicant has existing pets", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.application.id }}", metadata = { rule = "existing-pets-require-meet-and-greet" } } }
 ]
@@ -757,14 +766,21 @@ data = { name = "Submit Adoption Interest", trigger = "Applicant submits adoptio
 [workflow.ReviewApplication]
 description = "Volunteer starts review."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.record.status" = "Submitted" }
 
 [[workflow.ReviewApplication.steps]]
 type = "query"
-entity = "AdoptionApplication"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "In Review", reviewedBy = "{{ variables.data.user.id }}" }
+entity = "Volunteer"
+action = "find"
+where = { userId = "{{ variables.data.session.user.id }}", active = true }
+assignTo = "reviewer"
+
+[[workflow.ReviewApplication.steps]]
+type = "command"
+command = "ReviewApplicationState"
+recordId = "{{ variables.data.record.id }}"
+input = { reviewerId = "{{ variables.reviewer.0.id }}" }
 
 [[workflow.ReviewApplication.steps]]
 type = "query"
@@ -775,27 +791,38 @@ data = { actor = "Volunteer", eventType = "Application review started", summary 
 [workflow.ApproveApplication]
 description = "Coordinator approves application, updates dog, generates approval email, and creates pickup task."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.record.status" = ["In Review", "Meet & Greet Required", "Home Visit Required"] }
 
 [[workflow.ApproveApplication.steps]]
 type = "query"
-entity = "AdoptionApplication"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "Approved", decision = "Approved" }
+entity = "Applicant"
+action = "find"
+where = { id = "{{ variables.data.record.applicantId }}" }
+assignTo = "applicant"
 
 [[workflow.ApproveApplication.steps]]
 type = "query"
 entity = "Dog"
-action = "update"
+action = "find"
 where = { id = "{{ variables.data.record.dogId }}" }
-data = { status = "Pending Pickup" }
+assignTo = "dog"
+
+[[workflow.ApproveApplication.steps]]
+type = "command"
+command = "ApproveApplicationState"
+recordId = "{{ variables.data.record.id }}"
+
+[[workflow.ApproveApplication.steps]]
+type = "command"
+command = "PrepareDogPickup"
+recordId = "{{ variables.data.record.dogId }}"
 
 [[workflow.ApproveApplication.steps]]
 type = "query"
 entity = "OutgoingMessage"
 action = "create"
-data = { toEmail = "applicant@example.com", subject = "Your application for Bella has been approved", body = "Hi applicant,\nGood news! Your application to adopt Bella has been approved.\nA volunteer will contact you to schedule pickup and finalize the adoption.\nFriendly Paws Dog Rescue", template = "approval-email", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+data = { toEmail = "{{ variables.applicant.0.email }}", subject = "Your application for {{ variables.dog.0.name }} has been approved", body = "Hi {{ variables.applicant.0.firstName }},\nGood news! Your application to adopt {{ variables.dog.0.name }} has been approved.\nA volunteer will contact you to schedule pickup and finalize the adoption.\nFriendly Paws Dog Rescue", template = "approval-email", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
 
 [[workflow.ApproveApplication.steps]]
 type = "query"
@@ -818,14 +845,18 @@ data = { name = "Approve Application", trigger = "Adoption Coordinator clicks Ap
 [workflow.RejectApplication]
 description = "Coordinator rejects application."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.record.status" = ["Submitted", "In Review", "Meet & Greet Required", "Home Visit Required"] }
 
 [[workflow.RejectApplication.steps]]
-type = "query"
-entity = "AdoptionApplication"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "Rejected", decision = "Rejected" }
+type = "command"
+command = "RejectApplicationState"
+recordId = "{{ variables.data.record.id }}"
+
+[[workflow.RejectApplication.steps]]
+type = "command"
+command = "ReleaseRejectedDog"
+recordId = "{{ variables.data.record.dogId }}"
 
 [[workflow.RejectApplication.steps]]
 type = "query"
@@ -836,14 +867,13 @@ data = { actor = "Adoption Coordinator", eventType = "Application rejected", sum
 [workflow.RequireHomeVisit]
 description = "Coordinator requires home visit."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.record.status" = ["In Review", "Meet & Greet Required"] }
 
 [[workflow.RequireHomeVisit.steps]]
-type = "query"
-entity = "AdoptionApplication"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "Home Visit Required", homeVisitRequired = true }
+type = "command"
+command = "RequireHomeVisitState"
+recordId = "{{ variables.data.record.id }}"
 
 [[workflow.RequireHomeVisit.steps]]
 type = "query"
@@ -860,27 +890,31 @@ data = { actor = "Adoption Coordinator", eventType = "Home visit required", summ
 [workflow.CompleteAdoption]
 description = "Coordinator completes adoption."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.record.status" = "Approved" }
 
 [[workflow.CompleteAdoption.steps]]
 type = "query"
-entity = "AdoptionApplication"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "Completed", decision = "Completed" }
+entity = "Applicant"
+action = "find"
+where = { id = "{{ variables.data.record.applicantId }}" }
+assignTo = "applicant"
 
 [[workflow.CompleteAdoption.steps]]
-type = "query"
-entity = "Dog"
-action = "update"
-where = { id = "{{ variables.data.record.dogId }}" }
-data = { status = "Adopted" }
+type = "command"
+command = "CompleteAdoptionState"
+recordId = "{{ variables.data.record.id }}"
+
+[[workflow.CompleteAdoption.steps]]
+type = "command"
+command = "FinishDogAdoption"
+recordId = "{{ variables.data.record.dogId }}"
 
 [[workflow.CompleteAdoption.steps]]
 type = "query"
 entity = "OutgoingMessage"
 action = "create"
-data = { toEmail = "applicant@example.com", subject = "Welcome to Friendly Paws", body = "Your adoption is complete. Attached next steps are simulated for the demo.", template = "welcome-packet", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
+data = { toEmail = "{{ variables.applicant.0.email }}", subject = "Welcome to Friendly Paws", body = "Your adoption is complete. Attached next steps are simulated for the demo.", template = "welcome-packet", status = "Simulated", relatedEntityType = "AdoptionApplication", relatedEntityId = "{{ variables.data.record.id }}" }
 
 [[workflow.CompleteAdoption.steps]]
 type = "query"
@@ -897,6 +931,7 @@ data = { name = "Complete Adoption", trigger = "Coordinator marks adoption compl
 [workflow.SetTaskStatus]
 description = "Update task status."
 trigger = { manual = true }
+transactional = true
 precondition = { "variables.data.payload.status" = ["In Progress", "Completed"], "variables.data.record.status" = ["Open", "In Progress"] }
 
 [[workflow.SetTaskStatus.steps]]
@@ -938,16 +973,103 @@ source = "templates/sign-in.liquid"
 # own trusted system identity, not as this anonymous rule, so it stays narrow.
 anonymous = { allow = ["Dog.read", "AdoptionInterest.create"] }
 # Volunteers triage intake: start reviews and work tasks. Each entity/action pair here is
-# one a volunteer-triggered workflow actually writes - a role must cover every write a
-# workflow it can trigger performs, or that workflow fails partway through instead of
-# being cleanly rejected up front.
-volunteer = { allow = ["Dog.read", "Applicant.read", "AdoptionApplication.read", "AdoptionApplication.update", "Task.*", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.read"] }
+# required by volunteer-triggered workflows, including the Volunteer.read lookup
+# that links a login email to a reviewer record. The action route checks these
+# permissions before starting a workflow.
+volunteer = { allow = ["Volunteer.read", "Dog.read", "Applicant.read", "AdoptionApplication.read", "AdoptionApplication.update", "Task.*", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.read"] }
 # Coordinators decide outcomes: approve/reject/require a visit/complete adoptions, which
 # also generates emails, pickup tasks, activity entries, and workflow history.
-coordinator = { allow = ["Dog.read", "Dog.update", "Applicant.read", "AdoptionApplication.*", "Task.*", "OutgoingMessage.create", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.create", "WorkflowExecution.read"] }
+coordinator = { allow = ["Volunteer.read", "Dog.read", "Dog.update", "Applicant.read", "AdoptionApplication.*", "Task.*", "OutgoingMessage.create", "OutgoingMessage.read", "ActivityEvent.create", "ActivityEvent.read", "WorkflowExecution.create", "WorkflowExecution.read"] }
 admin = { allow = ["*.*"] }
 
 [ui]
 render_mode = "server"
 theme = "default"
 view_transitions = true
+
+# Public input is accepted only for a stored, available dog. The transactional
+# workflow repeats this state check when claiming the dog to resolve concurrent submissions.
+[entity.AdoptionInterest.access]
+create = "record.dog.status == 'Available' && (record.dog.applicationId == null || record.dog.applicationId == '')"
+read = false
+update = false
+delete = false
+
+[command.SetDogAvailability]
+entity = "Dog"
+policy = "workflow.__zebric.currentWorkflow == 'SetDogStatus' && (actor.roles contains 'coordinator' || actor.roles contains 'admin')"
+availableWhen = "record.status in ['Intake', 'Foster', 'Available', 'Unavailable'] && (record.applicationId == null || record.applicationId == '')"
+mutations = { status = "input.status" }
+
+[command.SetDogAvailability.input.status]
+type = "Enum"
+required = true
+values = ["Available", "Unavailable"]
+
+[command.ReviewApplicationState]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'ReviewApplication' && (actor.roles contains 'volunteer' || actor.roles contains 'coordinator' || actor.roles contains 'admin' && workflow.reviewer.id contains input.reviewerId && workflow.reviewer.userId contains actor.effectiveId)"
+availableWhen = "record.status == 'Submitted'"
+mutations = { status = "In Review", reviewedBy = "input.reviewerId" }
+
+[command.ReviewApplicationState.input.reviewerId]
+type = "Ref"
+required = true
+
+[command.ApproveApplicationState]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveApplication' && (actor.roles contains 'coordinator' || actor.roles contains 'admin')"
+availableWhen = "record.status in ['In Review', 'Meet & Greet Required', 'Home Visit Required'] && record.dog.applicationId == record.id"
+mutations = { status = "Approved", decision = "Approved" }
+
+[command.RejectApplicationState]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'RejectApplication' && (actor.roles contains 'coordinator' || actor.roles contains 'admin')"
+availableWhen = "record.status in ['Submitted', 'In Review', 'Meet & Greet Required', 'Home Visit Required']"
+mutations = { status = "Rejected", decision = "Rejected" }
+
+[command.RequireHomeVisitState]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'RequireHomeVisit' && (actor.roles contains 'coordinator' || actor.roles contains 'admin')"
+availableWhen = "record.status in ['In Review', 'Meet & Greet Required']"
+mutations = { status = "Home Visit Required", homeVisitRequired = true }
+
+[command.CompleteAdoptionState]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'CompleteAdoption' && (actor.roles contains 'coordinator' || actor.roles contains 'admin')"
+availableWhen = "record.status == 'Approved' && record.dog.applicationId == record.id"
+mutations = { status = "Completed", decision = "Completed" }
+
+[command.PrepareDogPickup]
+entity = "Dog"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveApplication' && (actor.roles contains 'coordinator' || actor.roles contains 'admin') && record.applicationId == workflow.data.record.id"
+availableWhen = "record.status == 'Application Pending'"
+mutations = { status = "Pending Pickup" }
+
+[command.FinishDogAdoption]
+entity = "Dog"
+policy = "workflow.__zebric.currentWorkflow == 'CompleteAdoption' && (actor.roles contains 'coordinator' || actor.roles contains 'admin') && record.applicationId == workflow.data.record.id"
+availableWhen = "record.status == 'Pending Pickup'"
+mutations = { status = "Adopted" }
+
+[command.ClaimDogForInterest]
+entity = "Dog"
+policy = "workflow.__zebric.currentWorkflow == 'SubmitAdoptionInterest' && (actor.type == 'system' && input.applicationId == workflow.application.id)"
+availableWhen = "record.status == 'Available' && (record.applicationId == null || record.applicationId == '')"
+mutations = { status = "Application Pending", applicationId = "input.applicationId" }
+
+[command.ClaimDogForInterest.input.applicationId]
+type = "Text"
+required = true
+
+[command.RequireMeetAndGreet]
+entity = "AdoptionApplication"
+policy = "workflow.__zebric.currentWorkflow == 'SubmitAdoptionInterest' && (actor.type == 'system' && record.id == workflow.application.id)"
+availableWhen = "record.status == 'Submitted'"
+mutations = { status = "Meet & Greet Required", meetAndGreetRequired = true, meetAndGreetReason = "Applicant has existing pets" }
+
+[command.ReleaseRejectedDog]
+entity = "Dog"
+policy = "workflow.__zebric.currentWorkflow == 'RejectApplication' && (actor.roles contains 'coordinator' || actor.roles contains 'admin') && record.applicationId == workflow.data.record.id"
+availableWhen = "record.status == 'Application Pending'"
+mutations = { status = "Available", applicationId = "" }

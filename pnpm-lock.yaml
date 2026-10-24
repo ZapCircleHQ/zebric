@@ -72,43 +72,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/runtime-node
 
-  examples/custom-theme:
-    dependencies:
-      '@zebric/runtime-core':
-        specifier: workspace:*
-        version: link:../../packages/runtime-core
-      '@zebric/runtime-node':
-        specifier: workspace:*
-        version: link:../../packages/runtime-node
-    devDependencies:
-      '@types/node':
-        specifier: ^22.19.17
-        version: 22.19.17
-      tsx:
-        specifier: ^4.7.0
-        version: 4.21.0
-      typescript:
-        specifier: ^6.0.3
-        version: 6.0.3
-
-  examples/customer-lookup:
-    dependencies:
-      '@zebric/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
-      '@zebric/runtime-node':
-        specifier: workspace:*
-        version: link:../../packages/runtime-node
-
-  examples/document-manager:
-    dependencies:
-      '@zebric/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
-      '@zebric/runtime-node':
-        specifier: workspace:*
-        version: link:../../packages/runtime-node
-
   examples/dog-rescue:
     dependencies:
       '@zebric/cli':
@@ -172,15 +135,6 @@ importers:
       '@zebric/mcp-server':
         specifier: workspace:*
         version: link:../../packages/mcp-server
-      '@zebric/runtime-node':
-        specifier: workspace:*
-        version: link:../../packages/runtime-node
-
-  examples/vibe:
-    dependencies:
-      '@zebric/cli':
-        specifier: workspace:*
-        version: link:../../packages/cli
       '@zebric/runtime-node':
         specifier: workspace:*
         version: link:../../packages/runtime-node

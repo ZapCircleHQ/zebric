@@ -34,6 +34,7 @@ const FieldSchema = z.object({
   name: z.string(),
   type: FieldTypeSchema,
   primary_key: z.boolean().optional(),
+  immutable: z.boolean().optional(),
   unique: z.boolean().optional(),
   index: z.boolean().optional(),
   required: z.boolean().optional(),
@@ -56,6 +57,7 @@ const RelationSchema = z.object({
   entity: z.string(),
   foreign_key: z.string().optional(),
   through: z.string().optional(),
+  where: AnyRecordSchema.optional(),
 })
 
 // ============================================================================
