@@ -33,7 +33,7 @@
     <label for="customerId">Customer</label>
     <select id="customerId" required>
       {% for customer in data.customers %}
-        <option value="{{ customer.id }}" data-type="{{ customer.type }}" data-email="{{ customer.email }}">{{ customer.name }} ({{ customer.type }})</option>
+        <option value="{{ customer.id }}" data-type="{{ customer.type }}">{{ customer.name }} ({{ customer.type }})</option>
       {% endfor %}
     </select>
   </div>
@@ -89,11 +89,6 @@
   function orderType(){
     var opt = customerSel.options[customerSel.selectedIndex];
     return opt ? opt.dataset.type : 'retail';
-  }
-
-  function customerEmail(){
-    var opt = customerSel.options[customerSel.selectedIndex];
-    return opt ? opt.dataset.email : '';
   }
 
   function priceFor(product){
@@ -186,8 +181,6 @@
 
     var payload = {
       customerId: customerSel.value,
-      customerEmail: customerEmail(),
-      orderType: orderType(),
       items: items,
       shippingMethod: method,
       truckingServiceId: method === 'delivery_truck' ? document.getElementById('truckingServiceId').value : null,

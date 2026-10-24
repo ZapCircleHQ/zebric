@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process'
-import { readFile, realpath, writeFile } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type { CandidateResolution, ConflictFile, PullRequestMetadata, RepositoryAdapter, ValidationCheck, ValidationResult } from './types.js'
@@ -13,6 +14,7 @@ export interface LocalGitOptions {
 
 export class LocalGitRepositoryAdapter implements RepositoryAdapter {
   private readonly root: string
+  private conflictPaths?: Set<string>
   constructor(private readonly options: LocalGitOptions) { this.root = resolve(options.worktree) }
 
   async getMetadata(): Promise<PullRequestMetadata> {
@@ -30,12 +32,13 @@ export class LocalGitRepositoryAdapter implements RepositoryAdapter {
   async getConflicts(): Promise<ConflictFile[]> {
     const names = (await this.git(['diff', '--name-only', '--diff-filter=U', '-z']))
       .split('\0').filter(Boolean)
+    if (!this.conflictPaths) this.conflictPaths = new Set(names)
     return Promise.all(names.map(async path => ({
       path,
       base: await this.stage(1, path),
       ours: await this.stage(2, path),
       theirs: await this.stage(3, path),
-      conflicted: await readFile(this.safePath(path), 'utf8'),
+      conflicted: await this.worktreeFile('read', path),
     })))
   }
 
@@ -45,8 +48,10 @@ export class LocalGitRepositoryAdapter implements RepositoryAdapter {
   }
 
   async applyCandidate(candidate: CandidateResolution): Promise<void> {
-    const path = this.safePath(candidate.path)
-    await writeFile(path, candidate.content, 'utf8')
+    this.safePath(candidate.path)
+    if (!this.conflictPaths) await this.getConflicts()
+    if (!this.conflictPaths!.has(candidate.path)) throw new Error('Candidate path is not an inspected conflict')
+    await this.worktreeFile('write', candidate.path, candidate.content)
     await this.git(['add', '--', candidate.path])
   }
 
@@ -92,10 +97,25 @@ export class LocalGitRepositoryAdapter implements RepositoryAdapter {
 
   private async stage(stage: number, path: string): Promise<string> { return this.git(['show', `:${stage}:${path}`]) }
 
+  private async worktreeFile(operation: 'read' | 'write', path: string, content = ''): Promise<string> {
+    this.safePath(path)
+    const root = await realpath(this.root)
+    const helper = fileURLToPath(new URL('./worktree-file.py', import.meta.url))
+    return new Promise((resolveResult, reject) => {
+      const child = execFile('python3', [helper, operation, root, path],
+        { encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+          if (error) reject(new Error(stderr.trim() || error.message))
+          else resolveResult(stdout)
+        })
+      child.stdin?.on('error', () => { /* Early helper rejection is handled by its exit status. */ })
+      child.stdin?.end(operation === 'write' ? content : '')
+    })
+  }
+
   private safePath(path: string): string {
     const target = resolve(this.root, path)
     const rel = relative(this.root, target)
-    if (rel.startsWith('..' + sep) || rel === '..' || rel === '' || dirname(target) === target) throw new Error(`Unsafe repository path: ${path}`)
+    if (path.split(/[\\/]/).some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git') || path !== rel || rel.startsWith('..' + sep) || rel === '..' || rel === '' || dirname(target) === target) throw new Error(`Unsafe repository path: ${path}`)
     return target
   }
 }

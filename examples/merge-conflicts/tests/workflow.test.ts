@@ -62,4 +62,13 @@ describe('MergeConflictWorkflow', () => {
     expect(pending.attempts).toHaveLength(2)
     await expect(workflow.approve(pending, 'reviewer@example.test')).resolves.toMatchObject({ state: 'completed' })
   })
+  it('rejects an agent proposal for a different file before applying it', async () => {
+    fixture = await createConflict({ base: 'export const value = 1\n', ours: 'export const value = 2\n', theirs: 'export const value = 3\n' })
+    const agent = new FakeAgent(() => ({ path: 'other.ts', content: 'bad', source: 'agent', resolver: 'bad', explanation: '', assumptions: [], requiresHumanReview: false }))
+    const result = await new MergeConflictWorkflow(new LocalGitRepositoryAdapter({ worktree: fixture.root }), new HeuristicClassifier(), agent, new MemoryAuditSink()).run()
+    expect(result.state).toBe('failed')
+    expect(result.failure).toContain('inspected conflict path')
+    expect(result.attempts).toHaveLength(0)
+  })
+
 })

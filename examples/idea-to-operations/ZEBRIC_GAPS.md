@@ -1,5 +1,18 @@
 # Idea to Operations: Zebric gap ledger
 
+## Current security remediation
+
+The observations below are historical unless marked open. Lifecycle, decision,
+readiness, milestone, dependency, and observation state now use command-only
+fields; parent references are immutable. Commands are scoped to workflows, and
+human decision attribution comes from the verified actor. G-01 is resolved.
+Event projections (G-07) use event-scoped commands bound to the affected record,
+so an initiating contributor needs no generic initiative update grant. Dynamic
+prerequisite refusals use unavailable commands to roll back the transaction.
+The full seeded lifecycle and adversarial API tests cover these boundaries.
+Trusted delegation, schedules, aggregate projections, external integrations, and
+other unrelated gaps below remain outside this remediation.
+
 ## 0.6.0 migration update
 
 - Fixed: Initiative stage is command-only and every stage workflow invokes the command pipeline.
@@ -22,13 +35,13 @@ Priorities follow the coding spec:
 
 | ID | Pri | Gap | Repeats | Consequence here | Workaround |
 |---|---|---|---|---|---|
-| G-01 | P0 | Stage and lifecycle fields are not command-only | Dispatch G-01, Ridgeline G-05, CRM G-03 | An initiative owner can `PUT stage=operating` on an idea and skip every gate | Workflows are the only UI/agent path; the bypass remains for any role holding `Initiative.update` |
+| G-01 | Resolved | Server-protected lifecycle fields | Dispatch G-01, Ridgeline G-05, CRM G-03 | Direct CRUD bypass rejected | Workflow-scoped domain commands |
 | G-02 | P0 | Command outcome is asynchronous; failures surface after a success response | Merge Conflicts GAP-002 (adjacent) | A refused launch approval returns 200/202, the UI flashes "started", the job fails later and retries 3x | Put every static check in `precondition` (synchronous 409); dynamic checks fail asynchronously |
 | G-03 | P0 | `schedule` triggers never fire | new | Recurring operational review cannot happen on its own | `OperationalReviewDue` is declared and correct but inert |
 | G-04 | P0 | No derived state, aggregates or projections | Ridgeline G-09, Dispatch G-07 | Initiative health cannot be computed; Attention cannot be served to agents | Event-nudged stored `health`; Attention derived in Liquid |
-| G-05 | P1 | No count/exists/aggregate predicates in rules | Ridgeline G-08 | "All milestones complete", "at least one evidence" are unenforceable or hacked | `find` + `condition` on `.0.id` + deliberate conflict update; several rules unenforced |
+| G-05 | P1 | No count/exists/aggregate predicates in rules | Ridgeline G-08 | "All milestones complete", "at least one evidence" are unenforceable or hacked | `find` + `condition` on `.0.id` + refusing command; several rules unenforced |
 | G-06 | P1 | A workflow needs the caller to hold every permission its steps use; page actions need a matching primary entity | new | Over-granted roles; five extra list pages exist only to host commands | Widen `OperationalCapability.create`, `Observation.update`; add pages |
-| G-07 | P1 | Entity-event automations run as the initiating principal | new | A contributor-raised high risk cannot update initiative health | None; documented and left failing in the smoke run |
+| G-07 | Resolved | Entity-event automations retain the initiating principal | new | Health projections use event-scoped commands | Bind commands to the stored affected record |
 | G-08 | P1 | Skill `create` actions accept undeclared body fields; create-time rules evaluate before defaults | new | An agent could create an initiative already at `approved`, or a Decision already `decided` | Agent writes are whitelisting workflows |
 | G-09 | P1 | Unresolved template references are persisted literally | new | Missing optional payload values were written as the text `{{ variables.data.payload.note }}` | Always send every payload key; `$gt ""` preconditions on required text |
 | G-10 | P1 | No initiator/executor split for agent actions | CRM G-01, Dispatch G-03 | Activity shows "Operations Agent", never the human it acted for | Accept agent-as-actor |
@@ -38,7 +51,7 @@ Priorities follow the coding spec:
 | G-14 | P2 | Auth users are not entities | Ridgeline G-03, CRM G-09 | Roles assigned by SQL after sign-up; names denormalized into rows | `seed.sh` updates `user.role` |
 | G-15 | P2 | Developer-experience rough edges | Ridgeline G-13 | New skill routes 404 until restart; default 100 req/min per IP breaks seeding; refused skill creates surface as opaque 500s | Restart; `ZEBRIC_RATE_LIMIT_MAX` |
 
-## G-01: Stage and lifecycle fields are not command-only (P0)
+## G-01: Stage and lifecycle fields (resolved; historical reproduction)
 
 - **Desired:** `Initiative.stage` changes only through `startDiscovery`,
   `approveInitiative`, `requestLaunchReview`, `transitionToOperations`, and the
@@ -172,7 +185,7 @@ Priorities follow the coding spec:
   underlying entity CRUD grants (same fix as G-01), and workflow exposure that
   is not tied to one page entity.
 
-## G-07: Automations run as the initiating principal (P1)
+## G-07: Automations run as the initiating principal (resolved through scoped commands; historical reproduction)
 
 - **Desired:** "risk opened → update initiative health" happens whoever raised
   the risk.

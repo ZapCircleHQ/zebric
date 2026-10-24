@@ -94,6 +94,7 @@ export class MergeConflictWorkflow {
         context: { classification, history: context.history, previousAttemptCount: context.previousAttempts.length },
       })
       const candidate = await this.agent.propose(context)
+      if (candidate.path !== file.path) throw new Error('Agent candidate must target the inspected conflict path')
       const passed = await this.tryCandidate(record, candidate)
       if (!passed) continue
       if (candidate.requiresHumanReview || classification.risk === 'HIGH' || classification.risk === 'UNKNOWN' || classification.kind === 'UNKNOWN') {

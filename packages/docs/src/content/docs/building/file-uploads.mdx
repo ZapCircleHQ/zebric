@@ -96,68 +96,6 @@ fields = [
 
 Only `attachment` (the URL) is required to display or link to the file. The rest are optional but useful for displaying file info, enforcing quotas, or building download UIs.
 
-## Complete Example
-
-A document manager with authentication and access control:
-
-```toml
-version = "0.6.0"
-
-[project]
-name = "Document Manager"
-version = "1.0.0"
-
-[auth]
-providers = ["email"]
-
-[entity.Document]
-fields = [
-  { name = "id",                  type = "ULID", primary_key = true },
-  { name = "title",               type = "Text", required = true },
-  { name = "category",            type = "Enum", values = ["contract", "invoice", "report"] },
-  { name = "attachment",          type = "Text", required = true },
-  { name = "attachment_filename", type = "Text" },
-  { name = "attachment_size",     type = "Integer" },
-  { name = "attachment_mimetype", type = "Text" },
-  { name = "ownerId",             type = "Ref", ref = "User" },
-]
-
-[entity.Document.access]
-create = { userId = "$currentUser.id" }
-read   = { ownerId = "$currentUser.id" }
-update = { ownerId = "$currentUser.id" }
-delete = { ownerId = "$currentUser.id" }
-
-[page."/documents"]
-title = "My Documents"
-layout = "list"
-entity = "Document"
-
-[page."/documents/new"]
-title = "Upload Document"
-layout = "form"
-entity = "Document"
-
-[[page."/documents/new".form.fields]]
-name = "title"
-type = "text"
-label = "Document Title"
-required = true
-
-[[page."/documents/new".form.fields]]
-name = "category"
-type = "select"
-label = "Category"
-
-[[page."/documents/new".form.fields]]
-name = "attachment"
-type = "file"
-label = "File"
-required = true
-accept = ["application/pdf", "image/jpeg", "image/png"]
-max = 10485760
-```
-
 ## File Storage
 
 ### Local Storage (Default)
@@ -223,14 +161,11 @@ Leave `S3_BUCKET` unset in your dev environment and let the runtime fall back to
 
 ### Access Control for Files
 
-The `/uploads/` path serves files directly without checking entity-level access control. To restrict who can access uploaded files, pair them with entity access control and avoid linking to files from pages the user shouldn't reach:
-
-```toml
-[entity.Document.access]
-read = { ownerId = "$currentUser.id" }
-```
-
-This prevents users from listing documents they don't own, but the raw `/uploads/` URL remains publicly accessible if known. For sensitive documents, consider using opaque ULIDs (already the default) and avoid exposing the URL in publicly accessible contexts.
+The local `/uploads/` route serves bytes publicly when their URL is known.
+Entity read policies control metadata, not downloads. Use this route only for
+public assets. Private documents require an authenticated download handler or
+private object storage with authorized, expiring links; hiding a URL does not
+enforce file access control.
 
 ### Size and Type Enforcement
 

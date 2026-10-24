@@ -12,7 +12,7 @@ curl -sS -c "$COOKIE_JAR" "$BASE/" > /dev/null
 CSRF="$(grep csrf-token "$COOKIE_JAR" | awk '{print $NF}')"
 
 post_json() {
-  curl -sS -X POST "$BASE$1" \
+  curl -fsS -X POST "$BASE$1" \
     -b "$COOKIE_JAR" \
     -H "x-csrf-token: $CSRF" \
     -H "Content-Type: application/json" \
@@ -55,27 +55,39 @@ SQL
 
 # The rest of this script seeds operational data as the admin account: with anonymous
 # access scoped down to just Dog.read + AdoptionInterest.create, these direct /api/*
-# writes need a real, permitted session (see GAP_ANALYSIS.md for why AdoptionInterest
-# itself is still exercised live, not scripted here).
+# writes need a real, permitted session (AdoptionInterest itself is
+# exercised through the public form in the demo and smoke test).
 echo "Signing in as admin (Rina) to seed operational data..."
 post_auth /api/auth/sign-in/email "{\"email\":\"rina@friendlypaws.example\",\"password\":\"$DEMO_PASSWORD\"}" >/dev/null
 
-echo "Creating volunteers..."
-MAYA=$(post_json /api/volunteers '{"name":"Maya Brooks","email":"maya@friendlypaws.example","role":"Volunteer","active":true}' | extract_id)
-ELI=$(post_json /api/volunteers '{"name":"Eli Turner","email":"eli@friendlypaws.example","role":"Adoption Coordinator","active":true}' | extract_id)
-RINA=$(post_json /api/volunteers '{"name":"Rina Shah","email":"rina@friendlypaws.example","role":"Admin","active":true}' | extract_id)
+# Staff identities are stable across reruns even though operational fixtures are fresh.
+volunteer() {
+  local user_id existing payload
+  user_id=$(sqlite3 "$DB_PATH" "SELECT id FROM user WHERE email='$1';")
+  existing=$(sqlite3 "$DB_PATH" "SELECT id FROM volunteer WHERE user_id='$user_id';")
+  if [[ -n "$existing" ]]; then
+    printf '%s\n' "$existing"
+    return
+  fi
+  payload=$(python3 -c 'import json,sys; print(json.dumps(dict(zip(["userId","name","email","role"],sys.argv[1:]), active=True)))' "$user_id" "$2" "$1" "$3")
+  post_json /api/volunteers "$payload" | extract_id
+}
+echo "Provisioning volunteers..."
+MAYA=$(volunteer 'maya@friendlypaws.example' 'Maya Brooks' 'Volunteer')
+ELI=$(volunteer 'eli@friendlypaws.example' 'Eli Turner' 'Adoption Coordinator')
+RINA=$(volunteer 'rina@friendlypaws.example' 'Rina Shah' 'Admin')
 
 echo "Creating dogs..."
-BELLA=$(post_json /api/dogs '{"name":"Bella","breed":"Labrador Mix","age":3,"weight":48,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1552053831-71594a27632d","status":"Available","temperament":"Affectionate, steady, eager to please.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Spayed, vaccinated, mild seasonal allergies.","fosterHome":"Maya Brooks","adoptionFee":275}' | extract_id)
-MILO=$(post_json /api/dogs '{"name":"Milo","breed":"Beagle","age":2,"weight":26,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1505628346881-b72b27e84530","status":"Application Pending","temperament":"Curious and food-motivated.","energyLevel":"High","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Eli Turner","adoptionFee":250}' | extract_id)
-LUNA=$(post_json /api/dogs '{"name":"Luna","breed":"Australian Shepherd","age":1.5,"weight":36,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1548199973-03cce0bbc87b","status":"Meet & Greet Required","temperament":"Smart, alert, bonds quickly.","energyLevel":"High","goodWithKids":false,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Needs structured exercise.","fosterHome":"Rina Shah","adoptionFee":300}' | extract_id)
-ROCKY=$(post_json /api/dogs '{"name":"Rocky","breed":"Boxer","age":5,"weight":62,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1587300003388-59208cc962cb","status":"Pending Pickup","temperament":"Goofy and people-focused.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":false,"goodWithCats":false,"medicalNotes":"Recovering well from dental cleaning.","fosterHome":"Maya Brooks","adoptionFee":225}' | extract_id)
-DAISY=$(post_json /api/dogs '{"name":"Daisy","breed":"Terrier Mix","age":0.7,"weight":18,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1517849845537-4d257902454a","status":"Available","temperament":"Playful puppy, needs training.","energyLevel":"High","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Puppy vaccine series in progress.","fosterHome":"Eli Turner","adoptionFee":325}' | extract_id)
-COOPER=$(post_json /api/dogs '{"name":"Cooper","breed":"Golden Retriever","age":4,"weight":70,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1558788353-f76d92427f16","status":"Available","temperament":"Gentle and social.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Rina Shah","adoptionFee":300}' | extract_id)
-NALA=$(post_json /api/dogs '{"name":"Nala","breed":"Pit Bull Mix","age":6,"weight":54,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1561037404-61cd46aa615b","status":"Foster","temperament":"Calm, loyal, prefers quiet homes.","energyLevel":"Low","goodWithKids":false,"goodWithDogs":false,"goodWithCats":false,"medicalNotes":"Arthritis management plan.","fosterHome":"Maya Brooks","adoptionFee":175}' | extract_id)
-OLLIE=$(post_json /api/dogs '{"name":"Ollie","breed":"Corgi","age":3,"weight":29,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1612536057832-2ff7ead58194","status":"Available","temperament":"Confident and funny.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Healthy.","fosterHome":"Eli Turner","adoptionFee":300}' | extract_id)
-SADIE=$(post_json /api/dogs '{"name":"Sadie","breed":"German Shepherd","age":7,"weight":74,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1589941013453-ec89f33b5e95","status":"Intake","temperament":"Observant and cautious.","energyLevel":"Moderate","goodWithKids":false,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Intake exam pending.","fosterHome":"Rina Shah","adoptionFee":200}' | extract_id)
-FINN=$(post_json /api/dogs '{"name":"Finn","breed":"Poodle Mix","age":2,"weight":22,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1537151625747-768eb6cf92b2","status":"Adopted","temperament":"Bright and cuddly.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Maya Brooks","adoptionFee":275}' | extract_id)
+BELLA=$(post_json /api/dogs '{"name":"Bella","breed":"Labrador Mix","age":3,"weight":48,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1552053831-71594a27632d","temperament":"Affectionate, steady, eager to please.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Spayed, vaccinated, mild seasonal allergies.","fosterHome":"Maya Brooks","adoptionFee":275}' | extract_id)
+MILO=$(post_json /api/dogs '{"name":"Milo","breed":"Beagle","age":2,"weight":26,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1505628346881-b72b27e84530","temperament":"Curious and food-motivated.","energyLevel":"High","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Eli Turner","adoptionFee":250}' | extract_id)
+LUNA=$(post_json /api/dogs '{"name":"Luna","breed":"Australian Shepherd","age":1.5,"weight":36,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1548199973-03cce0bbc87b","temperament":"Smart, alert, bonds quickly.","energyLevel":"High","goodWithKids":false,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Needs structured exercise.","fosterHome":"Rina Shah","adoptionFee":300}' | extract_id)
+ROCKY=$(post_json /api/dogs '{"name":"Rocky","breed":"Boxer","age":5,"weight":62,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1587300003388-59208cc962cb","temperament":"Goofy and people-focused.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":false,"goodWithCats":false,"medicalNotes":"Recovering well from dental cleaning.","fosterHome":"Maya Brooks","adoptionFee":225}' | extract_id)
+DAISY=$(post_json /api/dogs '{"name":"Daisy","breed":"Terrier Mix","age":0.7,"weight":18,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1517849845537-4d257902454a","temperament":"Playful puppy, needs training.","energyLevel":"High","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Puppy vaccine series in progress.","fosterHome":"Eli Turner","adoptionFee":325}' | extract_id)
+COOPER=$(post_json /api/dogs '{"name":"Cooper","breed":"Golden Retriever","age":4,"weight":70,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1558788353-f76d92427f16","temperament":"Gentle and social.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Rina Shah","adoptionFee":300}' | extract_id)
+NALA=$(post_json /api/dogs '{"name":"Nala","breed":"Pit Bull Mix","age":6,"weight":54,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1561037404-61cd46aa615b","temperament":"Calm, loyal, prefers quiet homes.","energyLevel":"Low","goodWithKids":false,"goodWithDogs":false,"goodWithCats":false,"medicalNotes":"Arthritis management plan.","fosterHome":"Maya Brooks","adoptionFee":175}' | extract_id)
+OLLIE=$(post_json /api/dogs '{"name":"Ollie","breed":"Corgi","age":3,"weight":29,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1612536057832-2ff7ead58194","temperament":"Confident and funny.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Healthy.","fosterHome":"Eli Turner","adoptionFee":300}' | extract_id)
+SADIE=$(post_json /api/dogs '{"name":"Sadie","breed":"German Shepherd","age":7,"weight":74,"sex":"Female","photoUrl":"https://images.unsplash.com/photo-1589941013453-ec89f33b5e95","temperament":"Observant and cautious.","energyLevel":"Moderate","goodWithKids":false,"goodWithDogs":true,"goodWithCats":false,"medicalNotes":"Intake exam pending.","fosterHome":"Rina Shah","adoptionFee":200}' | extract_id)
+FINN=$(post_json /api/dogs '{"name":"Finn","breed":"Poodle Mix","age":2,"weight":22,"sex":"Male","photoUrl":"https://images.unsplash.com/photo-1537151625747-768eb6cf92b2","temperament":"Bright and cuddly.","energyLevel":"Moderate","goodWithKids":true,"goodWithDogs":true,"goodWithCats":true,"medicalNotes":"Healthy.","fosterHome":"Maya Brooks","adoptionFee":275}' | extract_id)
 
 echo "Creating applicants..."
 SARAH=$(post_json /api/applicants '{"firstName":"Sarah","lastName":"Chen","email":"sarah.chen@example.com","phone":"555-0101","address":"120 Maple Ave","city":"Austin","state":"TX","zip":"78701","ownsOrRents":"Rents","landlordApprovalRequired":true,"hasExistingPets":true,"existingDogsCount":1,"existingCatsCount":0,"previousDogExperience":"Grew up with labs and currently has one senior dog.","householdNotes":"Works from home most days."}' | extract_id)
@@ -85,11 +97,52 @@ JAMES=$(post_json /api/applicants '{"firstName":"James","lastName":"Miller","ema
 ANA=$(post_json /api/applicants '{"firstName":"Ana","lastName":"Lopez","email":"ana.lopez@example.com","phone":"555-0105","address":"301 River Rd","city":"Austin","state":"TX","zip":"78703","ownsOrRents":"Owns","landlordApprovalRequired":false,"hasExistingPets":true,"existingDogsCount":2,"existingCatsCount":0,"previousDogExperience":"Experienced adopter with two friendly dogs.","householdNotes":"Large fenced yard."}' | extract_id)
 
 echo "Creating applications..."
-APP1=$(post_json /api/adoptionapplications "{\"dogId\":\"$MILO\",\"applicantId\":\"$SARAH\",\"status\":\"Submitted\",\"meetAndGreetRequired\":true,\"meetAndGreetReason\":\"Applicant has existing pets\"}" | extract_id)
-APP2=$(post_json /api/adoptionapplications "{\"dogId\":\"$LUNA\",\"applicantId\":\"$PRIYA\",\"status\":\"Meet & Greet Required\",\"meetAndGreetRequired\":true,\"meetAndGreetReason\":\"Applicant has cats\"}" | extract_id)
-APP3=$(post_json /api/adoptionapplications "{\"dogId\":\"$ROCKY\",\"applicantId\":\"$JAMES\",\"status\":\"Approved\",\"reviewedBy\":\"$ELI\",\"meetAndGreetRequired\":false,\"homeVisitRequired\":false,\"decision\":\"Approved\",\"decisionNotes\":\"Strong match\"}" | extract_id)
-APP4=$(post_json /api/adoptionapplications "{\"dogId\":\"$FINN\",\"applicantId\":\"$MIGUEL\",\"status\":\"Completed\",\"reviewedBy\":\"$MAYA\",\"meetAndGreetRequired\":false,\"homeVisitRequired\":false,\"decision\":\"Completed\",\"decisionNotes\":\"Adoption completed\"}" | extract_id)
-APP5=$(post_json /api/adoptionapplications "{\"dogId\":\"$DAISY\",\"applicantId\":\"$ANA\",\"status\":\"Home Visit Required\",\"reviewedBy\":\"$ELI\",\"meetAndGreetRequired\":true,\"meetAndGreetReason\":\"Two existing dogs\",\"homeVisitRequired\":true}" | extract_id)
+APP1=$(post_json /api/adoptionapplications "{\"dogId\":\"$MILO\",\"applicantId\":\"$SARAH\"}" | extract_id)
+APP2=$(post_json /api/adoptionapplications "{\"dogId\":\"$LUNA\",\"applicantId\":\"$PRIYA\"}" | extract_id)
+APP3=$(post_json /api/adoptionapplications "{\"dogId\":\"$ROCKY\",\"applicantId\":\"$JAMES\",\"decisionNotes\":\"Strong match\"}" | extract_id)
+APP4=$(post_json /api/adoptionapplications "{\"dogId\":\"$FINN\",\"applicantId\":\"$MIGUEL\",\"decisionNotes\":\"Adoption completed\"}" | extract_id)
+APP5=$(post_json /api/adoptionapplications "{\"dogId\":\"$DAISY\",\"applicantId\":\"$ANA\"}" | extract_id)
+
+# Trusted fixture lifecycle snapshots; application APIs cannot write these fields.
+sqlite3 -bail "$DB_PATH" <<SQL
+UPDATE dog SET status = 'Available' WHERE id = '$BELLA';
+UPDATE dog SET status = 'Application Pending' WHERE id = '$MILO';
+UPDATE dog SET status = 'Meet & Greet Required' WHERE id = '$LUNA';
+UPDATE dog SET status = 'Pending Pickup' WHERE id = '$ROCKY';
+UPDATE dog SET status = 'Available' WHERE id = '$DAISY';
+UPDATE dog SET status = 'Available' WHERE id = '$COOPER';
+UPDATE dog SET status = 'Foster' WHERE id = '$NALA';
+UPDATE dog SET status = 'Available' WHERE id = '$OLLIE';
+UPDATE dog SET status = 'Intake' WHERE id = '$SADIE';
+UPDATE dog SET status = 'Adopted' WHERE id = '$FINN';
+UPDATE adoption_application SET status = 'Submitted' WHERE id = '$APP1';
+UPDATE adoption_application SET meet_and_greet_required = 1 WHERE id = '$APP1';
+UPDATE adoption_application SET meet_and_greet_reason = 'Applicant has existing pets' WHERE id = '$APP1';
+UPDATE adoption_application SET status = 'Meet & Greet Required' WHERE id = '$APP2';
+UPDATE adoption_application SET meet_and_greet_required = 1 WHERE id = '$APP2';
+UPDATE adoption_application SET meet_and_greet_reason = 'Applicant has cats' WHERE id = '$APP2';
+UPDATE adoption_application SET status = 'Approved' WHERE id = '$APP3';
+UPDATE adoption_application SET decision = 'Approved' WHERE id = '$APP3';
+UPDATE adoption_application SET reviewed_by = '$ELI' WHERE id = '$APP3';
+UPDATE adoption_application SET meet_and_greet_required = 0 WHERE id = '$APP3';
+UPDATE adoption_application SET home_visit_required = 0 WHERE id = '$APP3';
+UPDATE adoption_application SET status = 'Completed' WHERE id = '$APP4';
+UPDATE adoption_application SET decision = 'Completed' WHERE id = '$APP4';
+UPDATE adoption_application SET reviewed_by = '$MAYA' WHERE id = '$APP4';
+UPDATE adoption_application SET meet_and_greet_required = 0 WHERE id = '$APP4';
+UPDATE adoption_application SET home_visit_required = 0 WHERE id = '$APP4';
+UPDATE adoption_application SET status = 'Home Visit Required' WHERE id = '$APP5';
+UPDATE adoption_application SET reviewed_by = '$ELI' WHERE id = '$APP5';
+UPDATE adoption_application SET meet_and_greet_required = 1 WHERE id = '$APP5';
+UPDATE adoption_application SET meet_and_greet_reason = 'Two existing dogs' WHERE id = '$APP5';
+UPDATE adoption_application SET home_visit_required = 1 WHERE id = '$APP5';
+UPDATE dog SET application_id = '$APP1' WHERE id = '$MILO';
+UPDATE dog SET application_id = '$APP2' WHERE id = '$LUNA';
+UPDATE dog SET application_id = '$APP3' WHERE id = '$ROCKY';
+UPDATE dog SET application_id = '$APP4' WHERE id = '$FINN';
+UPDATE dog SET application_id = '$APP5' WHERE id = '$DAISY';
+UPDATE dog SET status = 'Application Pending' WHERE id = '$DAISY';
+SQL
 
 echo "Creating tasks..."
 post_json /api/tasks "{\"title\":\"Schedule Meet & Greet\",\"description\":\"Sarah has an existing dog.\",\"assignedTo\":\"$MAYA\",\"relatedEntityType\":\"AdoptionApplication\",\"relatedEntityId\":\"$APP1\",\"status\":\"Open\",\"dueDate\":\"2026-07-08\",\"priority\":\"High\",\"createdByWorkflow\":true}" >/dev/null

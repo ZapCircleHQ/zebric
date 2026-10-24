@@ -35,6 +35,25 @@ Validate a blueprint file without starting a server.
 zebric validate --blueprint blueprint.toml
 ```
 
+### `zebric audit`
+
+`zebric audit --blueprint blueprint.toml` validates and statically audits a
+blueprint without starting the runtime or calling a model. Use `--format json`
+for structured findings, `--output audit.json` to save a report, and
+`--check audit.json` to require an exact semantic JSON match. `--fail-on warning`
+also fails on warnings (default: `error`; choices: `error`, `warning`, `info`,
+`none`). Validation and snapshot errors always fail.
+
+Rules cover entity access declarations, public mutation policies, page query
+bounds and ordering, reference indexes, workflow triggers and webhook secret
+configuration, and plugin trust. Findings include stable rule IDs, severities,
+blueprint paths, explanations, and suggestions. They flag review candidates;
+they do not certify deployment security.
+
+Repository contributors can check all example snapshots with `pnpm audit:examples`
+and explicitly refresh them with `pnpm audit:examples:update` after building the
+CLI. Each example's aggregate `audit.json` covers all root blueprint variants.
+
 ## Documentation
 
 Full docs at [docs.zebric.dev](https://docs.zebric.dev)

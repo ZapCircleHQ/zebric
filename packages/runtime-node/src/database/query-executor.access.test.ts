@@ -124,6 +124,19 @@ describe('QueryExecutor row access', () => {
     await expect(executor.delete('RoadmapItem', 'public-item')).rejects.toThrow('Access denied')
   })
 
+  it('accepts immutable values at creation but rejects reassignment on every update path', async () => {
+    const definition = blueprint.entities[0]!.fields.find(field => field.name === 'title')!
+    definition.immutable = true
+    try {
+      await expect(executor.update('RoadmapItem', 'public-item', { title: 'Hijacked' },
+        { session: authenticatedSession })).rejects.toThrow('Immutable fields')
+      await expect(executor.updateWhere('RoadmapItem', 'public-item', { visibility: 'public' },
+        { title: 'Hijacked' }, { session: authenticatedSession })).rejects.toThrow('Immutable fields')
+      await expect(executor.update('RoadmapItem', 'public-item', { title: 'Public item' },
+        { session: authenticatedSession })).resolves.toMatchObject({ title: 'Public item' })
+    } finally { delete definition.immutable }
+  })
+
   it('atomically updates only when the expected state still matches', async () => {
     const updated = await executor.updateWhere(
       'RoadmapItem',

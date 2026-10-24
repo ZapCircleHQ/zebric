@@ -42,7 +42,21 @@ SQL
 
 post_auth /api/auth/sign-in/email "{\"email\":\"admin@ridgelinecoffee.com\",\"password\":\"$DEMO_PASSWORD\"}" >/dev/null
 
+seed_memberships() {
+  sqlite3 -bail "$DB_PATH" <<'SQL'
+INSERT OR IGNORE INTO customer_membership (id, customer_id, user_id)
+SELECT 'member_northside', 'cust_northside', id FROM user WHERE email = 'orders@northsidecafe.com';
+INSERT OR IGNORE INTO customer_membership (id, customer_id, user_id)
+SELECT 'member_maple', 'cust_mapleandco', id FROM user WHERE email = 'orders@mapleandco.ca';
+INSERT OR IGNORE INTO customer_membership (id, customer_id, user_id)
+SELECT 'member_jsmith', 'cust_jsmith', id FROM user WHERE email = 'jsmith@example.com';
+INSERT OR IGNORE INTO customer_membership (id, customer_id, user_id)
+SELECT 'member_ana', 'cust_anaruiz', id FROM user WHERE email = 'ana.ruiz@example.com';
+SQL
+}
+
 if curl -fsS -b "$COOKIE_JAR" "$BASE_URL/api/customers" | grep -q 'cust_northside'; then
+  seed_memberships
   echo "Ridgeline demo data already exists; leaving it unchanged."
   exit 0
 fi
@@ -54,10 +68,9 @@ post_json /api/customers '{"id":"cust_harbor","name":"Harbor Hotel Group","type"
 post_json /api/customers '{"id":"cust_jsmith","name":"J. Smith","type":"retail","email":"jsmith@example.com","city":"Denver","state":"CO","country":"USA","currency":"USD"}' >/dev/null
 post_json /api/customers '{"id":"cust_anaruiz","name":"Ana Ruiz","type":"retail","email":"ana.ruiz@example.com","city":"Austin","state":"TX","country":"USA","currency":"USD"}' >/dev/null
 
-# A customer login is linked to its account by matching email address (Better
-# Auth's `user` table can't carry a custom customerId column -- see
-# ZEBRIC_GAPS.md G-04), so no separate linking step is needed: each account
-# above was seeded with the same email its login signed up with.
+# Provisioning is a trusted admin operation. Existing demo databases receive the
+# same explicit links on rerun; changing contact emails never changes these links.
+seed_memberships
 
 echo "Creating warehouses and trucking services..."
 post_json /api/warehouses '{"id":"wh_northside_main","customerId":"cust_northside","name":"Northside Cafe Loading Dock","address":"118 Butler St","city":"Pittsburgh","state":"PA","country":"USA","serviceArea":"in_state"}' >/dev/null
@@ -81,39 +94,39 @@ post_json /api/roastbatchs '{"id":"batch_col_01","lotId":"lot_colombia_01","prod
 post_json /api/roastbatchs '{"id":"batch_sum_01","lotId":"lot_sumatra_01","productId":"prod_summit","roastDate":"2026-09-24","greenWeightKg":50.00,"roastedWeightKg":40.10,"roastLevel":"dark","roastedBy":"Maria Torres"}' >/dev/null
 
 echo "Creating orders..."
-post_json /api/salesorders '{"id":"ord_pending","customerId":"cust_northside","customerEmail":"orders@northsidecafe.com","orderType":"wholesale","requestedShipDate":"2026-10-05","dueDate":"2026-10-08","notes":"Standing weekly order."}' >/dev/null
-post_json /api/orderitems '{"id":"item_pending_1","orderId":"ord_pending","customerEmail":"orders@northsidecafe.com","productId":"prod_reserve","quantity":6,"unitPrice":145.00}' >/dev/null
-post_json /api/orderitems '{"id":"item_pending_2","orderId":"ord_pending","customerEmail":"orders@northsidecafe.com","productId":"prod_foothills","quantity":4,"unitPrice":128.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_pending","orderId":"ord_pending","customerEmail":"orders@northsidecafe.com","method":"ups","scheduledShipDate":"2026-10-05"}' >/dev/null
+post_json /api/salesorders '{"id":"ord_pending","customerId":"cust_northside","orderType":"wholesale","requestedShipDate":"2026-10-05","dueDate":"2026-10-08","notes":"Standing weekly order."}' >/dev/null
+post_json /api/orderitems '{"id":"item_pending_1","orderId":"ord_pending","productId":"prod_reserve","quantity":6,"unitPrice":145.00}' >/dev/null
+post_json /api/orderitems '{"id":"item_pending_2","orderId":"ord_pending","productId":"prod_foothills","quantity":4,"unitPrice":128.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_pending","orderId":"ord_pending","method":"ups","scheduledShipDate":"2026-10-05"}' >/dev/null
 
-post_json /api/salesorders '{"id":"ord_confirmed","customerId":"cust_anaruiz","customerEmail":"ana.ruiz@example.com","orderType":"retail","requestedShipDate":"2026-09-30","dueDate":"2026-10-03"}' >/dev/null
-post_json /api/orderitems '{"id":"item_confirmed_1","orderId":"ord_confirmed","customerEmail":"ana.ruiz@example.com","productId":"prod_summit","quantity":3,"unitPrice":16.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_confirmed","orderId":"ord_confirmed","customerEmail":"ana.ruiz@example.com","method":"usps","scheduledShipDate":"2026-09-30"}' >/dev/null
+post_json /api/salesorders '{"id":"ord_confirmed","customerId":"cust_anaruiz","orderType":"retail","requestedShipDate":"2026-09-30","dueDate":"2026-10-03"}' >/dev/null
+post_json /api/orderitems '{"id":"item_confirmed_1","orderId":"ord_confirmed","productId":"prod_summit","quantity":3,"unitPrice":16.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_confirmed","orderId":"ord_confirmed","method":"usps","scheduledShipDate":"2026-09-30"}' >/dev/null
 
-post_json /api/salesorders '{"id":"ord_roasting","customerId":"cust_jsmith","customerEmail":"jsmith@example.com","orderType":"retail","requestedShipDate":"2026-09-29","dueDate":"2026-10-02"}' >/dev/null
-post_json /api/orderitems '{"id":"item_roasting_1","orderId":"ord_roasting","customerEmail":"jsmith@example.com","productId":"prod_reserve","quantity":2,"unitPrice":18.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_roasting","orderId":"ord_roasting","customerEmail":"jsmith@example.com","method":"fedex","scheduledShipDate":"2026-09-29"}' >/dev/null
+post_json /api/salesorders '{"id":"ord_roasting","customerId":"cust_jsmith","orderType":"retail","requestedShipDate":"2026-09-29","dueDate":"2026-10-02"}' >/dev/null
+post_json /api/orderitems '{"id":"item_roasting_1","orderId":"ord_roasting","productId":"prod_reserve","quantity":2,"unitPrice":18.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_roasting","orderId":"ord_roasting","method":"fedex","scheduledShipDate":"2026-09-29"}' >/dev/null
 
-post_json /api/salesorders '{"id":"ord_shipped","customerId":"cust_mapleandco","customerEmail":"orders@mapleandco.ca","orderType":"wholesale","requestedShipDate":"2026-09-22","dueDate":"2026-09-26"}' >/dev/null
-post_json /api/orderitems '{"id":"item_shipped_1","orderId":"ord_shipped","customerEmail":"orders@mapleandco.ca","productId":"prod_summit","quantity":10,"unitPrice":132.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_shipped","orderId":"ord_shipped","customerEmail":"orders@mapleandco.ca","method":"fedex","scheduledShipDate":"2026-09-22","trackingNumber":"FX-88213199"}' >/dev/null
+post_json /api/salesorders '{"id":"ord_shipped","customerId":"cust_mapleandco","orderType":"wholesale","requestedShipDate":"2026-09-22","dueDate":"2026-09-26"}' >/dev/null
+post_json /api/orderitems '{"id":"item_shipped_1","orderId":"ord_shipped","productId":"prod_summit","quantity":10,"unitPrice":132.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_shipped","orderId":"ord_shipped","method":"fedex","scheduledShipDate":"2026-09-22","trackingNumber":"FX-88213199"}' >/dev/null
 
-post_json /api/salesorders '{"id":"ord_delivered","customerId":"cust_northside","customerEmail":"orders@northsidecafe.com","orderType":"wholesale","requestedShipDate":"2026-09-10","dueDate":"2026-09-13"}' >/dev/null
-post_json /api/orderitems '{"id":"item_delivered_1","orderId":"ord_delivered","customerEmail":"orders@northsidecafe.com","productId":"prod_reserve","quantity":8,"unitPrice":145.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_delivered","orderId":"ord_delivered","customerEmail":"orders@northsidecafe.com","method":"ups","scheduledShipDate":"2026-09-10","trackingNumber":"1Z999AA10123456784"}' >/dev/null
+post_json /api/salesorders '{"id":"ord_delivered","customerId":"cust_northside","orderType":"wholesale","requestedShipDate":"2026-09-10","dueDate":"2026-09-13"}' >/dev/null
+post_json /api/orderitems '{"id":"item_delivered_1","orderId":"ord_delivered","productId":"prod_reserve","quantity":8,"unitPrice":145.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_delivered","orderId":"ord_delivered","method":"ups","scheduledShipDate":"2026-09-10","trackingNumber":"1Z999AA10123456784"}' >/dev/null
 
 echo "Creating a capacity-split truck order..."
-post_json /api/salesorders '{"id":"ord_truck","customerId":"cust_harbor","customerEmail":"purchasing@harborhotels.com","orderType":"wholesale","requestedShipDate":"2026-10-01","dueDate":"2026-10-06","notes":"Two-load delivery: 260 cases at 100/load."}' >/dev/null
-post_json /api/orderitems '{"id":"item_truck_1","orderId":"ord_truck","customerEmail":"purchasing@harborhotels.com","productId":"prod_reserve","quantity":140,"unitPrice":145.00}' >/dev/null
-post_json /api/orderitems '{"id":"item_truck_2","orderId":"ord_truck","customerEmail":"purchasing@harborhotels.com","productId":"prod_summit","quantity":120,"unitPrice":132.00}' >/dev/null
-post_json /api/shipments '{"id":"ship_truck_1","orderId":"ord_truck","customerEmail":"purchasing@harborhotels.com","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":1,"cases":100}' >/dev/null
-post_json /api/shipments '{"id":"ship_truck_2","orderId":"ord_truck","customerEmail":"purchasing@harborhotels.com","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":2,"cases":100}' >/dev/null
-post_json /api/shipments '{"id":"ship_truck_3","orderId":"ord_truck","customerEmail":"purchasing@harborhotels.com","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":3,"cases":60}' >/dev/null
+post_json /api/salesorders '{"id":"ord_truck","customerId":"cust_harbor","orderType":"wholesale","requestedShipDate":"2026-10-01","dueDate":"2026-10-06","notes":"Three-load delivery: 260 cases at 100/load."}' >/dev/null
+post_json /api/orderitems '{"id":"item_truck_1","orderId":"ord_truck","productId":"prod_reserve","quantity":140,"unitPrice":145.00}' >/dev/null
+post_json /api/orderitems '{"id":"item_truck_2","orderId":"ord_truck","productId":"prod_summit","quantity":120,"unitPrice":132.00}' >/dev/null
+post_json /api/shipments '{"id":"ship_truck_1","orderId":"ord_truck","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":1,"cases":100}' >/dev/null
+post_json /api/shipments '{"id":"ship_truck_2","orderId":"ord_truck","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":2,"cases":100}' >/dev/null
+post_json /api/shipments '{"id":"ship_truck_3","orderId":"ord_truck","method":"delivery_truck","scheduledShipDate":"2026-10-01","truckingServiceId":"svc_regional","warehouseId":"wh_harbor_main","loadNumber":3,"cases":60}' >/dev/null
 
 echo "Creating subscriptions..."
-post_json /api/subscriptions '{"id":"sub_jsmith","customerId":"cust_jsmith","customerEmail":"jsmith@example.com","productId":"prod_reserve","frequency":"monthly","quantity":2,"nextShipDate":"2026-10-15"}' >/dev/null
-post_json /api/subscriptions '{"id":"sub_anaruiz","customerId":"cust_anaruiz","customerEmail":"ana.ruiz@example.com","productId":"prod_summit","frequency":"biweekly","quantity":1,"nextShipDate":"2026-10-08"}' >/dev/null
-post_json /api/subscriptions '{"id":"sub_jsmith_paused","customerId":"cust_jsmith","customerEmail":"jsmith@example.com","productId":"prod_foothills","frequency":"weekly","quantity":1}' >/dev/null
+post_json /api/subscriptions '{"id":"sub_jsmith","customerId":"cust_jsmith","productId":"prod_reserve","frequency":"monthly","quantity":2,"nextShipDate":"2026-10-15"}' >/dev/null
+post_json /api/subscriptions '{"id":"sub_anaruiz","customerId":"cust_anaruiz","productId":"prod_summit","frequency":"biweekly","quantity":1,"nextShipDate":"2026-10-08"}' >/dev/null
+post_json /api/subscriptions '{"id":"sub_jsmith_paused","customerId":"cust_jsmith","productId":"prod_foothills","frequency":"weekly","quantity":1}' >/dev/null
 
 # Fixture setup is trusted test infrastructure. Populate non-default lifecycle
 # snapshots directly; application users still cannot bypass domain commands.

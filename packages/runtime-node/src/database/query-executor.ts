@@ -10,7 +10,7 @@ import { eq, ne, and, or, gt, gte, lt, lte, like, ilike, inArray, isNull, isNotN
 import type { Query, Entity, QueryPredicate, RequestContext } from '@zebric/runtime-core'
 import type { DatabaseConnection } from './connection.js'
 import type { PermissionManager } from '@zebric/runtime-core'
-import { AccessControl, PolicyEvaluator, SYSTEM_SESSION, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
+import { AccessControl, PolicyEvaluator, SYSTEM_SESSION, assertEntityAccess, assertProtectedMutation, assertImmutableFields, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 import { ulid } from 'ulid'
 import { MetricsRegistry } from '../monitoring/metrics.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -605,6 +605,8 @@ export class QueryExecutor {
 
     // Strip fields the caller cannot write before merge / access / default handling.
     data = filterWritableFields(entity, data, context?.session)
+
+    assertImmutableFields(entity, existingRecord, data)
 
     // Check update access against the stored resource so owner and state rules
     // cannot be satisfied by values introduced in the patch itself.

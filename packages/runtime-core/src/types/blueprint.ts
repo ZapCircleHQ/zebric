@@ -57,6 +57,8 @@ export interface EntityProtection {
 export interface Field {
   name: string
   type: FieldType
+  /** Accept an initial value, then reject changes through all mutation paths. */
+  immutable?: boolean
   primary_key?: boolean
   unique?: boolean
   index?: boolean
@@ -96,6 +98,8 @@ export interface Relation {
   entity: string
   foreign_key?: string
   through?: string // For many-to-many
+  /** Blueprint-owned filters applied when hydrating a collection policy relation. */
+  where?: Record<string, unknown>
 }
 
 export interface Index {

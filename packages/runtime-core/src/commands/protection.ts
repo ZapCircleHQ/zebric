@@ -1,6 +1,6 @@
 import type { Entity } from '../types/blueprint.js'
 import type { RequestContext } from '../routing/request-ports.js'
-import { ProtectedFieldMutationError } from '../errors/domain-errors.js'
+import { ProtectedFieldMutationError, ValidationFailureError } from '../errors/domain-errors.js'
 
 const issuedAuthorities = new WeakSet<object>()
 
@@ -44,4 +44,19 @@ export function assertProtectedMutation(
     })
 
   if (!allowed) throw new ProtectedFieldMutationError(entity.name, attempted)
+}
+
+/** Ownership/parent links may be selected at creation but never reassigned. */
+export function assertImmutableFields(
+  entity: Entity | undefined,
+  existing: Record<string, unknown>,
+  data: Record<string, unknown>,
+): void {
+  const changed = entity?.fields.filter(field => field.immutable
+    && Object.prototype.hasOwnProperty.call(data, field.name)
+    && data[field.name] !== existing[field.name]).map(field => field.name) ?? []
+  if (changed.length) throw new ValidationFailureError(
+    `Immutable fields on ${entity!.name} cannot be changed: ${changed.join(', ')}`,
+    { entity: entity!.name, fields: changed },
+  )
 }

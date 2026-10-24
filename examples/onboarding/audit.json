@@ -1,0 +1,206 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"Developer\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              1,
+              "access"
+            ],
+            "message": "Entity \"AccessItem\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              2,
+              "access"
+            ],
+            "message": "Entity \"OnboardingTask\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              3,
+              "access"
+            ],
+            "message": "Entity \"RampMilestone\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              0,
+              "fields",
+              6
+            ],
+            "message": "Reference \"Developer.mentorId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              0,
+              "fields",
+              7
+            ],
+            "message": "Reference \"Developer.buddyId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              0,
+              "fields",
+              8
+            ],
+            "message": "Reference \"Developer.managerId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              1,
+              "fields",
+              1
+            ],
+            "message": "Reference \"AccessItem.developerId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              2,
+              "fields",
+              1
+            ],
+            "message": "Reference \"OnboardingTask.developerId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              3,
+              "fields",
+              1
+            ],
+            "message": "Reference \"RampMilestone.developerId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              0,
+              "queries",
+              "stats"
+            ],
+            "message": "Page \"/\" query \"stats\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              1,
+              "queries",
+              "devs"
+            ],
+            "message": "Page \"/developers\" query \"devs\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "access"
+            ],
+            "message": "Page \"/developers/{id}\" query \"access\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "dev"
+            ],
+            "message": "Page \"/developers/{id}\" query \"dev\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "milestones"
+            ],
+            "message": "Page \"/developers/{id}\" query \"milestones\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "tasks"
+            ],
+            "message": "Page \"/developers/{id}\" query \"tasks\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 10,
+          "info": 6
+        }
+      }
+    }
+  ]
+}

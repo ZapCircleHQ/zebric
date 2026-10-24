@@ -157,3 +157,14 @@ Read [`ZEBRIC_GAPS.md`](ZEBRIC_GAPS.md) before relying on this. In short: an own
 can still `PUT` a stage directly (G-01), scheduled operational reviews are
 declared but never fire (G-03), health is event-nudged rather than derived (G-04),
 and a few spec rules are unenforced (G-05).
+
+Lifecycle and decision outcomes are protected at the server, including generic
+entity APIs. Parent references and dependency endpoints are immutable. Human
+outcomes derive the deciding user from the verified actor; workflow-scoped
+commands prevent direct-command bypass of prerequisite checks. Resolve a
+blocking dependency through `ResolveDependency`, which requires a completed
+target or a decision-maker waiver. The seed restores historical governed states
+through a trusted local SQLite bootstrap, using Unix-second timestamps.
+
+Run `pnpm --filter zebric-idea-to-operations test` for adversarial API checks and
+the complete seeded lifecycle scenario on temporary databases.

@@ -9,6 +9,6 @@ describe('review blueprint', () => {
     expect(blueprint.entities.map(entity => entity.name)).toEqual(expect.arrayContaining([
       'Repository', 'PullRequest', 'ConflictResolution', 'ConflictFile', 'ResolutionAttempt', 'ReviewDecision',
     ]))
-    expect(blueprint.workflows?.map(workflow => workflow.name)).toEqual(['ApproveResolution', 'RejectResolution'])
+    expect(blueprint.workflows?.map(workflow => workflow.name)).toEqual(expect.arrayContaining(['ApproveResolution', 'RejectResolution', 'RecordApprovalEvidence', 'RecordRejectionEvidence']))
   })
 })

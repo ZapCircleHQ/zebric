@@ -33,10 +33,10 @@ fields = [
 ]
 
 [entity.Theme.access]
-read = { or = [{ active = true }, "authenticated"] }
-create = "authenticated"
-update = "authenticated"
-delete = "authenticated"
+read = { or = [{ active = true }, "actor.roles contains 'editor' || actor.roles contains 'admin'"] }
+create = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+update = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+delete = "actor.roles contains 'editor' || actor.roles contains 'admin'"
 
 [entity.Theme.relations]
 items = { type = "hasMany", entity = "RoadmapItem", foreign_key = "themeId" }
@@ -60,10 +60,10 @@ fields = [
 ]
 
 [entity.RoadmapItem.access]
-read = { or = [{ visibility = "public" }, "authenticated"] }
-create = "authenticated"
-update = "authenticated"
-delete = "authenticated"
+read = { or = [{ visibility = "public" }, "actor.roles contains 'editor' || actor.roles contains 'admin'"] }
+create = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+update = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+delete = "actor.roles contains 'editor' || actor.roles contains 'admin'"
 
 [entity.RoadmapItem.relations]
 theme = { type = "belongsTo", entity = "Theme", foreign_key = "themeId" }
@@ -82,10 +82,10 @@ fields = [
 ]
 
 [entity.RoadmapDecision.access]
-read = "authenticated"
-create = "authenticated"
-update = "authenticated"
-delete = "authenticated"
+read = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+create = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+update = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+delete = "actor.roles contains 'editor' || actor.roles contains 'admin'"
 
 [entity.RoadmapDecision.relations]
 item = { type = "belongsTo", entity = "RoadmapItem", foreign_key = "itemId" }
@@ -101,10 +101,10 @@ fields = [
 ]
 
 [entity.RoadmapUpdate.access]
-read = { or = [{ published = true }, "authenticated"] }
-create = "authenticated"
-update = "authenticated"
-delete = "authenticated"
+read = { or = [{ published = true }, "actor.roles contains 'editor' || actor.roles contains 'admin'"] }
+create = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+update = "actor.roles contains 'editor' || actor.roles contains 'admin'"
+delete = "actor.roles contains 'editor' || actor.roles contains 'admin'"
 
 # Public, top-to-bottom roadmap. Only explicitly public items are queried.
 [page."/"]
@@ -537,3 +537,10 @@ keyEnv = "ROADMAP_AGENT_API_KEY"
 render_mode = "server"
 theme = "default"
 view_transitions = true
+
+# Registration creates viewers. Editing is explicitly provisioned by a trusted admin.
+[auth.permissions]
+anonymous = { allow = ["Theme.read", "RoadmapItem.read", "RoadmapUpdate.read"] }
+user = { allow = ["Theme.read", "RoadmapItem.read", "RoadmapUpdate.read"] }
+editor = { allow = ["Theme.*", "RoadmapItem.*", "RoadmapDecision.*", "RoadmapUpdate.*"] }
+admin = { allow = ["*.*"] }

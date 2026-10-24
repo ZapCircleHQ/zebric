@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint-array-syntax.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"User\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.public-mutation",
+            "severity": "warning",
+            "path": [
+              "entities",
+              1,
+              "access",
+              "create"
+            ],
+            "message": "Entity \"Post\" explicitly permits public create at the entity policy layer. Other authorization may still restrict it.",
+            "suggestion": "Confirm public writes are intentional, or require an authenticated actor or scoped policy."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/edit\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              5,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/delete\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              6,
+              "queries",
+              "user"
+            ],
+            "message": "Page \"/users/:id\" query \"user\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 6,
+          "info": 0
+        }
+      }
+    },
+    {
+      "path": "blueprint.json",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"User\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.public-mutation",
+            "severity": "warning",
+            "path": [
+              "entities",
+              1,
+              "access",
+              "create"
+            ],
+            "message": "Entity \"Post\" explicitly permits public create at the entity policy layer. Other authorization may still restrict it.",
+            "suggestion": "Confirm public writes are intentional, or require an authenticated actor or scoped policy."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/edit\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              5,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/delete\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              6,
+              "queries",
+              "user"
+            ],
+            "message": "Page \"/users/:id\" query \"user\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 6,
+          "info": 0
+        }
+      }
+    },
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"User\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.public-mutation",
+            "severity": "warning",
+            "path": [
+              "entities",
+              1,
+              "access",
+              "create"
+            ],
+            "message": "Entity \"Post\" explicitly permits public create at the entity policy layer. Other authorization may still restrict it.",
+            "suggestion": "Confirm public writes are intentional, or require an authenticated actor or scoped policy."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/edit\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              5,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/delete\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              6,
+              "queries",
+              "user"
+            ],
+            "message": "Page \"/users/:id\" query \"user\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 6,
+          "info": 0
+        }
+      }
+    }
+  ]
+}

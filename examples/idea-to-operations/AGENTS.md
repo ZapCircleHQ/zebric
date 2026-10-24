@@ -15,7 +15,7 @@ is also a Zebric framework stress test.
   anything that moves a stage. Agent write tools must be workflows that name the
   fields they set (G-08), never raw `create` actions.
 - Put every static check in a workflow `precondition` so it refuses
-  synchronously; assert dynamic prerequisites with the find + conflict pattern
+  synchronously; assert dynamic prerequisites with the find + refusing-command pattern
   used in `RequestLaunchReview` and `ApproveLaunch` (G-02, G-05).
 - Always send every payload key from forms (unresolved template references are
   stored literally, G-09), and guard required text with `{ "$gt" = "" }`.

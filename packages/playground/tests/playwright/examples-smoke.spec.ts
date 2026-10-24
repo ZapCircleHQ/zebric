@@ -29,6 +29,24 @@ test('home page loads without runtime errors', async ({ page }) => {
   expect(errors, 'Unexpected errors while rendering /').toEqual([])
 })
 
+test('Friendly Paws sidebar stays anchored inside the preview when the playground scrolls', async ({ page }) => {
+  await page.goto('/examples/friendly-paws')
+  const preview = page.locator('.zebric-simulator__preview')
+  const sidebar = preview.locator('.zb-sidebar')
+  await expect(sidebar).toBeVisible()
+
+  for (const scrollY of [0, 300]) {
+    await page.evaluate((y) => window.scrollTo(0, y), scrollY)
+    const previewBounds = await preview.boundingBox()
+    const sidebarBounds = await sidebar.boundingBox()
+    expect(previewBounds).not.toBeNull()
+    expect(sidebarBounds).not.toBeNull()
+    expect(sidebarBounds!.x).toBeCloseTo(previewBounds!.x, 0)
+    expect(sidebarBounds!.y).toBeCloseTo(previewBounds!.y, 0)
+    expect(sidebarBounds!.x + sidebarBounds!.width).toBeLessThanOrEqual(previewBounds!.x + previewBounds!.width)
+  }
+})
+
 test('every playground example renders its simulator without runtime errors', async ({ page }) => {
   await page.goto('/examples')
   const hrefs = await page

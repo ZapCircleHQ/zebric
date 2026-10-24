@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"Column\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              1,
+              "access"
+            ],
+            "message": "Entity \"Issue\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              2,
+              "access"
+            ],
+            "message": "Entity \"QAResult\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              0,
+              "queries",
+              "columns"
+            ],
+            "message": "Page \"/\" query \"columns\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              0,
+              "queries",
+              "issues"
+            ],
+            "message": "Page \"/\" query \"issues\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 5,
+          "info": 0
+        }
+      }
+    }
+  ]
+}

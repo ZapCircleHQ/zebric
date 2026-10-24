@@ -80,8 +80,12 @@ fields = [
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
+[entity.SalesTeam.relations]
+memberships = { type = "hasMany", entity = "TeamMembership", foreign_key = "teamId", where = { active = true } }
+assistants = { type = "hasMany", entity = "TeamMembership", foreign_key = "teamId", where = { active = true, teamRole = "assistant" } }
+
 [entity.SalesTeam.access]
-read = "authenticated"
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || (record.active == true && record.memberships.userId contains actor.effectiveId)"
 create = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
 update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
 delete = { "$currentUser.role" = "admin" }
@@ -89,11 +93,11 @@ delete = { "$currentUser.role" = "admin" }
 [entity.TeamMembership]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
-  { name = "userId", type = "Text", required = true, index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true, immutable = true },
+  { name = "userId", type = "Text", required = true, index = true, immutable = true },
   { name = "userEmail", type = "Email", required = true, index = true },
   { name = "userName", type = "Text", required = true },
-  { name = "teamRole", type = "Enum", values = ["account_executive", "assistant"], required = true },
+  { name = "teamRole", type = "Enum", values = ["account_executive", "assistant", "agent"], required = true },
   { name = "active", type = "Boolean", default = true }
 ]
 
@@ -101,7 +105,7 @@ fields = [
 team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
 
 [entity.TeamMembership.access]
-read = "authenticated"
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)"
 create = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
 update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }] }
 delete = { "$currentUser.role" = "admin" }
@@ -125,7 +129,7 @@ fields = [
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
-  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true, immutable = true },
   { name = "assistantEmail", type = "Email", index = true },
   { name = "source", type = "Enum", values = ["manual", "google_places", "import", "agent", "lead_conversion"], default = "manual" },
   { name = "externalPlaceId", type = "Text", index = true, nullable = true },
@@ -142,15 +146,16 @@ contacts = { type = "hasMany", entity = "Contact", foreign_key = "accountId" }
 opportunities = { type = "hasMany", entity = "Opportunity", foreign_key = "accountId" }
 
 [entity.CrmAccount.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Contact]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
-  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true },
+  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true, immutable = true },
   { name = "firstName", type = "Text", required = true },
   { name = "lastName", type = "Text", required = true },
   { name = "email", type = "Email", index = true },
@@ -167,12 +172,13 @@ fields = [
 ]
 
 [entity.Contact.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
 account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
 
 [entity.Contact.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.account.teamId == record.teamId)"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && record.account.teamId == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.account.teamId == record.teamId)"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Lead]
@@ -193,7 +199,7 @@ fields = [
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
-  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true, immutable = true },
   { name = "assistantEmail", type = "Email", index = true },
   { name = "convertedAccountId", type = "Text", nullable = true },
   { name = "convertedContactId", type = "Text", nullable = true },
@@ -206,20 +212,20 @@ fields = [
 team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
 
 [entity.Lead.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Opportunity]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
   { name = "name", type = "Text", required = true },
-  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true },
+  { name = "accountId", type = "Ref", ref = "CrmAccount.id", required = true, index = true, immutable = true },
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
-  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, index = true, immutable = true },
   { name = "assistantEmail", type = "Email", index = true },
   { name = "stage", type = "Enum", values = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"], default = "discovery", index = true, write = "command-only", commands = ["AdvanceOpportunityState", "WinOpportunity", "LoseOpportunity"] },
   { name = "amount", type = "Float", default = 0 },
@@ -239,20 +245,21 @@ account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId"
 team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
 
 [entity.Opportunity.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.account.teamId == record.teamId)"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && record.account.teamId == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.account.teamId == record.teamId)"
 delete = { "$currentUser.role" = "admin" }
 
 # Work, communication, and audit projections --------------------------------
 
 [entity.Activity]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
-  { name = "accountId", type = "Text", index = true, nullable = true },
-  { name = "contactId", type = "Text", index = true, nullable = true },
-  { name = "leadId", type = "Text", index = true, nullable = true },
-  { name = "opportunityId", type = "Text", index = true, nullable = true },
+  { name = "accountId", type = "Ref", index = true, nullable = true, ref = "CrmAccount.id", immutable = true },
+  { name = "contactId", type = "Ref", index = true, nullable = true, ref = "Contact.id", immutable = true },
+  { name = "leadId", type = "Ref", index = true, nullable = true, ref = "Lead.id", immutable = true },
+  { name = "opportunityId", type = "Ref", index = true, nullable = true, ref = "Opportunity.id", immutable = true },
   { name = "type", type = "Enum", values = ["email_sent", "email_received", "call", "meeting", "note", "status_change", "assignment", "workflow"], required = true, index = true },
   { name = "summary", type = "LongText", required = true },
   { name = "actorType", type = "Enum", values = ["user", "agent", "workflow", "system"], required = true },
@@ -267,19 +274,27 @@ fields = [
   { name = "occurredAt", type = "DateTime", default = "now", index = true }
 ]
 
+[entity.Activity.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+contact = { type = "belongsTo", entity = "Contact", foreign_key = "contactId" }
+lead = { type = "belongsTo", entity = "Lead", foreign_key = "leadId" }
+opportunity = { type = "belongsTo", entity = "Opportunity", foreign_key = "opportunityId" }
+
 [entity.Activity.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId))"
 update = false
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Conversation]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
   { name = "subject", type = "Text", required = true },
-  { name = "accountId", type = "Text", index = true, nullable = true },
-  { name = "contactId", type = "Text", index = true, nullable = true },
-  { name = "leadId", type = "Text", index = true, nullable = true },
+  { name = "accountId", type = "Ref", index = true, nullable = true, ref = "CrmAccount.id", immutable = true },
+  { name = "contactId", type = "Ref", index = true, nullable = true, ref = "Contact.id", immutable = true },
+  { name = "leadId", type = "Ref", index = true, nullable = true, ref = "Lead.id", immutable = true },
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
@@ -289,39 +304,47 @@ fields = [
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
+[entity.Conversation.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+contact = { type = "belongsTo", entity = "Contact", foreign_key = "contactId" }
+lead = { type = "belongsTo", entity = "Lead", foreign_key = "leadId" }
+
 [entity.Conversation.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Message]
 fields = [
+  { name = "createdById", type = "Ref", ref = "User.id", access = { write = false }, immutable = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
-  { name = "conversationId", type = "Ref", ref = "Conversation.id", required = true, index = true },
-  { name = "accountId", type = "Text", index = true, nullable = true },
-  { name = "contactId", type = "Text", index = true, nullable = true },
-  { name = "leadId", type = "Text", index = true, nullable = true },
-  { name = "direction", type = "Enum", values = ["inbound", "outbound"], required = true, index = true },
-  { name = "sender", type = "Email", required = true },
-  { name = "recipients", type = "Text", required = true },
-  { name = "subject", type = "Text", required = true },
-  { name = "body", type = "LongText", required = true },
+  { name = "conversationId", type = "Ref", ref = "Conversation.id", required = true, index = true, immutable = true },
+  { name = "accountId", type = "Ref", index = true, nullable = true, ref = "CrmAccount.id", immutable = true },
+  { name = "contactId", type = "Ref", index = true, nullable = true, ref = "Contact.id", immutable = true },
+  { name = "leadId", type = "Ref", index = true, nullable = true, ref = "Lead.id", immutable = true },
+  { name = "direction", type = "Enum", values = ["inbound", "outbound"], required = true, index = true, immutable = true },
+  { name = "sender", type = "Email", required = true, immutable = true },
+  { name = "recipients", type = "Text", required = true, immutable = true },
+  { name = "subject", type = "Text", required = true, immutable = true },
+  { name = "body", type = "LongText", required = true, immutable = true },
   { name = "sendGridId", type = "Text", index = true, nullable = true },
   { name = "status", type = "Enum", values = ["draft", "pending_review", "approved", "sending", "sent", "delivered", "failed", "received"], required = true, default = "draft", index = true, write = "command-only", commands = ["QueueOutreachReview", "ApproveOutreachMessage", "StartMessageSend", "FinishMessageSend", "ReceiveMessage"] },
-  { name = "approvalRequired", type = "Boolean", default = true },
-  { name = "reviewerId", type = "Text", nullable = true, index = true },
-  { name = "reviewerName", type = "Text" },
-  { name = "approvedById", type = "Text", nullable = true },
-  { name = "approvedAt", type = "DateTime", nullable = true },
+  { name = "approvalRequired", type = "Boolean", default = true, immutable = true },
+  { name = "reviewerId", type = "Text", nullable = true, index = true, immutable = true },
+  { name = "reviewerName", type = "Text", immutable = true },
+  { name = "approvedById", type = "Text", nullable = true, write = "command-only", commands = ["ApproveOutreachMessage"] },
+  { name = "approvedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["ApproveOutreachMessage"] },
   { name = "classification", type = "Enum", values = ["unclassified", "interested", "not_interested", "follow_up_later", "referral", "question", "unclear"], default = "unclassified", index = true, write = "command-only", commands = ["ApplyMessageClassification"] },
   { name = "classificationReason", type = "LongText" },
   { name = "classificationModel", type = "Text" },
-  { name = "ownerId", type = "Text", required = true, index = true },
+  { name = "ownerId", type = "Text", required = true, index = true, immutable = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
   { name = "assistantEmail", type = "Email", index = true },
-  { name = "initiatedById", type = "Text" },
+  { name = "initiatedById", type = "Text", immutable = true },
   { name = "createdByType", type = "Enum", values = ["user", "agent", "workflow", "system"], default = "user" },
   { name = "sentAt", type = "DateTime", nullable = true },
   { name = "receivedAt", type = "DateTime", nullable = true },
@@ -329,16 +352,21 @@ fields = [
 ]
 
 [entity.Message.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+contact = { type = "belongsTo", entity = "Contact", foreign_key = "contactId" }
+lead = { type = "belongsTo", entity = "Lead", foreign_key = "leadId" }
 conversation = { type = "belongsTo", entity = "Conversation", foreign_key = "conversationId" }
 
 [entity.Message.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { reviewerId = "$currentUser.id" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { reviewerId = "$currentUser.id" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.conversation.teamId == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && record.conversation.teamId == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.conversation.teamId == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId))"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Task]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
   { name = "title", type = "Text", required = true },
   { name = "description", type = "LongText" },
@@ -350,27 +378,36 @@ fields = [
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
   { name = "assistantEmail", type = "Email", index = true },
-  { name = "accountId", type = "Text", nullable = true },
-  { name = "leadId", type = "Text", nullable = true },
-  { name = "opportunityId", type = "Text", nullable = true },
-  { name = "messageId", type = "Text", nullable = true },
-  { name = "insightId", type = "Text", nullable = true },
+  { name = "accountId", type = "Ref", nullable = true, ref = "CrmAccount.id", immutable = true },
+  { name = "leadId", type = "Ref", nullable = true, ref = "Lead.id", immutable = true },
+  { name = "opportunityId", type = "Ref", nullable = true, ref = "Opportunity.id", immutable = true },
+  { name = "messageId", type = "Ref", nullable = true, ref = "Message.id", immutable = true },
+  { name = "insightId", type = "Ref", nullable = true, ref = "Insight.id", immutable = true },
   { name = "dueAt", type = "DateTime", nullable = true, index = true },
   { name = "completedAt", type = "DateTime", nullable = true },
   { name = "createdByType", type = "Enum", values = ["user", "agent", "workflow", "system"], default = "user" },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
+[entity.Task.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+lead = { type = "belongsTo", entity = "Lead", foreign_key = "leadId" }
+opportunity = { type = "belongsTo", entity = "Opportunity", foreign_key = "opportunityId" }
+message = { type = "belongsTo", entity = "Message", foreign_key = "messageId" }
+insight = { type = "belongsTo", entity = "Insight", foreign_key = "insightId" }
+
 [entity.Task.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { assigneeId = "$currentUser.id" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }, { assigneeId = "$currentUser.id" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId) && (record.messageId in [null, ''] || record.message.teamId == record.teamId) && (record.insightId in [null, ''] || record.insight.teamId == record.teamId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId) && (record.messageId in [null, ''] || record.message.teamId == record.teamId) && (record.insightId in [null, ''] || record.insight.teamId == record.teamId))"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId) && (record.messageId in [null, ''] || record.message.teamId == record.teamId) && (record.insightId in [null, ''] || record.insight.teamId == record.teamId))"
 delete = { "$currentUser.role" = "admin" }
 
 # Prospecting and insights ----------------------------------------------------
 
 [entity.ProspectSearch]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
   { name = "query", type = "Text", required = true },
   { name = "location", type = "Text", required = true },
@@ -391,16 +428,19 @@ fields = [
   { name = "completedAt", type = "DateTime", nullable = true }
 ]
 
+[entity.ProspectSearch.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+
 [entity.ProspectSearch.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId))"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.ProspectCandidate]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "searchId", type = "Ref", ref = "ProspectSearch.id", required = true, index = true },
+  { name = "searchId", type = "Ref", ref = "ProspectSearch.id", required = true, index = true, immutable = true },
   { name = "externalSource", type = "Enum", values = ["google_places", "manual", "import"], default = "google_places" },
   { name = "externalId", type = "Text", required = true, index = true },
   { name = "name", type = "Text", required = true, index = true },
@@ -421,28 +461,30 @@ fields = [
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
-  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true },
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", required = true, immutable = true },
   { name = "assistantEmail", type = "Email", index = true },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
 [entity.ProspectCandidate.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
 search = { type = "belongsTo", entity = "ProspectSearch", foreign_key = "searchId" }
 
 [entity.ProspectCandidate.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.search.teamId == record.teamId)"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && record.search.teamId == record.teamId)"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.search.teamId == record.teamId)"
 delete = { "$currentUser.role" = "admin" }
 
 [entity.Insight]
 fields = [
+  { name = "teamId", type = "Ref", ref = "SalesTeam.id", nullable = true, index = true, immutable = true },
   { name = "id", type = "ULID", primary_key = true },
   { name = "type", type = "Enum", values = ["stale_account", "opportunity_without_next_action", "closing_soon", "unanswered_prospect", "interested_prospect", "team_workload"], required = true, index = true },
-  { name = "accountId", type = "Text", nullable = true },
-  { name = "contactId", type = "Text", nullable = true },
-  { name = "leadId", type = "Text", nullable = true },
-  { name = "opportunityId", type = "Text", nullable = true },
+  { name = "accountId", type = "Ref", nullable = true, ref = "CrmAccount.id", immutable = true },
+  { name = "contactId", type = "Ref", nullable = true, ref = "Contact.id", immutable = true },
+  { name = "leadId", type = "Ref", nullable = true, ref = "Lead.id", immutable = true },
+  { name = "opportunityId", type = "Ref", nullable = true, ref = "Opportunity.id", immutable = true },
   { name = "ownerId", type = "Text", required = true, index = true },
   { name = "ownerName", type = "Text", required = true },
   { name = "agentAccessId", type = "Text", default = "crm-sales-agent", index = true },
@@ -458,17 +500,24 @@ fields = [
   { name = "generator", type = "Text", default = "deterministic" }
 ]
 
+[entity.Insight.relations]
+team = { type = "belongsTo", entity = "SalesTeam", foreign_key = "teamId" }
+account = { type = "belongsTo", entity = "CrmAccount", foreign_key = "accountId" }
+contact = { type = "belongsTo", entity = "Contact", foreign_key = "contactId" }
+lead = { type = "belongsTo", entity = "Lead", foreign_key = "leadId" }
+opportunity = { type = "belongsTo", entity = "Opportunity", foreign_key = "opportunityId" }
+
 [entity.Insight.access]
-read = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
-create = "authenticated"
-update = { or = [{ "$currentUser.role" = "manager" }, { "$currentUser.role" = "admin" }, { agentAccessId = "$currentUser.id" }, { ownerId = "$currentUser.id" }, { assistantEmail = "$currentUser.email" }] }
+read = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId))"
+create = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && record.team.id == record.teamId && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId))"
+update = "(actor.roles contains 'manager' || actor.roles contains 'admin') || ((record.team.active == true && record.team.memberships.userId contains actor.effectiveId) && (record.accountId in [null, ''] || record.account.teamId == record.teamId) && (record.contactId in [null, ''] || record.contact.teamId == record.teamId) && (record.leadId in [null, ''] || record.lead.teamId == record.teamId) && (record.opportunityId in [null, ''] || record.opportunity.teamId == record.teamId))"
 delete = { "$currentUser.role" = "admin" }
 
 # Domain commands -------------------------------------------------------------
 
 [command.QualifyLeadState]
 entity = "Lead"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+policy = "workflow.__zebric.currentWorkflow in ['QualifyLead'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status in ['new', 'researching']"
 mutations = { status = "qualified", qualificationNotes = "input.notes", nextAction = "input.nextAction" }
 [command.QualifyLeadState.input.notes]
@@ -478,7 +527,7 @@ type = "Text"
 
 [command.RejectLeadState]
 entity = "Lead"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+policy = "workflow.__zebric.currentWorkflow in ['RejectLead'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status in ['new', 'researching', 'qualified']"
 mutations = { status = "rejected", qualificationNotes = "input.reason" }
 [command.RejectLeadState.input.reason]
@@ -487,7 +536,7 @@ required = true
 
 [command.AdvanceOpportunityState]
 entity = "Opportunity"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+policy = "workflow.__zebric.currentWorkflow in ['AdvanceOpportunity'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status == 'open' && input.stage in ['discovery', 'qualified', 'proposal', 'negotiation']"
 mutations = { stage = "input.stage", probability = "input.probability", nextAction = "input.nextAction" }
 [command.AdvanceOpportunityState.input.stage]
@@ -502,13 +551,13 @@ type = "Text"
 
 [command.WinOpportunity]
 entity = "Opportunity"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+policy = "workflow.__zebric.currentWorkflow in ['MarkOpportunityWon'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status == 'open' && record.stage in ['proposal', 'negotiation']"
 mutations = { stage = "won", status = "won", probability = 100, closedAt = "now", nextAction = "Customer handoff" }
 
 [command.LoseOpportunity]
 entity = "Opportunity"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id"
+policy = "workflow.__zebric.currentWorkflow in ['MarkOpportunityLost'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status == 'open'"
 mutations = { stage = "lost", status = "lost", probability = 0, closedAt = "now", lossReason = "input.reason", nextAction = "" }
 [command.LoseOpportunity.input.reason]
@@ -517,40 +566,40 @@ required = true
 
 [command.QueueOutreachReview]
 entity = "Message"
-policy = "workflow.__zebric.currentWorkflow == 'PrepareOutreach'"
+policy = "workflow.__zebric.currentWorkflow in ['PrepareOutreach'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)) && record.team.assistants.userId contains record.reviewerId && record.reviewerId != record.createdById)"
 availableWhen = "record.direction == 'outbound' && record.status == 'draft'"
 mutations = { status = "pending_review" }
 
 [command.ApproveOutreachMessage]
 entity = "Message"
-policy = "actor.roles contains 'manager' || actor.roles contains 'admin' || record.reviewerId == actor.effectiveId"
+policy = "workflow.__zebric.currentWorkflow in ['ApproveOutreach'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)) && (actor.roles contains 'assistant' || actor.roles contains 'manager' || actor.roles contains 'admin') && (record.reviewerId == actor.effectiveId || actor.roles contains 'manager' || actor.roles contains 'admin') && record.createdById != actor.effectiveId && record.ownerId != actor.effectiveId && input.body == record.body)"
 availableWhen = "record.status == 'pending_review'"
-mutations = { status = "approved", body = "input.body", approvedById = "actor.effectiveId", approvedAt = "now" }
+mutations = { status = "approved", approvedById = "actor.effectiveId", approvedAt = "now" }
 [command.ApproveOutreachMessage.input.body]
 type = "LongText"
 required = true
 
 [command.StartMessageSend]
 entity = "Message"
-policy = "workflow.__zebric.currentWorkflow == 'SendApprovedEmail'"
+policy = "workflow.__zebric.currentWorkflow in ['SendApprovedEmail'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status == 'approved'"
 mutations = { status = "sending" }
 
 [command.FinishMessageSend]
 entity = "Message"
-policy = "workflow.__zebric.currentWorkflow == 'SendApprovedEmail'"
+policy = "workflow.__zebric.currentWorkflow in ['SendApprovedEmail'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status == 'sending'"
 mutations = { status = "sent", sentAt = "now" }
 
 [command.ReceiveMessage]
 entity = "Message"
-policy = "workflow.__zebric.currentWorkflow == 'ReceiveInboundEmail'"
+policy = "workflow.__zebric.currentWorkflow in ['ReceiveInboundEmail'] && (actor.type == 'system' && record.conversation.id == record.conversationId && record.teamId == record.conversation.teamId)"
 availableWhen = "record.direction == 'inbound' && record.status == 'draft'"
 mutations = { status = "received", receivedAt = "now" }
 
 [command.ApplyMessageClassification]
 entity = "Message"
-policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow in ['ApplyReplyClassification'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.direction == 'inbound' && record.classification == 'unclassified'"
 mutations = { classification = "input.classification", classificationReason = "input.reason", classificationModel = "input.model" }
 [command.ApplyMessageClassification.input.classification]
@@ -566,13 +615,13 @@ required = true
 
 [command.DismissInsightState]
 entity = "Insight"
-policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow in ['DismissInsight'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status in ['open', 'acknowledged']"
 mutations = { status = "dismissed", actedOnAt = "now" }
 
 [command.ActOnInsightState]
 entity = "Insight"
-policy = "record.ownerId == actor.effectiveId || record.assistantEmail == actor.metadata.email || record.agentAccessId == actor.id || actor.roles contains 'manager' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow in ['ActOnInsight'] && (((actor.roles contains 'manager' || actor.roles contains 'admin') || (record.team.active == true && record.team.memberships.userId contains actor.effectiveId)))"
 availableWhen = "record.status in ['open', 'acknowledged']"
 mutations = { status = "acted_on", actedOnAt = "now" }
 
@@ -880,7 +929,7 @@ input = { notes = "{{ variables.data.payload.notes }}", nextAction = "{{ variabl
 type = "query"
 entity = "Activity"
 action = "create"
-data = { leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead qualified: {{ variables.data.payload.notes }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "qualifyLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead qualified: {{ variables.data.payload.notes }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "qualifyLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.RejectLead]
 description = "Reject a non-converted lead with a reason."
@@ -898,7 +947,7 @@ input = { reason = "{{ variables.data.payload.reason }}" }
 type = "query"
 entity = "Activity"
 action = "create"
-data = { leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead rejected: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "rejectLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", leadId = "{{ variables.data.record.id }}", type = "status_change", summary = "Lead rejected: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "rejectLead", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.ReassignLead]
 description = "Reassign a lead and preserve an application-visible ownership trail."
@@ -910,13 +959,13 @@ type = "query"
 entity = "Lead"
 action = "update"
 where = { id = "{{ variables.data.record.id }}" }
-data = { ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", teamId = "{{ variables.data.payload.teamId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
+data = { ownerId = "{{ variables.data.payload.ownerId }}", ownerName = "{{ variables.data.payload.ownerName }}", teamId = "{{ variables.data.record.teamId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
 
 [[workflow.ReassignLead.steps]]
 type = "query"
 entity = "Activity"
 action = "create"
-data = { leadId = "{{ variables.data.record.id }}", type = "assignment", summary = "Lead reassigned to {{ variables.data.payload.ownerName }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "reassignLead", ownerId = "{{ variables.data.payload.ownerId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", leadId = "{{ variables.data.record.id }}", type = "assignment", summary = "Lead reassigned to {{ variables.data.payload.ownerName }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "reassignLead", ownerId = "{{ variables.data.payload.ownerId }}", assistantEmail = "{{ variables.data.payload.assistantEmail }}" }
 
 [workflow.PromoteProspect]
 description = "Promote a reviewed external candidate into a CRM Lead while retaining provenance."
@@ -929,7 +978,7 @@ type = "query"
 entity = "Lead"
 action = "create"
 assignTo = "lead"
-data = { companyName = "{{ variables.data.record.name }}", phone = "{{ variables.data.record.phone }}", website = "{{ variables.data.record.website }}", source = "google_places", sourceCandidateId = "{{ variables.data.record.id }}", qualificationNotes = "{{ variables.data.record.evaluation }}", nextAction = "Research decision maker and prepare outreach", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", teamId = "{{ variables.data.record.teamId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", companyName = "{{ variables.data.record.name }}", phone = "{{ variables.data.record.phone }}", website = "{{ variables.data.record.website }}", source = "google_places", sourceCandidateId = "{{ variables.data.record.id }}", qualificationNotes = "{{ variables.data.record.evaluation }}", nextAction = "Research decision maker and prepare outreach", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [[workflow.PromoteProspect.steps]]
 type = "query"
@@ -942,7 +991,7 @@ data = { disposition = "promoted", promotedLeadId = "{{ variables.lead.id }}" }
 type = "query"
 entity = "Activity"
 action = "create"
-data = { leadId = "{{ variables.lead.id }}", type = "workflow", summary = "Promoted Google Places candidate into a lead", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "promoteProspect", metadata = { candidateId = "{{ variables.data.record.id }}", externalId = "{{ variables.data.record.externalId }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", leadId = "{{ variables.lead.id }}", type = "workflow", summary = "Promoted Google Places candidate into a lead", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "promoteProspect", metadata = { candidateId = "{{ variables.data.record.id }}", externalId = "{{ variables.data.record.externalId }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.RejectProspect]
 trigger = { manual = true }
@@ -972,6 +1021,7 @@ type = "webhook"
 url = "https://places.googleapis.com/v1/places:searchText"
 method = "POST"
 assignTo = "placesResponse"
+
 [workflow.RunGooglePlacesSearch.steps.headers]
 Content-Type = "application/json"
 X-Goog-Api-Key = "{{ env.GOOGLE_PLACES_API_KEY }}"
@@ -1011,7 +1061,7 @@ input = { stage = "{{ variables.data.payload.stage }}", probability = "{{ variab
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity moved to {{ variables.data.payload.stage }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "advanceOpportunity", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity moved to {{ variables.data.payload.stage }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "advanceOpportunity", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.MarkOpportunityWon]
 trigger = { manual = true }
@@ -1027,7 +1077,7 @@ recordId = "{{ variables.data.record.id }}"
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity won", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityWon", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity won", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityWon", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.MarkOpportunityLost]
 trigger = { manual = true }
@@ -1044,7 +1094,7 @@ input = { reason = "{{ variables.data.payload.reason }}" }
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity lost: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityLost", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.record.accountId }}", opportunityId = "{{ variables.data.record.id }}", type = "status_change", summary = "Opportunity lost: {{ variables.data.payload.reason }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "markOpportunityLost", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.LogInteraction]
 trigger = { manual = true }
@@ -1054,7 +1104,7 @@ transactional = true
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", type = "{{ variables.data.payload.type }}", summary = "{{ variables.data.payload.summary }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "logInteraction", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", type = "{{ variables.data.payload.type }}", summary = "{{ variables.data.payload.summary }}", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "logInteraction", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.ScheduleFollowup]
 trigger = { manual = true }
@@ -1064,7 +1114,7 @@ transactional = true
 type = "query"
 entity = "Task"
 action = "create"
-data = { title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", type = "follow_up", status = "open", priority = "{{ variables.data.payload.priority }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "user" }
+data = { teamId = "{{ variables.data.record.teamId }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", type = "follow_up", status = "open", priority = "{{ variables.data.payload.priority }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", opportunityId = "{{ variables.data.payload.opportunityId }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "user" }
 
 [workflow.PrepareOutreach]
 description = "Create a draft and, when required, a human review task."
@@ -1076,7 +1126,7 @@ type = "query"
 entity = "Message"
 action = "create"
 assignTo = "message"
-data = { conversationId = "{{ variables.data.payload.conversationId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", direction = "outbound", sender = "{{ variables.data.payload.sender }}", recipients = "{{ variables.data.payload.recipients }}", subject = "{{ variables.data.payload.subject }}", body = "{{ variables.data.payload.body }}", approvalRequired = true, reviewerId = "{{ variables.data.payload.reviewerId }}", reviewerName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", initiatedById = "{{ variables.data.session.user.id }}", createdByType = "user" }
+data = { teamId = "{{ variables.data.record.teamId }}", conversationId = "{{ variables.data.payload.conversationId }}", accountId = "{{ variables.data.payload.accountId }}", contactId = "{{ variables.data.payload.contactId }}", leadId = "{{ variables.data.payload.leadId }}", direction = "outbound", sender = "{{ variables.data.payload.sender }}", recipients = "{{ variables.data.payload.recipients }}", subject = "{{ variables.data.payload.subject }}", body = "{{ variables.data.payload.body }}", approvalRequired = true, reviewerId = "{{ variables.data.payload.reviewerId }}", reviewerName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", initiatedById = "{{ variables.data.session.user.id }}", createdByType = "user" }
 
 [[workflow.PrepareOutreach.steps]]
 type = "command"
@@ -1087,7 +1137,7 @@ recordId = "{{ variables.message.id }}"
 type = "query"
 entity = "Task"
 action = "create"
-data = { title = "Review outreach to {{ variables.data.payload.recipients }}", description = "Review and approve the prepared prospect email before sending.", type = "review_outreach", status = "open", priority = "normal", assigneeId = "{{ variables.data.payload.reviewerId }}", assigneeName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", messageId = "{{ variables.message.id }}", dueAt = "{{ variables.data.payload.reviewDueAt }}", createdByType = "workflow" }
+data = { teamId = "{{ variables.data.record.teamId }}", title = "Review outreach to {{ variables.data.payload.recipients }}", description = "Review and approve the prepared prospect email before sending.", type = "review_outreach", status = "open", priority = "normal", assigneeId = "{{ variables.data.payload.reviewerId }}", assigneeName = "{{ variables.data.payload.reviewerName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.payload.accountId }}", leadId = "{{ variables.data.payload.leadId }}", messageId = "{{ variables.message.id }}", dueAt = "{{ variables.data.payload.reviewDueAt }}", createdByType = "workflow" }
 
 [workflow.ApproveOutreach]
 description = "Allow only the assigned reviewer, a manager, or an admin to approve outreach."
@@ -1119,7 +1169,7 @@ do = [
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Outbound email approved for sending", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "approveOutreach", metadata = { messageId = "{{ variables.data.record.id }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Outbound email approved for sending", actorType = "user", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}", command = "approveOutreach", metadata = { messageId = "{{ variables.data.record.id }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [workflow.SendApprovedEmail]
 description = "Send only an approved CRM message through SendGrid."
@@ -1136,6 +1186,7 @@ type = "webhook"
 url = "https://api.sendgrid.com/v3/mail/send"
 method = "POST"
 assignTo = "sendgrid"
+
 [workflow.SendApprovedEmail.steps.headers]
 Authorization = "Bearer {{ env.SENDGRID_API_KEY }}"
 Content-Type = "application/json"
@@ -1166,13 +1217,21 @@ data = { title = "Follow up on {{ variables.data.record.subject }}", description
 # multipart parse body; a normalization adapter is still required (documented gap).
 [workflow.ReceiveInboundEmail]
 trigger = { webhook = "/webhooks/sendgrid/inbound", webhookSecretEnv = "CRM_INBOUND_WEBHOOK_SECRET" }
+transactional = true
+
+[[workflow.ReceiveInboundEmail.steps]]
+type = "query"
+entity = "Conversation"
+action = "find"
+where = { id = "{{ variables.webhook.body.conversationId }}" }
+assignTo = "inboundConversation"
 
 [[workflow.ReceiveInboundEmail.steps]]
 type = "query"
 entity = "Message"
 action = "create"
 assignTo = "inbound"
-data = { conversationId = "{{ variables.webhook.body.conversationId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", direction = "inbound", sender = "{{ variables.webhook.body.from }}", recipients = "{{ variables.webhook.body.to }}", subject = "{{ variables.webhook.body.subject }}", body = "{{ variables.webhook.body.text }}", sendGridId = "{{ variables.webhook.body.messageId }}", approvalRequired = false, ownerId = "{{ variables.webhook.body.ownerId }}", ownerName = "{{ variables.webhook.body.ownerName }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}", createdByType = "system" }
+data = { teamId = "{{ variables.inboundConversation.0.teamId }}", conversationId = "{{ variables.webhook.body.conversationId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", direction = "inbound", sender = "{{ variables.webhook.body.from }}", recipients = "{{ variables.webhook.body.to }}", subject = "{{ variables.webhook.body.subject }}", body = "{{ variables.webhook.body.text }}", sendGridId = "{{ variables.webhook.body.messageId }}", approvalRequired = false, ownerId = "{{ variables.webhook.body.ownerId }}", ownerName = "{{ variables.webhook.body.ownerName }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}", createdByType = "system" }
 
 [[workflow.ReceiveInboundEmail.steps]]
 type = "command"
@@ -1183,10 +1242,11 @@ recordId = "{{ variables.inbound.id }}"
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", type = "email_received", summary = "Received: {{ variables.webhook.body.subject }}", actorType = "system", actorName = "SendGrid inbound", command = "receiveInboundEmail", metadata = { messageId = "{{ variables.inbound.id }}", externalId = "{{ variables.webhook.body.messageId }}" }, ownerId = "{{ variables.webhook.body.ownerId }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}" }
+data = { teamId = "{{ variables.inboundConversation.0.teamId }}", accountId = "{{ variables.webhook.body.accountId }}", contactId = "{{ variables.webhook.body.contactId }}", leadId = "{{ variables.webhook.body.leadId }}", type = "email_received", summary = "Received: {{ variables.webhook.body.subject }}", actorType = "system", actorName = "SendGrid inbound", command = "receiveInboundEmail", metadata = { messageId = "{{ variables.inbound.id }}", externalId = "{{ variables.webhook.body.messageId }}" }, ownerId = "{{ variables.webhook.body.ownerId }}", assistantEmail = "{{ variables.webhook.body.assistantEmail }}" }
 
 # OpenAI is used only to produce a structured classification. A separate semantic
 # command applies deterministic consequences so the model never mutates CRM state.
+
 [workflow.ClassifyInboundReply]
 trigger = { manual = true }
 precondition = { "variables.data.record.direction" = "inbound", "variables.data.record.classification" = "unclassified" }
@@ -1196,6 +1256,7 @@ type = "webhook"
 url = "https://api.openai.com/v1/chat/completions"
 method = "POST"
 assignTo = "classificationResponse"
+
 [workflow.ClassifyInboundReply.steps.headers]
 Authorization = "Bearer {{ env.OPENAI_API_KEY }}"
 Content-Type = "application/json"
@@ -1225,7 +1286,7 @@ input = { classification = "{{ variables.data.payload.classification }}", reason
 type = "query"
 entity = "Activity"
 action = "create"
-data = { accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Reply classified as {{ variables.data.payload.classification }}: {{ variables.data.payload.reason }}", actorType = "workflow", actorName = "Zebric CRM", command = "applyReplyClassification", metadata = { messageId = "{{ variables.data.record.id }}", model = "{{ variables.data.payload.model }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
+data = { teamId = "{{ variables.data.record.teamId }}", accountId = "{{ variables.data.record.accountId }}", contactId = "{{ variables.data.record.contactId }}", leadId = "{{ variables.data.record.leadId }}", type = "workflow", summary = "Reply classified as {{ variables.data.payload.classification }}: {{ variables.data.payload.reason }}", actorType = "workflow", actorName = "Zebric CRM", command = "applyReplyClassification", metadata = { messageId = "{{ variables.data.record.id }}", model = "{{ variables.data.payload.model }}" }, ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}" }
 
 [[workflow.ApplyReplyClassification.steps]]
 type = "condition"
@@ -1252,7 +1313,7 @@ transactional = true
 type = "query"
 entity = "Task"
 action = "create"
-data = { title = "{{ variables.data.payload.title }}", description = "{{ variables.data.record.evidence }}", type = "follow_up", status = "open", priority = "{{ variables.data.record.severity }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", opportunityId = "{{ variables.data.record.opportunityId }}", insightId = "{{ variables.data.record.id }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "workflow" }
+data = { teamId = "{{ variables.data.record.teamId }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.record.evidence }}", type = "follow_up", status = "open", priority = "{{ variables.data.record.severity }}", assigneeId = "{{ variables.data.payload.assigneeId }}", assigneeName = "{{ variables.data.payload.assigneeName }}", ownerId = "{{ variables.data.record.ownerId }}", assistantEmail = "{{ variables.data.record.assistantEmail }}", accountId = "{{ variables.data.record.accountId }}", leadId = "{{ variables.data.record.leadId }}", opportunityId = "{{ variables.data.record.opportunityId }}", insightId = "{{ variables.data.record.id }}", dueAt = "{{ variables.data.payload.dueAt }}", createdByType = "workflow" }
 
 [[workflow.ActOnInsight.steps]]
 type = "command"
@@ -1475,7 +1536,7 @@ entity = "ProspectSearch"
 action = "create"
 scopes = ["crm.prospects.search"]
 risk = "write"
-body = { query = "Text", location = "Text", latitude = "Float", longitude = "Float", radiusMeters = "Integer", requestedById = "Text", requestedByType = "Enum", ownerId = "Text", ownerName = "Text", assistantEmail = "Email" }
+body = { teamId = "Ref", query = "Text", location = "Text", latitude = "Float", longitude = "Float", radiusMeters = "Integer", requestedById = "Text", requestedByType = "Enum", ownerId = "Text", ownerName = "Text", assistantEmail = "Email" }
 
 [[skill.crm.actions]]
 name = "list_prospect_candidates"

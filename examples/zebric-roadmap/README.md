@@ -27,7 +27,7 @@ pnpm --filter zebric-roadmap validate
 pnpm --filter zebric-roadmap dev
 ```
 
-Open <http://localhost:3000> for the public roadmap. Visiting <http://localhost:3000/board> requires a session.
+Open <http://localhost:3000> for the public roadmap. Visiting <http://localhost:3000/board> requires a session; internal data and edits require `editor` or `admin`. Self-registration grants public-viewer access only.
 
 With the dev server running, create a local editor account:
 
@@ -35,7 +35,7 @@ With the dev server running, create a local editor account:
 pnpm --filter zebric-roadmap seed:user
 ```
 
-The defaults are `roadmap@zebric.local` and `RoadmapPass123!`. Override `DEV_EMAIL`, `DEV_PASSWORD`, and `DEV_NAME` as needed. The script also signs in and stores a local session in `.dev-user.cookies`.
+The defaults are `roadmap@zebric.local` and `RoadmapPass123!`. Override `DEV_EMAIL`, `DEV_PASSWORD`, `DEV_NAME`, and `DB_PATH` as needed. The trusted local seed assigns `editor` in that database, then starts a fresh session. The script also signs in and stores a local session in `.dev-user.cookies`.
 
 ## First-use sequence
 

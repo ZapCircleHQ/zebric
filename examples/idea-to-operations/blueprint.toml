@@ -80,11 +80,11 @@ fields = [
   { name = "title", type = "Text", required = true, index = true },
   { name = "summary", type = "LongText", required = true },
   { name = "stage", type = "Enum", values = ["idea", "discovery", "proposal", "approved", "planning", "building", "launch", "operating", "retired"], default = "idea", index = true, write = "command-only", commands = ["StartInitiativeDiscovery", "SubmitInitiativeProposal", "ApproveInitiativeState", "BeginInitiativePlanning", "StartInitiativeBuilding", "RequestInitiativeLaunch", "MoveInitiativeToOperations", "RetireInitiativeState"] },
-  { name = "health", type = "Enum", values = ["healthy", "attention", "at_risk", "blocked"], default = "healthy", index = true },
-  { name = "healthReason", type = "Text", nullable = true },
+  { name = "health", type = "Enum", values = ["healthy", "attention", "at_risk", "blocked"], default = "healthy", index = true, write = "command-only", commands = ["MilestoneBlockedHealthInitiativeState", "HighRiskHealthInitiativeState", "MoveInitiativeToOperations"] },
+  { name = "healthReason", type = "Text", nullable = true, write = "command-only", commands = ["MilestoneBlockedHealthInitiativeState", "HighRiskHealthInitiativeState", "MoveInitiativeToOperations"] },
   { name = "priority", type = "Enum", values = ["low", "medium", "high"], default = "medium" },
-  { name = "ownerId", type = "Text", nullable = true, index = true },
-  { name = "ownerName", type = "Text", nullable = true },
+  { name = "ownerId", type = "Text", nullable = true, index = true, write = "command-only", commands = ["StartInitiativeDiscovery"] },
+  { name = "ownerName", type = "Text", nullable = true, write = "command-only", commands = ["StartInitiativeDiscovery"] },
   { name = "sponsorId", type = "Text", nullable = true },
   { name = "sponsorName", type = "Text", nullable = true },
   { name = "createdById", type = "Text", nullable = true },
@@ -94,13 +94,13 @@ fields = [
   { name = "successCriteria", type = "LongText", nullable = true },
   { name = "recommendedApproach", type = "LongText", nullable = true },
   { name = "targetLaunchDate", type = "DateTime", nullable = true, index = true },
-  { name = "planApprovedAt", type = "DateTime", nullable = true },
-  { name = "launchApprovedAt", type = "DateTime", nullable = true },
-  { name = "operationalOwnerId", type = "Text", nullable = true, index = true },
-  { name = "operationalOwnerName", type = "Text", nullable = true },
-  { name = "runbookUrl", type = "Text", nullable = true },
-  { name = "launchedAt", type = "DateTime", nullable = true },
-  { name = "retiredAt", type = "DateTime", nullable = true },
+  { name = "planApprovedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["ApprovePlanInitiativeState"] },
+  { name = "launchApprovedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["ApproveLaunchInitiativeState"] },
+  { name = "operationalOwnerId", type = "Text", nullable = true, index = true, write = "command-only", commands = ["ApproveLaunchInitiativeState"] },
+  { name = "operationalOwnerName", type = "Text", nullable = true, write = "command-only", commands = ["ApproveLaunchInitiativeState"] },
+  { name = "runbookUrl", type = "Text", nullable = true, write = "command-only", commands = ["ApproveLaunchInitiativeState"] },
+  { name = "launchedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["MoveInitiativeToOperations"] },
+  { name = "retiredAt", type = "DateTime", nullable = true, write = "command-only", commands = ["RetireInitiativeState"] },
   { name = "retirementReason", type = "LongText", nullable = true },
   { name = "sourceObservationId", type = "Text", nullable = true, index = true },
   { name = "sourceCapabilityId", type = "Text", nullable = true, index = true },
@@ -214,20 +214,20 @@ delete = { "$currentUser.role" = "admin" }
 [entity.Decision]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
-  { name = "kind", type = "Enum", values = ["approve_initiative", "select_approach", "approve_launch", "scope_change", "retire"], required = true, index = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true, immutable = true },
+  { name = "kind", type = "Enum", values = ["approve_initiative", "select_approach", "approve_launch", "scope_change", "retire"], required = true, index = true, immutable = true },
   { name = "question", type = "Text", required = true },
   { name = "context", type = "LongText" },
-  { name = "status", type = "Enum", values = ["requested", "decided", "superseded"], default = "requested", index = true },
-  { name = "outcome", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", index = true },
-  { name = "decision", type = "LongText", nullable = true },
-  { name = "rationale", type = "LongText", nullable = true },
-  { name = "selectedAlternativeId", type = "Text", nullable = true },
+  { name = "status", type = "Enum", values = ["requested", "decided", "superseded"], default = "requested", index = true, write = "command-only", commands = ["RecordDecisionDecisionState", "ApproveInitiativeDecisionState", "ApproveLaunchDecisionState", "RetireCapabilityDecisionState"] },
+  { name = "outcome", type = "Enum", values = ["pending", "approved", "rejected"], default = "pending", index = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
+  { name = "decision", type = "LongText", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
+  { name = "rationale", type = "LongText", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
+  { name = "selectedAlternativeId", type = "Text", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
   { name = "requestedById", type = "Text", nullable = true },
   { name = "requestedByName", type = "Text", nullable = true },
-  { name = "decidedById", type = "Text", nullable = true },
-  { name = "decidedByName", type = "Text", nullable = true },
-  { name = "decidedAt", type = "DateTime", nullable = true },
+  { name = "decidedById", type = "Text", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
+  { name = "decidedByName", type = "Text", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
+  { name = "decidedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["RecordDecisionDecisionState"] },
   { name = "dueDate", type = "DateTime", nullable = true, index = true },
   { name = "requestedAt", type = "DateTime", default = "now" }
 ]
@@ -248,15 +248,15 @@ delete = { "$currentUser.role" = "admin" }
 [entity.Milestone]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true, immutable = true },
   { name = "title", type = "Text", required = true },
   { name = "description", type = "LongText", nullable = true },
   { name = "ownerId", type = "Text", nullable = true },
   { name = "ownerName", type = "Text", nullable = true },
-  { name = "status", type = "Enum", values = ["planned", "active", "blocked", "completed", "cancelled"], default = "planned", index = true },
+  { name = "status", type = "Enum", values = ["planned", "active", "blocked", "completed", "cancelled"], default = "planned", index = true, write = "command-only", commands = ["CompleteMilestoneMilestoneState"] },
   { name = "isDraft", type = "Boolean", default = false },
   { name = "targetDate", type = "DateTime", nullable = true, index = true },
-  { name = "completedAt", type = "DateTime", nullable = true }
+  { name = "completedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["CompleteMilestoneMilestoneState"] }
 ]
 
 [entity.Milestone.relations]
@@ -294,16 +294,20 @@ delete = { "$currentUser.role" = "admin" }
 [entity.Dependency]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "sourceType", type = "Enum", values = ["initiative", "milestone"], required = true },
-  { name = "sourceId", type = "Text", required = true, index = true },
+  { name = "sourceType", type = "Enum", values = ["initiative", "milestone"], required = true, immutable = true },
+  { name = "sourceId", type = "Text", required = true, index = true, immutable = true },
   { name = "sourceLabel", type = "Text", required = true },
-  { name = "targetType", type = "Enum", values = ["initiative", "milestone"], required = true },
-  { name = "targetId", type = "Text", required = true, index = true },
+  { name = "targetType", type = "Enum", values = ["initiative", "milestone"], required = true, immutable = true },
+  { name = "targetId", type = "Text", required = true, index = true, immutable = true },
   { name = "targetLabel", type = "Text", required = true },
-  { name = "type", type = "Enum", values = ["blocks_launch", "blocks_start", "informs"], default = "blocks_launch" },
-  { name = "status", type = "Enum", values = ["open", "satisfied", "waived"], default = "open", index = true },
+  { name = "type", type = "Enum", values = ["blocks_launch", "blocks_start", "informs"], default = "blocks_launch", immutable = true },
+  { name = "status", type = "Enum", values = ["open", "satisfied", "waived"], default = "open", index = true, write = "command-only", commands = ["SatisfyDependencyState", "ResolveInitiativeDependency"] },
   { name = "description", type = "LongText", nullable = true }
 ]
+
+[entity.Dependency.relations]
+targetInitiative = { type = "belongsTo", entity = "Initiative", foreign_key = "targetId" }
+targetMilestone = { type = "belongsTo", entity = "Milestone", foreign_key = "targetId" }
 
 [entity.Dependency.access]
 read = "authenticated"
@@ -341,14 +345,14 @@ delete = { "$currentUser.role" = "admin" }
 [entity.ReadinessCheck]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true, immutable = true },
   { name = "category", type = "Enum", values = ["engineering", "security", "support", "documentation", "analytics", "operations", "communications"], required = true },
   { name = "title", type = "Text", required = true },
-  { name = "status", type = "Enum", values = ["pending", "ready", "waived", "blocked"], default = "pending", index = true },
+  { name = "status", type = "Enum", values = ["pending", "ready", "waived", "blocked"], default = "pending", index = true, write = "command-only", commands = ["CompleteReadinessCheckReadinessCheckState"] },
   { name = "ownerId", type = "Text", nullable = true },
   { name = "ownerName", type = "Text", nullable = true },
-  { name = "notes", type = "LongText", nullable = true },
-  { name = "completedAt", type = "DateTime", nullable = true }
+  { name = "notes", type = "LongText", nullable = true, write = "command-only", commands = ["CompleteReadinessCheckReadinessCheckState"] },
+  { name = "completedAt", type = "DateTime", nullable = true, write = "command-only", commands = ["CompleteReadinessCheckReadinessCheckState"] }
 ]
 
 [entity.ReadinessCheck.relations]
@@ -363,12 +367,12 @@ delete = { "$currentUser.role" = "admin" }
 [entity.OperationalCapability]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true },
+  { name = "initiativeId", type = "Ref", ref = "Initiative.id", required = true, index = true, immutable = true },
   { name = "name", type = "Text", required = true },
   { name = "description", type = "LongText", nullable = true },
   { name = "ownerId", type = "Text", nullable = true, index = true },
   { name = "ownerName", type = "Text", nullable = true },
-  { name = "status", type = "Enum", values = ["healthy", "degraded", "attention", "retiring", "retired"], default = "healthy", index = true },
+  { name = "status", type = "Enum", values = ["healthy", "degraded", "attention", "retiring", "retired"], default = "healthy", index = true, write = "command-only", commands = ["RetireCapabilityOperationalCapabilityState"] },
   { name = "runbookUrl", type = "Text", nullable = true },
   { name = "launchedAt", type = "DateTime", nullable = true },
   { name = "reviewCadence", type = "Enum", values = ["weekly", "monthly", "quarterly"], default = "monthly" },
@@ -410,14 +414,14 @@ delete = { "$currentUser.role" = "admin" }
 [entity.Observation]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
-  { name = "capabilityId", type = "Ref", ref = "OperationalCapability.id", required = true, index = true },
+  { name = "capabilityId", type = "Ref", ref = "OperationalCapability.id", required = true, index = true, immutable = true },
   { name = "title", type = "Text", required = true },
   { name = "description", type = "LongText", nullable = true },
   { name = "severity", type = "Enum", values = ["low", "medium", "high"], default = "medium", index = true },
-  { name = "status", type = "Enum", values = ["open", "incident", "improvement", "converted", "dismissed"], default = "open", index = true },
+  { name = "status", type = "Enum", values = ["open", "incident", "improvement", "converted", "dismissed"], default = "open", index = true, write = "command-only", commands = ["CreateInitiativeFromObservationObservationState"] },
   { name = "createdById", type = "Text", nullable = true },
   { name = "createdByName", type = "Text", nullable = true },
-  { name = "resultingInitiativeId", type = "Text", nullable = true },
+  { name = "resultingInitiativeId", type = "Text", nullable = true, write = "command-only", commands = ["CreateInitiativeFromObservationObservationState"] },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
 
@@ -461,7 +465,7 @@ delete = { "$currentUser.role" = "admin" }
 [command.StartInitiativeDiscovery]
 entity = "Initiative"
 label = "Start discovery"
-policy = "actor.roles contains 'initiative_owner' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow == 'StartDiscovery' && (actor.roles contains 'initiative_owner' || actor.roles contains 'admin')"
 availableWhen = "record.stage == 'idea'"
 mutations = { stage = "discovery", ownerId = "input.ownerId", ownerName = "input.ownerName", problemStatement = "input.problemStatement" }
 [command.StartInitiativeDiscovery.input.ownerId]
@@ -477,47 +481,47 @@ required = true
 [command.SubmitInitiativeProposal]
 entity = "Initiative"
 label = "Submit proposal"
-policy = "actor.roles contains 'admin' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+policy = "workflow.__zebric.currentWorkflow == 'SubmitProposal' && (actor.roles contains 'admin' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId))"
 availableWhen = "record.stage == 'discovery' && record.ownerId != null && record.sponsorId != null && record.expectedOutcome != null && record.successCriteria != null && record.recommendedApproach != null"
 mutations = { stage = "proposal" }
 
 [command.ApproveInitiativeState]
 entity = "Initiative"
 label = "Approve initiative"
-policy = "actor.roles contains 'decision_maker' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveInitiative' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
 availableWhen = "record.stage == 'proposal'"
 mutations = { stage = "approved" }
 
 [command.BeginInitiativePlanning]
 entity = "Initiative"
-policy = "actor.type == 'system'"
+policy = "workflow.__zebric.currentWorkflow == 'BeginPlanning' && record.id == workflow.after.id"
 availableWhen = "record.stage == 'approved'"
 mutations = { stage = "planning" }
 
 [command.StartInitiativeBuilding]
 entity = "Initiative"
 label = "Start building"
-policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+policy = "workflow.__zebric.currentWorkflow == 'StartBuilding' && (actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId))"
 availableWhen = "record.stage == 'planning' && record.ownerId != null && record.targetLaunchDate != null && record.planApprovedAt != null"
 mutations = { stage = "building" }
 
 [command.RequestInitiativeLaunch]
 entity = "Initiative"
 label = "Request launch review"
-policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+policy = "workflow.__zebric.currentWorkflow == 'RequestLaunchReview' && (actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId))"
 availableWhen = "record.stage == 'building'"
 mutations = { stage = "launch" }
 
 [command.MoveInitiativeToOperations]
 entity = "Initiative"
 label = "Move to operations"
-policy = "actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId)"
+policy = "workflow.__zebric.currentWorkflow == 'TransitionToOperations' && (actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && record.ownerId == actor.effectiveId))"
 availableWhen = "record.stage == 'launch' && record.launchApprovedAt != null && record.operationalOwnerId != null && record.runbookUrl != null"
 mutations = { stage = "operating", launchedAt = "now", health = "healthy", healthReason = "" }
 
 [command.RetireInitiativeState]
 entity = "Initiative"
-policy = "actor.roles contains 'decision_maker' || actor.roles contains 'admin'"
+policy = "workflow.__zebric.currentWorkflow == 'RetireInitiative' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
 availableWhen = "record.stage == 'operating'"
 mutations = { stage = "retired", retiredAt = "now", retirementReason = "input.reason" }
 [command.RetireInitiativeState.input.reason]
@@ -721,6 +725,10 @@ label = "Transition to operations"
 workflow = "TransitionToOperations"
 style = "primary"
 visibleWhen = { stage = "launch" }
+
+[[page."/initiatives/:id".actionBar.secondaryActions]]
+label = "Resolve dependency"
+workflow = "ResolveDependency"
 
 [page."/attention"]
 title = "Attention"
@@ -1019,7 +1027,7 @@ transactional = true
 type = "query"
 entity = "Milestone"
 action = "create"
-data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", status = "planned", isDraft = true }
+data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.title }}", description = "{{ variables.data.payload.description }}", isDraft = true }
 
 [[workflow.DraftMilestone.steps]]
 type = "query"
@@ -1051,11 +1059,11 @@ precondition = { "variables.data.record.status" = "requested", "session.user.rol
 transactional = true
 
 [[workflow.RecordDecision.steps]]
-type = "query"
-entity = "Decision"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "requested" }
-data = { status = "decided", outcome = "{{ variables.data.payload.outcome }}", decision = "{{ variables.data.payload.decision }}", rationale = "{{ variables.data.payload.rationale }}", selectedAlternativeId = "{{ variables.data.payload.selectedAlternativeId }}", decidedById = "{{ variables.data.session.user.id }}", decidedByName = "{{ variables.data.session.user.name }}", decidedAt = "now" }
+type = "command"
+command = "RecordDecisionDecisionState"
+recordId = "{{ variables.data.record.id }}"
+input = { outcome = "{{ variables.data.payload.outcome }}", decision = "{{ variables.data.payload.decision }}", rationale = "{{ variables.data.payload.rationale }}", selectedAlternativeId = "{{ variables.data.payload.selectedAlternativeId }}" }
+
 
 [[workflow.RecordDecision.steps]]
 type = "query"
@@ -1074,11 +1082,10 @@ precondition = { "variables.data.record.stage" = "proposal", "session.user.role"
 transactional = true
 
 [[workflow.ApproveInitiative.steps]]
-type = "query"
-entity = "Decision"
-action = "update"
-where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.id }}", kind = "approve_initiative", status = "decided", outcome = "approved" }
-data = { status = "decided" }
+type = "command"
+command = "ApproveInitiativeDecisionState"
+recordId = "{{ variables.data.payload.decisionId }}"
+
 
 [[workflow.ApproveInitiative.steps]]
 type = "command"
@@ -1135,7 +1142,7 @@ data = { targetLaunchDate = "{{ variables.data.payload.targetLaunchDate }}" }
 type = "query"
 entity = "Milestone"
 action = "create"
-data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.milestoneTitle }}", targetDate = "{{ variables.data.payload.milestoneDate }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}", status = "planned" }
+data = { initiativeId = "{{ variables.data.record.id }}", title = "{{ variables.data.payload.milestoneTitle }}", targetDate = "{{ variables.data.payload.milestoneDate }}", ownerId = "{{ variables.data.record.ownerId }}", ownerName = "{{ variables.data.record.ownerName }}" }
 
 [[workflow.CreatePlan.steps]]
 type = "query"
@@ -1150,11 +1157,10 @@ precondition = { "variables.data.record.stage" = "planning", "session.user.role"
 transactional = true
 
 [[workflow.ApprovePlan.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "planning" }
-data = { planApprovedAt = "now" }
+type = "command"
+command = "ApprovePlanInitiativeState"
+recordId = "{{ variables.data.record.id }}"
+
 
 [[workflow.ApprovePlan.steps]]
 type = "query"
@@ -1186,11 +1192,10 @@ precondition = { "variables.data.record.status" = ["planned", "active", "blocked
 transactional = true
 
 [[workflow.CompleteMilestone.steps]]
-type = "query"
-entity = "Milestone"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
-data = { status = "completed", completedAt = "now" }
+type = "command"
+command = "CompleteMilestoneMilestoneState"
+recordId = "{{ variables.data.record.id }}"
+
 
 [[workflow.CompleteMilestone.steps]]
 type = "query"
@@ -1206,11 +1211,11 @@ description = "Milestone blocked -> initiative health blocked."
 trigger = { entity = "Milestone", event = "update", condition = { "after.status" = "blocked" } }
 
 [[workflow.MilestoneBlockedHealth.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.after.initiativeId }}" }
-data = { health = "blocked", healthReason = "Milestone blocked: {{ variables.after.title }}" }
+type = "command"
+command = "MilestoneBlockedHealthInitiativeState"
+recordId = "{{ variables.after.initiativeId }}"
+input = { healthReason = "Milestone blocked: {{ variables.after.title }}" }
+
 
 [[workflow.MilestoneBlockedHealth.steps]]
 type = "query"
@@ -1223,11 +1228,11 @@ description = "High-impact, high-likelihood risk opened -> initiative at risk."
 trigger = { entity = "Risk", event = "create", condition = { "after.impact" = "high", "after.likelihood" = "high" } }
 
 [[workflow.HighRiskHealth.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.after.initiativeId }}" }
-data = { health = "at_risk", healthReason = "High risk opened: {{ variables.after.title }}" }
+type = "command"
+command = "HighRiskHealthInitiativeState"
+recordId = "{{ variables.after.initiativeId }}"
+input = { healthReason = "High risk opened: {{ variables.after.title }}" }
+
 
 [[workflow.HighRiskHealth.steps]]
 type = "query"
@@ -1254,7 +1259,7 @@ assignTo = "openMilestones"
 type = "condition"
 if = { "variables.openMilestones.0.id" = { "$gt" = "" } }
 then = [
-  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__milestones_incomplete__" }, data = { health = "attention" } }
+  { type = "command", command = "RefuseIncompleteMilestones", recordId = "{{ variables.data.record.id }}" }
 ]
 
 [[workflow.RequestLaunchReview.steps]]
@@ -1305,11 +1310,11 @@ precondition = { "variables.data.record.status" = ["pending", "blocked"], "varia
 transactional = true
 
 [[workflow.CompleteReadinessCheck.steps]]
-type = "query"
-entity = "ReadinessCheck"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", status = "{{ variables.data.record.status }}" }
-data = { status = "{{ variables.data.payload.status }}", notes = "{{ variables.data.payload.notes }}", completedAt = "now" }
+type = "command"
+command = "CompleteReadinessCheckReadinessCheckState"
+recordId = "{{ variables.data.record.id }}"
+input = { status = "{{ variables.data.payload.status }}", notes = "{{ variables.data.payload.notes }}" }
+
 
 [[workflow.CompleteReadinessCheck.steps]]
 type = "query"
@@ -1334,7 +1339,7 @@ assignTo = "unresolvedChecks"
 type = "condition"
 if = { "variables.unresolvedChecks.0.id" = { "$gt" = "" } }
 then = [
-  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__readiness_incomplete__" }, data = { health = "blocked" } }
+  { type = "command", command = "RefuseIncompleteLaunchPrerequisites", recordId = "{{ variables.data.record.id }}" }
 ]
 
 # Dependencies gate the transition: any open blocks_launch edge out of this
@@ -1350,22 +1355,21 @@ assignTo = "openDependencies"
 type = "condition"
 if = { "variables.openDependencies.0.id" = { "$gt" = "" } }
 then = [
-  { type = "query", entity = "Initiative", action = "update", where = { id = "{{ variables.data.record.id }}", stage = "__dependency_open__" }, data = { health = "blocked" } }
+  { type = "command", command = "RefuseIncompleteLaunchPrerequisites", recordId = "{{ variables.data.record.id }}" }
 ]
 
 [[workflow.ApproveLaunch.steps]]
-type = "query"
-entity = "Decision"
-action = "update"
-where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.id }}", kind = "approve_launch", status = "decided", outcome = "approved" }
-data = { status = "decided" }
+type = "command"
+command = "ApproveLaunchDecisionState"
+recordId = "{{ variables.data.payload.decisionId }}"
+
 
 [[workflow.ApproveLaunch.steps]]
-type = "query"
-entity = "Initiative"
-action = "update"
-where = { id = "{{ variables.data.record.id }}", stage = "launch" }
-data = { launchApprovedAt = "now", operationalOwnerId = "{{ variables.data.payload.operationalOwnerId }}", operationalOwnerName = "{{ variables.data.payload.operationalOwnerName }}", runbookUrl = "{{ variables.data.payload.runbookUrl }}" }
+type = "command"
+command = "ApproveLaunchInitiativeState"
+recordId = "{{ variables.data.record.id }}"
+input = { operationalOwnerId = "{{ variables.data.payload.operationalOwnerId }}", operationalOwnerName = "{{ variables.data.payload.operationalOwnerName }}", runbookUrl = "{{ variables.data.payload.runbookUrl }}" }
+
 
 [[workflow.ApproveLaunch.steps]]
 type = "query"
@@ -1413,7 +1417,7 @@ assignTo = "waiting"
 type = "loop"
 items = "{{ variables.waiting }}"
 do = [
-  { type = "query", entity = "Dependency", action = "update", where = { id = "{{ variables.item.id }}", status = "open" }, data = { status = "satisfied" } },
+  { type = "command", command = "SatisfyDependencyState", recordId = "{{ variables.item.id }}" },
   { type = "query", entity = "Activity", action = "create", data = { initiativeId = "{{ variables.item.sourceId }}", type = "note", summary = "Dependency satisfied: {{ variables.item.targetLabel }} is now operating (automation)", command = "satisfyDependencies", actorName = "System" } }
 ]
 
@@ -1450,11 +1454,11 @@ assignTo = "idea"
 data = { title = "{{ variables.data.payload.title }}", summary = "{{ variables.data.record.description }}", sourceObservationId = "{{ variables.data.record.id }}", sourceCapabilityId = "{{ variables.data.record.capabilityId }}", createdById = "{{ variables.data.session.user.id }}", createdByName = "{{ variables.data.session.user.name }}" }
 
 [[workflow.CreateInitiativeFromObservation.steps]]
-type = "query"
-entity = "Observation"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "converted", resultingInitiativeId = "{{ variables.idea.id }}" }
+type = "command"
+command = "CreateInitiativeFromObservationObservationState"
+recordId = "{{ variables.data.record.id }}"
+input = { resultingInitiativeId = "{{ variables.idea.id }}" }
+
 
 [[workflow.CreateInitiativeFromObservation.steps]]
 type = "query"
@@ -1469,18 +1473,16 @@ precondition = { "variables.data.record.status" = ["healthy", "degraded", "atten
 transactional = true
 
 [[workflow.RetireCapability.steps]]
-type = "query"
-entity = "Decision"
-action = "update"
-where = { id = "{{ variables.data.payload.decisionId }}", initiativeId = "{{ variables.data.record.initiativeId }}", kind = "retire", status = "decided", outcome = "approved" }
-data = { status = "decided" }
+type = "command"
+command = "RetireCapabilityDecisionState"
+recordId = "{{ variables.data.payload.decisionId }}"
+
 
 [[workflow.RetireCapability.steps]]
-type = "query"
-entity = "OperationalCapability"
-action = "update"
-where = { id = "{{ variables.data.record.id }}" }
-data = { status = "retired" }
+type = "command"
+command = "RetireCapabilityOperationalCapabilityState"
+recordId = "{{ variables.data.record.id }}"
+
 
 [[workflow.RetireCapability.steps]]
 type = "command"
@@ -1899,3 +1901,172 @@ render_mode = "server"
 theme = "default"
 progressive_enhancement = "alpine"
 view_transitions = true
+
+# Additional governed lifecycle commands.
+
+[command.RecordDecisionDecisionState]
+entity = "Decision"
+policy = "workflow.__zebric.currentWorkflow == 'RecordDecision' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin' && input.outcome in ['approved', 'rejected'])"
+availableWhen = "record.status == 'requested'"
+mutations = { status = "decided", outcome = "input.outcome", decision = "input.decision", rationale = "input.rationale", selectedAlternativeId = "input.selectedAlternativeId", decidedById = "actor.effectiveId", decidedByName = "actor.metadata.name", decidedAt = "now" }
+
+[command.RecordDecisionDecisionState.input.outcome]
+type = "Enum"
+required = true
+values = ["pending", "approved", "rejected"]
+
+[command.RecordDecisionDecisionState.input.decision]
+type = "LongText"
+required = true
+
+[command.RecordDecisionDecisionState.input.rationale]
+type = "LongText"
+required = true
+
+[command.RecordDecisionDecisionState.input.selectedAlternativeId]
+type = "Text"
+required = true
+
+[command.ApproveInitiativeDecisionState]
+entity = "Decision"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveInitiative' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.initiativeId == workflow.data.record.id && record.kind == 'approve_initiative' && record.status == 'decided' && record.outcome == 'approved'"
+mutations = { status = "decided" }
+
+[command.ApprovePlanInitiativeState]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'ApprovePlan' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.stage == 'planning'"
+mutations = { planApprovedAt = "now" }
+
+[command.CompleteMilestoneMilestoneState]
+entity = "Milestone"
+policy = "workflow.__zebric.currentWorkflow == 'CompleteMilestone' && (actor.roles contains 'initiative_owner' || actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.status == workflow.data.record.status"
+mutations = { status = "completed", completedAt = "now" }
+
+[command.MilestoneBlockedHealthInitiativeState]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'MilestoneBlockedHealth' && record.id == workflow.after.initiativeId"
+availableWhen = "true"
+mutations = { health = "blocked", healthReason = "input.healthReason" }
+
+[command.MilestoneBlockedHealthInitiativeState.input.healthReason]
+type = "Text"
+required = true
+
+[command.HighRiskHealthInitiativeState]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'HighRiskHealth' && record.id == workflow.after.initiativeId"
+availableWhen = "true"
+mutations = { health = "at_risk", healthReason = "input.healthReason" }
+
+[command.HighRiskHealthInitiativeState.input.healthReason]
+type = "Text"
+required = true
+
+[command.CompleteReadinessCheckReadinessCheckState]
+entity = "ReadinessCheck"
+policy = "workflow.__zebric.currentWorkflow == 'CompleteReadinessCheck' && ((actor.roles contains 'initiative_owner' || actor.roles contains 'operational_owner' || actor.roles contains 'decision_maker' || actor.roles contains 'admin' || record.ownerId == actor.effectiveId) && input.status in ['ready', 'waived'] && (input.status == 'ready' || actor.roles contains 'decision_maker' || actor.roles contains 'admin'))"
+availableWhen = "record.status == workflow.data.record.status"
+mutations = { status = "input.status", notes = "input.notes", completedAt = "now" }
+
+[command.CompleteReadinessCheckReadinessCheckState.input.status]
+type = "Enum"
+required = true
+values = ["pending", "ready", "waived", "blocked"]
+
+[command.CompleteReadinessCheckReadinessCheckState.input.notes]
+type = "LongText"
+required = true
+
+[command.ApproveLaunchInitiativeState]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveLaunch' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.stage == 'launch'"
+mutations = { launchApprovedAt = "now", operationalOwnerId = "input.operationalOwnerId", operationalOwnerName = "input.operationalOwnerName", runbookUrl = "input.runbookUrl" }
+
+[command.ApproveLaunchInitiativeState.input.operationalOwnerId]
+type = "Text"
+required = true
+
+[command.ApproveLaunchInitiativeState.input.operationalOwnerName]
+type = "Text"
+required = true
+
+[command.ApproveLaunchInitiativeState.input.runbookUrl]
+type = "Text"
+required = true
+
+[command.ApproveLaunchDecisionState]
+entity = "Decision"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveLaunch' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.initiativeId == workflow.data.record.id && record.kind == 'approve_launch' && record.status == 'decided' && record.outcome == 'approved'"
+mutations = { status = "decided" }
+
+[command.CreateInitiativeFromObservationObservationState]
+entity = "Observation"
+policy = "workflow.__zebric.currentWorkflow == 'CreateInitiativeFromObservation' && (actor.roles contains 'user' || actor.roles contains 'initiative_owner' || actor.roles contains 'operational_owner' || actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "true"
+mutations = { status = "converted", resultingInitiativeId = "input.resultingInitiativeId" }
+
+[command.CreateInitiativeFromObservationObservationState.input.resultingInitiativeId]
+type = "Text"
+required = true
+
+[command.RetireCapabilityOperationalCapabilityState]
+entity = "OperationalCapability"
+policy = "workflow.__zebric.currentWorkflow == 'RetireCapability' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "true"
+mutations = { status = "retired" }
+
+[command.RetireCapabilityDecisionState]
+entity = "Decision"
+policy = "workflow.__zebric.currentWorkflow == 'RetireCapability' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')"
+availableWhen = "record.initiativeId == workflow.data.record.initiativeId && record.kind == 'retire' && record.status == 'decided' && record.outcome == 'approved'"
+mutations = { status = "decided" }
+
+[command.RefuseIncompleteMilestones]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'RequestLaunchReview' && (true)"
+availableWhen = "false"
+mutations = {  }
+
+[command.RefuseIncompleteLaunchPrerequisites]
+entity = "Initiative"
+policy = "workflow.__zebric.currentWorkflow == 'ApproveLaunch' && (true)"
+availableWhen = "false"
+mutations = {  }
+
+[command.SatisfyDependencyState]
+entity = "Dependency"
+policy = "workflow.__zebric.currentWorkflow == 'SatisfyDependencies' && record.targetId == workflow.after.id"
+availableWhen = "record.status == 'open' && record.targetId == workflow.after.id"
+mutations = { status = "satisfied" }
+
+[command.ResolveInitiativeDependency]
+entity = "Dependency"
+policy = "workflow.__zebric.currentWorkflow == 'ResolveDependency' && record.sourceType == 'initiative' && record.sourceId == workflow.data.record.id && (actor.roles contains 'admin' || actor.roles contains 'decision_maker' || (actor.roles contains 'initiative_owner' && workflow.data.record.ownerId == actor.effectiveId))"
+availableWhen = "record.status == 'open' && ((input.status == 'satisfied' && ((record.targetType == 'initiative' && record.targetInitiative.stage == 'operating') || (record.targetType == 'milestone' && record.targetMilestone.status == 'completed'))) || (input.status == 'waived' && (actor.roles contains 'decision_maker' || actor.roles contains 'admin')))"
+mutations = { status = "input.status" }
+[command.ResolveInitiativeDependency.input.status]
+type = "Enum"
+values = ["satisfied", "waived"]
+required = true
+
+[workflow.ResolveDependency]
+trigger = { manual = true }
+precondition = { "session.user.role" = ["initiative_owner", "decision_maker", "admin"], "variables.data.payload.dependencyId" = { "$gt" = "" }, "variables.data.payload.status" = ["satisfied", "waived"] }
+transactional = true
+
+[[workflow.ResolveDependency.steps]]
+type = "command"
+command = "ResolveInitiativeDependency"
+recordId = "{{ variables.data.payload.dependencyId }}"
+input = { status = "{{ variables.data.payload.status }}" }
+
+[[workflow.ResolveDependency.steps]]
+type = "query"
+entity = "Activity"
+action = "create"
+data = { initiativeId = "{{ variables.data.record.id }}", type = "note", summary = "Dependency {{ variables.data.payload.dependencyId }} {{ variables.data.payload.status }}", command = "resolveDependency", actorId = "{{ variables.data.session.user.id }}", actorName = "{{ variables.data.session.user.name }}" }

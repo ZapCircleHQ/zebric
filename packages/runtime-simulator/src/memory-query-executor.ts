@@ -4,6 +4,7 @@ import {
   assertEntityAccess,
   filterReadableFields,
   filterWritableFields,
+  assertImmutableFields,
   matchesQueryPredicate,
   normalizeQueryWhere,
   type Blueprint,
@@ -147,6 +148,7 @@ export class BrowserMemoryQueryExecutor implements QueryExecutorPort {
 
     const existing = rows[index]!
     const writable = filterWritableFields(entity, data, context.session)
+    assertImmutableFields(entity, existing, writable)
     await assertEntityAccess({
       session: context.session,
       action: 'update',

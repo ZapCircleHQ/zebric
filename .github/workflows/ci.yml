@@ -60,6 +60,12 @@ jobs:
       - name: Build packages (typechecks via tsc)
         run: pnpm build
 
+      - name: Verify example audit snapshots
+        run: pnpm audit:examples
+
+      - name: Test example audit checkpoint
+        run: node --test scripts/audit-examples.test.mjs
+
       - name: Lint check
         run: pnpm lint
 

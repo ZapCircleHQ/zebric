@@ -12,7 +12,7 @@ import type { QueryExecutorPort, RequestContext, SqlStoragePort, CommandEffectsP
 import { D1Adapter } from '../database/d1-adapter.js'
 import { D1Transactions, type TransactionReceipt } from '../database/d1-transactions.js'
 import type { WorkflowEventIntent } from '../workflows/d1-workflow-outbox.js'
-import { AccessControl, PermissionManager, PolicyEvaluator, actorFromSession, assertEntityAccess, assertProtectedMutation, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
+import { AccessControl, PermissionManager, PolicyEvaluator, actorFromSession, assertEntityAccess, assertProtectedMutation, assertImmutableFields, filterReadableFields, filterRecordsByReadPolicy, filterWritableFields, isSystemSession, normalizeQueryWhere, requiresRecordEvaluation } from '@zebric/runtime-core'
 
 export class WorkersQueryExecutor implements QueryExecutorPort {
   private get recordsLiveChanges(): boolean { return Boolean(this.blueprint.pages?.some(page => page.live)) }
@@ -217,6 +217,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     // Drop fields the caller may not write, then authorize the stored resource.
     // Proposed ownership values must not grant access to the update itself.
     const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
+    assertImmutableFields(entityDef, existing!, writable)
     await assertEntityAccess({
       entity: entityDef,
       action: 'update',
@@ -360,6 +361,7 @@ export class WorkersQueryExecutor implements QueryExecutorPort {
     if (!data) throw new Error('Update action requires data')
     assertProtectedMutation(entityDef, data, context)
     const writable = this.normalizeInput(entityDef, filterWritableFields(entityDef, data, context.session))
+    assertImmutableFields(entityDef, existing!, writable)
     await assertEntityAccess({
       entity: entityDef,
       action: 'update',

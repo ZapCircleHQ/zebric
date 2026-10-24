@@ -15,13 +15,6 @@ export const stories: StoryDefinition[] = [
     tests: ['src/stories/developer-onboarding.story.test.ts']
   },
   {
-    id: 'feature-pipeline',
-    title: 'Product teams shepherd a feature request',
-    blueprintPath: 'examples/vibe/blueprint.toml',
-    description: 'Validates the multi-entity flow used for customer-to-delivery pipelines.',
-    tests: ['src/stories/feature-pipeline.story.test.ts']
-  },
-  {
     id: 'task-tracker-kanban',
     title: 'Internal teams manage tasks via a drag-and-drop kanban board',
     blueprintPath: 'examples/task-tracker/blueprint.toml',

@@ -7,8 +7,10 @@
   "scripts": {
     "dev": "zebric-engine --blueprint=blueprint.toml --port=3012",
     "build": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run tests && node --test security.test.mjs",
+    "test:watch": "vitest",
+    "pretest": "pnpm --dir ../.. --filter @zebric/cli... build",
+    "predev": "pnpm --dir ../.. --filter @zebric/cli... build"
   },
   "dependencies": {
     "@zebric/cli": "workspace:*",

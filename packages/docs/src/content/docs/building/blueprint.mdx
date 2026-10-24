@@ -95,6 +95,7 @@ fields = [
 |--------|------|-------------|
 | `primary_key` | boolean | Mark as primary key |
 | `unique` | boolean | Enforce uniqueness |
+| `immutable` | boolean | Accept an initial value, then reject changes through updates, commands, or workflow writes |
 | `index` | boolean | Create database index |
 | `required` | boolean | Cannot be null |
 | `nullable` | boolean | Explicitly allow null |
@@ -139,6 +140,12 @@ author = { type = "belongsTo", entity = "User", foreign_key = "authorId" }
 ```
 
 Relation types: `hasMany`, `hasOne`, `belongsTo`, `manyToMany` (requires `through`).
+
+For policy traversal, `hasMany` and `hasOne` relations can declare a static
+`where` filter, for example `where = { active = true }` on team memberships.
+The runtime combines this with the stored parent foreign key; caller-supplied
+relation objects cannot authorize access. This filter applies to policy
+hydration, independently of page-query includes.
 
 ### Access Control
 

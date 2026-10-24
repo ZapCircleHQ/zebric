@@ -349,6 +349,11 @@ textarea {
   min-height: 780px;
 }
 
+.playground-simulator .zebric-simulator__preview {
+  /* Keep fixed app navigation and overlays inside the embedded preview. */
+  contain: layout paint;
+}
+
 .example-sidebar {
   display: grid;
   gap: 14px;
