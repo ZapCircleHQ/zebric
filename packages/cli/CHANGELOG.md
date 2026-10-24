@@ -1,5 +1,20 @@
 # @zebric/cli
 
+## 0.10.0
+
+### Minor Changes
+
+- f1c0589: Add a deterministic blueprint audit API and CLI with stable JSON findings, severity thresholds, and snapshot checking. Check all example blueprint audit snapshots in CI.
+
+### Patch Changes
+
+- Updated dependencies [829c949]
+- Updated dependencies [f1c0589]
+- Updated dependencies [6566582]
+- Updated dependencies [6566582]
+  - @zebric/runtime-core@0.10.0
+  - @zebric/runtime-node@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
