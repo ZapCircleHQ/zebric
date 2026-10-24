@@ -1,5 +1,22 @@
 # @zebric/runtime-core
 
+## 0.10.0
+
+### Minor Changes
+
+- f1c0589: Add a deterministic blueprint audit API and CLI with stable JSON findings, severity thresholds, and snapshot checking. Check all example blueprint audit snapshots in CI.
+- 6566582: Support blueprint-owned filters on collection relations during policy hydration and normalize omitted nullable fields when authorizing creates. This lets active stored memberships govern example access without copied email or ownership snapshots.
+
+  Map protected mutation and validation domain errors to client HTTP statuses on generic entity routes.
+
+- 6566582: Resolve policy relations from stored records instead of trusting embedded request objects. Add immutable fields to prevent ownership and parent references from being reassigned after creation across Node, Workers, and simulator writes.
+
+  Ridgeline now authorizes customer accounts and their children through admin-provisioned user-ID memberships instead of email snapshots, including server-side account lookup during creation and adversarial ownership regression coverage.
+
+### Patch Changes
+
+- 829c949: Submit an explicit false value for unchecked form checkboxes so saved Boolean fields can be cleared. Open the configured delete confirmation form from detail pages so deletion uses CSRF protection and the form's success redirect.
+
 ## 0.9.0
 
 ### Minor Changes

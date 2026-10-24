@@ -1,5 +1,21 @@
 # @zebric/runtime-worker
 
+## 0.10.0
+
+### Patch Changes
+
+- 6566582: Resolve policy relations from stored records instead of trusting embedded request objects. Add immutable fields to prevent ownership and parent references from being reassigned after creation across Node, Workers, and simulator writes.
+
+  Ridgeline now authorizes customer accounts and their children through admin-provisioned user-ID memberships instead of email snapshots, including server-side account lookup during creation and adversarial ownership regression coverage.
+
+- Updated dependencies [829c949]
+- Updated dependencies [f1c0589]
+- Updated dependencies [6566582]
+- Updated dependencies [6566582]
+  - @zebric/runtime-core@0.10.0
+  - @zebric/notifications@0.10.0
+  - @zebric/runtime-hono@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
