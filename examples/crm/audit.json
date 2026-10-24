@@ -1,0 +1,197 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "access.implicit",
+            "severity": "warning",
+            "path": [
+              "entities",
+              0,
+              "access"
+            ],
+            "message": "Entity \"User\" has no explicit read, create, update, delete access rule. Omitted entity rules allow access at the policy layer; other authorization may still restrict it.",
+            "suggestion": "Declare access rules for every operation to make the intended boundary explicit."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              10,
+              "fields",
+              12
+            ],
+            "message": "Reference \"Task.accountId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              10,
+              "fields",
+              13
+            ],
+            "message": "Reference \"Task.leadId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              10,
+              "fields",
+              14
+            ],
+            "message": "Reference \"Task.opportunityId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              10,
+              "fields",
+              15
+            ],
+            "message": "Reference \"Task.messageId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              10,
+              "fields",
+              16
+            ],
+            "message": "Reference \"Task.insightId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              12,
+              "fields",
+              22
+            ],
+            "message": "Reference \"ProspectCandidate.teamId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              13,
+              "fields",
+              3
+            ],
+            "message": "Reference \"Insight.accountId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              13,
+              "fields",
+              4
+            ],
+            "message": "Reference \"Insight.contactId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              13,
+              "fields",
+              5
+            ],
+            "message": "Reference \"Insight.leadId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              13,
+              "fields",
+              6
+            ],
+            "message": "Reference \"Insight.opportunityId\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "performance.reference-index",
+            "severity": "info",
+            "path": [
+              "entities",
+              9,
+              "fields",
+              0
+            ],
+            "message": "Reference \"Message.createdById\" has no declared index with this field first.",
+            "suggestion": "Consider an index if this reference is used for joins or filtering; inspect actual query plans."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              3,
+              "queries",
+              "account"
+            ],
+            "message": "Page \"/accounts/:id\" query \"account\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              6,
+              "queries",
+              "opportunity"
+            ],
+            "message": "Page \"/opportunities/:id\" query \"opportunity\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              9,
+              "queries",
+              "message"
+            ],
+            "message": "Page \"/messages/:id\" query \"message\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 4,
+          "info": 11
+        }
+      }
+    }
+  ]
+}

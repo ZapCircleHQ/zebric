@@ -7,8 +7,8 @@
  */
 
 import { readFileSync } from 'node:fs'
-import { Command } from 'commander'
-import { benchmarkCommand, devCommand, validateCommand } from './commands/index.js'
+import { Command, Option } from 'commander'
+import { auditCommand, benchmarkCommand, devCommand, validateCommand } from './commands/index.js'
 
 function getCliVersion(): string {
   const packageJsonUrl = new URL('../package.json', import.meta.url)
@@ -50,6 +50,16 @@ program
       blueprint: options.blueprint,
     })
   })
+
+program
+  .command('audit')
+  .description('Deterministically audit a validated blueprint without starting the engine')
+  .option('-b, --blueprint <path>', 'Path to blueprint file', 'blueprint.toml')
+  .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json']).default('text'))
+  .option('--output <path>', 'Write the JSON report to a snapshot file')
+  .option('--check <path>', 'Fail if the JSON snapshot differs from the report')
+  .addOption(new Option('--fail-on <severity>', 'Fail at or above this severity').choices(['error', 'warning', 'info', 'none']).default('error'))
+  .action(auditCommand)
 
 program
   .command('benchmark')

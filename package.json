@@ -27,7 +27,9 @@
     "build:templates": "node scripts/build-layout-templates.mjs",
     "prepare": "husky || true",
     "test:parity": "pnpm --filter @zebric/runtime-node test:conformance && pnpm --filter @zebric/runtime-worker test:conformance",
-    "test:workers-apps": "pnpm --filter @zebric/runtime-worker... build && node scripts/verify-workers-apps.mjs"
+    "test:workers-apps": "pnpm --filter @zebric/runtime-worker... build && node scripts/verify-workers-apps.mjs",
+    "audit:examples": "node scripts/audit-examples.mjs",
+    "audit:examples:update": "node scripts/audit-examples.mjs --update"
   },
   "devDependencies": {
     "@changesets/cli": "^3.0.3",

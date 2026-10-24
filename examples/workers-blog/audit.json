@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              0,
+              "queries",
+              "posts"
+            ],
+            "message": "Page \"/\" query \"posts\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              1,
+              "queries",
+              "posts"
+            ],
+            "message": "Page \"/posts/mine\" query \"posts\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              3,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "post"
+            ],
+            "message": "Page \"/posts/:id/edit\" query \"post\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              5,
+              "queries",
+              "record"
+            ],
+            "message": "Page \"/posts/:id/delete\" query \"record\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 5,
+          "info": 0
+        }
+      }
+    }
+  ]
+}

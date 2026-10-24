@@ -33,6 +33,84 @@ zebric validate --blueprint blueprint.toml
 
 Returns validation errors and warnings without starting a server. Useful for CI checks.
 
+### `zebric audit`
+
+Validate a blueprint and inspect it using deterministic static rules. No model,
+server, database, plugin execution, or deployment credentials are needed. Imported
+TOML fragments are composed using the same loader as `validate`.
+
+```bash
+zebric audit --blueprint blueprint.toml
+zebric audit --blueprint blueprint.toml --format json
+zebric audit --blueprint blueprint.toml --output audit.json
+zebric audit --blueprint blueprint.toml --check audit.json
+zebric audit --blueprint blueprint.toml --fail-on warning
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-b, --blueprint <path>` | `blueprint.toml` | TOML or JSON blueprint |
+| `--format <text\|json>` | `text` | Standard output format |
+| `--output <path>` | — | Write the JSON report |
+| `--check <path>` | — | Compare the report with a saved JSON snapshot |
+| `--fail-on <error\|warning\|info\|none>` | `error` | Fail on findings at or above this severity |
+
+Exit status is 1 for validation or file errors, snapshot differences, or findings
+meeting the selected severity threshold; otherwise it is 0. `--fail-on none`
+disables only the severity gate. `--output` and `--check` are mutually exclusive.
+Snapshot comparison ignores JSON whitespace and object-key order, and detects both
+added and removed findings. A failed validation never produces an audit report.
+
+Reports contain a format/rules version, findings with stable rule IDs, severity,
+composed blueprint path segments, explanations and suggestions, and severity
+counts. They omit timestamps, absolute source paths, and input hashes. Array indexes
+in paths refer to the composed blueprint. Reordering definitions can change paths.
+
+The initial rules are:
+
+| Rule ID | Severity | Checks |
+|---------|----------|--------|
+| `access.implicit` | warning | Missing entity CRUD access declarations |
+| `access.public-mutation` | warning | Explicit `true` or `public` entity create/update/delete policies |
+| `performance.reference-index` | info | Reference fields without a field index, uniqueness, primary key, or leading composite index |
+| `query.unbounded` | warning | Page queries without explicit positive limits |
+| `query.offset-without-order` | warning | Page query offsets without ordering |
+| `workflow.no-trigger` | warning | Enabled workflows without a complete trigger |
+| `workflow.webhook-default-secret` | info | Active webhooks relying on the default signing-secret variable |
+| `plugin.full-trust` | warning | Enabled plugins declaring full trust |
+
+These findings flag declarations for review. They do not prove an authorization
+bypass, inspect deployed secrets, or replace runtime testing. Other authorization
+layers can restrict public entity policies; reference indexes depend on workload.
+Version 1 has warning and informational rules; validation handles invalid inputs.
+The reusable `auditBlueprint(blueprint)` API is exported by `@zebric/runtime-core`
+and expects an already validated, composed blueprint.
+
+#### Example snapshots in this repository
+
+After building the CLI and its dependencies, run:
+
+```bash
+pnpm --filter @zebric/cli... build
+pnpm audit:examples
+# After reviewing intended blueprint or rule changes:
+pnpm audit:examples:update
+git diff -- examples/
+```
+
+CI checks every application directory under `examples/` automatically. Each
+application's root `audit.json` contains a versioned `blueprints` array of
+`{ path, report }` entries for all root `blueprint*.toml` and `blueprint*.json`
+files, including alternate examples. Imported fragments are audited through their
+entrypoint. Hidden directories and `__*` cache directories are ignored; an
+application directory with no matching entrypoint fails the check.
+
+These aggregate example snapshots differ from the single-report files produced
+by `zebric audit --output`. Use the repository scripts to check or update them.
+CI never updates snapshots: missing files, changed findings, removed findings, and
+added or removed entrypoints require an explicit, reviewed snapshot update. A
+matching snapshot acknowledges existing findings; it does not assert a clean audit.
+
 ## Environment Variables
 
 | Variable | Description |

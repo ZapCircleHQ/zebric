@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "blueprints": [
+    {
+      "path": "blueprint.toml",
+      "report": {
+        "version": 1,
+        "findings": [
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              2,
+              "queries",
+              "themes"
+            ],
+            "message": "Page \"/items/new\" query \"themes\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              3,
+              "queries",
+              "item"
+            ],
+            "message": "Page \"/items/:id\" query \"item\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "item"
+            ],
+            "message": "Page \"/items/:id/edit\" query \"item\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          },
+          {
+            "ruleId": "query.unbounded",
+            "severity": "warning",
+            "path": [
+              "pages",
+              4,
+              "queries",
+              "themes"
+            ],
+            "message": "Page \"/items/:id/edit\" query \"themes\" has no explicit positive result limit.",
+            "suggestion": "Set a limit appropriate for the view to bound work as the dataset grows."
+          }
+        ],
+        "summary": {
+          "error": 0,
+          "warning": 4,
+          "info": 0
+        }
+      }
+    }
+  ]
+}
