@@ -519,6 +519,8 @@ jobs:
             --root-dir packages/docs/dist
             --exclude ^https://docs\.zebric\.dev/
             --exclude '^http://(localhost|127\.0\.0\.1)(:[0-9]+)?(/.*)?$'
+            --exclude '^https://github\.com/modelcontextprotocol/ext-apps/blob/main/examples/basic-host/package\.json$'
+            --exclude '^https://github\.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps\.mdx$'
             packages/docs/dist/**/*.html
 
   all-checks:
