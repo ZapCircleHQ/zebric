@@ -16,7 +16,7 @@
     "db:migrate:prod": "node scripts/predeploy.mjs && wrangler d1 migrations apply DB --remote"
   },
   "dependencies": {
-    "@zebric/runtime-worker": "0.9.0"
+    "@zebric/runtime-worker": "0.10.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "4.20260702.1",
