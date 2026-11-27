@@ -68,6 +68,20 @@ Temporary apps and child servers are cleaned up on completion or failure.
 The README, public quickstart, and downloadable Blueprint are kept identical by
 `packages/docs/tests/quick-start-blueprint.test.mjs`.
 
+### Human-and-agent tutorial
+
+```bash
+pnpm --filter @zebric/runtime-node test:browser:install
+pnpm smoke:human-agent
+```
+
+Builds the runtime/agent dependencies and uses the documented completed Blueprint
+and downloadable tool script. Checks additive migration from the quickstart,
+actual Chromium signup/form creation/command-button invocation, the deterministic
+generated agent tool, shared role-policy denial, stale state, local approval
+denial, and protected-field bypass rejection. Uses fixture credentials and an
+isolated SQLite database, without a model. CI runs it in Docs Quality.
+
 ### 3. Browser tests — Playwright (Chromium)
 Start a real engine against the `zebric-dispatch` example blueprint, then drive it with a headless browser. Run automatically on every push to `main` via `browser-tests.yml`.
 

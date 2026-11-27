@@ -1,0 +1,86 @@
+---
+label: Example Catalog
+slug: getting-started/examples
+title: Choose an Example
+description: Find a Zebric example by developer goal, runtime, and authentication model.
+---
+
+Start with the quickstart for a first working app. Continue with **Humans and
+Agents** to see one business action shared across the UI and an agent tool.
+The other examples cover specific widgets, data models, and deployment paths.
+
+## Choose by Goal
+
+| Your goal | Start here | Runtime | Authentication and access |
+| --- | --- | --- | --- |
+| Run your first app and change a Blueprint | [Quickstart](/getting-started/quickstart/) | Node + SQLite | Public reads; signed-in writes; shared posts |
+| Reuse a guarded action from UI and agent tools | [Humans and Agents](/guides/human-and-agent/) | Node + SQLite | Session or scoped API key; shared role policy and command-only field |
+| Build a kanban board and connect MCP tools | [Task Tracker](https://github.com/ZapCircleHQ/zebric/tree/main/examples/task-tracker) | Node + SQLite | Browser demo allows public interactions; agent tools use a scoped key |
+| Explore related entities and author queries | [Blog](https://github.com/ZapCircleHQ/zebric/tree/main/examples/blog) | Node + SQLite | Email auth; application authors are separate records; see setup limitations |
+| Explore dynamic board columns and agent QA workflows | [Issue Board](https://github.com/ZapCircleHQ/zebric/tree/main/examples/issue-board) | Node + SQLite | Browser demo allows public interactions; agent operations require configured scopes |
+| Deploy a private per-user task manager | [Workers starter](https://github.com/ZapCircleHQ/zebric/tree/main/starters/cloudflare-workers) | Workers + D1 | Signup/signin; each user owns their tasks |
+| Deploy a multi-author blog with private drafts | [Workers Blog](https://github.com/ZapCircleHQ/zebric/tree/main/examples/workers-blog) | Workers + D1 | Published reads are public; author-owned drafts and writes |
+| Learn intake, review, permissions, and workflows step by step | [Internal tools course](/courses/tutorial-ops/) | Node + SQLite | Introduces auth and guarded operations as the lessons progress |
+
+“Public interactions” describes a learning demo's declared access model. The
+quickstart and tutorial also deliberately share posts between signed-in users.
+For owner-specific data, start with a Workers example or adapt the
+[access rules](/building/security/) to your application.
+
+## Run a Repository Example
+
+Use Node.js 24 and the repository's pinned pnpm 11.23.0 for source development.
+Clone the repository, install once, then choose one app:
+
+```bash
+git clone https://github.com/ZapCircleHQ/zebric.git
+cd zebric
+pnpm install --frozen-lockfile
+pnpm --filter task-tracker... build
+pnpm --filter task-tracker dev
+```
+
+Open http://localhost:3000. In another terminal at the repository root, populate
+the board with `pnpm --filter task-tracker seed`. Follow its README for MCP setup.
+
+For the other Node demos, replace the final two commands with the matching pair:
+
+| Example | Build from the repository root | Run from the repository root |
+| --- | --- | --- |
+| Blog | `pnpm --filter blog-example... build` | `pnpm --filter blog-example dev` |
+| Issue Board | `pnpm --filter issue-board-example... build` | `pnpm --filter issue-board-example dev` |
+
+Run one app at a time on the default port. Each package script runs from its own
+example directory, so its local database lives in that directory's `data/`.
+Use [CLI options](/reference/cli/) when launching a Blueprint directly.
+
+## Run or Deploy a Workers Example
+
+Workers use Wrangler, explicit D1 migrations, and a local `.dev.vars` file.
+From an installed repository, the starter's local setup is:
+
+```bash
+cd starters/cloudflare-workers
+cp .dev.vars.example .dev.vars
+pnpm db:migrate
+pnpm dev
+```
+
+Open http://localhost:8787/auth/sign-up. For the blog, use `examples/workers-blog`
+instead of `starters/cloudflare-workers`. Both directories can also be copied
+outside the repo and installed independently; preserve their
+`pnpm-workspace.yaml` auth pin.
+
+Their READMEs explain database provisioning, production origin, secret setup,
+migrations, and deployment. Continue with the [Cloudflare guide](/run/cloudflare/)
+for runtime constraints. For Node hosting, use
+[Runtime and Deployment](/run/runtime/) and review its operational requirements.
+
+## Extend What You Built
+
+- Add a shared business action with [Domain Commands](/building/domain-commands/).
+- Customize a board or lookup with [Widgets](/building/widgets/).
+- Connect a model-driven agent after the deterministic tutorial using
+  [Zebric Agent](/agents/zebric-agent/getting-started/).
+- Add [workflows and notifications](/building/workflows/) after the permission
+  and state checks for the underlying action are clear.

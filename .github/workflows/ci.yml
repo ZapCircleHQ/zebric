@@ -504,6 +504,12 @@ jobs:
       - name: Smoke test tutorial checkpoints
         run: pnpm -C packages/docs smoke:tutorial-ops
 
+      - name: Install Chromium for human-and-agent tutorial
+        run: pnpm --filter @zebric/runtime-node exec playwright install --with-deps chromium
+
+      - name: Smoke test shared human and agent action
+        run: pnpm smoke:human-agent
+
       - name: Link check built docs
         uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
         with:

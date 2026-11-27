@@ -28,6 +28,8 @@ It is best suited to internal tools, admin surfaces, CRUD workflows, prototypes,
 ## Start Here
 
 - Documentation: [docs.zebric.dev](https://docs.zebric.dev)
+- Example catalog: [choose by goal, runtime, and access model](examples/README.md)
+- Human-and-agent tutorial: [one action through UI and agent tools](https://docs.zebric.dev/guides/human-and-agent/)
 - Playground and examples: [playground.zebric.dev](https://playground.zebric.dev)
 - npm package: [@zebric/cli](https://www.npmjs.com/package/@zebric/cli)
 - Cloudflare Workers: [deployment guide](https://docs.zebric.dev/run/cloudflare/) and [readiness audit](docs/CLOUDFLARE_READINESS_AUDIT.md)

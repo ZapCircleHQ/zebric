@@ -1,0 +1,188 @@
+---
+label: Humans and Agents
+slug: guides/human-and-agent
+title: One Action for Humans and Agents
+description: Extend the quickstart blog with a guarded Feature post command, then invoke it from the UI and a deterministic agent tool.
+---
+
+Extend the [quickstart](/getting-started/quickstart/) with a **Feature post** action.
+A person clicks a detail-page button; an agent invokes a generated tool. Both
+reach the same command, which checks the actor's role and the record's state.
+You can run the whole tutorial without a model or an AI provider account.
+
+Use a local learning app with Node.js 22+ and the current Zebric CLI. If you
+haven't created one, follow the quickstart first. This app intentionally allows
+all signed-in users to edit all posts and keeps all posts public. Featuring a post
+adds a boolean marker; it does not change publication, visibility, or ownership.
+
+## 1. Add a Protected Field
+
+Keep the quickstart dev server running while you edit so hot reload can apply
+the new column to an existing local database. In `blueprint.toml`, add this entry
+immediately before `published` in `[entity.Post]`'s existing `fields` array:
+
+```toml
+{ name = "featured", type = "Boolean", default = false, write = "command-only", commands = ["FeaturePost"] },
+```
+
+New posts start with `featured = false`. The command-only setting prevents an
+ordinary form or entity API update from setting the flag directly. Keep the
+existing fields, access rules, queries, and seed records.
+
+## 2. Define the Shared Action
+
+Append this command to the Blueprint:
+
+```toml
+[command.FeaturePost]
+entity = "Post"
+label = "Feature post"
+description = "Feature a post that has not been featured yet."
+policy = "actor.roles contains 'user'"
+availableWhen = "record.featured == false"
+confirm = "Feature this post?"
+style = "primary"
+mutations = { featured = true }
+scopes = ["posts.feature"]
+```
+
+`policy` allows the `user` role. Local email signups receive that role by default.
+`availableWhen` prevents featuring the same post again. The runtime checks both
+conditions when executing the command, even if a caller submits a stale request.
+
+The existing `/posts/:id` detail page automatically renders commands for `Post`;
+no custom page code or extra action-bar configuration is required.
+
+## 3. Give the Agent an Identity
+
+Append the following API keys. The first identity can feature posts. The second
+has the same transport scope but a different role, so it will demonstrate a
+command-policy rejection:
+
+```toml
+[[auth.apiKeys]]
+name = "blog-feature-agent"
+keyEnv = "FEATURE_POST_API_KEY"
+agentId = "blog-feature-agent"
+credentialId = "blog-feature-local"
+roles = ["user"]
+scopes = ["posts.feature"]
+
+[[auth.apiKeys]]
+name = "blog-reader-agent"
+keyEnv = "READER_API_KEY"
+agentId = "blog-reader-agent"
+credentialId = "blog-reader-local"
+roles = ["reader"]
+scopes = ["posts.feature"]
+```
+
+Or replace your local Blueprint with the
+[completed Blueprint](/human-and-agent/blueprint.toml). It includes the quickstart
+and all three additions above. The commands below assume you are in the app
+directory created by `zebric init`.
+
+Save the Blueprint and wait for the dev server to report a successful reload.
+Then stop it with **Ctrl+C**, set fixture-only credentials in the server terminal,
+and restart:
+
+```bash
+export FEATURE_POST_API_KEY=local-feature-tutorial-key
+export READER_API_KEY=local-reader-tutorial-key
+npm run validate
+npm run dev
+```
+
+Environment variables must be present when the runtime starts. Do not commit
+these credentials. If port 3000 is already used, stop the other app before this
+step. The additive column change is applied during the earlier Node hot reload;
+restarting alone is not a schema migration for an existing database. If starting
+with a fresh app, save the completed Blueprint before the first server launch.
+On Workers, schema changes require an explicit D1 migration.
+
+## 4. Use the Human UI
+
+1. Visit `http://localhost:3000/posts/new`. Sign up or sign in.
+2. Create a post titled **Featured by a person**.
+3. Open its detail page from the list and click **Feature post**. Accept the confirmation.
+4. The detail page shows `featured` as true and the action disappears.
+5. Create a second post titled **Featured by an agent**. Open its detail page and
+   copy the ID from `/posts/<id>`. Leave this post unfeatured.
+
+In a private browser session, the public detail page is readable but has no
+**Feature post** action. Page visibility is separate from permission to execute
+the command.
+
+## 5. Use the Agent Tool Without a Model
+
+In another terminal in the same app directory:
+
+```bash
+npm install @zebric/agent
+export FEATURE_POST_API_KEY=local-feature-tutorial-key
+```
+
+Download [feature-post.mjs](/human-and-agent/feature-post.mjs) into that directory,
+then substitute the second post's ID:
+
+```bash
+node feature-post.mjs YOUR_SECOND_POST_ID
+```
+
+The script discovers the application's OpenAPI contract and constructs the same
+generated tools used by Zebric Agent. `FeaturePost` becomes the `feature_post`
+operation and, with application name `blog`, the `blog_feature_post` tool.
+`DeterministicAgentDriver` selects that tool explicitly; it makes no model call.
+
+The script approves only a POST to `feature_post` for the ID you supplied. Client
+approval permits the request to leave the tool; the server still checks the API
+key scope, role policy, current state, and protected-field authority. The tool
+supplies an idempotency key for the mutation; the script assigns a unique agent
+run ID for server-side attribution.
+
+Successful output contains the updated record with `featured: true`. Refresh its
+detail page: the button is gone, just as it was after the human action. The agent
+uses `POST /api/commands/feature_post/<id>`. The browser submits a form to
+`POST /commands/feature_post/<id>`, using a session cookie and CSRF protection.
+Both routes call the same command executor; agent calls use the bearer key.
+
+If using another origin, set `ZEBRIC_URL` in the script terminal and update
+`auth.trustedOrigins` in the Blueprint to match the browser origin.
+
+## 6. Prove the Guardrails
+
+Create a third, unfeatured post and try the reader identity:
+
+```bash
+FEATURE_POST_API_KEY=local-reader-tutorial-key node feature-post.mjs YOUR_THIRD_POST_ID
+```
+
+Expect `AUTHORIZATION_FAILED` (HTTP 403): the reader has `posts.feature`, but
+fails the same `user` role policy that controls the human button. Refresh the
+post to confirm it remains unfeatured.
+
+Run the successful command again for an already featured post:
+
+```bash
+node feature-post.mjs YOUR_SECOND_POST_ID
+```
+
+Expect `COMMAND_UNAVAILABLE` (HTTP 409). This invocation has a new idempotency
+key, so the server evaluates current state rather than replaying the earlier
+response. An exact transport retry with the original key would replay it.
+
+The `PROTECTED_FIELD_MUTATION` guard rejects a generic update that sends
+`featured = true`, even for a signed-in user who can otherwise edit the post.
+The generic entity API responds with HTTP 409 and a protected-field explanation. Give a model the named command instead of a broad data-update workaround.
+
+## Continue
+
+- Read [Domain Commands](/building/domain-commands/) for input fields and workflows.
+- Read [Deterministic Testing](/agents/zebric-agent/testing/) to build repeatable tool tests.
+- Choose another path in the [example catalog](/getting-started/examples/).
+
+Repository contributors can run `pnpm smoke:human-agent` for the actual browser
+signup/button journey, deterministic tool call, and negative cases against a
+temporary database. Install Chromium first with
+`pnpm --filter @zebric/runtime-node test:browser:install`. The smoke check cleans
+up its server and database and uses no external model credentials.

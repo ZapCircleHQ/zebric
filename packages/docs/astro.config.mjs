@@ -35,6 +35,8 @@ export default defineConfig({
 					items: [
 						{ label: 'What is Zebric', slug: 'getting-started/what-is-zebric' },
 						{ label: 'Quickstart', slug: 'getting-started/quickstart' },
+						{ label: 'Example Catalog', slug: 'getting-started/examples' },
+						{ label: 'Humans and Agents', slug: 'guides/human-and-agent' },
 					],
 				},
 				{
