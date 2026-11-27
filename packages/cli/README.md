@@ -12,6 +12,31 @@ npx @zebric/cli <command>
 
 ## Commands
 
+### `zebric init [directory]`
+
+Create the quickstart app in a new or empty directory, without prompts or an
+automatic dependency install:
+
+```bash
+npx @zebric/cli init my-app
+cd my-app
+npm install
+npm run validate
+npm run dev
+```
+
+Omit the directory to use the current empty directory. The starter includes
+`blueprint.toml`, a pinned CLI dependency and package scripts, a README, and a
+`.gitignore` for local data/dependencies/secrets. Existing nonempty directories,
+files, and symlink destinations are refused. No AI credential is needed.
+
+### Blueprint selection
+
+`dev`, `validate`, and `audit` automatically use the only `blueprint.toml` or
+`blueprint.json` in the current directory. If both exist, specify `--blueprint`;
+if neither exists, select an existing file or create a project with `init`.
+Explicit paths always take precedence.
+
 ### `zebric dev`
 
 Start a development server with hot reload.
@@ -22,10 +47,16 @@ zebric dev --blueprint blueprint.toml --port 3000
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--blueprint`, `-b` | `blueprint.json` | Path to your blueprint file |
-| `--port`, `-p` | `3000` | Port to listen on |
+| `--blueprint`, `-b` | Auto-detect | Path to your TOML or JSON blueprint |
+| `--port`, `-p` | `3000` | App port; 0 selects a free port |
+| `--admin-port` | App port + 30 | Admin server port; 0 selects a free port |
 | `--host`, `-h` | `localhost` | Host to bind to |
 | `--seed` | — | Seed the database with sample data |
+
+Ports must be whole numbers from 0 to 65535. Set `--admin-port` explicitly if
+app port + 30 would exceed 65535. App and admin ports must differ unless both
+are 0. Startup checks Blueprint validity and port availability before opening
+the database.
 
 ### `zebric validate`
 

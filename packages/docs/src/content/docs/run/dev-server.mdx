@@ -166,6 +166,13 @@ A `null` response means the schema is in sync. Otherwise you'll see:
 
 If port 3030 conflicts with another service, override it:
 
+```bash
+npx zebric dev --admin-port 4000
+```
+
+The CLI normally uses app port + 30 for the admin server. Set `--admin-port 0`
+to select an available port. When embedding the engine, configure it directly:
+
 ```typescript
 const engine = new ZebricEngine({
   blueprintPath: './blueprint.toml',

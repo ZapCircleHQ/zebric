@@ -4,7 +4,6 @@
  * Checks a Blueprint file against the runtime schema without starting the engine.
  */
 
-import { resolve } from 'node:path'
 import { access } from 'node:fs/promises'
 import { constants as fsConstants } from 'node:fs'
 import {
@@ -12,16 +11,20 @@ import {
   type Blueprint,
 } from '@zebric/runtime-core'
 import { BlueprintLoader } from '@zebric/runtime-node'
+import { resolveBlueprintPath } from '../blueprint-path.js'
 
 export interface ValidateOptions {
   blueprint?: string
 }
 
 export async function validateCommand(options: ValidateOptions = {}): Promise<void> {
-  const blueprintPath = resolve(
-    process.cwd(),
-    options.blueprint ?? 'blueprint.toml'
-  )
+  let blueprintPath: string
+  try {
+    blueprintPath = resolveBlueprintPath(options.blueprint)
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
 
   try {
     await access(blueprintPath, fsConstants.F_OK)
@@ -39,7 +42,8 @@ export async function validateCommand(options: ValidateOptions = {}): Promise<vo
 
     reportSuccess(blueprintPath, blueprint, elapsed)
   } catch (error) {
-    handleValidationError(error, blueprintPath)
+    reportValidationError(error, blueprintPath)
+    process.exit(1)
   }
 }
 
@@ -54,7 +58,7 @@ function reportSuccess(path: string, blueprint: Blueprint, elapsedMs: number): v
   console.log(`   Checked in ${elapsedMs}ms`)
 }
 
-function handleValidationError(error: unknown, path: string): never {
+export function reportValidationError(error: unknown, path: string): void {
   if (error instanceof BlueprintValidationError) {
     console.error(`❌ Blueprint validation failed: ${path}`)
     console.error('')
@@ -86,12 +90,11 @@ function handleValidationError(error: unknown, path: string): never {
       })
     }
 
-    process.exit(1)
+    return
   }
 
   console.error(`❌ Failed to validate blueprint: ${path}`)
   console.error(
     error instanceof Error ? `   ${error.message}` : `   ${String(error)}`
   )
-  process.exit(1)
 }

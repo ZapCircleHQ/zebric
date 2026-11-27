@@ -8,6 +8,30 @@ description: Zebric CLI commands, flags, and environment variables.
 
 ## Commands
 
+### `zebric init [directory]`
+
+Create the first-app starter without prompts or automatic dependency installation:
+
+```bash
+npx @zebric/cli init my-app
+cd my-app
+npm install
+npm run validate
+npm run dev
+```
+
+The directory defaults to `.`. The target must be new or empty; nonempty
+directories, files, and symlink destinations are refused. The generated project
+contains `blueprint.toml`, a `package.json` pinning the CLI version used to create
+it, a README, and a `.gitignore`. No AI credentials are needed.
+
+### Blueprint selection
+
+For `dev`, `validate`, and `audit`, `--blueprint <path>` takes precedence. Without
+it, the command uses the only `blueprint.toml` or `blueprint.json` in the current
+directory. Both files present is an error requiring an explicit choice. Neither
+file present is an error with guidance to select a file or run `init`.
+
 ### `zebric dev`
 
 Start a development server with hot reload:
@@ -18,10 +42,17 @@ zebric dev --blueprint blueprint.toml --port 3000 --seed
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-b, --blueprint <path>` | `blueprint.json` | Path to blueprint file |
-| `-p, --port <number>` | `3000` | Port to listen on |
+| `-b, --blueprint <path>` | Auto-detect | Path to TOML or JSON blueprint |
+| `-p, --port <number>` | `3000` | App port; 0 selects a free port |
+| `--admin-port <number>` | App port + 30 | Admin port; 0 selects a free port |
 | `-h, --host <host>` | `localhost` | Host to bind to |
 | `--seed` | — | Seed database with sample data |
+
+Ports must be whole numbers from 0 to 65535. With app port 0, the admin port
+also defaults to 0. Otherwise app port + 30 must fit in the range, or you must
+set `--admin-port` explicitly. App and admin ports must differ unless both are
+0. Startup checks Blueprint validity and configured port availability before
+opening the database.
 
 ### `zebric validate`
 
@@ -49,7 +80,7 @@ zebric audit --blueprint blueprint.toml --fail-on warning
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-b, --blueprint <path>` | `blueprint.toml` | TOML or JSON blueprint |
+| `-b, --blueprint <path>` | Auto-detect | TOML or JSON blueprint |
 | `--format <text\|json>` | `text` | Standard output format |
 | `--output <path>` | — | Write the JSON report |
 | `--check <path>` | — | Compare the report with a saved JSON snapshot |

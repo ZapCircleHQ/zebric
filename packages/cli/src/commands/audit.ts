@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { auditBlueprint, BlueprintValidationError, type AuditSeverity } from '@zebric/runtime-core'
 import { BlueprintLoader } from '@zebric/runtime-node'
+import { resolveBlueprintPath } from '../blueprint-path.js'
 
 export interface AuditOptions {
   blueprint?: string
@@ -15,7 +16,7 @@ export interface AuditOptions {
 export async function auditCommand(options: AuditOptions = {}): Promise<void> {
   try {
     if (options.output && options.check) throw new Error('--output and --check cannot be combined')
-    const blueprint = await new BlueprintLoader().load(resolve(options.blueprint ?? 'blueprint.toml'))
+    const blueprint = await new BlueprintLoader().load(resolveBlueprintPath(options.blueprint))
     const report = auditBlueprint(blueprint)
     const json = `${JSON.stringify(report, null, 2)}\n`
     if (options.output) await writeFile(resolve(options.output), json, 'utf8')

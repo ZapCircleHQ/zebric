@@ -8,8 +8,9 @@ import { BlueprintParser } from '../../runtime-core/dist/blueprint/loader.js'
 const quickStartPath = new URL('../src/content/docs/getting-started/quick-start.mdx', import.meta.url)
 const fixturePath = new URL('../public/quickstart/blueprint.toml', import.meta.url)
 
-test('README, quickstart, and downloadable first-app Blueprint stay identical', async () => {
+test('README, quickstart, CLI starter, and downloadable first-app Blueprint stay identical', async () => {
   const fixture = (await readFile(fixturePath, 'utf8')).trim()
+  assert.equal((await readFile(new URL('../../cli/templates/blueprint.toml', import.meta.url), 'utf8')).trim(), fixture, 'CLI starter drifted from the documented Blueprint')
   for (const path of [quickStartPath, new URL('../../../README.md', import.meta.url)]) {
     const markdown = await readFile(path, 'utf8')
     const match = markdown.match(/```toml\n([\s\S]*?)\n```/)

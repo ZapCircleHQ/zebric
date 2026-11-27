@@ -64,6 +64,24 @@ zebric/
 
 Requires Node.js 22+ (CI uses Node.js 24).
 
+Create a starter with sample posts, signup, and a protected create form:
+
+```bash
+npx @zebric/cli init my-app
+cd my-app
+npm install
+npm run validate
+npm run dev
+```
+
+Open http://localhost:3000, then visit `/posts/new` to sign up and create a post.
+`init` writes files without installing packages and refuses nonempty directories.
+Run `npx @zebric/cli init` in an existing empty directory to use it in place.
+
+### Create the files manually
+
+If you prefer to start with just a Blueprint:
+
 ```bash
 mkdir my-app
 cd my-app

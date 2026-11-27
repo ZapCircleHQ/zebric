@@ -35,6 +35,34 @@ If a page queries or displays a field that isn't defined on the entity, the runt
 
 ## Dev Server & Hot Reload
 
+### Blueprint file not found, or both default files exist
+
+`dev`, `validate`, and `audit` select the only `blueprint.toml` or `blueprint.json`
+in the current directory. If both exist, pass `--blueprint blueprint.toml` (or
+select the JSON file). If neither exists, change to the app directory, pass the
+path explicitly, or run `npx @zebric/cli init my-app` to create a project.
+
+### Invalid port or port already in use
+
+Use whole-number ports from 0 to 65535. App and admin ports must differ; 0 asks
+the operating system for a free port. For example:
+
+```bash
+npx zebric dev --port 3100 --admin-port 3130
+```
+
+The default admin port is app port + 30, or 0 when the app port is 0. If startup
+reports an occupied app or admin port, stop the process using it or change the
+corresponding flag. If you change the browser origin, also update
+`auth.trustedOrigins` in your Blueprint to match it.
+
+### Database cannot be opened for writing
+
+The CLI's local SQLite database is `data/app.db` relative to the directory you
+run it from. Verify `data/` is a directory and the directory/database are writable.
+A file named `data` blocks creation of that directory; move it out of the way
+without deleting any database you need to keep.
+
 ### Hot reload not triggering
 
 - Confirm `zebric dev` was used (not `zebric start` or a direct node invocation without dev config)
@@ -55,7 +83,7 @@ If a page queries or displays a field that isn't defined on the entity, the runt
 ### Admin server not responding on port 3030
 
 - The admin server only starts in dev mode. If you started with a production config (no `dev` block), it won't run.
-- Confirm nothing else is bound to port 3030. Override with `adminPort` in the engine config if needed.
+- Confirm nothing else is bound to port 3030. Set `--admin-port <number>` with `zebric dev`, or `adminPort` in the engine config if needed.
 
 ---
 

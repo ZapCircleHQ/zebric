@@ -7,8 +7,9 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { parsePort } from './dev-preflight.js'
 import { Command, Option } from 'commander'
-import { auditCommand, benchmarkCommand, devCommand, validateCommand } from './commands/index.js'
+import { auditCommand, benchmarkCommand, devCommand, initCommand, validateCommand } from './commands/index.js'
 
 function getCliVersion(): string {
   const packageJsonUrl = new URL('../package.json', import.meta.url)
@@ -20,21 +21,29 @@ const program = new Command()
 
 program
   .name('zebric')
-  .description('Zebric - Runtime interpreter for Blueprint JSON (ZBL Engine)')
+  .description('Zebric - Run applications from TOML or JSON Blueprints')
   .version(getCliVersion())
+
+program
+  .command('init')
+  .description('Create the first-app starter in a new or empty directory (no install)')
+  .argument('[directory]', 'Project directory', '.')
+  .action(initCommand)
 
 // Dev command
 program
   .command('dev')
   .description('Start development server with hot reload')
-  .option('-b, --blueprint <path>', 'Path to blueprint.json', 'blueprint.json')
-  .option('-p, --port <number>', 'Port to listen on', '3000')
+  .option('-b, --blueprint <path>', 'Blueprint path (auto-detect TOML or JSON)')
+  .option('-p, --port <number>', 'App port (0 selects a free port)', parsePort, 3000)
+  .option('--admin-port <number>', 'Admin port (default: app port + 30; 0 selects a free port)', parsePort)
   .option('-h, --host <host>', 'Host to bind to', 'localhost')
   .option('--seed', 'Seed database with sample data')
   .action(async (options) => {
     await devCommand({
       blueprint: options.blueprint,
-      port: parseInt(options.port),
+      port: options.port,
+      adminPort: options.adminPort,
       host: options.host,
       seed: options.seed,
     })
@@ -44,7 +53,7 @@ program
 program
   .command('validate')
   .description('Validate a blueprint file without starting the engine')
-  .option('-b, --blueprint <path>', 'Path to blueprint file', 'blueprint.toml')
+  .option('-b, --blueprint <path>', 'Blueprint path (auto-detect TOML or JSON)')
   .action(async (options) => {
     await validateCommand({
       blueprint: options.blueprint,
@@ -54,7 +63,7 @@ program
 program
   .command('audit')
   .description('Deterministically audit a validated blueprint without starting the engine')
-  .option('-b, --blueprint <path>', 'Path to blueprint file', 'blueprint.toml')
+  .option('-b, --blueprint <path>', 'Blueprint path (auto-detect TOML or JSON)')
   .addOption(new Option('--format <format>', 'Report format').choices(['text', 'json']).default('text'))
   .option('--output <path>', 'Write the JSON report to a snapshot file')
   .option('--check <path>', 'Fail if the JSON snapshot differs from the report')
@@ -71,4 +80,4 @@ program
   })
 
 // Parse arguments
-program.parse()
+await program.parseAsync()

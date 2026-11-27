@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -10,7 +10,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = mkdtempSync(join(tmpdir(), 'zebric-cli-app-'))
 const artifacts = join(temporary, 'artifacts')
-const consumer = join(temporary, 'app')
+const bootstrap = join(temporary, 'bootstrap')
+const consumer = join(temporary, 'my app')
 const environment = { ...process.env, CI: 'true', NODE_ENV: 'development', pnpm_config_pm_on_fail: 'ignore' }
 // This journey needs no external services or credentials from the developer shell.
 delete environment.REDIS_URL
@@ -27,7 +28,7 @@ function run(args, cwd) {
 
 try {
   mkdirSync(artifacts)
-  mkdirSync(consumer)
+  mkdirSync(bootstrap)
   const overrides = {}
   for (const name of ['runtime-core', 'runtime-hono', 'notifications', 'observability', 'runtime-node', 'cli']) {
     run(['pack', '--pack-destination', artifacts], join(root, 'packages', name))
@@ -35,35 +36,116 @@ try {
     assert.equal(tarballs.length, 1, `Expected one ${name} package`)
     overrides[`@zebric/${name}`] = `file:${join(artifacts, tarballs[0])}`
   }
-  writeFileSync(join(consumer, 'package.json'), JSON.stringify({
+  writeFileSync(join(bootstrap, 'package.json'), JSON.stringify({
     name: 'zebric-first-app-smoke', private: true, type: 'module',
     dependencies: { '@zebric/cli': overrides['@zebric/cli'] },
   }, null, 2))
   // Never resolve a Zebric package from the registry or link workspace sources.
-  writeFileSync(join(consumer, '.npmrc'), '@zebric:registry=http://127.0.0.1:9/\n')
-  writeFileSync(join(consumer, 'pnpm-workspace.yaml'), `packages:\n  - .\nallowBuilds:\n  better-sqlite3: true\n  msgpackr-extract: false\noverrides:\n${Object.entries(overrides).map(([name, path]) => `  '${name}': ${JSON.stringify(path)}`).join('\n')}\n`)
+  writeFileSync(join(bootstrap, '.npmrc'), '@zebric:registry=http://127.0.0.1:9/\n')
+  writeFileSync(join(bootstrap, 'pnpm-workspace.yaml'), `packages:\n  - .\nallowBuilds:\n  better-sqlite3: true\n  msgpackr-extract: false\noverrides:\n${Object.entries(overrides).map(([name, path]) => `  '${name}': ${JSON.stringify(path)}`).join('\n')}\n`)
   const install = ['install', '--frozen-lockfile=false']
   if (process.env.ZEBRIC_PACKAGE_SMOKE_OFFLINE === '1') install.push('--offline')
   process.stdout.write('Installing packed CLI in a standalone consumer...\n')
+  run(install, bootstrap)
+  assert.match(run(['exec', 'zebric', 'init', consumer], bootstrap), /Next steps:/)
+  const fixture = readFileSync(join(root, 'packages/docs/public/quickstart/blueprint.toml'), 'utf8')
+  assert.equal(readFileSync(join(consumer, 'blueprint.toml'), 'utf8'), fixture, 'Packed init must generate the documented app')
+  const generated = JSON.parse(readFileSync(join(consumer, 'package.json'), 'utf8'))
+  assert.equal(generated.dependencies['@zebric/cli'], JSON.parse(readFileSync(join(root, 'packages/cli/package.json'), 'utf8')).version)
+  // Install the generated project with local release artifacts replacing registry Zebric packages.
+  for (const name of ['.npmrc', 'pnpm-workspace.yaml']) {
+    writeFileSync(join(consumer, name), readFileSync(join(bootstrap, name)))
+  }
   run(install, consumer)
+  assert.match(run(['run', 'validate'], consumer), /Blueprint valid/)
+  verifyFailures()
   const port = await freePortPair()
   const origin = `http://localhost:${port}`
   // Only the trusted origin changes to accommodate an available local test port.
-  const blueprint = readFileSync(join(root, 'packages/docs/public/quickstart/blueprint.toml'), 'utf8')
+  const blueprint = readFileSync(join(consumer, 'blueprint.toml'), 'utf8')
     .replace('http://localhost:3000', origin)
   const blueprintPath = join(consumer, 'blueprint.toml')
   writeFileSync(blueprintPath, blueprint)
-  assert.match(run(['exec', 'zebric', 'validate', '--blueprint', 'blueprint.toml'], consumer), /Blueprint valid/)
+  assert.match(run(['exec', 'zebric', 'validate'], consumer), /Blueprint valid/)
   await exercise(origin, port, blueprintPath, blueprint)
-  process.stdout.write('CLI first app passed: install, validate, seed, auth, form save, reload, restart and persistence.\n')
+  const jsonOnly = join(temporary, 'json-only')
+  const jsonServer = await start(port, origin, jsonOnly)
+  await jsonServer.stop()
+  process.stdout.write('CLI first app passed: packed init, install, diagnostics, validate, seed, auth, form save, reload, restart and persistence.\n')
 } finally {
   rmSync(temporary, { recursive: true, force: true })
+}
+
+function cli(args, cwd = consumer) {
+  return spawnSync(process.execPath, [join(consumer, 'node_modules/@zebric/cli/dist/index.js'), ...args], {
+    cwd, env: environment, encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL',
+  })
+}
+
+function fails(args, expected, cwd = consumer) {
+  const result = cli(args, cwd)
+  assert.equal(result.status, 1, `Expected failure for ${args}: ${result.error ?? result.stdout + result.stderr}`)
+  assert.match(result.stderr, expected)
+  assert.doesNotMatch(result.stderr, /at (?:async |file:)/, 'Expected a recovery message, not a stack trace')
+}
+
+function verifyFailures() {
+  const original = readFileSync(join(consumer, 'blueprint.toml'), 'utf8')
+  fails(['init', consumer], /Refusing to overwrite/)
+  assert.equal(readFileSync(join(consumer, 'blueprint.toml'), 'utf8'), original)
+  assert.equal(readFileSync(join(consumer, 'package.json'), 'utf8').includes('zebric dev --seed'), true)
+  fails(['dev', '--port', '3000oops'], /whole-number port/)
+  fails(['dev', '--port', '65535'], /--admin-port/)
+  fails(['dev', '--port', '3000', '--admin-port', '3000'], /must differ/)
+  for (const command of ['dev', 'validate', 'audit']) {
+    fails([command, '--blueprint', 'missing.toml'], /missing.toml/)
+    const empty = join(temporary, `empty-${command}`)
+    mkdirSync(empty)
+    fails([command], /zebric init/, empty)
+  }
+  const inPlace = join(temporary, 'in-place')
+  mkdirSync(inPlace)
+  assert.equal(cli(['init'], inPlace).status, 0, 'init with no directory must use the empty current directory')
+  assert.equal(readFileSync(join(inPlace, 'blueprint.toml'), 'utf8'), original)
+  fails(['dev', '--blueprint', inPlace], /must point to a file/)
+  const json = JSON.stringify({
+    version: '0.6.0', project: { name: 'JSON app', version: '1.0.0', runtime: { min_version: '0.6.0' } },
+    entities: [], pages: [],
+  })
+  const jsonOnly = join(temporary, 'json-only')
+  mkdirSync(jsonOnly)
+  writeFileSync(join(jsonOnly, 'blueprint.json'), json)
+  for (const command of ['validate', 'audit']) assert.equal(cli([command], jsonOnly).status, 0, `${command} must discover JSON`)
+  writeFileSync(join(consumer, 'blueprint.json'), json)
+  for (const command of ['dev', 'validate', 'audit']) fails([command], /Both blueprint.toml and blueprint.json/)
+  assert.equal(cli(['validate', '--blueprint', 'blueprint.json']).status, 0)
+  rmSync(join(consumer, 'blueprint.json'))
+  writeFileSync(join(consumer, 'blueprint.toml'), 'version = "invalid"')
+  fails(['dev'], /Blueprint validation failed/)
+  writeFileSync(join(consumer, 'blueprint.toml'), original)
+  // A conflicting database directory must give a concrete repair suggestion.
+  writeFileSync(join(consumer, 'data'), 'not a directory')
 }
 
 async function exercise(origin, port, blueprintPath, blueprint) {
   let server
   let socket
   try {
+    fails(['dev', '--port', String(port)], /data\/.*writable directory/s)
+    rmSync(join(consumer, 'data'))
+    const appBlocker = createServer()
+    const adminBlocker = createServer()
+    try {
+      await listen(appBlocker, port)
+      fails(['dev', '--port', String(port)], /App port .*already in use.*--port/)
+    } finally { await new Promise(resolveClose => appBlocker.close(resolveClose)) }
+    try {
+      await new Promise((resolveListen, reject) => {
+        adminBlocker.once('error', reject)
+        adminBlocker.listen(port + 30, '127.0.0.1', resolveListen)
+      })
+      fails(['dev', '--port', String(port)], /Admin port .*already in use.*--admin-port/)
+    } finally { await new Promise(resolveClose => adminBlocker.close(resolveClose)) }
     server = await start(port, origin)
     const anonymous = browser(origin)
     const home = await anonymous('/')
@@ -136,11 +218,11 @@ async function exercise(origin, port, blueprintPath, blueprint) {
   }
 }
 
-async function start(port, origin) {
+async function start(port, origin, appDirectory = consumer) {
   // Spawn the installed binary itself, not an engine imported from the workspace.
   const cli = join(consumer, 'node_modules/@zebric/cli/dist/index.js')
-  const child = spawn(process.execPath, [cli, 'dev', '--blueprint', 'blueprint.toml', '--port', String(port), '--seed'], {
-    cwd: consumer, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(process.execPath, [cli, 'dev', '--port', String(port), '--seed'], {
+    cwd: appDirectory, env: environment, stdio: ['ignore', 'pipe', 'pipe'],
   })
   let logs = ''
   const capture = chunk => { logs = (logs + chunk).slice(-64000) }

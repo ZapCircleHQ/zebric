@@ -52,7 +52,10 @@ pnpm test:cli-app
 ```
 
 Builds and packs the CLI and its runtime dependencies, installs them outside the
-workspace, and runs the downloadable quickstart Blueprint. Checks validation,
+workspace, uses the packed `init` command to create a project, installs that
+project, and runs its quickstart Blueprint. Checks overwrite protection,
+Blueprint selection, startup diagnostics (including occupied app/admin ports),
+validation,
 seeded HTML/data, anonymous write rejection, signup, native form submission,
 public detail rendering, WebSocket reload plus changed HTML, and persistence and
 sign-in after restart. This is an HTTP/WebSocket check; it does not drive a browser.

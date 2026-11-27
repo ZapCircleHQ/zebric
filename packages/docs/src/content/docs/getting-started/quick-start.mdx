@@ -15,6 +15,25 @@ You'll need Node.js 22 or above. Zebric's CI and published images use Node.js 24
 ## Create a Project
 
 ```bash
+npx @zebric/cli init my-app
+cd my-app
+npm install
+npm run validate
+npm run dev
+```
+
+Open http://localhost:3000. You'll see three sample posts. Continue with
+[creating your first post](#create-your-first-post) below.
+
+`init` creates the Blueprint, package scripts, README, and `.gitignore` without
+installing dependencies. It requires a new or empty directory and never prompts.
+Omit `my-app` to use the current empty directory. No AI credential is needed.
+
+## Create the Files Manually
+
+To create the same app yourself instead of using `init`:
+
+```bash
 mkdir my-app
 cd my-app
 npm install @zebric/cli
@@ -112,7 +131,7 @@ entity = "Post"
 where = { id = "$params.id" }
 ```
 
-## Start the Dev Server
+## Start the Dev Server Manually
 
 ```bash
 npx zebric validate --blueprint blueprint.toml
@@ -125,6 +144,8 @@ Open `http://localhost:3000` in your browser. You'll see:
 - A public detail page at `/posts/:id` for each post
 - A protected form at `/posts/new` for signed-in users
 
+## Create Your First Post
+
 Visit `/posts/new`. Zebric redirects you to its built-in sign-in page because
 the form has `auth = "required"`. Select **Sign up**, create an account, then
 return to `/posts/new` and create your first post. Readers can visit the list
@@ -136,7 +157,8 @@ Keep the server running. In `blueprint.toml`, change `title = "All Posts"` to
 `title = "My Posts"` and save. The browser reloads and shows **My Posts**; your
 records remain in the local SQLite database at `data/app.db`.
 
-Stop the server with **Ctrl+C**. Run the same start command again to continue.
+Stop the server with **Ctrl+C**. Run `npm run dev` again for a generated project,
+or repeat the manual start command, to continue.
 `--seed` skips entities that already contain records, so restarting does not add
 duplicate sample posts.
 
