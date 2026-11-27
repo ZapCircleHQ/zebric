@@ -1,5 +1,17 @@
 # @zebric/mcp-server
 
+## 0.10.0
+
+### Minor Changes
+
+- 6e3755c: Add declarative MCP Apps table and detail views, blueprint validation and composition, and a transport-independent MCP server configuration hook. Views use sandboxed HTML resources and host-mediated read-only refresh while preserving existing tool authorization and text responses.
+- 6e3755c: Stop repeating the application prefix in generated tool names. When an operation ID already starts with the application name (for example, a skill named after its application), the tool is named after the operation ID alone: `task_tracker_list_tasks` instead of `task_tracker_task_tracker_list_tasks`. Other tool names are unchanged. MCP clients or agent configurations that reference the old doubled names must be updated; mutation allowlists use operation IDs and are unaffected.
+
+### Patch Changes
+
+- Updated dependencies [6e3755c]
+  - @zebric/agent@0.10.0
+
 ## 0.9.0
 
 ### Patch Changes
