@@ -21,7 +21,7 @@
     "clean": "turbo run clean && rm -rf node_modules",
     "changeset": "changeset",
     "changeset:check": "node scripts/check-changeset-pr.mjs",
-    "version": "changeset version",
+    "version": "changeset version && pnpm install --lockfile-only",
     "release:check": "node scripts/check-release-versions.mjs",
     "release": "pnpm release:check && pnpm build && changeset publish",
     "build:templates": "node scripts/build-layout-templates.mjs",
