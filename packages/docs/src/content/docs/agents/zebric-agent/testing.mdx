@@ -23,7 +23,7 @@ const tools = createRuntimeReadTools(contract, { applicationName: 'issue_board' 
 const driver = new DeterministicAgentDriver(tools)
 const columns = await driver.invoke({
   // Generated names are <applicationName>_<OpenAPI operationId>.
-  tool: 'issue_board_issue_board_list_columns',
+  tool: 'issue_board_list_columns',
   input: { key: 'ready_to_test' },
 })
 

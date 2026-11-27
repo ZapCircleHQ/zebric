@@ -83,4 +83,23 @@ describe('auditBlueprint', () => {
     bp.pages[0]!.queries = { zero: { entity: 'Task', limit: 0 }, negative: { entity: 'Task', limit: -1 } }
     expect(auditBlueprint(bp).findings.map(f => f.ruleId)).toEqual(['query.unbounded', 'query.unbounded'])
   })
+
+  it('flags MCP App views bound to operations the blueprint does not expose', () => {
+    const bp = blueprint()
+    bp.skills = [{ name: 'tasks', actions: [{ name: 'list', method: 'GET', path: '/api/agent/tasks', entity: 'Task', action: 'list' }] }]
+    bp.commands = [{ name: 'Close Task', entity: 'Task', set: { done: true } } as any]
+    bp.mcp_apps = [
+      { name: 'skill', title: 'Skill', operation: 'tasks_list', layout: 'table' },
+      { name: 'builtin', title: 'Audit', operation: 'query_audit_history', layout: 'table' },
+      { name: 'command', title: 'Close', operation: 'close_task', layout: 'detail' },
+      { name: 'typo', title: 'Typo', operation: 'task_list', layout: 'table' },
+    ]
+    const report = auditBlueprint(bp)
+    expect(report.findings.map(f => [f.ruleId, f.severity, f.path])).toEqual([
+      ['mcp-apps.mutation-operation', 'warning', ['mcp_apps', 2, 'operation']],
+      ['mcp-apps.unknown-operation', 'error', ['mcp_apps', 3, 'operation']],
+    ])
+    expect(report.findings[0]!.message).toContain('"close_task"')
+    expect(report.findings[1]!.message).toContain('"task_list"')
+  })
 })

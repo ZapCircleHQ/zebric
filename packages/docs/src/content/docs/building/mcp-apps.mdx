@@ -1,0 +1,60 @@
+---
+title: MCP Apps
+description: Declare interactive tool result views for MCP Apps hosts.
+---
+
+`@zebric/mcp-apps` turns Agent API tool results into table and detail views inside MCP Apps clients. Views are declared in the Blueprint and registered through `@zebric/mcp-server`. The implementation follows the [MCP Apps specification](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx).
+
+```toml
+[[mcp_apps]]
+name = "tasks"
+title = "Tasks"
+operation = "task_tracker_list_tasks"
+layout = "table"
+fields = ["title", { field = "status", label = "Status" }]
+```
+
+Set `operation` to the exact OpenAPI operation ID from your application's `/api/openapi.json`. Use `data_path = "data"` if records are wrapped in a `data` property; omit it for a direct array. Field paths can select nested values. `layout = "detail"` presents each record as labeled values. Without `fields`, the view uses the first record's keys. `empty` overrides the empty state. `resource_uri` overrides the default `ui://zebric/<name>.html` URI and can carry a version for host caches.
+
+Load the Blueprint using the normal loader and register its declarations:
+
+```ts
+import { BlueprintLoader } from '@zebric/runtime-node'
+import { startZebricMcpHttpServer } from '@zebric/mcp-server/node'
+import { createMcpAppsExtension } from '@zebric/mcp-apps'
+
+const blueprint = await new BlueprintLoader().load('./blueprint.toml')
+const server = await startZebricMcpHttpServer({
+  applicationUrl: 'http://127.0.0.1:3000',
+  credential: () => process.env.ZEBRIC_API_KEY,
+  configureServer: createMcpAppsExtension(blueprint.mcp_apps ?? []),
+})
+```
+
+This starts a loopback MCP listener at `http://127.0.0.1:3001/mcp`. The same hook works with `createZebricMcpServer` for stdio or `createZebricMcpHttpHandler` for Workers/Hono. Public listeners require incoming authentication or an explicit gateway/public-access configuration; follow the [MCP server documentation](https://github.com/ZapCircleHQ/zebric/tree/main/packages/mcp-server).
+
+The adapter binds views to existing tools and serves static HTML resources with the MCP Apps MIME type. Hosts deliver tool results to the view and proxy Refresh calls to the read-only operation with the original arguments. Text-only clients continue to receive the normal text result. Views receive no API credentials and declare no external network access.
+
+Mutations still require `allowedMutations`; declaring a view does not grant execution rights. Mutation result views have no Refresh button, and their tools stay `model`-only, so the view cannot call them. Missing operations and duplicate declarations are rejected. `zebric audit` reports unknown operations as errors, and views bound to mutations as warnings, since those need an allowlist entry wherever they are served. Table and detail views are the initial supported layouts; existing web pages, forms, custom templates, and boards are not embedded. Configure views programmatically; the MCP server CLI does not load them.
+
+## Test in supported environments
+
+Use the [MCP Apps testing guide](https://github.com/ZapCircleHQ/zebric/blob/main/packages/mcp-apps/TESTING.md) for the full procedure, expected results, and troubleshooting. It includes local Node HTTP, host-managed stdio, the reference `basic-host`, VS Code, Claude, ChatGPT, and Workers/Hono deployment checks. These are testing directions; record the host version and results rather than assuming every client version has been verified.
+
+From a repository checkout, build the adapter and sample application's dependencies:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm exec turbo run build --filter=@zebric/mcp-apps... --filter=@zebric/cli...
+pnpm --filter @zebric/mcp-apps test
+```
+
+Start Task Tracker with `TASK_TRACKER_API_KEY` set, add sample tasks, and start the Apps adapter in a second terminal with the same key:
+
+```sh
+node packages/mcp-apps/examples/task-tracker.mjs
+```
+
+Use `http://127.0.0.1:3001/mcp` in a local MCP Apps host. For stdio, configure the host to launch that script with `--stdio`; keep Task Tracker running on port 3000. The generic `zebric-mcp-server` CLI does not register Apps views.
+
+Inspect the list tool's `_meta.ui.resourceUri`, read `ui://zebric/tasks.html`, and call `task_tracker_list_tasks` with `{"status":"not_started"}`. Then verify the rendered table and Refresh in a visual host. Refresh should retain that filter after you edit a task in the web app. A successful text tool result alone does not verify sandbox rendering. Hosted clients need reachable HTTPS or a supported private tunnel; the loopback sample is only the local starting point.

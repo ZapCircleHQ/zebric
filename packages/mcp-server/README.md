@@ -2,6 +2,8 @@
 
 Expose a running Zebric application's Agent API as an MCP server over stdio or Streamable HTTP/S. Node supports both transports; Cloudflare Workers use the HTTP handler. With stdio, when the application advertises its authenticated Agent API event stream, the adapter also declares Claude Code's experimental `claude/channel` capability and forwards redacted entity and workflow notifications into the session.
 
+For declarative table and detail views in MCP Apps clients, use [`@zebric/mcp-apps`](../mcp-apps/README.md). Its `createMcpAppsExtension(blueprint.mcp_apps ?? [])` function plugs into the `configureServer` option on every transport. This hook runs after tool registration and before transport connection; its context maps exact operation IDs to `{ name, registration }` for available tools. Hooks can register resources or decorate tool metadata without enabling otherwise unavailable mutations.
+
 ```sh
 zebric-mcp-server --connect http://127.0.0.1:3000
 ```
@@ -80,5 +82,7 @@ Configure these limits with `maxRequestBytes`, `requestBodyTimeoutMs`, `maxConcu
 HTTP `credential(request)` receives the current MCP request, so one retained handler can resolve a different application API key for each authenticated agent. Existing zero-argument credential providers remain supported. `fetch(input, init, request)` also receives that request for binding in-process application execution to the current invocation. Discovery is cached as application metadata; credentials and upstream execution context are never shared between callers. Authenticate incoming callers and resolve only the application credentials they are authorized to use.
 
 Failed Agent API tool calls return `isError: true` and an `error` object in `structuredContent` and JSON text. This preserves `code`, `retryable`, HTTP `status`, error `kind`, and available `requestId`/`details`. Consumers can inspect `result.structuredContent.error.retryable` without matching message text. Credentials remain redacted.
+
+Tool names are `<application-name>_<operationId>`, sanitized to lowercase letters, digits and underscores. When the operation ID already starts with the application name, as it does for a skill named after its application, the prefix is not repeated: `--application-name task_tracker` exposes `task_tracker_list_tasks`, not `task_tracker_task_tracker_list_tasks`. Mutation allowlists always use operation IDs, not tool names.
 
 Upstream requests use manual redirect handling and reject redirects explicitly on both Node and Workers. SSE-only operations such as `stream_agent_events` are consumed through the event channel rather than listed as tools.

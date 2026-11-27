@@ -752,6 +752,36 @@ const LiveConfigSchema = z.object({
   change_retention_hours: z.number().min(0).optional(),
 })
 
+export const McpAppViewSchema = z.object({
+  name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/),
+  title: z.string().min(1),
+  operation: z.string().min(1),
+  layout: z.enum(['table', 'detail']),
+  data_path: z.string().min(1).optional(),
+  fields: z.array(z.union([
+    z.string().min(1),
+    z.object({ field: z.string().min(1), label: z.string().optional() }).strict(),
+  ])).min(1).optional(),
+  empty: z.string().optional(),
+  resource_uri: z.string().url().startsWith('ui://').optional(),
+}).strict()
+
+export const McpAppsSchema = z.array(McpAppViewSchema).superRefine((views, context) => {
+  for (const key of ['name', 'operation', 'resource_uri'] as const) {
+    // Value -> whether it was set explicitly; default URIs derive from names.
+    const seen = new Map<string, boolean>()
+    views.forEach((view, index) => {
+      const explicit = key !== 'resource_uri' || view.resource_uri !== undefined
+      const value = key === 'resource_uri' ? view.resource_uri ?? `ui://zebric/${view.name}.html` : view[key]
+      // Two derived URIs collide only when names do, which the name check already reports.
+      if (seen.has(value) && (explicit || seen.get(value))) {
+        context.addIssue({ code: 'custom', message: `Duplicate MCP App ${key}: ${value}`, path: [index, key] })
+      }
+      if (!seen.get(value)) seen.set(value, explicit)
+    })
+  }
+})
+
 export const BlueprintSchema = z.object({
   version: z.string(),
   hash: z.string().optional(),
@@ -770,6 +800,7 @@ export const BlueprintSchema = z.object({
   commands: z.array(CommandSchema).optional(),
   services: z.array(ServiceConfigSchema).optional(),
   live: LiveConfigSchema.optional(),
+  mcp_apps: McpAppsSchema.optional(),
 })
 
 /** Schema for a TOML file participating in a composed Blueprint. */

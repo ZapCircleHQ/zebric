@@ -47,6 +47,7 @@ export default defineConfig({
 						{ label: 'Blueprint Reference', slug: 'building/blueprint' },
 						{ label: 'Domain Commands', slug: 'building/domain-commands' },
 						{ label: 'Live Mode', slug: 'building/live-mode' },
+						{ label: 'MCP Apps', slug: 'building/mcp-apps' },
 						{
 							label: 'Agent API',
 							items: [

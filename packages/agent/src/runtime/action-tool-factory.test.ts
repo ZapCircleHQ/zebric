@@ -242,6 +242,23 @@ describe('createRuntimeReadTools', () => {
       .toThrow('Zebric tool-name collision: local_issue_board_list_columns')
   })
 
+  it('does not repeat an application prefix the operation ID already carries', () => {
+    const names = (applicationName: string) =>
+      createRuntimeReadTools(contract, { applicationName }).map(item => item.name)
+    expect(names('issue_board')).toContain('issue_board_list_columns')
+    // Matching is done on the sanitized form, and only on a whole prefix segment.
+    expect(names('Issue Board')).toContain('issue_board_list_columns')
+    expect(names('issue')).toContain('issue_board_list_columns')
+    expect(names('issue_boar')).toContain('issue_boar_issue_board_list_columns')
+  })
+
+  it('rejects collisions between prefixed and already-prefixed operation IDs', () => {
+    const colliding = structuredClone(contract)
+    colliding.openapi.paths['/api/agent/list-columns'] = { get: { operationId: 'list_columns' } }
+    expect(() => createRuntimeReadTools(colliding, { applicationName: 'issue_board' }))
+      .toThrow('Zebric tool-name collision: issue_board_list_columns')
+  })
+
   it.each([
     ['reference', { $ref: '#/components/schemas/Filter' }, 'keyword "$ref"'],
     ['composition', { oneOf: [{ type: 'string' }, { type: 'integer' }] }, 'keyword "oneOf"'],

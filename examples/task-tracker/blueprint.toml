@@ -262,3 +262,11 @@ agentId = "task-tracker-mcp-agent"
 credentialId = "task-tracker-mcp-key"
 displayName = "Task Tracker MCP Agent"
 scopes = ["tasks.read", "tasks.write", "tasks.delete"]
+
+[[mcp_apps]]
+name = "tasks"
+title = "Tasks"
+operation = "task_tracker_list_tasks"
+layout = "table"
+fields = ["title", "status", "priority"]
+empty = "No tasks found."

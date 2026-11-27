@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ServerNotification } from '@modelcontextprotocol/sdk/types.js'
 import { randomUUID } from 'node:crypto'
 import {
@@ -25,7 +25,14 @@ export interface CreateZebricMcpServerOptions {
   eventStream?: boolean
   /** Pre-discovered contract for HTTP adapters with bounded discovery caching. */
   contract?: ZebricApplicationContract
+  /** Register resources or decorate tools before the server connects to a transport. */
+  configureServer?: ConfigureZebricMcpServer
 }
+
+export type ConfigureZebricMcpServer = (
+  server: ZebricMcpServer,
+  context: { tools: ReadonlyMap<string, { name: string; registration: RegisteredTool }> },
+) => void | Promise<void>
 
 type EventStreamOptions = Pick<CreateZebricMcpServerOptions, 'credential' | 'fetch' | 'timeoutMs'>
 
@@ -160,15 +167,12 @@ export async function createZebricMcpServer(options: CreateZebricMcpServerOption
     },
   )
 
-  if (contract.eventStreamUrl && options.eventStream !== false) {
-    await server.startEventStream(contract.eventStreamUrl, options)
-  }
-
+  const registeredTools = new Map<string, { name: string; registration: RegisteredTool }>()
   for (const runtimeTool of runtimeTools) {
     const metadata = getRuntimeToolMetadata(runtimeTool)
     if (!metadata) throw new Error(`Missing Zebric metadata for tool ${runtimeTool.name}`)
     if (metadata.risk !== 'read' && !allowedMutations.has(metadata.operationId)) continue
-    server.registerTool(
+    const registeredTool = server.registerTool(
       runtimeTool.name,
       {
         description: runtimeTool.description,
@@ -212,8 +216,18 @@ export async function createZebricMcpServer(options: CreateZebricMcpServerOption
         }
       },
     )
+    registeredTools.set(metadata.operationId, { name: runtimeTool.name, registration: registeredTool })
   }
 
+  try {
+    await options.configureServer?.(server, { tools: registeredTools })
+    if (contract.eventStreamUrl && options.eventStream !== false) {
+      await server.startEventStream(contract.eventStreamUrl, options)
+    }
+  } catch (error) {
+    await server.close()
+    throw error
+  }
   return server
 }
 

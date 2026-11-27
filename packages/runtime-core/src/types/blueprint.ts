@@ -23,6 +23,21 @@ export interface Blueprint {
   commands?: Command[]
   services?: ServiceConfig[]
   live?: LiveConfig
+  mcp_apps?: McpAppView[]
+}
+
+/** A sandboxed MCP App view of an existing Agent API operation's result. */
+export interface McpAppView {
+  name: string
+  title: string
+  operation: string
+  layout: 'table' | 'detail'
+  /** Dot-separated path into the tool result, for example `data.items`. */
+  data_path?: string
+  fields?: Array<string | { field: string; label?: string }>
+  empty?: string
+  /** Explicit versioned URI for hosts that cache UI resources. */
+  resource_uri?: string
 }
 
 export interface ProjectConfig {
