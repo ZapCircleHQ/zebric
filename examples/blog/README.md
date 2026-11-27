@@ -1,96 +1,58 @@
 # Blog Example
 
-A simple blog application built with Zebric demonstrating core features.
+A relational Blueprint example with users, posts, author queries, draft/published
+states, and list/detail/form pages. TOML and JSON variants are included.
 
-## Features
+For a first working app with signup and sample posts, follow the
+[quickstart](https://docs.zebric.dev/getting-started/quickstart/). This example is
+for exploring a larger data model; its `User` entity is application data and is
+separate from Better Auth accounts.
 
-- ✅ Public blog post listing and detail pages
-- ✅ Create, edit, and delete posts (requires authentication)
-- ✅ User profiles with post history
-- ✅ Dashboard for content management
-- ✅ Draft and published post statuses
-- ✅ Server-side HTML rendering with Tailwind CSS
-- ✅ Form validation and error handling
-- ✅ Access control and permissions
+## Run from source
 
-## Getting Started
-
-### 1. Build the Project
+Use Node.js 24 and pnpm 11.23.0. From the repository root:
 
 ```bash
-# From project root
-pnpm build
-```
-
-### 2. Start the Dev Server
-
-```bash
-# From project root
-node packages/cli/dist/index.js dev --blueprint examples/blog/blueprint.json --port 3000
-
-# Or use the convenience script
+pnpm install --frozen-lockfile
+pnpm --filter blog-example... build
 pnpm --filter blog-example dev
 ```
 
-The blog will be available at http://localhost:3000
+Open http://localhost:3000. The package script runs `blueprint.json`. To inspect
+the TOML variant instead, run:
+
+```bash
+node packages/cli/dist/index.js dev --blueprint examples/blog/blueprint.toml
+```
 
 ## Pages
 
-| Path | Description | Auth Required |
-|------|-------------|---------------|
-| `/` | Home - List of published posts | No |
-| `/posts` | All published posts | No |
-| `/posts/:id` | Post detail page | No |
-| `/posts/new` | Create new post form | Optional* |
-| `/posts/:id/edit` | Edit post form | Yes |
-| `/posts/:id/delete` | Delete post confirmation | Yes |
-| `/users/:id` | User profile page | No |
-| `/dashboard` | Admin dashboard | Yes |
+| Path | Purpose | Page auth |
+| --- | --- | --- |
+| `/` and `/posts` | Published posts | Public |
+| `/posts/:id` | Post and author detail | Public |
+| `/posts/new` | Create form | Optional |
+| `/posts/:id/edit` | Edit form | Required |
+| `/posts/:id/delete` | Delete confirmation | Required |
+| `/users/:id` | Author profile | Public |
+| `/dashboard` | Content management | Required |
 
-*The form is accessible to everyone, but creating posts requires authentication.
+Entity access rules still apply independently of page auth. Inspect the selected
+Blueprint before using these rules in your application.
 
-## Testing the Example
+## Data and authentication
 
-The example works and renders correctly! Here's what's been tested and verified:
+The database starts empty, without seed records. Email/password authentication
+is configured, and Zebric supplies `/auth/sign-up` and `/auth/sign-in`. Creating
+a post also requires an application `User` record for the `authorId` reference;
+signing up alone does not create that record. Decide how accounts relate to
+application authors before extending this example. Its create policy is public;
+use the quickstart for an example with explicit authenticated writes.
 
-✅ **Pages Load Correctly**
-- Home page (`/`) renders with empty state when no posts exist
-- Posts list (`/posts`) renders with proper HTML structure
-- New post form (`/posts/new`) renders with all form fields and validation
-- 404 error pages render beautifully
-- Admin endpoints work (`/__admin/blueprint`, `/__admin/pages`, etc.)
+## Continue
 
-✅ **Security Features**
-- XSS protection with HTML escaping throughout
-- CSP headers configured correctly
-- Secure by default auth (pages require auth unless explicitly set to `none` or `optional`)
-- Access control rules enforced
-
-✅ **HTML Rendering**
-- Server-side rendering with Tailwind CSS
-- Responsive navigation with properly escaped links
-- Form fields with client-side enhancement
-- Error states and validation messages
-
-## Known Limitations
-
-1. **Authentication UI**: The example doesn't include sign-in/sign-up forms yet. You'll need to use Better Auth API endpoints directly or extend the example.
-
-2. **API Access Control**: Direct API endpoints (`/api/posts`) enforce access rules but don't have session context in curl requests. Use the HTML forms for CRUD operations with auth.
-
-3. **Initial Data**: Database starts empty. You'll need to create users and posts through forms or by extending the seed data.
-
-## Architecture
-
-- **Runtime**: Pure JSON interpreter, no build step
-- **Database**: SQLite with Better-SQLite3
-- **Auth**: Better Auth v5 with email provider + RBAC
-- **Rendering**: Server-side HTML with Tailwind CSS CDN
-- **Security**: Row-level access control, XSS protection, CSP headers
-
-## Learn More
-
-- [Zebric Documentation](../../docs/)
-- [Blueprint Specification](../../ZBL-Engine-Specification.md)
-- [Plugin System](../../packages/runtime/docs/PLUGIN-SYSTEM.md)
-- [HTML Rendering](../../docs/HTML-RENDERING.md)
+- [Blueprint reference](https://docs.zebric.dev/building/blueprint/)
+- [Authentication and access control](https://docs.zebric.dev/building/security/)
+- [Runtime and deployment](https://docs.zebric.dev/run/runtime/)
+- [Cloudflare blog](../workers-blog/README.md) for a standalone example with
+  signup, ownership, migrations, and deployment instructions

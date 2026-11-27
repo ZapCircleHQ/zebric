@@ -24,9 +24,13 @@ data update. The runtime's shared client bundle handles all the DOM wiring.
 
 ```bash
 # From the zebric root
-pnpm install
+pnpm install --frozen-lockfile
+pnpm --filter task-tracker... build
 pnpm --filter task-tracker dev
 ```
+
+Requires Node.js 24 and pnpm 11.23.0 for repository development. The filtered
+build prepares the CLI, runtime, and MCP server before the example uses them.
 
 The board renders immediately with three empty columns. To populate it with a few
 sample tasks:

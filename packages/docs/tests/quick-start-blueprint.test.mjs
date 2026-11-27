@@ -6,6 +6,17 @@ import { AccessControl } from '../../runtime-core/dist/database/access-control.j
 import { BlueprintParser } from '../../runtime-core/dist/blueprint/loader.js'
 
 const quickStartPath = new URL('../src/content/docs/getting-started/quick-start.mdx', import.meta.url)
+const fixturePath = new URL('../public/quickstart/blueprint.toml', import.meta.url)
+
+test('README, quickstart, and downloadable first-app Blueprint stay identical', async () => {
+  const fixture = (await readFile(fixturePath, 'utf8')).trim()
+  for (const path of [quickStartPath, new URL('../../../README.md', import.meta.url)]) {
+    const markdown = await readFile(path, 'utf8')
+    const match = markdown.match(/```toml\n([\s\S]*?)\n```/)
+    assert.ok(match, `${path.pathname} must include the first-app Blueprint`)
+    assert.equal(match[1].trim(), fixture, `${path.pathname} drifted from the downloadable Blueprint`)
+  }
+})
 
 async function loadQuickStartBlueprint() {
   const markdown = await readFile(quickStartPath, 'utf8')

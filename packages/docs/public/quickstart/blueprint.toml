@@ -1,0 +1,82 @@
+version = "0.6.0"
+
+[project]
+name = "My Blog"
+version = "1.0.0"
+description = "A simple blog"
+
+[project.runtime]
+min_version = "0.6.0"
+
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+# Define a Post entity
+[entity.Post]
+fields = [
+  { name = "id", type = "ULID", primary_key = true },
+  { name = "title", type = "Text", required = true },
+  { name = "body", type = "LongText", required = true },
+  { name = "published", type = "Boolean", default = false },
+  { name = "createdAt", type = "DateTime", default = "now" }
+]
+seed = [
+  { title = "Welcome to Zebric", body = "This blog runs from a single TOML blueprint. Edit blueprint.toml and the page reloads.", published = true },
+  { title = "How seeding works", body = "These sample posts come from the seed array on the Post entity. zebric dev --seed inserts them when the table is empty.", published = true },
+  { title = "Write your own", body = "Sign up, visit /posts/new, and create your first post.", published = false }
+]
+
+[entity.Post.access]
+read = true
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+# Home page — list all posts
+[page."/"]
+title = "All Posts"
+auth = "none"
+layout = "list"
+
+[page."/".query.posts]
+entity = "Post"
+orderBy = { createdAt = "desc" }
+limit = 25
+
+# Create-post form
+[page."/posts/new"]
+title = "New Post"
+auth = "required"
+layout = "form"
+
+[page."/posts/new".form]
+entity = "Post"
+method = "create"
+
+[[page."/posts/new".form.fields]]
+name = "title"
+type = "text"
+label = "Title"
+required = true
+
+[[page."/posts/new".form.fields]]
+name = "body"
+type = "textarea"
+label = "Body"
+rows = 10
+required = true
+
+[page."/posts/new".form.onSuccess]
+redirect = "/"
+message = "Post created!"
+
+# Post detail page
+[page."/posts/:id"]
+title = "Post Detail"
+auth = "none"
+layout = "detail"
+
+[page."/posts/:id".query.post]
+entity = "Post"
+where = { id = "$params.id" }

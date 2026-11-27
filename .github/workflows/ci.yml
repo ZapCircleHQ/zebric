@@ -378,6 +378,9 @@ jobs:
       - name: Build packages
         run: pnpm build
 
+      - name: Verify standalone CLI first-app journey
+        run: pnpm test:cli-app
+
       - name: Test task-tracker blueprint parse
         run: |
           echo "Testing task-tracker blueprint..."

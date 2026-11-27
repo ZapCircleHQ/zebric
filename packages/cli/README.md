@@ -7,7 +7,7 @@ Command-line tools for Zebric. Start a development server or validate your bluep
 ```bash
 npm install -g @zebric/cli
 # or use without installing:
-npx zebric <command>
+npx @zebric/cli <command>
 ```
 
 ## Commands

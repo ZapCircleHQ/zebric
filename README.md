@@ -62,21 +62,16 @@ zebric/
 
 ## Quick Start
 
-### Using npm
+Requires Node.js 22+ (CI uses Node.js 24).
 
 ```bash
-# Install Zebric CLI globally
-npm install -g @zebric/cli
-
-# Or use with npx (no installation needed)
-npx @zebric/cli --version
-
-# Create a new directory for your project
 mkdir my-app
 cd my-app
-
-# Create a blueprint.toml file with the contents below
+npm install @zebric/cli
 ```
+
+Create `blueprint.toml` with the following contents, or download the
+[quickstart Blueprint](https://docs.zebric.dev/quickstart/blueprint.toml):
 
 ```toml
 version = "0.6.0"
@@ -89,6 +84,11 @@ description = "A simple blog"
 [project.runtime]
 min_version = "0.6.0"
 
+[auth]
+providers = ["email"]
+trustedOrigins = ["http://localhost:3000"]
+
+# Define a Post entity
 [entity.Post]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
@@ -97,7 +97,19 @@ fields = [
   { name = "published", type = "Boolean", default = false },
   { name = "createdAt", type = "DateTime", default = "now" }
 ]
+seed = [
+  { title = "Welcome to Zebric", body = "This blog runs from a single TOML blueprint. Edit blueprint.toml and the page reloads.", published = true },
+  { title = "How seeding works", body = "These sample posts come from the seed array on the Post entity. zebric dev --seed inserts them when the table is empty.", published = true },
+  { title = "Write your own", body = "Sign up, visit /posts/new, and create your first post.", published = false }
+]
 
+[entity.Post.access]
+read = true
+create = "authenticated"
+update = "authenticated"
+delete = "authenticated"
+
+# Home page — list all posts
 [page."/"]
 title = "All Posts"
 auth = "none"
@@ -106,10 +118,12 @@ layout = "list"
 [page."/".query.posts]
 entity = "Post"
 orderBy = { createdAt = "desc" }
+limit = 25
 
+# Create-post form
 [page."/posts/new"]
 title = "New Post"
-auth = "none"
+auth = "required"
 layout = "form"
 
 [page."/posts/new".form]
@@ -133,6 +147,7 @@ required = true
 redirect = "/"
 message = "Post created!"
 
+# Post detail page
 [page."/posts/:id"]
 title = "Post Detail"
 auth = "none"
@@ -143,37 +158,44 @@ entity = "Post"
 where = { id = "$params.id" }
 ```
 
-Then start the development server:
+Validate and run your app:
 
 ```bash
-zebric dev --blueprint blueprint.toml --seed
-# Or without a global installation:
-# npx @zebric/cli dev --blueprint blueprint.toml --seed
-
-# Visit http://localhost:3000
+npx zebric validate --blueprint blueprint.toml
+npx zebric dev --blueprint blueprint.toml --seed
 ```
+
+Open http://localhost:3000 to see three sample posts. Visit `/posts/new`, select
+**Sign up**, create an account, then return to `/posts/new` and create a post.
+Reading is public; creating, updating, and deleting posts require a signed-in user.
+
+Keep the server running, change `title = "All Posts"` to `title = "My Posts"`,
+and save. The browser reloads with the new heading. Records persist in
+`data/app.db`; restarting with `--seed` does not duplicate existing sample data.
+Stop the server with **Ctrl+C**.
+
+This learning app lets every signed-in user modify any post and lists all posts,
+including unpublished ones. Add ownership rules and publication filters before
+adapting it for multiple authors or private drafts. Continue with the
+[quickstart](https://docs.zebric.dev/getting-started/quickstart/) and
+[security guide](https://docs.zebric.dev/building/security/).
 
 ### Development from source
 
+For contributing to Zebric, use Node.js 24 and pnpm 11.23.0 (the pinned version
+in `package.json`). Run the workspace CLI directly so no registry package is used:
+
 ```bash
-# Clone the repository
 git clone https://github.com/ZapCircleHQ/zebric.git
 cd zebric
-
-# Install dependencies
-pnpm install
-
-# Build all packages
-pnpm build
-
-# Run an example app
-cd examples/blog
-npx zebric dev --blueprint blueprint.toml
-
-# Visit http://localhost:3000
+pnpm install --frozen-lockfile
+pnpm --filter task-tracker... build
+pnpm --filter task-tracker dev
 ```
 
-For more patterns, continue with the [documentation](https://docs.zebric.dev) and [examples](examples/).
+Open http://localhost:3000. See [CONTRIBUTING.md](CONTRIBUTING.md) for focused
+build/test commands and [Task Tracker](examples/task-tracker/README.md) for sample
+data and agent tools.
 
 ## Technology Stack
 

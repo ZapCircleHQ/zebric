@@ -4,6 +4,10 @@ Thank you for your interest in contributing to Zebric! We welcome contributions 
 
 ## Getting Started
 
+Use Node.js 24 (the CI version) and pnpm 11.23.0, pinned in the root
+`package.json`. Application runtimes support Node.js 22+, while contributor tools
+can have stricter patch-version requirements.
+
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
@@ -12,16 +16,42 @@ Thank you for your interest in contributing to Zebric! We welcome contributions 
    ```
 3. **Install dependencies**:
    ```bash
-   pnpm install
+   pnpm install --frozen-lockfile
    ```
-4. **Build the project**:
+4. **Build and run one example**:
    ```bash
-   pnpm build
+   pnpm --filter task-tracker... build
+   pnpm --filter task-tracker dev
    ```
-5. **Run tests**:
-   ```bash
-   pnpm test
-   ```
+   Open http://localhost:3000. Stop with Ctrl+C. See the
+   [Task Tracker guide](examples/task-tracker/README.md) for seeding and MCP tools.
+5. **Run checks for the area you change**, using the table below.
+
+## Focused Development Loop
+
+Build the package and its dependencies before running its compiled CLI or tests.
+For example:
+
+```bash
+pnpm --filter @zebric/cli... build
+pnpm --filter @zebric/cli test
+```
+
+| Change | Relevant checks |
+| --- | --- |
+| Blueprint parsing, schema, or access rules | `pnpm --filter @zebric/runtime-core test` |
+| Node runtime or HTTP behavior | `pnpm --filter @zebric/runtime-node test` |
+| CLI | `pnpm --filter @zebric/cli test` and `pnpm test:cli-app` |
+| Public documentation | `pnpm --filter zebric-docs test`, `pnpm --filter zebric-docs build`, and `pnpm --filter zebric-docs check` |
+| First-app Blueprint or instructions | `pnpm --filter zebric-docs test` and `pnpm test:cli-app` |
+| Workers starter/runtime | See [TESTING.md](TESTING.md), including `pnpm test:workers-apps` |
+
+`pnpm test:cli-app` builds and packs the CLI and its runtime dependencies, then
+installs a standalone app in a temporary directory. It requires registry access
+for third-party dependencies. It does not publish or deploy anything.
+
+Use `pnpm build` and `pnpm test` for repository-wide verification before a PR;
+[TESTING.md](TESTING.md) explains browser tests and the other test layers.
 
 ## Development Workflow
 
@@ -86,7 +116,8 @@ test: add unit tests for query executor
 
 ## Documentation
 
-- Update relevant documentation in `/docs` for new features
+- Update public documentation in `packages/docs/src/content/docs` for user-facing features
+- Keep architecture and project notes in `/docs`
 - Add examples to demonstrate usage
 - Update README.md if adding major features
 - Include inline code comments for complex logic

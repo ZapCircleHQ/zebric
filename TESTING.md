@@ -45,6 +45,26 @@ using local Wrangler/workerd servers. It does not deploy or access remote D1.
 CI runs this gate in the Worker smoke job. Set `ZEBRIC_PACKAGE_SMOKE_OFFLINE=1`
 only when every third-party dependency is already cached locally.
 
+### Standalone CLI first-app check
+
+```bash
+pnpm test:cli-app
+```
+
+Builds and packs the CLI and its runtime dependencies, installs them outside the
+workspace, and runs the downloadable quickstart Blueprint. Checks validation,
+seeded HTML/data, anonymous write rejection, signup, native form submission,
+public detail rendering, WebSocket reload plus changed HTML, and persistence and
+sign-in after restart. This is an HTTP/WebSocket check; it does not drive a browser.
+CI runs it in the Blueprint Smoke Tests job on Node.js 24.
+
+Registry access is needed for third-party dependencies and native SQLite setup.
+Set `ZEBRIC_PACKAGE_SMOKE_OFFLINE=1` only when dependencies are already cached.
+Temporary apps and child servers are cleaned up on completion or failure.
+
+The README, public quickstart, and downloadable Blueprint are kept identical by
+`packages/docs/tests/quick-start-blueprint.test.mjs`.
+
 ### 3. Browser tests — Playwright (Chromium)
 Start a real engine against the `zebric-dispatch` example blueprint, then drive it with a headless browser. Run automatically on every push to `main` via `browser-tests.yml`.
 

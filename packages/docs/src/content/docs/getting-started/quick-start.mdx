@@ -12,15 +12,20 @@ This quick start gets you up and running with a Zebric web application on your l
 
 You'll need Node.js 22 or above. Zebric's CI and published images use Node.js 24.
 
-## Install Zebric
+## Create a Project
 
 ```bash
-npm install -g @zebric/cli
+mkdir my-app
+cd my-app
+npm install @zebric/cli
 ```
+
+This installs the CLI locally in your project. Use `npx zebric` in this directory
+for the commands below.
 
 ## Create a Blueprint
 
-Create a new file named `blueprint.toml`:
+Create a new file named `blueprint.toml`, or [download this Blueprint](/quickstart/blueprint.toml):
 
 ```toml
 version = "0.6.0"
@@ -37,7 +42,7 @@ min_version = "0.6.0"
 providers = ["email"]
 trustedOrigins = ["http://localhost:3000"]
 
-# Define a Post entity with three fields
+# Define a Post entity
 [entity.Post]
 fields = [
   { name = "id", type = "ULID", primary_key = true },
@@ -49,7 +54,7 @@ fields = [
 seed = [
   { title = "Welcome to Zebric", body = "This blog runs from a single TOML blueprint. Edit blueprint.toml and the page reloads.", published = true },
   { title = "How seeding works", body = "These sample posts come from the seed array on the Post entity. zebric dev --seed inserts them when the table is empty.", published = true },
-  { title = "Write your own", body = "Sign up, visit /posts/new, and publish your first post.", published = false }
+  { title = "Write your own", body = "Sign up, visit /posts/new, and create your first post.", published = false }
 ]
 
 [entity.Post.access]
@@ -67,6 +72,7 @@ layout = "list"
 [page."/".query.posts]
 entity = "Post"
 orderBy = { createdAt = "desc" }
+limit = 25
 
 # Create-post form
 [page."/posts/new"]
@@ -109,7 +115,8 @@ where = { id = "$params.id" }
 ## Start the Dev Server
 
 ```bash
-zebric dev --blueprint blueprint.toml --seed
+npx zebric validate --blueprint blueprint.toml
+npx zebric dev --blueprint blueprint.toml --seed
 ```
 
 Open `http://localhost:3000` in your browser. You'll see:
@@ -120,8 +127,23 @@ Open `http://localhost:3000` in your browser. You'll see:
 
 Visit `/posts/new`. Zebric redirects you to its built-in sign-in page because
 the form has `auth = "required"`. Select **Sign up**, create an account, then
-return to `/posts/new` and publish your first post. Readers can visit the list
+return to `/posts/new` and create your first post. Readers can visit the list
 and detail pages without signing in.
+
+## Make Your First Change
+
+Keep the server running. In `blueprint.toml`, change `title = "All Posts"` to
+`title = "My Posts"` and save. The browser reloads and shows **My Posts**; your
+records remain in the local SQLite database at `data/app.db`.
+
+Stop the server with **Ctrl+C**. Run the same start command again to continue.
+`--seed` skips entities that already contain records, so restarting does not add
+duplicate sample posts.
+
+This learning app lets every signed-in user modify any post, and its public list
+includes all posts regardless of the `published` field. Before adapting it for
+multiple authors or private drafts, add ownership rules and publication filters
+as described in [security and access control](/building/security/).
 
 ## What Just Happened?
 
