@@ -2,7 +2,7 @@
 
 A small multi-author blog. Anyone can read published posts. Signed-in users can create posts; drafts, edits and deletes belong to their author. Signup is open, so every registered user can publish their own posts.
 
-This app uses `@zebric/runtime-worker` 0.9.0, D1 and Better Auth email/password
+This app uses `@zebric/runtime-worker` (pinned in `package.json`), D1 and Better Auth email/password
 sessions. It shares the starter's entrypoint, TypeScript setup, auth migration and
 deployment commands. `pnpm-workspace.yaml` pins Better Auth to 1.6.6 to match
 the checked-in migration and tested adapter; retain it in standalone copies. No KV, R2 or background job bindings are needed.

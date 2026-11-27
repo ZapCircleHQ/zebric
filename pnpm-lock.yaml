@@ -142,7 +142,7 @@ importers:
   examples/workers-blog:
     dependencies:
       '@zebric/runtime-worker':
-        specifier: 0.9.0
+        specifier: 0.10.0
         version: link:../../packages/runtime-worker
     devDependencies:
       '@cloudflare/workers-types':
@@ -706,7 +706,7 @@ importers:
   starters/cloudflare-workers:
     dependencies:
       '@zebric/runtime-worker':
-        specifier: 0.9.0
+        specifier: 0.10.0
         version: link:../../packages/runtime-worker
     devDependencies:
       '@cloudflare/workers-types':
