@@ -106,7 +106,7 @@ configure it to launch that script with `--stdio` instead. This Apps example exp
 reads and registers the HTML resources; the `mcp` package script above is the separate
 tool-only example with explicitly allowed mutations.
 
-See the [MCP Apps testing guide](../../packages/mcp-apps/TESTING.md) for build commands,
+See the [MCP Apps testing guide](https://docs.zebric.dev/building/mcp-apps-testing/) for build commands,
 Windows setup, VS Code and Claude configurations, remote ChatGPT/Claude testing,
 Workers/Hono, and the expected visual results.
 

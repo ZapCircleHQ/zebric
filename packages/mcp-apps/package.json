@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist", "README.md", "TESTING.md"],
+  "files": ["dist", "README.md"],
   "publishConfig": { "access": "public" },
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/ZapCircleHQ/zebric.git", "directory": "packages/mcp-apps" },

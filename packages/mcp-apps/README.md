@@ -6,7 +6,7 @@ Declarative [MCP Apps](https://github.com/modelcontextprotocol/ext-apps/blob/mai
 pnpm add @zebric/mcp-apps @zebric/mcp-server
 ```
 
-For setup, regression commands, host configurations, and expected results across local Node, stdio, VS Code, Claude, ChatGPT, and Workers/Hono, see the [testing guide](./TESTING.md). It distinguishes protocol checks from visual host checks and includes troubleshooting.
+For setup, regression commands, host configurations, and expected results across local Node, stdio, VS Code, Claude, ChatGPT, and Workers/Hono, see the [testing guide](https://docs.zebric.dev/building/mcp-apps-testing/). It distinguishes protocol checks from visual host checks and includes troubleshooting.
 
 ## Declare views
 
