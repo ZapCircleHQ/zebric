@@ -90,6 +90,26 @@ TASK_TRACKER_API_KEY=development-secret pnpm --filter task-tracker mcp
 Read tools are available automatically. Each mutation is exposed only when its exact
 OpenAPI operation ID is allowlisted (see the `--allow-mutation` flags in `package.json`).
 
+## Testing the MCP Apps view
+
+The `[[mcp_apps]]` declaration exposes the task list as an interactive table. After
+building the workspace and starting this application with `TASK_TRACKER_API_KEY`, run
+this from the repository root in another terminal with the same key:
+
+```bash
+node packages/mcp-apps/examples/task-tracker.mjs
+```
+
+Connect an MCP Apps host to `http://127.0.0.1:3001/mcp` and request
+`task_tracker_list_tasks`. For a host-managed local stdio connection,
+configure it to launch that script with `--stdio` instead. This Apps example exposes
+reads and registers the HTML resources; the `mcp` package script above is the separate
+tool-only example with explicitly allowed mutations.
+
+See the [MCP Apps testing guide](https://docs.zebric.dev/building/mcp-apps-testing/) for build commands,
+Windows setup, VS Code and Claude configurations, remote ChatGPT/Claude testing,
+Workers/Hono, and the expected visual results.
+
 ## Limitations of this slice
 
 - A move updates only the dragged card's `position`. Peer cards keep their positions, so

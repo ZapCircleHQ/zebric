@@ -121,6 +121,7 @@ export class BlueprintParser {
       skills: Array.isArray(parsed.skills) ? [...parsed.skills] : undefined,
       auth: parsed.auth,
       live: parsed.live,
+      mcp_apps: parsed.mcp_apps,
       ui: parsed.ui,
       ux: parsed.ux,
       design_adapter: parsed.design_adapter,

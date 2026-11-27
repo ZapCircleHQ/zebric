@@ -17,6 +17,7 @@ export type BlueprintDefinitionKind =
   | 'service'
   | 'plugin'
   | 'skill'
+  | 'mcp_app'
   | 'auth'
   | 'ui'
   | 'ux'
@@ -41,6 +42,7 @@ const collectionDefinitions: Array<{
   { field: 'services', kind: 'service', identity: value => value.name },
   { field: 'plugins', kind: 'plugin', identity: value => value.name },
   { field: 'skills', kind: 'skill', identity: value => value.name },
+  { field: 'mcp_apps', kind: 'mcp_app', identity: value => value.name },
 ]
 
 const singletonDefinitions: Array<keyof Pick<Blueprint,

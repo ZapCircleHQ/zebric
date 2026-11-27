@@ -77,11 +77,11 @@ describe('Zebric Agent deterministic E2E', () => {
       credential: () => agentKey,
     })
     const driver = new DeterministicAgentDriver(tools)
-    const claimTool = tools.find(tool => tool.name === 'issue_board_issue_board_claim_issue_for_qa')
+    const claimTool = tools.find(tool => tool.name === 'issue_board_claim_issue_for_qa')
     expect(claimTool).toBeUndefined()
 
     const columnsOutput = await driver.invoke({
-      tool: 'issue_board_issue_board_list_columns',
+      tool: 'issue_board_list_columns',
       input: { key: 'ready_to_test' },
     })
     const columns = JSON.parse(String(columnsOutput)) as Array<{ id: string; key: string }>
@@ -89,7 +89,7 @@ describe('Zebric Agent deterministic E2E', () => {
     expect(columns[0]!.key).toBe('ready_to_test')
 
     const issuesOutput = await driver.invoke({
-      tool: 'issue_board_issue_board_list_issues',
+      tool: 'issue_board_list_issues',
       input: { columnId: columns[0]!.id },
     })
     const issues = JSON.parse(String(issuesOutput)) as Array<Record<string, unknown>>
@@ -107,7 +107,7 @@ describe('Zebric Agent deterministic E2E', () => {
     }))
 
     const issueOutput = await driver.invoke({
-      tool: 'issue_board_issue_board_get_issue',
+      tool: 'issue_board_get_issue',
       input: { id: issue.id },
     })
     expect(JSON.parse(String(issueOutput))).toEqual(expect.objectContaining({
@@ -115,9 +115,9 @@ describe('Zebric Agent deterministic E2E', () => {
       testUrl: `${baseUrl}/`,
     }))
     expect(driver.transcript.map(entry => entry.tool)).toEqual([
-      'issue_board_issue_board_list_columns',
-      'issue_board_issue_board_list_issues',
-      'issue_board_issue_board_get_issue',
+      'issue_board_list_columns',
+      'issue_board_list_issues',
+      'issue_board_get_issue',
     ])
   })
 
@@ -130,7 +130,7 @@ describe('Zebric Agent deterministic E2E', () => {
     const driver = new DeterministicAgentDriver(tools)
 
     await expect(driver.invoke({
-      tool: 'issue_board_issue_board_list_columns',
+      tool: 'issue_board_list_columns',
       input: { key: 'not_a_real_column' },
     })).rejects.toThrow()
     expect(driver.transcript).toEqual([])
@@ -216,7 +216,7 @@ describe('Zebric Agent deterministic E2E', () => {
       },
     })
     const claimMetadata = getRuntimeToolMetadata(
-      tools.find(tool => tool.name === 'issue_board_issue_board_claim_issue_for_qa')!
+      tools.find(tool => tool.name === 'issue_board_claim_issue_for_qa')!
     )
     expect(claimMetadata).toEqual(expect.objectContaining({
       risk: 'write', approvalRequired: true, idempotencyRequired: true,
@@ -225,7 +225,7 @@ describe('Zebric Agent deterministic E2E', () => {
     }))
     const driver = new DeterministicAgentDriver(tools)
     const call = {
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.complete },
     }
 
@@ -300,7 +300,7 @@ describe('Zebric Agent deterministic E2E', () => {
     }))
 
     const output = JSON.parse(String(await driver.invoke({
-      tool: 'issue_board_issue_board_claim_issue_for_qa', input: { id: seededIssues.retry },
+      tool: 'issue_board_claim_issue_for_qa', input: { id: seededIssues.retry },
     })))
     expect(output.status).toBe('succeeded')
     expect(mutationKeys).toEqual(['real-runtime-retry-key', 'real-runtime-retry-key'])
@@ -326,7 +326,7 @@ describe('Zebric Agent deterministic E2E', () => {
       maxPolls: 0,
     }
     const call = {
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.interrupted },
     }
     const interrupted = new DeterministicAgentDriver(createRuntimeReadTools(contract, {
@@ -367,7 +367,7 @@ describe('Zebric Agent deterministic E2E', () => {
     const driver = new DeterministicAgentDriver(tools)
 
     const failure = await driver.invoke({
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.complete },
     }).catch(error => error)
     expect(failure).toBeInstanceOf(ZebricApiError)
@@ -389,7 +389,7 @@ describe('Zebric Agent deterministic E2E', () => {
       },
     }))
     const calls = ['race-run-a', 'race-run-b'].map(runId => makeDriver(runId).invoke({
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.race },
     }))
 
@@ -406,7 +406,7 @@ describe('Zebric Agent deterministic E2E', () => {
   it('records a passing result and moves the issue to QA Completed', async () => {
     const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-1')
     const issue = JSON.parse(String(await driver.invoke({
-      tool: 'issue_board_issue_board_get_issue',
+      tool: 'issue_board_get_issue',
       input: { id: seededIssues.complete },
     }))) as any
     const target = {
@@ -430,7 +430,7 @@ describe('Zebric Agent deterministic E2E', () => {
       checks: [{ name: 'Board loads', instruction: issue.acceptanceCriteria }],
     })
     const output = await driver.invoke({
-      tool: 'issue_board_issue_board_complete_qa',
+      tool: 'issue_board_complete_qa',
       input: {
         id: seededIssues.complete,
         resultId: 'qa-result-complete',
@@ -456,7 +456,7 @@ describe('Zebric Agent deterministic E2E', () => {
     })
 
     const results = JSON.parse(String(await driver.invoke({
-      tool: 'issue_board_issue_board_list_qa_results',
+      tool: 'issue_board_list_qa_results',
       input: { issueId: seededIssues.complete },
     })))
     expect(results).toEqual([expect.objectContaining({
@@ -469,11 +469,11 @@ describe('Zebric Agent deterministic E2E', () => {
   it('records a failing result and moves a separately claimed issue to Needs Work', async () => {
     const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-needs-work')
     await driver.invoke({
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.needsWork },
     })
     const output = await driver.invoke({
-      tool: 'issue_board_issue_board_mark_qa_needs_work',
+      tool: 'issue_board_mark_qa_needs_work',
       input: {
         id: seededIssues.needsWork,
         resultId: 'qa-result-needs-work',
@@ -496,12 +496,12 @@ describe('Zebric Agent deterministic E2E', () => {
   it('rolls back the issue transition when QA result creation fails', async () => {
     const driver = await mutationDriver(baseUrl, agentKey, 'qa-run-rollback')
     await driver.invoke({
-      tool: 'issue_board_issue_board_claim_issue_for_qa',
+      tool: 'issue_board_claim_issue_for_qa',
       input: { id: seededIssues.rollback },
     })
 
     const failedOutput = await driver.invoke({
-      tool: 'issue_board_issue_board_complete_qa',
+      tool: 'issue_board_complete_qa',
       input: {
         id: seededIssues.rollback,
         resultId: 'qa-result-complete',
@@ -523,7 +523,7 @@ describe('Zebric Agent deterministic E2E', () => {
       qaRunId: 'qa-run-rollback',
     }))
     const results = JSON.parse(String(await driver.invoke({
-      tool: 'issue_board_issue_board_list_qa_results',
+      tool: 'issue_board_list_qa_results',
       input: { issueId: seededIssues.rollback },
     })))
     expect(results).not.toContainEqual(expect.objectContaining({ issueId: seededIssues.rollback }))

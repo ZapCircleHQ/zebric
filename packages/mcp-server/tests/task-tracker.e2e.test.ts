@@ -75,16 +75,16 @@ describe('Task Tracker flagship MCP example', () => {
     try {
       const listedTools = await client.listTools()
       expect(listedTools.tools.map(tool => tool.name).sort()).toEqual([
+        'task_tracker_create_task',
+        'task_tracker_delete_task',
+        'task_tracker_get_task',
+        'task_tracker_list_tasks',
         'task_tracker_query_audit_history',
-        'task_tracker_task_tracker_create_task',
-        'task_tracker_task_tracker_delete_task',
-        'task_tracker_task_tracker_get_task',
-        'task_tracker_task_tracker_list_tasks',
-        'task_tracker_task_tracker_set_task_status',
-        'task_tracker_task_tracker_update_task',
+        'task_tracker_set_task_status',
+        'task_tracker_update_task',
       ])
 
-      const createTool = listedTools.tools.find(tool => tool.name === 'task_tracker_task_tracker_create_task')!
+      const createTool = listedTools.tools.find(tool => tool.name === 'task_tracker_create_task')!
       expect(createTool.inputSchema).toEqual(expect.objectContaining({
         required: ['title'],
         properties: expect.objectContaining({
@@ -94,7 +94,7 @@ describe('Task Tracker flagship MCP example', () => {
       }))
 
       const created = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_create_task',
+        name: 'task_tracker_create_task',
         arguments: {
           title: 'Ship the flagship MCP example',
           description: 'Exercise the complete declared task lifecycle.',
@@ -109,18 +109,18 @@ describe('Task Tracker flagship MCP example', () => {
       expect(client.getServerCapabilities()?.experimental).toHaveProperty('claude/channel')
 
       const tasks = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_list_tasks',
+        name: 'task_tracker_list_tasks',
         arguments: { status: 'not_started' },
       })) as Array<{ id: string }>
       expect(tasks.map(task => task.id)).toContain(created.id)
 
       const fetched = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_get_task', arguments: { id: created.id },
+        name: 'task_tracker_get_task', arguments: { id: created.id },
       })) as { id: string; title: string }
       expect(fetched).toEqual(expect.objectContaining({ id: created.id, title: created.title }))
 
       const detailsUpdated = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_update_task',
+        name: 'task_tracker_update_task',
         arguments: { id: created.id, title: 'Ship the polished MCP example', priority: 'normal' },
       })) as { id: string; title: string; priority: string }
       expect(detailsUpdated).toEqual(expect.objectContaining({
@@ -128,17 +128,17 @@ describe('Task Tracker flagship MCP example', () => {
       }))
 
       const updated = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_set_task_status',
+        name: 'task_tracker_set_task_status',
         arguments: { id: created.id, status: 'in_progress' },
       })) as { id: string; status: string }
       expect(updated).toEqual(expect.objectContaining({ id: created.id, status: 'in_progress' }))
 
       const deleted = parseToolJson(await client.callTool({
-        name: 'task_tracker_task_tracker_delete_task', arguments: { id: created.id },
+        name: 'task_tracker_delete_task', arguments: { id: created.id },
       }))
       expect(deleted).toEqual({ success: true })
       const missing = await client.callTool({
-        name: 'task_tracker_task_tracker_get_task', arguments: { id: created.id },
+        name: 'task_tracker_get_task', arguments: { id: created.id },
       })
       expect(missing.isError).toBe(true)
 

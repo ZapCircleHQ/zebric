@@ -16,7 +16,8 @@
       "@zebric/plugin-sdk",
       "@zebric/themes",
       "@zebric/agent",
-      "@zebric/mcp-server"
+      "@zebric/mcp-server",
+      "@zebric/mcp-apps"
     ]
   ],
   "linked": [],

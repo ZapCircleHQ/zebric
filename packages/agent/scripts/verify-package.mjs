@@ -51,10 +51,8 @@ try {
       '@zebric/runtime-core': `file:${dependencyTarballs['@zebric/runtime-core']}`,
     },
   }, null, 2))
-  // The consumer install ignores the repo lockfile, so transitive dependencies
-  // float to latest. langsmith >=0.10 ships broken declarations (missing
-  // NullableHeaders) that fail the strict skipLibCheck:false type check below,
-  // so the overrides below also keep it at the version the workspace lockfile resolves.
+  // The consumer install ignores the repo lockfile, so third-party transitive
+  // dependencies float to latest, as they would for a real consumer.
   // The workspace dependency may be part of the same unpublished release.
   // Force every occurrence to the tarball under test instead of asking npm to
   // resolve the version embedded in the packed agent manifest. pnpm 11 reads
@@ -66,7 +64,6 @@ overrides:
 ${Object.entries(dependencyTarballs)
   .map(([name, tarball]) => `  '${name}': ${JSON.stringify(`file:${tarball}`)}`)
   .join('\n')}
-  langsmith: 0.7.17
 `)
   // Make an accidental registry lookup for an unpublished Zebric package fail
   // deterministically, while leaving third-party package installs unchanged.

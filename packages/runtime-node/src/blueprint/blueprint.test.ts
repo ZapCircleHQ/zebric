@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { BlueprintLoader } from './loader.js'
@@ -47,6 +47,21 @@ layout = "list"
 }
 
 describe('blueprint wrappers', () => {
+  it('composes MCP App declarations from imported fragments', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'zebric-mcp-apps-'))
+    try {
+      const root = join(dir, 'blueprint.toml')
+      await writeFile(root, `imports = ["./views.toml"]\n${minimalBlueprintToml()}`)
+      await writeFile(join(dir, 'views.toml'), `[[mcp_apps]]\nname = "users"\ntitle = "Users"\noperation = "list_user"\nlayout = "table"`)
+      const loader = new BlueprintLoader()
+      const blueprint = await loader.load(root)
+      expect(blueprint.mcp_apps).toEqual([{ name: 'users', title: 'Users', operation: 'list_user', layout: 'table' }])
+      expect(loader.getSourceLocation('mcp_app', 'users')?.file).toBe(await realpath(join(dir, 'views.toml')))
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('validates blueprint content from JSON string', () => {
     const parsed = validateBlueprint(minimalBlueprintJson(), 'json')
     expect(parsed.project.name).toBe('test-app')

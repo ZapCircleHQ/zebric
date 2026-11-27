@@ -2,6 +2,12 @@
 
 Zebric uses a four-layer test pyramid. Each layer has a different cost and purpose; only run what you need for your current task.
 
+For MCP Apps specifically, use the [MCP Apps testing guide](https://docs.zebric.dev/building/mcp-apps-testing/).
+It covers automated regression checks, a local Task Tracker fixture, protocol inspection,
+visual host checks, stdio, and remote Node/Workers/Hono deployments. Host setup is
+documented for the reference host, VS Code, Claude, and ChatGPT; external host checks
+are manual and should be recorded separately from automated test results.
+
 ---
 
 ## Layers

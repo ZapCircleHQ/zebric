@@ -316,7 +316,16 @@ function unsupported(
 }
 
 function safeToolName(applicationName: string, operationId: string): string {
-  return `${applicationName}_${operationId}`
+  const prefix = normalizeToolName(applicationName)
+  const operation = normalizeToolName(operationId)
+  // Skills are commonly named after their application (`task_tracker_list_tasks`), so an
+  // operation that already carries the prefix is namespaced; adding it again would double it.
+  if (prefix && (operation === prefix || operation.startsWith(`${prefix}_`))) return operation
+  return normalizeToolName(`${applicationName}_${operationId}`)
+}
+
+function normalizeToolName(value: string): string {
+  return value
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, '_')
     .replace(/^_+|_+$/g, '')

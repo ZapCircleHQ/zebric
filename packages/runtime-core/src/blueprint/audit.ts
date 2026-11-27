@@ -1,4 +1,5 @@
 import type { Blueprint } from '../types/blueprint.js'
+import { generateOpenAPISpec } from '../api/openapi-generator.js'
 
 export type AuditSeverity = 'error' | 'warning' | 'info'
 
@@ -94,6 +95,32 @@ export function auditBlueprint(blueprint: Blueprint): BlueprintAuditReport {
         'Review the plugin and its capabilities; prefer limited trust when possible.')
     }
   })
+
+  if (blueprint.mcp_apps?.length) {
+    // Operation IDs this blueprint exposes; an unknown binding fails MCP server creation,
+    // which for stateless HTTP means every request.
+    const operations = new Map<string, string | undefined>()
+    for (const methods of Object.values(generateOpenAPISpec(blueprint).paths)) {
+      for (const operation of Object.values(methods as Record<string, {
+        operationId?: string
+        'x-zebric-agent-operation'?: { risk?: string }
+      }>)) {
+        if (operation.operationId) operations.set(operation.operationId, operation['x-zebric-agent-operation']?.risk)
+      }
+    }
+    blueprint.mcp_apps.forEach((view, index) => {
+      if (!operations.has(view.operation)) {
+        add('mcp-apps.unknown-operation', 'error', ['mcp_apps', index, 'operation'],
+          `MCP App "${view.name}" references operation "${view.operation}", which this blueprint does not expose.`,
+          'Use an exact operation ID from the generated OpenAPI document, such as <skill>_<action>.')
+      } else if (operations.get(view.operation) !== 'read') {
+        // Mutations are registered only when allowlisted; otherwise server creation fails.
+        add('mcp-apps.mutation-operation', 'warning', ['mcp_apps', index, 'operation'],
+          `MCP App "${view.name}" is bound to mutation "${view.operation}", which MCP servers expose only when it is allowlisted.`,
+          `Add "${view.operation}" to allowedMutations (--allow-mutation) wherever this view is served, or bind the view to a read operation.`)
+      }
+    })
+  }
 
   // Code-unit comparison avoids locale-dependent ordering across machines.
   findings.sort((a, b) => {

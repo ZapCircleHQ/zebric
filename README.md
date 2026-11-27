@@ -258,6 +258,8 @@ Zebric is still evolving. A few practical limitations to keep in mind:
 
 ## MCP Server (Agent API)
 
+[`@zebric/mcp-apps`](packages/mcp-apps/README.md) adds declarative table and detail views for MCP Apps clients. Declare `[[mcp_apps]]` in a Blueprint and register the views on an MCP transport with `createMcpAppsExtension`.
+
 > Technical preview. The discovery contract and stdio MCP adapter are implemented and tested; see [Agent API](https://docs.zebric.dev/building/agent-api).
 
 `@zebric/mcp-server` exposes a running Zebric application's Agent API to any MCP client (Claude Code, Claude Desktop, etc.) over stdio. Read operations are available automatically; each mutation must be opted in by its exact OpenAPI operation ID with a repeatable `--allow-mutation` flag. Zebric's existing HTTP authorization, validation, idempotency, workflow, and audit paths stay authoritative. The adapter also supports Claude Code's experimental Channels capability, forwarding authenticated, redacted entity and workflow events from the application's Agent API event stream.
