@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep SHA-pinned GitHub Actions up to date. Dependabot updates both the
+  # commit SHA and the trailing "# vX.Y.Z" comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait a week before proposing a new release, so a compromised or
+    # broken release has time to be noticed and yanked upstream.
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "chore(ci)"

@@ -6,6 +6,8 @@ on:
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
+permissions: {}
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -15,21 +17,22 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with: { version: 11.23.0 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
-          cache: "pnpm"
+          # No dependency cache in the publishing job, to rule out cache poisoning.
+          package-manager-cache: false
       - name: Ensure npm supports trusted publishing
-        run: npm install -g npm@^11.5.1
+        run: npm install -g npm@11.21.3
       - run: pnpm install --frozen-lockfile
       - name: Create release PR or publish
-        uses: changesets/action@v1
+        uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
         with:
           version: pnpm run version
           publish: pnpm release
